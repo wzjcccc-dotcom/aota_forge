@@ -1,0 +1,38 @@
+schema_version: 1
+project:
+  id: aota_forge
+  name: AOTA Forge
+  kind: forge-core
+  status: active
+summary: Canonical source repository for the executor-neutral AOTA Forge Core, Unified Control Plane, canonical CLI, and executor adapters.
+capabilities:
+  - forge-core
+paths:
+  source_root: .
+  source:
+    - aota_forge/
+  docs:
+    - docs/
+  scripts:
+    - scripts/
+  profiles: []
+  skills: []
+  tests:
+    - tests/
+commands:
+  validate:
+    - scripts/m1_dependency_guard.py
+  deploy: []
+  verify_deploy: []
+runtime:
+  deployment_type: manual
+  requires_human_checkpoint: true
+codegraph:
+  enabled: false
+  index_location: .codegraph/
+plan:
+  active_plan_id: null
+constraints:
+  - canonical source repository for AOTA Forge Core
+  - aota-hermes-tools remains legacy migration and regression evidence only
+  - governing Portable Plan remains wzjcccc-dotcom/aota-hermes-tools issue 9
