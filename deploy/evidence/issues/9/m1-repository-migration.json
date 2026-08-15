@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "migration_kind": "clean_source_repository_split",
+  "new_repository": "wzjcccc-dotcom/aota_forge",
+  "new_project_id": "aota_forge",
+  "legacy_source_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "legacy_m1_source_candidate": "16a8469985ae046ad45f8c4291afd5c4f77c1e06",
+  "legacy_accepted_writable_base": "cec580c3b9eecf742213ab576cf1eed154bdedcd",
+  "legacy_predecessor_known_good_checkpoint": "239669d7738c7478d044ed73180a759a975aea3c",
+  "legacy_m1_scoped_commits": [
+    "620c3a6bf92e1fc2a72c4e2ec30045a9b289bf86",
+    "23dc127037686246ed7b71084cb334be2fd55aed",
+    "ce564c325cb0b74be01f539bd068aadba25bd7b5",
+    "211440686db255a41948928b6e0083599c795d5e",
+    "c48a4d1930007fba2930fd7d7626d9316a88a503",
+    "0211948c671575bb107a796b5798f012c64a38eb",
+    "f35c03d687716959f5265ad088fda0b4587b66a7",
+    "581f90ece950f878ffaa2c9784d0a47770379196",
+    "16a8469985ae046ad45f8c4291afd5c4f77c1e06"
+  ],
+  "legacy_control_plane_migrated": false,
+  "source_semantics_intention": "no semantic redesign during repository migration",
+  "migration_source_method": "git archive from exact legacy commit object",
+  "old_m1_worktree_preserved": true,
+  "old_m1_worktree_removed": false,
+  "migrated_paths": [
+    "aota_forge/",
+    "scripts/m1_dependency_guard.py",
+    "scripts/m1_fixtures.py",
+    "deploy/evidence/issues/9/m1-h-migration-inventory.json",
+    "deploy/evidence/issues/9/m1-issue8-regression-mapping.json"
+  ],
+  "legacy_paths_excluded": [
+    "plugin/",
+    "profiles/",
+    "skills/",
+    "fixtures/",
+    "docs/",
+    "legacy deploy manifests",
+    "legacy runtime assembly",
+    "legacy outbox",
+    "legacy parent-wake",
+    "legacy current_* implementation",
+    "unrelated Issue #8 source"
+  ],
+  "commit_rewrites": []
+}

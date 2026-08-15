@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "artifact": "M1-H migration inventory",
+  "issue": 9,
+  "milestone": "M1",
+  "source_baseline": "cec580c3b9eecf742213ab576cf1eed154bdedcd",
+  "generated_at": "2026-08-15T00:00:00Z",
+  "generated_by": "codex",
+  "dispositions": {
+    "RETAIN": [
+      "Portable Plan governance (Issue body remains Plan authority)",
+      "Project Steward checkpoint semantics",
+      "Git checkpoint semantics",
+      "managed deployment/rollback semantics",
+      "security invariants (path escape, symlink rejection, fail-closed ambiguity)",
+      "stable manifests/schemas/receipt formats (project.yaml schema_version 1)"
+    ],
+    "EXTRACT": [
+      "strict project manifest parsing (aota_forge/core/project/manifest.py)",
+      "safe paths (manifest._relative, resolver boundary checks)",
+      "deterministic registry discovery (aota_forge/core/project/discovery.py)",
+      "candidate evaluation 0/1/>1 (aota_forge/core/project/resolver.py)",
+      "pure Plan validation/hash primitives (aota_forge/core/plan/validation.py, read_model.snapshot_sha256)",
+      "Git read-only mechanics after fixing boundary issue (aota_forge/core/git/inspect.py)",
+      "deployment receipt validation (aota_forge/adapters/host/process.py read_receipt)",
+      "read-only workspace discovery (aota_forge/core/project/resolver.py resolve_workspace)"
+    ],
+    "REWRITE": [
+      "workspace resolver semantics (executor-neutral, registry path injected)",
+      "Portable Plan read model (PortablePlanSnapshot/MilestoneSnapshot/WorkItemSnapshot)",
+      "executor-neutral errors (contracts/errors.py)",
+      "PLAN_INIT lifecycle in future milestones",
+      "subject lifecycle (future M3)",
+      "authority/id handling (future M3)",
+      "orchestration (future milestones)",
+      "executor routing (future M5)"
+    ],
+    "RETIRE_FROM_CORE": [
+      "WebUI coupling",
+      "Docker Hermes assumptions",
+      "outbox",
+      "parent wake",
+      "legacy current_* authority",
+      "generic project command runner",
+      "Profile Task ontology",
+      "Hermes-specific object identity",
+      "model-managed recovery choreography"
+    ]
+  },
+  "legacy_dependency_notes": {
+    "NEW_CORE_IMPORTS_LEGACY_CONTROL_PLANE": "no",
+    "legacy_hermes_dependencies": "not imported by aota_forge",
+    "legacy_webui_docker_dependencies": "not imported by aota_forge",
+    "legacy_pointer_state_dependencies": "read via LegacyPlanStateReader as shadow/migration evidence only",
+    "pure_deterministic_utilities": "extracted into aota_forge/core/project and aota_forge/core/plan",
+    "shared_contracts": "aota_forge/core/contracts (operations/results/errors)"
+  },
+  "note": "This inventory is migration evidence; it does not authorize modification of every legacy file."
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #8 regression mapping (M1 semantic corpus)",
+  "issue": 9,
+  "milestone": "M1",
+  "source": "Issue #8 M7 failure classes",
+  "mapping": [
+    {
+      "id": "B011",
+      "summary": "pre-binding PLAN_INIT bootstrap/lifecycle cycle",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "M1 Core has no PLAN_INIT lifecycle; lifecycle mutations belong to M2/M3/M4."
+    },
+    {
+      "id": "B013",
+      "summary": "stale Plan ambiguity / missing retirement lifecycle",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "M1 read model treats Plan state as shadow evidence only; no dual authority."
+    },
+    {
+      "id": "B014",
+      "summary": "post-binding PLAN_INIT producer-consumer cycle",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "No Plan mutation or binding in M1."
+    },
+    {
+      "id": "B014-F",
+      "summary": "production materialization authority gap",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "M1 performs no production materialization; read-only only."
+    },
+    {
+      "id": "B014-F1",
+      "summary": "finalizer lifecycle-recognition drift",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "Finalizer lifecycle is outside M1 Core boundary."
+    },
+    {
+      "id": "ACTIVATE-R-current-binding",
+      "summary": "current decision/followup subject binding conflict",
+      "m1_disposition": "PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER",
+      "m1_note": "current_* pointers are not Core authority in M1 (fixture: legacy_current_pointer_not_authority)."
+    },
+    {
+      "id": "ACTIVATE-R-host-inspection-escalation",
+      "summary": "safe Host read-only inspection unnecessarily escalated into classification/SPEC/ProfileTask/approval/completion/decision/followup",
+      "m1_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "m1_note": "aota host status / host.status ingress route requires no Plan/Milestone/Work Item/SPEC/Profile Task/approval/completion/decision/followup (fixture: host_inspection_no_plan_required)."
+    },
+    {
+      "id": "ACTIVATE-R-wrong-source-checkout",
+      "summary": "validation used wrong source checkout",
+      "m1_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "m1_note": "Git inspection is bounded to resolved project root (fixture: git_boundary_escape_fails_closed); project resolution is deterministic with fail-closed ambiguity."
+    }
+  ],
+  "claim_boundary": "M1 does not claim to solve M2/M3/M4 lifecycle mutations. ELIMINATED_BY_CONSTRUCTION applies to read-only inspection architecture only."
+}
