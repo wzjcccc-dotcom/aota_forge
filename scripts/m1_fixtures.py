@@ -64,6 +64,7 @@ def main() -> int:
         workspace.mkdir()
         p1 = make_project(workspace, "fixture-alpha")
         make_project(workspace, "fixture-beta")
+        make_project(workspace, "aota_forge")
         registry = workdir / "workspaces.json"
         registry.write_text(json.dumps({"fixture-ws": {"candidates": [str(workspace)]}}), encoding="utf-8")
 
@@ -77,6 +78,22 @@ def main() -> int:
             principal="library",
         )
         check("library_invocation_ok", lib_result.get("ok") is True and lib_result["data"]["project_id"] == "fixture-alpha")
+
+        # 1a. I9-B003: underscore project id accepted through real manifest
+        # loading/validation path (regression: kebab-only PROJECT_ID_RE).
+        # 1b. I9-B001: resolved root is the canonical project root, never the
+        # .aota metadata directory (regression: root derivation).
+        underscore_result = library_execute(
+            "project.resolve",
+            {"workspace_id": "fixture-ws", "project_id": "aota_forge", "registry_path": str(registry)},
+            principal="library",
+        )
+        canonical_root = str((workspace / "aota_forge").resolve())
+        aota_metadata_root = str((workspace / "aota_forge" / ".aota").resolve())
+        check("underscore_project_id_accepted", underscore_result.get("ok") is True)
+        check("underscore_project_id_identity", underscore_result.get("data", {}).get("project_id") == "aota_forge")
+        check("project_root_is_canonical_project_root", underscore_result.get("data", {}).get("project_root") == canonical_root)
+        check("project_root_is_not_aota_metadata", underscore_result.get("data", {}).get("project_root") != aota_metadata_root)
 
         # 2. CLI calls the same ingress (invoke CLI subprocess, compare envelope).
         cli_out = subprocess.run(
