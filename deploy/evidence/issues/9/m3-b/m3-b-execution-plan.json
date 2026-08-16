@@ -1,0 +1,1259 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-B0 execution plan and dependency DAG materialization",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-B",
+  "lane": "M3-B0",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "base_sha": "6945110206993c753fb332d1298c34687c24900c",
+  "accepted_writable_base": "6945110206993c753fb332d1298c34687c24900c",
+  "recommended_branch": "aota/m3/b0-execution-plan",
+  "recommended_worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m3/b0-execution-plan",
+  "governance_preconditions": {
+    "M3_A_KNOWN_GOOD_CHECKPOINT": "6945110206993c753fb332d1298c34687c24900c",
+    "M3_A_STATUS": "completed",
+    "M3_PHASE": "M3-B",
+    "M3_B_STATUS": "planned",
+    "M3_B_EXECUTION_PLANNING_READY": "yes",
+    "M3_B_EXECUTION_AUTHORIZED": "no",
+    "M3_B_SOURCE_CONSTRUCTION_ALLOWED": "not_yet_authorized_by_this_materialization",
+    "M3_B_SOURCE_CONSTRUCTION_REQUIRES_CUTOVER": "no",
+    "M3_B_AUTHORITATIVE_WRITE_REQUIRES_CUTOVER": "yes",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "M3_B_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "SOURCE_CODE_CHANGED": "no",
+    "M3_B_IMPLEMENTATION_STARTED": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_PERFORMED": "no",
+    "ISSUE_9_MUTATED": "no",
+    "CONTROL_COMMENTS_MUTATED": "no",
+    "PUSH_PERFORMED": "no",
+    "DEPLOY_PERFORMED": "no",
+    "CUTOVER_PERFORMED": "no",
+    "input_authorities": [
+      "deploy/evidence/issues/9/m3-a/m3-a-design-proof.json",
+      "deploy/evidence/issues/9/m3-a/m3-a-r1-contract-repair.json",
+      "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+      "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+      "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+      "deploy/evidence/issues/9/m3-a/a3-revision-cas-transaction.json",
+      "deploy/evidence/issues/9/m3-a/a4-bootstrap-cutover.json",
+      "deploy/evidence/issues/9/m3-a/a5-binding-recovery.json",
+      "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+      "deploy/evidence/issues/9/m3-a/a45-contract-reconciliation.json",
+      "deploy/evidence/issues/9/m2-successor-regression-matrix.json"
+    ],
+    "M3_A_ARCHITECTURE_RECONCILIATION": {
+      "subject_identity": "Subject identity is canonical graph data, not authority; IDs are typed refs and never authority roots.",
+      "authority": "Normal lifecycle mutation authority resolves to the owning Subject aggregate.",
+      "revision": "Subject aggregate revision is the CAS boundary; independent Subjects do not require global serialization.",
+      "followup": "A Decision-backed parent-authorized two-root transaction mints the child inside the transaction; parent lease grants no post-commit child authority.",
+      "completion": "Completion resolves through execution_ref to Execution and then the owning Subject; no direct Completion subject_ref is required.",
+      "cutover": "Shadow graph materialization is non-authoritative; authoritative runtime lifecycle writes require a completed explicit cutover.",
+      "binding": "Zero/one/many binding is deterministic and fail-closed; ambiguity returns NEEDS_SEMANTIC_CHOICE; heuristics are denied.",
+      "recovery": "Recovery is bounded mechanical read-then-repair and cannot perform semantic reasoning or trigger cutover."
+    },
+    "observed_governing_issue_9": {
+      "read_method": "GitHub API read-only observation",
+      "repository": "wzjcccc-dotcom/aota-hermes-tools",
+      "number": 9,
+      "state": "open",
+      "title": "[PLAN][CLI] AOTA Forge LLM-First Core, Unified Control Plane, and Canonical CLI Interface",
+      "updated_at": "2026-08-16T16:06:21Z",
+      "body_reconciled": "yes",
+      "observed_plan_state": {
+        "PLAN_STATUS": "in-progress",
+        "CURRENT_MILESTONE": "M3",
+        "CURRENT_STATUS": "m3_b_ready_for_execution_planning",
+        "CURRENT_BLOCKER": "none",
+        "M3_A_STATUS": "completed",
+        "M3_A_CLOSE_MATERIALIZED": "yes",
+        "M3_B_STATUS": "planned",
+        "M3_B_EXECUTION_PLANNING_READY": "yes",
+        "M3_B_EXECUTION_AUTHORIZED": "no",
+        "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+        "M3_B_SOURCE_CONSTRUCTION_ALLOWED": "not_yet_authorized_by_this_materialization"
+      },
+      "mutation_performed": "no"
+    }
+  },
+  "work_item_set": {
+    "canonical_implementation_work_item_ids": [
+      "M3-B1",
+      "M3-B2",
+      "M3-B3",
+      "M3-B4",
+      "M3-B5",
+      "M3-B6",
+      "M3-B7",
+      "M3-B8",
+      "M3-B9",
+      "M3-B10",
+      "M3-B11",
+      "M3-B12",
+      "M3-B13",
+      "M3-B14",
+      "M3-B15"
+    ],
+    "gate_ids": ["M3-BG1", "M3-BG2"],
+    "planning_lane_id": "M3-B0",
+    "canonical_implementation_work_item_count": 15,
+    "gate_count": 2,
+    "planning_lane_count": 1,
+    "implementation_status_at_b0": "not_started",
+    "claim_boundary": "A B0 PASS proves plan materialization and guard coverage only. It does not prove any B1-B15 source capability, shadow candidate, cutover, or authoritative graph write."
+  },
+  "work_items": [
+    {
+      "work_item_id": "M3-B0",
+      "legacy_equivalent_ids": [],
+      "title": "Execution plan and DAG materialization",
+      "kind": "planning_lane",
+      "status": "planned",
+      "depends_on": [],
+      "authority_class": "GOVERNANCE_ONLY",
+      "mutation_class": "planning evidence only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B1",
+      "legacy_equivalent_ids": ["W-M3B-12", "I9-B008"],
+      "title": "I9-B008 Canonical Ingress Hardening",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B0"],
+      "authority_class": "SOURCE_ONLY",
+      "mutation_class": "source implementation only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B2",
+      "legacy_equivalent_ids": ["W-M3B-11", "NF2"],
+      "title": "NF2 Principal / Trusted Context Enforcement",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B0"],
+      "authority_class": "SOURCE_ONLY",
+      "mutation_class": "source implementation only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B3",
+      "legacy_equivalent_ids": ["W-M3B-01"],
+      "title": "Durable Subject Graph Foundation",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B1", "M3-B2"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated test state",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B4",
+      "legacy_equivalent_ids": ["W-M3B-02", "W-M3B-04"],
+      "title": "Internal ID / Subject Identity Mechanics",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B1", "M3-B2"],
+      "authority_class": "SOURCE_ONLY",
+      "mutation_class": "source implementation",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B5",
+      "legacy_equivalent_ids": ["W-M3B-05", "W-M3B-06"],
+      "title": "Authority / Capability Lease Foundation",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B1", "M3-B2"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated tests",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B6",
+      "legacy_equivalent_ids": ["W-M3B-03"],
+      "title": "Revision / CAS / Transaction Core",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B3", "M3-B4", "M3-B5"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated test storage",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B7",
+      "legacy_equivalent_ids": [],
+      "title": "Canonical Transition Layer",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B3", "M3-B4", "M3-B5", "M3-B6"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated tests",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B8",
+      "legacy_equivalent_ids": ["W-M3B-09"],
+      "title": "Projection Reconstruction",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B7"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated test state",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B9",
+      "legacy_equivalent_ids": ["W-M3B-10"],
+      "title": "Subject Binding / Mechanical Recovery",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B7"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source implementation / isolated tests",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B10",
+      "legacy_equivalent_ids": ["W-M3B-13"],
+      "title": "Behavioral Regression Foundation",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B8", "M3-B9"],
+      "authority_class": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "mutation_class": "source / behavioral regression evidence only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-BG1",
+      "legacy_equivalent_ids": [],
+      "title": "Shadow Materialization Gate",
+      "kind": "gate",
+      "status": "planned",
+      "depends_on": ["M3-B10"],
+      "authority_class": "GOVERNANCE_ONLY",
+      "mutation_class": "gate evaluation only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B11",
+      "legacy_equivalent_ids": ["W-M3B-07"],
+      "title": "Bootstrap / Migration Mechanics",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-BG1"],
+      "authority_class": "SHADOW_NON_AUTHORITATIVE",
+      "mutation_class": "non-authoritative shadow materialization only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B12",
+      "legacy_equivalent_ids": [],
+      "title": "Shadow Validation",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B11"],
+      "authority_class": "SHADOW_NON_AUTHORITATIVE",
+      "mutation_class": "read-only / shadow validation",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B13",
+      "legacy_equivalent_ids": ["W-M3B-08"],
+      "title": "Cutover Mechanics",
+      "kind": "implementation_lane",
+      "status": "planned",
+      "depends_on": ["M3-B12"],
+      "authority_class": "CUTOVER_MECHANISM_ONLY",
+      "mutation_class": "cutover mechanism implementation only",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-BG2",
+      "legacy_equivalent_ids": [],
+      "title": "Authority Cutover Gate",
+      "kind": "gate",
+      "status": "planned",
+      "depends_on": ["M3-B13"],
+      "authority_class": "GOVERNANCE_ONLY",
+      "mutation_class": "explicit authority activation gate",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    },
+    {
+      "work_item_id": "M3-B14",
+      "legacy_equivalent_ids": ["W-M3B-15", "W-M3B-09", "W-M3B-10"],
+      "title": "Post-Cutover Behavioral Validation",
+      "kind": "implementation_lane",
+      "status": "blocked_until_gate",
+      "depends_on": ["M3-BG2"],
+      "authority_class": "POST_CUTOVER_AUTHORITATIVE_VALIDATION",
+      "mutation_class": "post-cutover behavioral / live validation",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "only after BG2 activation evidence"
+    },
+    {
+      "work_item_id": "M3-B15",
+      "legacy_equivalent_ids": ["W-M3B-14"],
+      "title": "Integration / Independent Review / Steward / Closure",
+      "kind": "governance_lane",
+      "status": "planned",
+      "depends_on": ["M3-B14", "M3-B10"],
+      "authority_class": "GOVERNANCE_ONLY",
+      "mutation_class": "integration and governance evidence",
+      "implementation_status": "not_started",
+      "authoritative_graph_writes_allowed": "no"
+    }
+  ],
+  "dependency_dag": {
+    "node_id_convention": "M3-B0, M3-B1..M3-B15, M3-BG1, M3-BG2; legacy W-M3B IDs are retained only as equivalent identifiers.",
+    "nodes": [
+      "M3-B0",
+      "M3-B1",
+      "M3-B2",
+      "M3-B3",
+      "M3-B4",
+      "M3-B5",
+      "M3-B6",
+      "M3-B7",
+      "M3-B8",
+      "M3-B9",
+      "M3-B10",
+      "M3-BG1",
+      "M3-B11",
+      "M3-B12",
+      "M3-B13",
+      "M3-BG2",
+      "M3-B14",
+      "M3-B15"
+    ],
+    "edges": [
+      ["M3-B0", "M3-B1"],
+      ["M3-B0", "M3-B2"],
+      ["M3-B1", "M3-B3"],
+      ["M3-B2", "M3-B3"],
+      ["M3-B1", "M3-B4"],
+      ["M3-B2", "M3-B4"],
+      ["M3-B1", "M3-B5"],
+      ["M3-B2", "M3-B5"],
+      ["M3-B3", "M3-B6"],
+      ["M3-B4", "M3-B6"],
+      ["M3-B5", "M3-B6"],
+      ["M3-B3", "M3-B7"],
+      ["M3-B4", "M3-B7"],
+      ["M3-B5", "M3-B7"],
+      ["M3-B6", "M3-B7"],
+      ["M3-B7", "M3-B8"],
+      ["M3-B7", "M3-B9"],
+      ["M3-B8", "M3-B10"],
+      ["M3-B9", "M3-B10"],
+      ["M3-B10", "M3-BG1"],
+      ["M3-BG1", "M3-B11"],
+      ["M3-B11", "M3-B12"],
+      ["M3-B12", "M3-B13"],
+      ["M3-B13", "M3-BG2"],
+      ["M3-BG2", "M3-B14"],
+      ["M3-B10", "M3-B15"],
+      ["M3-B14", "M3-B15"]
+    ],
+    "required_edge_annotations": [
+      {
+        "edge": ["M3-B10", "M3-B15"],
+        "accepted_equivalent_edge": ["W-M3B-13", "W-M3B-14"],
+        "reason": "A6/R1 construction map explicitly requires behavioral successor proof before integration/review; this direct edge remains even though the staged cutover path also reaches B15."
+      }
+    ],
+    "topological_layers": [
+      ["M3-B0"],
+      ["M3-B1", "M3-B2"],
+      ["M3-B3", "M3-B4", "M3-B5"],
+      ["M3-B6"],
+      ["M3-B7"],
+      ["M3-B8", "M3-B9"],
+      ["M3-B10"],
+      ["M3-BG1"],
+      ["M3-B11"],
+      ["M3-B12"],
+      ["M3-B13"],
+      ["M3-BG2"],
+      ["M3-B14"],
+      ["M3-B15"]
+    ],
+    "acyclic": "yes",
+    "ordering_rule": "An edge source must be accepted at its applicable checkpoint before the target may become ready; no edge authorizes production graph writes by itself."
+  },
+  "ready_sets": {
+    "CURRENT_READY_SET": ["M3-B0"],
+    "CURRENT_AUTHORIZED_LANES": ["M3-B0"],
+    "CURRENT_IMPLEMENTATION_READY_SET": [],
+    "NEXT_IMPLEMENTATION_READY_SET": ["M3-B1", "M3-B2"],
+    "NEXT_IMPLEMENTATION_READY_SET_STATUS": "conditional_on_B0_acceptance_and_explicit_authorization",
+    "B0_DOES_NOT_AUTHORIZE_B1_B2": "yes",
+    "B0_DOES_NOT_START_B1_B2": "yes",
+    "B0_DOES_NOT_CREATE_B1_B2_WORKTREES": "yes",
+    "initial_ready_rule": "Only M3-B0 is currently authorized. B1 and B2 become the next implementation-ready siblings only after B0 plan review/checkpoint/materialization and a separate explicit authorization action.",
+    "future_ready_rule": "A lane is ready only when every DAG dependency is accepted, required gate evidence is PASS, source ownership is reconciled, and the lane is explicitly authorized. Readiness never implies authority activation.",
+    "gate_ready_rules": {
+      "M3-B11": "requires BG1 PASS; shadow state remains non-authoritative",
+      "M3-B14": "requires BG2 PASS and completed cutover evidence",
+      "M3-B15": "requires B14 validation evidence plus independent review and steward reconciliation"
+    }
+  },
+  "parallel_safety": {
+    "PARALLEL_WRITERS_USE_SEPARATE_WORKTREES": "yes",
+    "SHARED_HOT_FILE_CONCURRENT_WRITE_ALLOWED": "no",
+    "B1_B2_PARALLEL_SAFE": "conditional",
+    "B1_B2_PARALLEL_RULE": "B1 and B2 are sibling lanes after B0. They may run in parallel only if reconnaissance confirms their shared ingress/context edits can be separated; otherwise serialize the shared hot-file portion. Separate worktrees are mandatory either way.",
+    "B3_B4_B5_PARALLEL_MODEL": "potentially_parallel_after_B1_B2_acceptance_and_exact_source_ownership_check; interfaces are frozen but new module boundaries and re-export hot files must be reconciled before concurrent writes",
+    "B6_PLUS_SERIALIZATION_POLICY": "prefer serial execution from B6 onward; permit a later explicitly reviewed sublane only when source ownership, tests, and integration files are proven non-overlapping",
+    "NO_AUTOMATIC_BRANCH_MERGES_IN_B0": "yes",
+    "INTEGRATION_ONLY_FILES": [
+      "deploy/evidence/issues/9/m3-b/m3-b-execution-plan.json",
+      "scripts/m3_b0_execution_plan_guard.py",
+      "deploy/evidence/issues/9/m2-successor-regression-matrix.json",
+      "scripts/m2_regression_corpus.py",
+      "all shared public Core exports and integration manifests discovered by the steward"
+    ],
+    "worktree_rule": "Every concurrent writer uses a sibling worktree from the exact accepted common base; no lane writes a file concurrently with another lane."
+  },
+  "base_branch_policy": {
+    "accepted_base_sha": "6945110206993c753fb332d1298c34687c24900c",
+    "B0_commit_policy": "Create exactly one local planning commit containing the B0 artifact and guard.",
+    "COMMON_BASE_POLICY": "After B0 is accepted and checkpointed, B1 and B2 should branch from the exact accepted B0 planning commit.",
+    "B0_PLANNING_COMMIT_IS_REQUIRED_FOR_COMMON_BASE": "yes",
+    "B1_B2_DIRECT_BASE_FALLBACK": "not preferred; use the accepted B0 planning commit unless governance explicitly selects the original accepted base.",
+    "PUSH_AUTOMATICALLY": "no",
+    "B0_COMMIT_SHA": "to_be_recorded_after_local_commit",
+    "merge_policy": "No implementation branch merge is performed by B0."
+  },
+  "source_ownership": {
+    "M3-B1": {
+      "WORK_ITEM_ID": "M3-B1",
+      "PURPOSE": "Normalize malformed or non-dict internal handler results at canonical ingress.",
+      "DEPENDS_ON": ["M3-B0"],
+      "SOURCE_OWNERSHIP": "aota_forge/core/ingress.py handler-success normalization seam; confirmed by A0 I9-B008 reconnaissance.",
+      "EXPECTED_FILES_OR_MODULES": ["aota_forge/core/ingress.py"],
+      "SHARED_HOT_FILES": ["aota_forge/core/ingress.py"],
+      "PARALLEL_SAFE_WITH": ["M3-B2 conditional on shared-hot-file reconciliation"],
+      "MUTATION_CLASS": "source implementation only",
+      "AUTHORITY_CLASS": "SOURCE_ONLY",
+      "REGRESSION_CLASSES": ["I9-B008 targeted ingress regression"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Every internal handler result is normalized through one bounded canonical path; no raw shape error escapes execute().",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Malformed list/string/None/int handler results produce the canonical error envelope in deterministic isolated fixtures.",
+        "REGRESSION_ACCEPTANCE": "I9_B008_SOURCE_FIXED=yes; ALL_HANDLER_RESULTS_NORMALIZED=yes; UNCAUGHT_HANDLER_RESULT_SHAPE_ERROR=no; CANONICAL_ERROR_ENVELOPE_ALWAYS_USED=yes.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Early prerequisite review before B3/B4/B5 acceptance; no production deploy/reload by default."
+    },
+    "M3-B2": {
+      "WORK_ITEM_ID": "M3-B2",
+      "PURPOSE": "Implement typed trusted principal context and trusted logical-resource boundaries without granting mutation authority by identity or resource resolution.",
+      "DEPENDS_ON": ["M3-B0"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; known A0 seams are core/context.py, core/ingress.py, core/contracts/validation.py, core/contracts/results.py, core/resources/resolver.py, adapters/hermes/schema.py, adapters/hermes/invoke.py, and adapters/host/resources.py.",
+      "EXPECTED_FILES_OR_MODULES": ["known principal/context and trusted-resource seams above; exact final module ownership must be discovered before implementation"],
+      "SHARED_HOT_FILES": ["aota_forge/core/ingress.py", "aota_forge/core/context.py", "aota_forge/core/contracts/results.py"],
+      "PARALLEL_SAFE_WITH": ["M3-B1 conditional on shared-hot-file reconciliation"],
+      "MUTATION_CLASS": "source implementation only",
+      "AUTHORITY_CLASS": "SOURCE_ONLY",
+      "REGRESSION_CLASSES": ["BIND-1", "ACTIVATE-R-current-binding"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Principal is typed and bound only at a trusted injection boundary; model parameters and adapter self-assertion cannot establish privileged identity; audit includes the bound principal; raw resolved paths remain non-model-facing.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Untrusted principal self-assertion, missing trusted binding, trusted-resource-only access, and logical-resource resolution are covered by fail-closed deterministic fixtures.",
+        "REGRESSION_ACCEPTANCE": "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL=no; PRINCIPAL_INCLUDED_IN_AUDIT=yes; RAW_RESOLVED_PATH_MODEL_FACING=no; TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY=no; NF2_SOURCE_FIXED=yes.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Early prerequisite review before authority-bearing foundation lanes; no production deploy/reload by default."
+    },
+    "M3-B3": {
+      "WORK_ITEM_ID": "M3-B3",
+      "PURPOSE": "Implement the storage-neutral canonical graph record model and repository abstraction for Workflow, Subject, Execution, Completion, Decision, FollowupEdge/ParentChildEdge.",
+      "DEPENDS_ON": ["M3-B1", "M3-B2"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new canonical graph core modules and isolated repository implementation, preserving A1 canonical_records and A3/A4/A5 ownership relationships.",
+      "EXPECTED_FILES_OR_MODULES": ["new canonical graph model/repository modules under aota_forge/core/ to be discovered", "isolated test storage only"],
+      "SHARED_HOT_FILES": ["new public Core exports, if any, require steward reconciliation"],
+      "PARALLEL_SAFE_WITH": ["M3-B4", "M3-B5"],
+      "MUTATION_CLASS": "source implementation / isolated test state",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["B011", "B013", "WCTX-1", "ACTIVATE-R-current-binding"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Canonical record kinds and ownership links match A1; Completion resolves via Execution to owning Subject; repository interface is storage-neutral; no current_* pointer is authority.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Create/read deterministic graph fixtures for each record kind, including Completion -> Execution -> Subject and Decision-backed edge lineage.",
+        "REGRESSION_ACCEPTANCE": "CANONICAL_GRAPH_FOUNDATION=PASS in an isolated non-authoritative foundation proof; no production authoritative writes are exposed.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Foundation checkpoint before B6; exact module ownership must be recorded in the lane artifact."
+    },
+    "M3-B4": {
+      "WORK_ITEM_ID": "M3-B4",
+      "PURPOSE": "Implement canonical internal IDs, typed object_ref, mint/reuse/collision rules, and trusted semantic-reference resolution.",
+      "DEPENDS_ON": ["M3-B1", "M3-B2"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new identity/ID Broker core module plus graph-facing typed reference interfaces.",
+      "EXPECTED_FILES_OR_MODULES": ["new identity and typed object_ref modules under aota_forge/core/ to be discovered", "isolated collision fixtures"],
+      "SHARED_HOT_FILES": ["canonical graph public types and exports, if any"],
+      "PARALLEL_SAFE_WITH": ["M3-B3", "M3-B5"],
+      "MUTATION_CLASS": "source implementation",
+      "AUTHORITY_CLASS": "SOURCE_ONLY",
+      "REGRESSION_CLASSES": ["B011", "ACTIVATE-R-current-binding"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "ID_IS_AUTHORITY=no and SUBJECT_ID_IS_AUTHORITY=no; IDs are typed, never reused, collision-fail-closed, and semantic resolution is trusted-boundary controlled.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Deterministic derivation and minted-ID fixtures prove reuse, collision, malformed reference, and legacy-ID non-authority behavior.",
+        "REGRESSION_ACCEPTANCE": "SUBJECT_IDENTITY_MECHANICS=PASS without importing legacy IDs as authority.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Identity foundation checkpoint before B6 transaction-object integration."
+    },
+    "M3-B5": {
+      "WORK_ITEM_ID": "M3-B5",
+      "PURPOSE": "Implement typed Principal, deterministic Authority Engine, and capability lease lifecycle mechanics.",
+      "DEPENDS_ON": ["M3-B1", "M3-B2"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; known principal seam is core/context.py and trusted boundary seams are listed for B2; new authority/lease modules must be selected without changing A2 semantics.",
+      "EXPECTED_FILES_OR_MODULES": ["new authority engine and capability lease modules under aota_forge/core/ to be discovered", "core/context.py only if ownership is confirmed", "isolated lease fixtures"],
+      "SHARED_HOT_FILES": ["core/context.py", "canonical graph typed object_ref exports, if touched"],
+      "PARALLEL_SAFE_WITH": ["M3-B3", "M3-B4"],
+      "MUTATION_CLASS": "source implementation / isolated tests",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["BIND-1", "ACTIVATE-R-current-binding"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Authority evaluates typed target and owning Subject; leases bind principal, operation, object, expected revision, scope, expiry, and authority basis; expiry, replay, substitution, expansion, and stale revision fail closed.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "ALLOW/DENY/NEEDS_APPROVAL, lease issuance/consumption/revocation/expiry/replay, and parent-scoped followup lease fixtures are deterministic and isolated.",
+        "REGRESSION_ACCEPTANCE": "AUTHORITY_LEASE_FOUNDATION=PASS; PARENT_LEASE_GRANTS_POST_COMMIT_CHILD_AUTHORITY=no; no production authority root is activated.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Authority/lease foundation checkpoint before transition and bootstrap lanes."
+    },
+    "M3-B6": {
+      "WORK_ITEM_ID": "M3-B6",
+      "PURPOSE": "Implement Subject aggregate revision, CAS, transaction, and idempotency mechanics without unnecessary global serialization.",
+      "DEPENDS_ON": ["M3-B3", "M3-B4", "M3-B5"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new revision/CAS/transaction core and isolated storage boundary, preserving A3 revision unit and transaction boundary.",
+      "EXPECTED_FILES_OR_MODULES": ["new revision/CAS/transaction modules under aota_forge/core/ to be discovered", "isolated test storage only"],
+      "SHARED_HOT_FILES": ["canonical graph repository interfaces and public transition types"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "source implementation / isolated test storage",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["B014", "B014-F", "RC2-1", "WCTX-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Subject aggregate is the normal CAS boundary; stale mutation fails closed; lost updates and silent last-write-wins are impossible; independent Subjects can mutate concurrently; idempotency is atomic and fingerprint-bound.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Concurrent independent Subjects, stale revisions, same-key replay, payload mismatch, and failed atomic commit fixtures produce deterministic outcomes.",
+        "REGRESSION_ACCEPTANCE": "REVISION_CAS_TRANSACTION=PASS; LOST_UPDATE_ALLOWED=no; SILENT_LAST_WRITE_WINS=no; STALE_REVISION_MUTATION=fail_closed.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Serial transaction-core review before B7; no authoritative runtime storage."
+    },
+    "M3-B7": {
+      "WORK_ITEM_ID": "M3-B7",
+      "PURPOSE": "Implement bounded canonical transitions create_execution, record_completion, record_decision, and create_followup_subject.",
+      "DEPENDS_ON": ["M3-B3", "M3-B4", "M3-B5", "M3-B6"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new canonical transition module over B3-B6 interfaces; no semantic transition architecture may be invented.",
+      "EXPECTED_FILES_OR_MODULES": ["new transition modules under aota_forge/core/ to be discovered", "isolated transition fixtures"],
+      "SHARED_HOT_FILES": ["graph repository, authority/lease, revision/CAS public interfaces"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "source implementation / isolated tests",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["B011", "B014", "B014-F", "RC2-1", "WCTX-1"],
+      "FROZEN_FOLLOWUP_TRANSACTION_ORDER": [
+        "resolve parent Subject",
+        "verify materialized Decision basis",
+        "verify lease",
+        "verify expected parent revision",
+        "CAS parent",
+        "mint canonical child Subject ID",
+        "create child Subject at initial revision",
+        "create Decision-backed FollowupEdge",
+        "advance parent revision",
+        "persist idempotency metadata",
+        "atomically commit authoritative unit"
+      ],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Transitions resolve semantic refs to owning Subject, evaluate authority, use owning Subject revision, and commit only through B6; followup preserves the eleven-step R1 order: verify Decision, verify parent lease, CAS parent, mint child, create child, create edge, advance parent revision, persist idempotency, atomic commit.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Each transition has success, invalid predecessor, stale revision, authority denial, idempotent replay, and atomic failure fixtures; no orphan child or edge is observable.",
+        "REGRESSION_ACCEPTANCE": "CANONICAL_TRANSITION_LAYER=PASS; COMPLETION_DIRECT_SUBJECT_REF_REQUIRED=no; PARENT_LEASE_GRANTS_POST_COMMIT_CHILD_AUTHORITY=no.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Serial canonical-transition review before projection and binding lanes."
+    },
+    "M3-B8": {
+      "WORK_ITEM_ID": "M3-B8",
+      "PURPOSE": "Rebuild current_* projections mechanically from canonical graph records.",
+      "DEPENDS_ON": ["M3-B7"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new projection reconstruction module over canonical graph reads; existing plan read_model is legacy/shadow evidence, not the new authority.",
+      "EXPECTED_FILES_OR_MODULES": ["new projection module under aota_forge/core/ to be discovered", "isolated projection fixtures"],
+      "SHARED_HOT_FILES": ["canonical graph read interfaces", "projection/CLI exports if discovered"],
+      "PARALLEL_SAFE_WITH": ["M3-B9 only if exact ownership is proven non-overlapping; default serial"],
+      "MUTATION_CLASS": "source implementation / isolated test state",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["B013", "ACTIVATE-R-current-binding", "WCTX-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Projection derives from canonical authority only; PROJECTION_REBUILD_MUTATES_GRAPH=no; stale projection cannot hide a valid Subject; projection failure cannot become authority.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Delete or corrupt current_* projection and rebuild from graph; compare deterministic outputs and preserve valid durable Subject visibility.",
+        "REGRESSION_ACCEPTANCE": "PROJECTION_FOUNDATION=PASS; CURRENT_POINTERS_ARE_AUTHORITY=no; STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT=yes.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Projection foundation review before B10; no production deploy/reload by default."
+    },
+    "M3-B9": {
+      "WORK_ITEM_ID": "M3-B9",
+      "PURPOSE": "Implement deterministic zero/one/many Subject binding and bounded mechanical recovery.",
+      "DEPENDS_ON": ["M3-B7"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; new binding/recovery module over canonical graph, authority, revision, predecessor, projection, and readonly diagnostic seams.",
+      "EXPECTED_FILES_OR_MODULES": ["new binding/recovery modules under aota_forge/core/ to be discovered", "isolated binding/recovery fixtures"],
+      "SHARED_HOT_FILES": ["canonical graph read interfaces", "projection interfaces", "readonly diagnostic result envelope"],
+      "PARALLEL_SAFE_WITH": ["M3-B8 only if exact ownership is proven non-overlapping; default serial"],
+      "MUTATION_CLASS": "source implementation / isolated tests",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["BIND-1", "ACTIVATE-R-current-binding", "RECOVERY-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "ZERO is bounded notfound/reconciliation; ONE requires Decision, authority, revision, and predecessor validity; MANY returns NEEDS_SEMANTIC_CHOICE; heuristics and semantic reasoning are denied; readonly diagnosis requires no Subject binding.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Zero/one/many, stale pointer, invalid predecessor, missing Decision, ambiguity, idempotent repair, and safe readonly diagnosis fixtures are deterministic.",
+        "REGRESSION_ACCEPTANCE": "BINDING_RECOVERY_FOUNDATION=PASS; HEURISTIC_PRE_FILTER_ALLOWED=no; HEURISTIC_SUBJECT_SELECTION_ALLOWED=no; RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING=no.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "no",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Binding/recovery foundation review before B10; recovery must not trigger cutover."
+    },
+    "M3-B10": {
+      "WORK_ITEM_ID": "M3-B10",
+      "PURPOSE": "Turn M3-A design proofs into source and behavioral regression proofs for the pre-cutover foundation.",
+      "DEPENDS_ON": ["M3-B8", "M3-B9"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; regression fixtures/guards and lane-owned evidence; integration-only matrix changes require steward review.",
+      "EXPECTED_FILES_OR_MODULES": ["new M3-B regression evidence/fixtures and focused tests to be discovered", "deploy/evidence/issues/9/m2-successor-regression-matrix.json only when an actual behavioral proof supports a disposition change", "scripts/m2_regression_corpus.py only through explicit integration ownership"],
+      "SHARED_HOT_FILES": ["deploy/evidence/issues/9/m2-successor-regression-matrix.json", "scripts/m2_regression_corpus.py", "shared Core test/export modules"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "source / behavioral regression evidence only",
+      "AUTHORITY_CLASS": "ISOLATED_NON_AUTHORITATIVE_STATE",
+      "REGRESSION_CLASSES": ["B011", "B013", "B014", "B014-F", "ACTIVATE-R-current-binding", "WCTX-1", "BIND-1", "RC2-1", "RECOVERY-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Regression proof covers source behavior and the frozen M3-A invariants without changing semantic architecture.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Each applicable class has deterministic source/fixture evidence; pre-cutover tests do not claim post-cutover or production authority.",
+        "REGRESSION_ACCEPTANCE": "B011, B013, B014, B014-F, ACTIVATE-R-current-binding, WCTX-1, BIND-1, RC2-1, and RECOVERY-1 are exercised honestly; NOT_YET_IMPLEMENTED changes only when the exact behavioral proof exists.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Behavioral foundation checkpoint; required predecessor to BG1."
+    },
+    "M3-B11": {
+      "WORK_ITEM_ID": "M3-B11",
+      "PURPOSE": "Materialize deterministic legacy evidence into a validated non-authoritative shadow graph candidate.",
+      "DEPENDS_ON": ["M3-BG1"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; A0 source classifications and A4 bootstrap input contract; new migration/shadow modules only after BG1.",
+      "EXPECTED_FILES_OR_MODULES": ["new bootstrap/migration/shadow modules to be discovered", "existing plan/project/adapter readers as evidence inputs only", "isolated or shadow storage"],
+      "SHARED_HOT_FILES": ["canonical graph repository read/write interfaces", "legacy evidence readers", "migration evidence artifacts"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "non-authoritative shadow materialization only",
+      "AUTHORITY_CLASS": "SHADOW_NON_AUTHORITATIVE",
+      "REGRESSION_CLASSES": ["B011", "B013", "B014-F"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Read, normalize, cross-validate, and materialize candidate only; latest-wins, first-match, similarity, Git history, current pointer, and heuristic identity merge are forbidden.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Valid, ambiguous, incomplete, conflicting, and unmigratable legacy evidence fixtures classify deterministically; ambiguity is NEEDS_SEMANTIC_CHOICE or UNMIGRATABLE.",
+        "REGRESSION_ACCEPTANCE": "B11 is permitted only after BG1 PASS; SHADOW_GRAPH_IS_AUTHORITY=no; SHADOW_GRAPH_CAN_AUTHORITATIVELY_BIND=no; SHADOW_GRAPH_CAN_ACCEPT_RUNTIME_LIFECYCLE_MUTATION=no.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Shadow-materialization checkpoint; no authority flip and no production authoritative writes."
+    },
+    "M3-B12": {
+      "WORK_ITEM_ID": "M3-B12",
+      "PURPOSE": "Validate a shadow candidate against real/current legacy evidence without flipping authority.",
+      "DEPENDS_ON": ["M3-B11"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; read-only validator over bootstrap candidate and legacy evidence boundaries.",
+      "EXPECTED_FILES_OR_MODULES": ["new shadow validation module to be discovered", "read-only legacy evidence adapters", "validation fixtures"],
+      "SHARED_HOT_FILES": ["shadow candidate schema", "canonical graph read interfaces", "migration evidence artifacts"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "read-only / shadow validation",
+      "AUTHORITY_CLASS": "SHADOW_NON_AUTHORITATIVE",
+      "REGRESSION_CLASSES": ["B011", "B013", "B014-F", "ACTIVATE-R-current-binding", "BIND-1", "RECOVERY-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Validate identity, lineage, Decision/followup relationship, projection reconstruction, and ambiguity/unmigratable classification; validation cannot create authority.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Current evidence and candidate mismatch fixtures produce bounded validation findings; valid candidate digest is stable; no authority flip occurs.",
+        "REGRESSION_ACCEPTANCE": "BOOTSTRAP_CANDIDATE_VALIDATED=yes only for a validated shadow candidate; SHADOW_GRAPH_IS_AUTHORITY=no remains true.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Shadow-validation checkpoint before B13; isolated or shadow real-data mechanics only."
+    },
+    "M3-B13": {
+      "WORK_ITEM_ID": "M3-B13",
+      "PURPOSE": "Implement the deterministic cutover primitive, preconditions, serialization/freeze, failure behavior, idempotent replay, and legacy retirement/shadow mechanics.",
+      "DEPENDS_ON": ["M3-B12"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; A4 cutover rule plus A45 pre/post binding and idempotency contracts; exact cutover module to be discovered.",
+      "EXPECTED_FILES_OR_MODULES": ["new cutover mechanism module to be discovered", "cutover record/serialization fixture storage", "isolated failure/idempotency fixtures"],
+      "SHARED_HOT_FILES": ["authority epoch/cutover record interfaces", "canonical graph repository", "legacy compatibility projection boundaries"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "cutover mechanism implementation only",
+      "AUTHORITY_CLASS": "CUTOVER_MECHANISM_ONLY",
+      "REGRESSION_CLASSES": ["B013", "B014-F", "RC2-1", "ACTIVATE-R-current-binding"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Implement preconditions, one-way authority-flip primitive, freeze/serialization, failure atomicity, idempotent replay, and legacy retirement/shadow transition mechanics; the mechanism itself does not activate production cutover.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Missing precondition, concurrent cutover, failure before/after commit, replay, candidate mismatch, and legacy retirement fixtures are deterministic and cannot produce dual authority.",
+        "REGRESSION_ACCEPTANCE": "CUTOVER_MECHANICS_IMPLEMENTED=yes may be recorded only for mechanism behavior; CUTOVER_COMPLETED remains separate and is not implied by B13 PASS.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "no"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Independent cutover-mechanics review; implementation PASS cannot activate runtime authority."
+    },
+    "M3-B14": {
+      "WORK_ITEM_ID": "M3-B14",
+      "PURPOSE": "After explicit BG2 authorization and completed cutover, prove the graph is sole lifecycle authority and recovery/projection/binding remain mechanical.",
+      "DEPENDS_ON": ["M3-BG2"],
+      "SOURCE_OWNERSHIP": "reconnaissance_required_before_implementation; post-cutover validation harness and runtime-facing proof surface; no lane may declare readiness before BG2.",
+      "EXPECTED_FILES_OR_MODULES": ["post-cutover behavioral validation fixtures/harness to be discovered", "runtime or adapter surface only where actual validation requires it", "read-only diagnostic validation"],
+      "SHARED_HOT_FILES": ["all integrated graph transition/projection/binding interfaces", "post-cutover acceptance evidence"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "post-cutover behavioral / live validation",
+      "AUTHORITY_CLASS": "POST_CUTOVER_AUTHORITATIVE_VALIDATION",
+      "REGRESSION_CLASSES": ["B011", "B013", "B014", "B014-F", "ACTIVATE-R-current-binding", "WCTX-1", "BIND-1", "RC2-1", "RECOVERY-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "Validation proves graph sole authority, legacy pointer cannot override, projection rebuild is graph-derived, binding resolves against graph, recovery stays mechanical, readonly plane remains available, and no dual authority exists.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "Post-cutover fixtures cover legacy-pointer conflict, graph rebuild, zero/one/many binding, recovery ambiguity, idempotent replay, and failure rollback.",
+        "REGRESSION_ACCEPTANCE": "Required M3 behavioral proofs PASS only with actual evidence; CUTOVER_COMPLETED=yes and all BG2 activation outputs are verified before authoritative runtime-write evidence is accepted.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "yes"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Explicit post-cutover runtime/live validation checkpoint; cannot be ready before BG2 succeeds."
+    },
+    "M3-B15": {
+      "WORK_ITEM_ID": "M3-B15",
+      "PURPOSE": "Integrate M3-B source, run focused acceptance, perform independent review and Project Steward reconciliation, create the M3 Known-Good checkpoint, and close Issue #9 M3 through governance.",
+      "DEPENDS_ON": ["M3-B14", "M3-B10"],
+      "SOURCE_OWNERSHIP": "integration/review/steward/closure ownership; all implementation files remain owned by their lanes; exact integration-only files require steward reconciliation.",
+      "EXPECTED_FILES_OR_MODULES": ["accepted lane commits", "integration-only evidence and checkpoint artifacts to be identified", "Issue #9 closure/control state only in a separate authorized governance task"],
+      "SHARED_HOT_FILES": ["all accepted M3-B lane outputs", "regression matrix and evidence", "checkpoint/closure records"],
+      "PARALLEL_SAFE_WITH": [],
+      "MUTATION_CLASS": "integration and governance evidence",
+      "AUTHORITY_CLASS": "GOVERNANCE_ONLY",
+      "REGRESSION_CLASSES": ["B011", "B013", "B014", "B014-F", "B014-F1", "ACTIVATE-R-current-binding", "ACTIVATE-R-host-inspection-escalation", "ACTIVATE-R-wrong-source-checkout", "WCTX-1", "BIND-1", "DRIFT-1", "RC2-1", "CLASSIFY-1", "RECOVERY-1", "RUNNER-1", "E2E-1"],
+      "ACCEPTANCE": {
+        "SOURCE_ACCEPTANCE": "All accepted lane commits integrate without source-boundary violations or semantic drift; focused acceptance and review evidence is complete.",
+        "STATIC_OR_DETERMINISTIC_FIXTURE_ACCEPTANCE": "All applicable focused fixtures, guard outputs, regression corpus evidence, and checkpoint provenance are reproducible.",
+        "REGRESSION_ACCEPTANCE": "All 16 classes are accounted for and no NOT_YET_IMPLEMENTED disposition changes without actual behavioral proof; closure state is governed separately.",
+        "INDEPENDENT_REVIEW_REQUIRED": "yes",
+        "STEWARD_RECONCILIATION_REQUIRED": "yes",
+        "RUNTIME_OR_LIVE_REQUIRED": "yes"
+      },
+      "CHECKPOINT_OR_REVIEW_REQUIREMENT": "Independent review -> Project Steward reconciliation -> M3 Known-Good checkpoint -> separately authorized Issue #9 M3 closure; none is ordinary implementation success."
+    }
+  },
+  "authority_classes": {
+    "allowed": ["SOURCE_ONLY", "ISOLATED_NON_AUTHORITATIVE_STATE", "SHADOW_NON_AUTHORITATIVE", "CUTOVER_MECHANISM_ONLY", "POST_CUTOVER_AUTHORITATIVE_VALIDATION", "GOVERNANCE_ONLY"],
+    "M3-B0": "GOVERNANCE_ONLY",
+    "M3-B1": "SOURCE_ONLY",
+    "M3-B2": "SOURCE_ONLY",
+    "M3-B3": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B4": "SOURCE_ONLY",
+    "M3-B5": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B6": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B7": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B8": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B9": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-B10": "ISOLATED_NON_AUTHORITATIVE_STATE",
+    "M3-BG1": "GOVERNANCE_ONLY",
+    "M3-B11": "SHADOW_NON_AUTHORITATIVE",
+    "M3-B12": "SHADOW_NON_AUTHORITATIVE",
+    "M3-B13": "CUTOVER_MECHANISM_ONLY",
+    "M3-BG2": "GOVERNANCE_ONLY",
+    "M3-B14": "POST_CUTOVER_AUTHORITATIVE_VALIDATION",
+    "M3-B15": "GOVERNANCE_ONLY",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED_THROUGH_B0": "no",
+    "production_authoritative_write_activation": "only after BG2 activation outputs are verified"
+  },
+  "shadow_materialization_gate": {
+    "gate_id": "M3-BG1",
+    "gate_type": "shadow materialization authorization gate",
+    "PLAN_GATE_DEFINITION_STATUS": "PASS",
+    "CURRENT_EXECUTION_EVALUATION": "not_evaluated_in_B0",
+    "B11_READY": "only_if_PASS",
+    "SHADOW_GRAPH_IS_AUTHORITY": "no",
+    "SHADOW_GRAPH_CAN_AUTHORITATIVELY_BIND": "no",
+    "SHADOW_GRAPH_CAN_ACCEPT_RUNTIME_LIFECYCLE_MUTATION": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "required_prerequisites": {
+      "I9_B008_SOURCE_FIXED": "yes",
+      "NF2_SOURCE_FIXED": "yes",
+      "CANONICAL_GRAPH_FOUNDATION": "PASS",
+      "SUBJECT_IDENTITY_MECHANICS": "PASS",
+      "AUTHORITY_LEASE_FOUNDATION": "PASS",
+      "REVISION_CAS_TRANSACTION": "PASS",
+      "CANONICAL_TRANSITION_LAYER": "PASS",
+      "PROJECTION_FOUNDATION": "PASS where required",
+      "BINDING_RECOVERY_FOUNDATION": "PASS where required",
+      "BEHAVIORAL_FOUNDATION_REGRESSIONS": "PASS",
+      "SHADOW_GRAPH_IS_AUTHORITY": "no",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no"
+    },
+    "release_rule": "Only a BG1 PASS evaluation releases B11. B11 may materialize a validated candidate in shadow/non-authoritative state only; BG1 never flips lifecycle authority.",
+    "negative_rule": "Any missing prerequisite, authoritative classification, or write permission fails closed and keeps B11 not ready."
+  },
+  "authority_cutover_gate": {
+    "gate_id": "M3-BG2",
+    "gate_type": "authority cutover authorization and activation gate",
+    "PLAN_GATE_DEFINITION_STATUS": "PASS",
+    "CURRENT_EXECUTION_EVALUATION": "not_passed_in_B0",
+    "B14_READY": "only_if_PASS",
+    "required_prerequisites": {
+      "I9_B008_SOURCE_FIXED": "yes",
+      "NF2_PRINCIPAL_ENFORCEMENT_IMPLEMENTED": "yes",
+      "CANONICAL_GRAPH_FOUNDATION_IMPLEMENTED": "yes",
+      "SUBJECT_IDENTITY_IMPLEMENTED": "yes",
+      "REVISION_CAS_TRANSACTION_IMPLEMENTED": "yes",
+      "AUTHORITY_ENGINE_IMPLEMENTED": "yes",
+      "CAPABILITY_LEASE_IMPLEMENTED": "yes",
+      "IDEMPOTENCY_IMPLEMENTED": "yes",
+      "REQUIRED_M3_BEHAVIORAL_REGRESSION_PROOFS": "PASS",
+      "BOOTSTRAP_CANDIDATE_VALIDATED": "yes",
+      "CUTOVER_MECHANICS_IMPLEMENTED": "yes",
+      "CUTOVER_AUTHORIZED": "yes"
+    },
+    "activation_outputs": {
+      "CUTOVER_COMPLETED": "yes",
+      "DURABLE_SUBJECT_GRAPH_IS_CURRENT_LIFECYCLE_AUTHORITY": "yes",
+      "LEGACY_LIFECYCLE_AUTHORITY_RETIRED_OR_SHADOW_ONLY": "yes",
+      "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+      "AUTHORITATIVE_RUNTIME_LIFECYCLE_GRAPH_WRITES_ALLOWED": "yes"
+    },
+    "CURRENT_B0_ACTIVATION_OUTPUTS": {
+      "CUTOVER_COMPLETED": "no",
+      "DURABLE_SUBJECT_GRAPH_IS_CURRENT_LIFECYCLE_AUTHORITY": "no",
+      "LEGACY_LIFECYCLE_AUTHORITY_RETIRED_OR_SHADOW_ONLY": "no",
+      "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "not_applicable_before_cutover",
+      "AUTHORITATIVE_RUNTIME_LIFECYCLE_GRAPH_WRITES_ALLOWED": "no"
+    },
+    "M3_A_PASS_AUTOMATICALLY_AUTHORIZES_GRAPH_WRITES": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "release_rule": "B13 implementation PASS is only a mechanics result. BG2 PASS requires every prerequisite and activation output, an explicit authorization action, and independent review; only then may B14 become ready and runtime authoritative writes be enabled.",
+    "negative_rule": "A missing completed-cutover prerequisite, explicit authorization, or no-dual-authority evidence fails closed; B13 PASS cannot substitute for BG2."
+  },
+  "cutover_authorization_boundary": {
+    "B13": "cutover mechanics implementation",
+    "BG2": "cutover authority/activation gate",
+    "actual_production_cutover": "separate explicitly authorized action/task",
+    "CUTOVER_IMPLEMENTATION_EQUALS_CUTOVER_COMPLETION": "no",
+    "CUTOVER_REQUIRES_EXPLICIT_AUTHORIZATION": "yes",
+    "M3_B_EXECUTION_PLAN_DOES_NOT_AUTHORIZE_CUTOVER": "yes",
+    "M3_A_PASS_AUTOMATICALLY_AUTHORIZES_GRAPH_WRITES": "no",
+    "B13_PASS_IMPLIES_CUTOVER_COMPLETED": "no",
+    "recovery_engine_may_trigger_cutover": "no"
+  },
+  "regression_ownership": [
+    {
+      "FAILURE_CLASS": "B011",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A6 accepted integrated design proof",
+      "IMPLEMENTATION_OWNER": "M3-B7",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10",
+      "GATE_DEPENDENCY": "B10 -> BG1; final lifecycle transition owner is M4",
+      "MAY_TRANSITION_FROM_NYI_AT": "only at an actual behavioral proof checkpoint owned by the applicable transition milestone; not by design evidence alone",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change; no unsupported PASS"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A6 accepted integrated design proof",
+      "IMPLEMENTATION_OWNER": "M3-B8 and M3-B11",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10",
+      "GATE_DEPENDENCY": "B10 -> BG1 -> B11/B12; retirement lifecycle remains later scope",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after actual projection/bootstrap behavior proves the frozen condition",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change; no unsupported PASS"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A6 accepted integrated design proof",
+      "IMPLEMENTATION_OWNER": "M3-B7",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10, with lifecycle completion owned later by M4",
+      "GATE_DEPENDENCY": "B10 -> BG1; authoritative transition proof also requires BG2/B14",
+      "MAY_TRANSITION_FROM_NYI_AT": "only when actual mechanical transition proof exists and the owning milestone permits the disposition change",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "B014-F",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A6 and M3-A3 transaction design",
+      "IMPLEMENTATION_OWNER": "M3-B6/M3-B7",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10",
+      "GATE_DEPENDENCY": "B10 -> BG1; authoritative materialization behavior remains gated by BG2",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after canonical result and materialization failure behavior is actually exercised",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition; terminology carry-forward is non-blocking"
+    },
+    {
+      "FAILURE_CLASS": "B014-F1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M2 regression corpus / future executor contract",
+      "IMPLEMENTATION_OWNER": "M5",
+      "BEHAVIORAL_PROOF_OWNER": "M5",
+      "GATE_DEPENDENCY": "M5 ExecutorAdapter gate; outside M3-B",
+      "MAY_TRANSITION_FROM_NYI_AT": "M5 only with actual executor finalizer proof",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "NOT_YET_IMPLEMENTED"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A5/M3-A6",
+      "IMPLEMENTATION_OWNER": "M3-B8/M3-B9",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10 pre-cutover and M3-B14 post-cutover",
+      "GATE_DEPENDENCY": "BG1 for foundation; BG2 and B14 for sole-authority proof",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after actual graph-derived binding proof; post-cutover claims require B14",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-host-inspection-escalation",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "DESIGN_OWNER": "M2-C/M2-I corpus",
+      "IMPLEMENTATION_OWNER": "M2",
+      "BEHAVIORAL_PROOF_OWNER": "M2 regression corpus",
+      "GATE_DEPENDENCY": "none; preserved as historical regression evidence",
+      "MAY_TRANSITION_FROM_NYI_AT": "not applicable",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "ELIMINATED_BY_CONSTRUCTION; do not mutate in B0"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-wrong-source-checkout",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "DESIGN_OWNER": "M2-C/M2-I corpus",
+      "IMPLEMENTATION_OWNER": "M2",
+      "BEHAVIORAL_PROOF_OWNER": "M2 regression corpus",
+      "GATE_DEPENDENCY": "none; preserved as historical regression evidence",
+      "MAY_TRANSITION_FROM_NYI_AT": "not applicable",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "ELIMINATED_BY_CONSTRUCTION; do not mutate in B0"
+    },
+    {
+      "FAILURE_CLASS": "WCTX-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M2 regression corpus and M3-A ingress/transition contracts",
+      "IMPLEMENTATION_OWNER": "M3-B1/M3-B7",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10",
+      "GATE_DEPENDENCY": "B1/B7 -> B10 -> BG1",
+      "MAY_TRANSITION_FROM_NYI_AT": "only with actual distinct lifecycle error behavior; no design-only transition",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A5/M3-A6",
+      "IMPLEMENTATION_OWNER": "M3-B5/M3-B9",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10 and M3-B14",
+      "GATE_DEPENDENCY": "BG1 for foundation; BG2/B14 for authoritative binding",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after actual zero/one/many and authority/revision/predecessor proof",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "DRIFT-1",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "DESIGN_OWNER": "M2-C/M2-I corpus",
+      "IMPLEMENTATION_OWNER": "M2",
+      "BEHAVIORAL_PROOF_OWNER": "M2 regression corpus",
+      "GATE_DEPENDENCY": "none; preserve canonical contract drift evidence",
+      "MAY_TRANSITION_FROM_NYI_AT": "not applicable",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "ELIMINATED_BY_CONSTRUCTION; do not mutate in B0"
+    },
+    {
+      "FAILURE_CLASS": "RC2-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A3/M3-A6",
+      "IMPLEMENTATION_OWNER": "M3-B6/M3-B7",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10",
+      "GATE_DEPENDENCY": "B10 -> BG1; authoritative failure evidence may require BG2",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after actual canonical authoritative failure and idempotency proof",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "CLASSIFY-1",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "DESIGN_OWNER": "M2-C/M2-I corpus",
+      "IMPLEMENTATION_OWNER": "M2",
+      "BEHAVIORAL_PROOF_OWNER": "M2 regression corpus",
+      "GATE_DEPENDENCY": "none; preserved as deterministic classification evidence",
+      "MAY_TRANSITION_FROM_NYI_AT": "not applicable",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "ELIMINATED_BY_CONSTRUCTION; do not mutate in B0"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M3-A5/M3-A6",
+      "IMPLEMENTATION_OWNER": "M3-B9",
+      "BEHAVIORAL_PROOF_OWNER": "M3-B10 foundation and M3-B14 post-cutover",
+      "GATE_DEPENDENCY": "BG1 for foundation; BG2/B14 for post-cutover authority evidence",
+      "MAY_TRANSITION_FROM_NYI_AT": "only after actual bounded recovery proof; semantic choice remains outside the engine",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "retain current disposition unless exact behavioral proof supports a permitted change"
+    },
+    {
+      "FAILURE_CLASS": "RUNNER-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M2 regression corpus / future executor contract",
+      "IMPLEMENTATION_OWNER": "M5",
+      "BEHAVIORAL_PROOF_OWNER": "M5",
+      "GATE_DEPENDENCY": "M5 ExecutorAdapter gate; outside M3-B",
+      "MAY_TRANSITION_FROM_NYI_AT": "M5 only with actual executor-selection proof",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "NOT_YET_IMPLEMENTED"
+    },
+    {
+      "FAILURE_CLASS": "E2E-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "DESIGN_OWNER": "M2 regression corpus / future production-chain contract",
+      "IMPLEMENTATION_OWNER": "M5",
+      "BEHAVIORAL_PROOF_OWNER": "M5",
+      "GATE_DEPENDENCY": "M5 runtime-chain gate; outside M3-B",
+      "MAY_TRANSITION_FROM_NYI_AT": "M5 only with actual chained behavioral proof",
+      "FINAL_REQUIRED_STATE_FOR_M3_CLOSE": "NOT_YET_IMPLEMENTED"
+    }
+  ],
+  "defect_carry_forward": {
+    "I9-B008": {
+      "owner": "M3-B1",
+      "ordering": "early_prerequisite",
+      "source_fixed_at_b0": "no",
+      "rule": "Do not reassign after mutation-capable foundation; B1 is before B3-B7."
+    },
+    "NF2": {
+      "owner": "M3-B2",
+      "ordering": "early_prerequisite",
+      "source_fixed_at_b0": "no",
+      "rule": "Do not reassign after authority activation; B2 is before authority-bearing foundation."
+    },
+    "A3_B014-F_terminology": {
+      "classification": "non_blocking_carry_forward",
+      "rule": "Preserve the repaired transaction/Completion/revision terminology; no new canonical Commit record is introduced."
+    },
+    "descendant_changed_path_guard_diagnostics": {
+      "classification": "tooling_only",
+      "rule": "Classify descendant-worktree-only allowlist findings separately; do not weaken semantic guards or treat them as implementation blockers."
+    },
+    "historical_regression_owner_prerequisite_metadata": {
+      "classification": "retain_unless_clear_correction_artifact_required",
+      "rule": "Do not silently rewrite historical ownership or prerequisite metadata in B0."
+    },
+    "new_defect_ids": "none_invented"
+  },
+  "validation_policy": {
+    "default_layers": ["syntax/static", "deterministic fixtures", "minimal isolated smoke"],
+    "broad_live_e2e_default": "no",
+    "NOT_YET_IMPLEMENTED_DISPOSITION_RULE": "Only change a disposition when actual behavioral proof exists; design proof alone is not successor behavior.",
+    "source_change_boundary": "B0 may change only the M3-B plan artifact, B0 guard, and optional digest; aota_forge/core/** and aota_forge/adapters/** are forbidden.",
+    "M3_CORE_HERMES_DEPENDENCY": "no",
+    "HERMES_TASK_MAIN_REQUIRED_FOR_M3_B_EXECUTION": "no",
+    "executor_neutrality": "Codex or another suitable local executor may implement/review lanes; Hermes-specific adapter validation is required only for an actual Hermes adapter surface.",
+    "CLI_ADAPTER_PORTABILITY": "separate from runtime permission model"
+  },
+  "runtime_boundary": {
+    "M3_CORE_HERMES_DEPENDENCY": "no",
+    "HERMES_TASK_MAIN_REQUIRED_FOR_M3_B_EXECUTION": "no",
+    "M3-B1_through_M3-B10": {
+      "production_deploy_or_reload_required_by_default": "no",
+      "runtime_or_live_required": "no",
+      "allowed_validation": "local source, deterministic fixtures, isolated smoke"
+    },
+    "M3-B11_through_M3-B13": {
+      "production_deploy_or_reload_required_by_default": "no",
+      "runtime_or_live_required": "no",
+      "allowed_validation": "isolated or shadow real-data mechanics only; no authority flip"
+    },
+    "M3-BG2": {
+      "production_deploy_or_reload_required_by_default": "not_applicable",
+      "runtime_or_live_required": "explicit activation evidence required for PASS",
+      "authority_activation": "separate explicitly authorized action"
+    },
+    "M3-B14": {
+      "production_deploy_or_reload_required_by_default": "only where the authorized post-cutover validation surface requires it",
+      "runtime_or_live_required": "yes",
+      "authority_evidence": "expected"
+    },
+    "M3-B15": {
+      "production_deploy_or_reload_required_by_default": "no additional deploy by default",
+      "runtime_or_live_required": "uses B14 evidence where applicable",
+      "closure_evidence": "required"
+    }
+  },
+  "checkpoint_and_review_sequence": {
+    "sequence": [
+      {
+        "step": 1,
+        "name": "B0 base verification",
+        "requirement": "Verify isolated worktree HEAD and clean state at 6945110206993c753fb332d1298c34687c24900c before mutation."
+      },
+      {
+        "step": 2,
+        "name": "B0 plan materialization",
+        "requirement": "Create the machine-readable plan and guard; run guard positive and negative proof."
+      },
+      {
+        "step": 3,
+        "name": "B0 focused acceptance",
+        "requirement": "Run M3-A R1 guard, M3-A6 guard, M2 corpus, and M2 corpus self-test; classify descendant path diagnostics separately."
+      },
+      {
+        "step": 4,
+        "name": "B0 planning review",
+        "requirement": "Review work-item decomposition, DAG, source ownership, gates, regression ownership, and semantic-boundary self-check."
+      },
+      {
+        "step": 5,
+        "name": "B0 local checkpoint",
+        "requirement": "Create exactly one local planning commit; no push, issue update, source implementation, deploy, shadow materialization, or cutover."
+      },
+      {
+        "step": 6,
+        "name": "Explicit implementation authorization",
+        "requirement": "Separate governance task may authorize NEXT_IMPLEMENTATION_READY_SET=M3-B1,M3-B2 after B0 acceptance; B0 does not perform this authorization."
+      },
+      {
+        "step": 7,
+        "name": "B1/B2 execution",
+        "requirement": "Use sibling worktrees from the accepted B0 planning commit; reconcile shared hot files before concurrent writes."
+      },
+      {
+        "step": 8,
+        "name": "Foundation checkpoints",
+        "requirement": "Review B3/B4/B5/B6/B7 in dependency order; keep authority non-authoritative and prefer serial integration from B6 onward."
+      },
+      {
+        "step": 9,
+        "name": "Pre-cutover behavior and BG1",
+        "requirement": "Accept B8/B9/B10, then evaluate BG1; only BG1 PASS can release B11."
+      },
+      {
+        "step": 10,
+        "name": "Shadow validation and cutover mechanics",
+        "requirement": "Run B11/B12/B13 without authority flip; B13 PASS never implies completion."
+      },
+      {
+        "step": 11,
+        "name": "BG2 and post-cutover validation",
+        "requirement": "Separate explicit authorization and activation evidence are required for BG2; only BG2 PASS releases B14."
+      },
+      {
+        "step": 12,
+        "name": "Integration and closure",
+        "requirement": "B14 evidence -> independent review -> Project Steward reconciliation -> M3 Known-Good checkpoint -> separately authorized Issue #9 closure."
+      }
+    ],
+    "governance_gates_are_not_ordinary_implementation_success": "yes"
+  },
+  "open_questions": [
+    {
+      "question_id": "A1-DEFER-01",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B4",
+      "question": "ID Broker minting mechanics, deterministic hash selection, and collision protocol."
+    },
+    {
+      "question_id": "A1-DEFER-02",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B8/M3-B9",
+      "question": "Projection and zero/one/many binding implementation over the frozen canonical model."
+    },
+    {
+      "question_id": "A1-DEFER-05",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B3/M3-B6",
+      "question": "Storage engine, graph serialization, and atomic persistence mapping; no storage engine is selected by M3-A."
+    },
+    {
+      "question_id": "A3-DEFER-01",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B6",
+      "question": "Atomic commit primitive and committed-or-not enforcement."
+    },
+    {
+      "question_id": "A3-DEFER-02",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B6/M3-B7",
+      "question": "Multi-root transaction mechanics for the frozen followup unit."
+    },
+    {
+      "question_id": "A3-DEFER-03",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B6",
+      "question": "Idempotency record retention and storage mapping."
+    },
+    {
+      "question_id": "A4-DEFER-ATOMIC",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B13",
+      "question": "Atomic cutover record and durable authority-flip implementation."
+    },
+    {
+      "question_id": "A4-DEFER-STORAGE",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B11/M3-B13",
+      "question": "Storage mapping for candidate and cutover records."
+    },
+    {
+      "question_id": "A5-DEFER-01",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B9",
+      "question": "Mechanical binding engine implementation."
+    },
+    {
+      "question_id": "A5-DEFER-03",
+      "classification": "M3_B_IMPLEMENTATION_DETAIL",
+      "owner_lane": "M3-B8",
+      "question": "Projection rebuild runtime and stale-marker storage."
+    }
+  ],
+  "semantic_boundary_check": {
+    "M3_B_EXECUTION_PLAN_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "unresolved_semantic_design_questions": [],
+    "implementation_detail_questions_do_not_change_architecture": "yes",
+    "blocked_rule": "If implementation discovers a true subject identity, authority, revision, CAS, transaction, lease, bootstrap/cutover, binding ambiguity, or recovery-boundary gap, stop and mark STATUS=BLOCKED; do not invent a semantic resolution in an implementation lane."
+  },
+  "acceptance": {
+    "M3_B_WORK_ITEM_SET": "PASS",
+    "M3_B_DEPENDENCY_DAG": "PASS",
+    "M3_B_INITIAL_READY_SET": "PASS",
+    "M3_B_PARALLEL_SAFETY": "PASS",
+    "M3_B_SOURCE_OWNERSHIP_MAP": "PASS",
+    "M3_B_REGRESSION_OWNERSHIP": "PASS",
+    "M3_B_SHADOW_MATERIALIZATION_GATE": "PASS",
+    "M3_B_AUTHORITY_CUTOVER_GATE": "PASS",
+    "M3_B_CUTOVER_AUTHORIZATION_BOUNDARY": "PASS",
+    "M3_B_EXECUTION_PLAN_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "M3_B_EXECUTION_AUTHORIZED": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "REGRESSION_MATRIX_MUTATED": "no",
+    "ISSUE_9_MUTATED": "no",
+    "CONTROL_COMMENTS_MUTATED": "no",
+    "M3_B_IMPLEMENTATION_STARTED": "no",
+    "SOURCE_CODE_CHANGED": "no",
+    "M3_B0_GUARD": "PASS",
+    "M3_B0_NEGATIVE_GUARD_PROOF": "PASS",
+    "claim_status": "planning_contract_pass_only; no implementation, cutover, runtime, or authoritative-write success is claimed; guard proof applies to plan structure only"
+  }
+}
