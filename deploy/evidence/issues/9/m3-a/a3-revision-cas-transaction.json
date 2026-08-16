@@ -1,0 +1,697 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A3 revision / CAS / transaction / concurrency design freeze (design-only)",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A3",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+  "m3_a_common_base": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "inputs": {
+    "a0": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+    "a1": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+    "a2": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+    "a12": "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+    "matrix": "deploy/evidence/issues/9/m2-successor-regression-matrix.json"
+  },
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527"
+  },
+  "design_proof_only": {
+    "no_graph_storage_engine": "yes",
+    "no_graph_mutation_implementation": "yes",
+    "no_authoritative_graph_writes": "yes",
+    "no_authority_engine": "yes",
+    "no_lease_engine": "yes",
+    "no_cas_engine": "yes",
+    "no_transaction_engine": "yes",
+    "no_lock_lease_recovery_engine": "yes",
+    "no_runtime_behavior": "yes",
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "revision_model": {
+    "selected_model": "subject_aggregate",
+    "selection_rationale": "A1 defines the Subject as the durable identity anchor and mechanical lifecycle carrier of exactly one unit of work, with Execution/Completion/Decision records owned by exactly one Subject and Subject mechanical state transitions revisioned. The durable subject graph regressions (B011/B013/B014/BIND-1/ACTIVATE-R-current-binding/RECOVERY-1) all refer to the Subject as the durable unit. Revisioning at the Subject aggregate therefore aligns the concurrency unit with the ownership and lifecycle unit defined by A1, keeps independent Subjects concurrently mutable (LOST_UPDATE_ALLOWED=no without global serialization), and gives every multi-record write under one Subject a single atomic revision point. One deliberate exception keeps A1 Workflow revision_participation=yes without coupling Subjects: Workflow's own mutable record fields revision under an independent Workflow-record revision scope (revision_scope). This is a deliberate primary/hybrid boundary, not storage convenience.",
+    "evaluated_alternatives": [
+      {
+        "model": "whole_graph",
+        "revision_unit": "one revision for the entire durable subject graph",
+        "verdict": "rejected",
+        "reasons": [
+          "any mutation would advance a single global revision, so every independent Subject's CAS read would be invalidated by any other Subject's commit (spurious contention)",
+          "requires global serialization of independent Subjects, which the A3 contract explicitly rejects as non-canonical",
+          "a single global revision makes the graph one giant aggregate, contradicting A1 aggregate ownership (Subject owns its Executions/Decisions)",
+          "no storage-free canonical representation survives whole-graph coupling; recovery/projection rebuild would require whole-graph replay"
+        ]
+      },
+      {
+        "model": "workflow_aggregate",
+        "revision_unit": "one revision per Workflow (its WorkSubjects and records)",
+        "verdict": "rejected",
+        "reasons": [
+          "A1: Workflow is a durable record of semantic intent shared 0..n by WorkSubjects and carries no mechanical lifecycle state",
+          "two independent child Subjects of the same Workflow would spuriously conflict on one Workflow revision",
+          "Workflow identity is stable across revisions; Plan document revisions are revisioned records/decisions, not Workflow mutations",
+          "the rejected model is a Workflow-WIDE revision of its WorkSubjects; it is distinct from the selected independent Workflow-RECORD scope for Workflow's own mutable fields, which is not a Workflow-wide revision and never serializes WorkSubjects"
+        ]
+      },
+      {
+        "model": "record_level",
+        "revision_unit": "every record carries its own independent revision",
+        "verdict": "rejected",
+        "reasons": [
+          "cannot express multi-record atomicity: a child Subject, its initial state and its FollowupEdge(s) must commit as one unit (no orphan child, no edge without child)",
+          "Execution mechanical_status and Completion must transition together (terminal transition), which record-level revisions cannot make atomic",
+          "append-only records (Completion/Decision/FollowupEdge) would each need a counter, and no record carries the aggregate CAS authority"
+        ]
+      },
+      {
+        "model": "hybrid",
+        "revision_unit": "Subject aggregate for single-root mutations plus a two-root commit for followup creation",
+        "verdict": "selected_shape",
+        "reasons": [
+          "the only cross-Subject commit in A3 scope is parent -> new-child followup creation (child does not pre-exist, so only the parent side can race)",
+          "hybrid is not a third revision unit: the two roots keep their own revision counters; the followup commit is an atomic two-root transaction, not a new aggregate",
+          "all other cross-existing-Subject transactions are minimized and deferred (multi_subject_policy)"
+        ]
+      }
+    ],
+    "revision_unit": "subject_aggregate",
+    "revision_ownership": {
+      "REVISION_OWNER": "M3-A3",
+      "MODEL_MANAGES_REVISION_CHOREOGRAPHY": "no",
+      "revision_choreography_rule": "revision numbering, ordering, and expected/current resolution are mechanical control-plane concerns: the expected revision for any mutation is resolved by the authority/lease control plane mechanically reading the canonical current revision of the target aggregate from the durable record set; the model never supplies, orders, or selects revision numbers, and no model input can override the mechanical resolution",
+      "expected_revision_resolution": "expected_revision is resolved mechanically by the control plane at lease issuance (read of the target aggregate's current canonical revision from the durable record set) and re-validated at the pre-commit CAS check"
+    },
+    "revision_scope": {
+      "PRIMARY_REVISION_SCOPE": "subject_aggregate",
+      "REVISION_SCOPE_EXCEPTION": "workflow_record",
+      "exception_rationale": "A1 canonical_records.Workflow declares revision_participation=yes (every mutation is a revision; immutable core fields never mutate in place) and mutable_fields scope_annotations/non_semantic_metadata. To honor A1 without serializing WorkSubjects, Workflow's own mutable fields revision under an independent Workflow-record revision scope when/if the operation that mutates them exists. This is a deliberate primary/hybrid boundary chosen on ownership and lifecycle grounds (Subject aggregate owns Subject lifecycle and lineage; Workflow is a shared intent record with no lifecycle), not storage convenience."
+    },
+    "revision_increment_rule": {
+      "rule": "explicit increment semantics: which operations advance which revision scope, and how",
+      "increments_subject_aggregate": [
+        "create Execution for a Subject",
+        "record Completion for an Execution",
+        "add Decision to a Subject",
+        "mechanical Subject state transition (mechanical_state)",
+        "parent FollowupEdge / child creation (followup transaction: parent aggregate advances, child aggregate initializes at rev 1)"
+      ],
+      "append_only_rule": "append-only records (Completion, Decision, FollowupEdge) advance the owning Subject aggregate revision at commit; they carry no later mutation and no later revision change",
+      "child_initial_rule": "a new child Subject starts at its own independent revision 1 (revision_number 1 of its own aggregate, own token)",
+      "workflow_mutable_fields_rule": "if/when an operation mutates Workflow scope_annotations/non_semantic_metadata, that mutation advances the independent Workflow-record revision scope only; it never advances any Subject aggregate and never serializes WorkSubjects",
+      "workflow_immutable_core_rule": "Workflow immutable core fields (workflow_id, semantic_intent, goal, scope, context_references, creation_context) never mutate in place (A1), so no revision increment exists for them"
+    },
+    "revision_representation": {
+      "canonical_form": "revision = (aggregate_id, revision_number, revision_token)",
+      "revision_type": "an opaque content-derived revision_token paired with a monotonic revision_number per aggregate; this is the canonical storage-independent revision type - no database, storage engine, or serialization format is selected (NO_STORAGE_ENGINE_FROZEN=yes)",
+      "aggregate_id": "canonical Subject internal ID (minted or deterministic per A1 subject_identity_rule); the revision unit is identified by the Subject aggregate, never by executor, session, path, or pointer",
+      "revision_number": "monotonically increasing integer >= 1 within the aggregate, never reused, no gaps required; the initial revision of any Subject is revision_number 1 (child Subjects start at their own independent revision 1)",
+      "revision_token": "opaque content-derived token: deterministic hash over the aggregate's committed record set plus the previous revision_token (chain) or the initial token for revision 1",
+      "storage_independent": "the representation is defined by the contract, not by any storage engine: any storage mapping must expose exactly this canonical revision unit, counter and token; NO_STORAGE_ENGINE_FROZEN=yes",
+      "ordering_semantics": "revision_number strictly increases on every committed mutation; revision_token changes if and only if the committed record set changed; equal token implies identical committed record set",
+      "no_choreography": "the model defines the revision contract but does not choreograph revision: no lock manager, no revision coordinator, no storage-specific revision table is defined by M3-A3"
+    },
+    "workflow_revision": {
+      "WORKFLOW_REVISION_IN_SUBJECT_AGGREGATE": "no",
+      "WORKFLOW_RECORD_REVISION_SCOPE": "independent",
+      "WORKFLOW_REVISION_SERIALIZES_WORKSUBJECTS": "no",
+      "rule": "no Workflow-wide revision is required for ordinary cross-Subject operations: Workflow is a durable intent record shared 0..n by WorkSubjects and carries no mechanical lifecycle; a Workflow-wide revision would couple independent children of one Workflow and is rejected. Workflow's own mutable record fields (scope_annotations, non_semantic_metadata) revision under an independent Workflow-record revision scope when/if that operation exists (A1 Workflow revision_participation=yes preserved). Workflow revision never serializes all WorkSubjects.",
+      "rationale": "A1 canonical_records.Workflow revision_participation=yes is honored through the independent Workflow-record scope, keeping Subject aggregates as the PRIMARY concurrency/revision boundary; ordinary cross-Subject operations never read or CAS a Workflow revision, and Workflow revision never serializes all WorkSubjects."
+    },
+    "records_sharing_revision": {
+      "Subject_root": "yes (mechanical_state transitions advance the aggregate revision)",
+      "Execution": "yes (mechanical_status changes, including terminal transition, advance the owning Subject aggregate revision)",
+      "Completion": "yes (append-only; a Completion is committed as part of the owning Subject aggregate and advances its revision)",
+      "Decision": "yes (append-only; a Decision is committed as part of the owning Subject aggregate and advances its revision)",
+      "FollowupEdge": "attached_at_creation (an edge created with a child Subject commits in the same unit as the child's initial revision and advances the parent aggregate revision; edges are append-only and never mutate later)",
+      "ParentChildEdge": "same as FollowupEdge (alias per A1); no separate revision identity",
+      "Workflow": "independent Workflow-record revision scope for its own mutable fields only (scope_annotations, non_semantic_metadata); never part of any Subject aggregate; no Workflow-wide revision for ordinary cross-Subject operations"
+    },
+    "parent_child_creation_atomicity": {
+      "atomic": "yes",
+      "rule": "parent -> new-child creation commits as a single two-root atomic unit: child Subject initial revision (rev 1) + at least one FollowupEdge + mechanically verified source Decision basis become visible together or not at all",
+      "partial_visible": "no"
+    },
+    "child_initial_revision": {
+      "independent": "yes",
+      "rule": "the child Subject gets its own independent initial revision (revision_number 1 of its own aggregate); it does not inherit the parent's revision number or token"
+    }
+  },
+  "aggregate_boundary": {
+    "aggregate_definition": "The Subject aggregate is the root of the revision unit: Subject root record plus every Execution, Completion and Decision owned by that Subject (exactly-one ownership per A1), plus FollowupEdges for which the Subject is parent or child. The aggregate boundary is the A1 ownership boundary: ownership is never transferred by executor or current pointers.",
+    "single_root_transactions": "Every mutation that touches only records of one Subject aggregate commits as one single-root transaction against that aggregate's revision (CAS on the aggregate revision token).",
+    "two_root_transaction_shape": "Followup creation (parent Subject + new child Subject) is the only canonical two-root transaction in A3 scope; it commits atomically and advances both roots' revisions (see followup_transaction).",
+    "workflow_outside_aggregate": "Workflow is not part of any Subject aggregate; it is referenced by Subjects and carries an independent Workflow-record revision scope for its own mutable fields (see revision_model.workflow_revision); no Subject aggregate ever CASes a Workflow revision.",
+    "edge_attachment": "FollowupEdge records are append-only; their revision participation is fixed at creation (child side at child initial revision; parent side at parent revision advancing with the edge). No later mutation of an edge exists, so no edge-revision conflict is representable.",
+    "no_aggregate_transfer": "A record never migrates between aggregates; aggregate membership is fixed by A1 ownership (subject_ref / execution_ref / source_decision_ref)."
+  },
+  "cas_model": {
+    "definition": "Compare-and-set is the canonical concurrency primitive for authoritative mutation: a mutation carries the expected_revision of its target aggregate; the commit succeeds only if the current revision token of the target aggregate still equals the expected token at the pre-commit check; on success the aggregate advances to a new revision token.",
+    "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+    "expected_revision": "the canonical revision token (and revision_number) of the target aggregate as validated when the mutation was prepared and as bound in the capability lease (LEASE_REVISION_BOUND)",
+    "current_revision": "the canonical revision token of the target aggregate at pre-commit check time, read from the durable authoritative record set (not from any projection, cache, pointer, or event log)",
+    "pre_commit_check": "expected token == current token; equal commits (new token derived from the committed record set), unequal fails closed with REVISION_CONFLICT; no merging, no last-write-wins, no lost update",
+    "stale_mutation": "STALE_REVISION_MUTATION=fail_closed",
+    "retry_rule": "a REVISION_CONFLICT retry must re-read the current revision and re-validate all authority facts (fresh lease with the new expected revision, fresh authority evaluation); blind retry with stale facts is denied",
+    "no_bypass_except": {
+      "exceptions": ["M3-A4 bootstrap", "M3-A4 cutover"],
+      "rule": "The ONLY defined exceptions to CAS-before-commit are the M3-A4 bootstrap (initial authoritative population of the graph from authoritative bootstrap inputs, where no concurrent authoritative mutation can exist by construction) and the M3-A4 cutover (explicitly recorded transition replacing legacy current_* authority with derived projections). Any such bypass must be recorded by the M3-A4 lane, is never a normal mutation path, and is not usable for ordinary mutations.",
+      "CAS_BYPASS_ONLY_BOOTSTRAP_CUTOVER": "yes",
+      "NO_CAS_BYPASS_FOR_NORMAL_MUTATION": "yes"
+    },
+    "model_does_not_choreograph_revision": "yes",
+    "model_does_not_choreograph_detail": "M3-A3 defines expected/current semantics, the pre-commit check, failure behavior and exception boundaries only. It defines no lock manager, no revision coordinator, no storage-specific CAS engine, no distributed consensus, and no runtime behavior.",
+    "authoritative_read": "the current revision used by CAS is read from the durable authoritative record set; Event Log, git history, control comments, current_* pointers and projections are never CAS sources (EVENT_LOG_IS_SUBJECT_AUTHORITY=no, CURRENT_POINTERS_ARE_AUTHORITY=no)"
+  },
+  "lease_revision_contract": {
+    "LEASE_REVISION_BOUND": "yes",
+    "typed_target_binding": "the lease object_ref is a typed object reference with object_kind=Subject and object_id equal to the canonical Subject internal ID (A12 rule A); possessing a bare Subject ID is never authority; raw internal IDs are never normal model input (A2)",
+    "expected_revision_bound": "the lease binds the exact expected revision (canonical revision token + revision_number) of the typed target aggregate at issuance",
+    "operation_and_scope_bound": "operation (contract identity) and mutation_scope are bound per A2; scope expansion denied",
+    "consumption_rule": "at consumption the authority engine verifies principal, operation, typed object_ref, mutation_scope, lease validity/current time, AND that the lease expected_revision equals the current revision token of the target aggregate",
+    "STALE_UNEXPIRED_LEASE_DENIED": "yes",
+    "STALE_LEASE_REVISION_MUTATION": "denied",
+    "LEASE_REISSUE_REQUIRED_AFTER_REVISION_CHANGE": "yes",
+    "stale_unexpired_rule": "a lease that is not expired but whose expected_revision no longer equals the current revision of the target aggregate is denied (REVISION_MISMATCH per A2 error semantics): staleness is a hard denial independent of expiry, so an unexpired lease can never mutate a stale target",
+    "stale_lease_revision_mutation_rule": "any mutation attempted with a lease whose expected_revision differs from the target aggregate's current revision is denied (STALE_LEASE_REVISION_MUTATION=denied); no operation-dependent exception is granted",
+    "reissue_after_revision_change_rule": "after any committed revision change of the target aggregate, an outstanding lease is stale and must be replaced: LEASE_REISSUE_REQUIRED_AFTER_REVISION_CHANGE=yes — a fresh lease with the new expected_revision must be issued through the A2 issuance rules; the old lease is never repaired, renewed, or revalidated against the new revision",
+    "expiry_hard_denial": "now >= expires_at is a hard denial (LEASE_EXPIRED); LEASE_EXPIRY_ENFORCED=yes",
+    "expiry_cannot_expand_authority": "lease expiry can never silently expand authority: denial on expiry is hard and final for that lease; no implicit renewal, expansion, or substitution (A2); a fresh lease must be issued through issuance rules",
+    "semantic_boundary": "the lease is mechanical evidence only; the authority engine mechanically verifies facts, never reasons semantically (AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING=no)",
+    "denial_codes": ["LEASE_EXPIRED", "LEASE_SCOPE_MISMATCH", "LEASE_PRINCIPAL_MISMATCH", "LEASE_OPERATION_MISMATCH", "LEASE_REPLAY_DENIED", "LEASE_REVOKED", "REVISION_MISMATCH"]
+  },
+  "transaction_boundary": {
+    "authoritative_transaction": "the single commit unit that changes the durable authoritative record set of one Subject aggregate (or the canonical followup two-root unit). Only the authoritative transaction is a CAS commit; it is the only place where revision advances.",
+    "post_commit_projection": "projections (current decision, current plan, current followup, binding 0/1/many) are derived deterministically AFTER the authoritative commit, are rebuildable, and are never part of the transaction (CURRENT_POINTERS_ARE_AUTHORITY=no; CURRENT_POINTERS_ARE_PROJECTIONS=yes)",
+    "post_commit_audit": "audit records are written AFTER the authoritative commit and are evidence, never a second authoritative write (DUAL_AUTHORITATIVE_WRITE=no)",
+    "separation_rule": "no projection write and no audit write participates in the authoritative transaction, and no authoritative commit depends on projection/audit success (AUDIT_FAILURE_ROLLS_BACK=no)",
+    "AUTHORITATIVE_TRANSACTION_CONTENTS": [
+      "create Execution for the Subject",
+      "record Completion for an Execution",
+      "add Decision to the Subject",
+      "followup verification + edge + child creation (when the transaction is a followup transaction)",
+      "mechanical Subject state transition and the resulting revision update",
+      "atomic idempotency reservation and outcome metadata"
+    ],
+    "POST_COMMIT_PROJECTION_CONTENTS": [
+      "derived current decision projections (latest record per decision_kind)",
+      "derived current plan selection",
+      "derived current followup projection",
+      "binding 0/1/many projection",
+      "any other read-model derivation over the committed durable record set"
+    ],
+    "idempotency_metadata_relation": "idempotency reservation and outcome metadata commit ATOMICALLY WITH the authoritative transaction as durable dedupe metadata; it is NOT graph authority: it never authorizes, never selects, never binds, never participates in projections, and never appears in derived current state",
+    "CANONICAL_COMMIT_SUCCEEDS_IF_PROJECTION_PUBLICATION_FAILS": "yes",
+    "projection_failure_rationale": "the durable authoritative record set is the only authority; projections are derived and rebuildable (CURRENT_POINTERS_ARE_PROJECTIONS=yes), so a projection publication failure must never roll back or block a canonical commit; post-commit projection is eventually consistent with the durable record set and projection lag is permitted",
+    "transaction_scope_default": "one transaction = one Subject aggregate (single root)",
+    "cross_subject_scope": "only the followup creation shape (parent + new child) is a canonical cross-Subject transaction in A3 scope; all other cross-existing-Subject transactions are minimized and deferred (multi_subject_policy)",
+    "no_whole_graph_transaction": "no transaction spans the whole graph; no transaction couples unrelated Subjects",
+    "no_operation_level_transaction": "no transaction spans multiple operations unless they touch exactly one aggregate"
+  },
+  "followup_transaction": {
+    "definition": "the canonical two-root authoritative transaction that creates a child Subject from a parent Subject on the basis of an already-materialized Decision (LLM_or_user_materialized_decision)",
+    "commit_unit": [
+      "child Subject record with its own independent initial revision (revision_number 1)",
+      "at least one FollowupEdge (parent_subject_ref, child_subject_ref, source_decision_ref)",
+      "mechanical verification that the source Decision exists, is owned by the parent Subject, and is already materialized (AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION=yes; the engine verifies, never infers intent and never creates the Decision)"
+    ],
+    "FORBIDDEN_ORPHAN_CHILD": "yes",
+    "orphan_child_rule": "a child Subject without at least one FollowupEdge is forbidden: child creation and its >=1 parent edge commit in the same unit",
+    "FORBIDDEN_EDGE_WITHOUT_CHILD": "yes",
+    "edge_without_child_rule": "a FollowupEdge referencing a child Subject that does not exist is forbidden: edge and child commit together",
+    "FORBIDDEN_CHILD_WITHOUT_VERIFIED_DECISION": "yes",
+    "child_without_decision_rule": "a child Subject whose source_decision_ref does not reference an existing, parent-owned, materialized Decision is forbidden; the authority engine mechanically verifies the Decision basis and never performs semantic reasoning",
+    "PARTIAL_AUTHORITATIVE_TRANSITION_VISIBLE": "no",
+    "atomicity_rule": "the followup transaction commits atomically: no observer ever sees the child without its edges, an edge without its child, or a child whose Decision basis failed verification; a crash before commit leaves nothing, a crash after commit leaves the full unit (crash_atomicity)",
+    "parent_cas_before_commit": "the followup transaction CASes the parent Subject aggregate expected_revision before commit; if the parent moved, the whole transaction fails closed (REVISION_CONFLICT when nothing was prepared; TRANSACTION_CONFLICT when the child side was already prepared) and no partial effect is visible",
+    "parent_revision_increment": "on commit the parent aggregate revision advances (outgoing edge(s) and optional mechanical state transition) in the same atomic unit",
+    "child_revision_independent": "the child's initial revision is independent of the parent's revision sequence (child aggregate revision 1, own counter and token)",
+    "verified_materialized_decision": "the source Decision is mechanically verified before commit: it exists, is owned by the parent Subject, and is already materialized (LLM_or_user_materialized_decision); the engine verifies only and never infers intent or creates the Decision (AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION=yes)",
+    "edge_child_atomicity": "edge(s) and child commit atomically: the child's initial revision and at least one FollowupEdge become visible together or not at all",
+    "DUPLICATE_CHILD_SEMANTIC_EFFECT_FORBIDDEN": "yes",
+    "duplicate_child_effect": "replay of a followup transaction after an uncertain commit must not create a second child (idempotency_model; IDEMPOTENT_REPLAY=must_not_duplicate_semantic_effects)",
+    "semantic_uniqueness_concurrent": "concurrent attempts to materialize the same already-decided followup (including attempts carrying different idempotency keys) produce at most one child semantic effect: exactly one attempt commits; every other attempt fails closed with REVISION_CONFLICT (parent CAS race) or TRANSACTION_CONFLICT (two-root atomicity); distinct-key contention is never collapsed into key-reuse conflict, and no duplicate child is ever created",
+    "multi_parent_followup_policy": {
+      "MULTI_PARENT_FOLLOWUP_DEFERRED": "yes",
+      "canonical_shape": "the canonical M3-A3 parent -> new-child transaction is exactly ONE existing parent Subject plus a new child Subject",
+      "rule": "a child that requires multiple EXISTING parents is deferred/denied as a cross-existing-Subject transaction: it is not a canonical A3 transaction, it commits nothing in A3 scope, and it produces no child/edge partial effect",
+      "no_silent_reduction": "a multi-parent intent must never be silently reduced to one parent: either the explicit multi-parent transaction is authorized by the deferred lane or the operation fails closed; there is no silent parent loss",
+      "future_rule": "if a multi-parent followup is later authorized, the future transaction must CAS ALL participating parent aggregates (each with its expected revision) and commit child + all edges atomically; this is an explicit defer, not an implementation"
+    },
+    "edge_ownership_boundary": {
+      "edge_is_cross_root_lineage_record": "a FollowupEdge is a cross-root lineage record (A1: parenthood defined only by edges), not dual authoritative ownership: it never grants authority to either root and no root 'owns' the other through the edge",
+      "edge_creation_owner": "parent CAS and parent revision own edge creation: the edge commits as part of the parent aggregate's revision advance (outgoing edge) in the followup transaction",
+      "child_lineage_snapshot": "the child's initial revision includes the committed lineage snapshot (its incoming parent edge(s) and source Decision reference) as immutable record content",
+      "no_independent_edge_revision": "there is no independent edge revision: edges are append-only, fixed at creation, and carry no revision counter or token of their own",
+      "no_dual_authority": "edge participation in two roots' records never creates dual authoritative ownership: both roots' revisions advance as one atomic unit, and DUAL_AUTHORITATIVE_WRITE=no is preserved"
+    },
+    "no_heuristic_parent": "parent selection is never heuristic (A1 NO_HEURISTIC_PARENT_SELECTION=yes); the edge carries the explicit parent reference from the materialized decision"
+  },
+  "multi_subject_policy": {
+    "default": "one authoritative transaction touches exactly one Subject aggregate; independent Subjects are never serialized by default",
+    "GLOBAL_PROCESS_MUTEX_CANONICAL": "no",
+    "GLOBAL_PROCESS_LOCK_IS_CANONICAL_CONCURRENCY_MODEL": "no",
+    "global_serialization_rule": "a single global process mutex is NOT canonical and is never the default concurrency mechanism; independent Subjects must be concurrently mutable via per-aggregate CAS",
+    "explicit_serialization_allowed": "explicit, documented, bounded serialization is acceptable ONLY where CAS cannot express the required invariant (e.g., a defined two-root protocol or an explicitly scoped counter); every such use must state its scope and justification",
+    "canonical_two_root": "parent -> new-child followup creation is the only canonical cross-Subject transaction in A3 scope; it is safe because the child does not pre-exist, so only the parent side can race (parent CAS governs the commit)",
+    "deferred_cross_subject": [
+      "attaching an ADDITIONAL parent edge to an existing child (multi-parent on an existing Subject)",
+      "a followup child requiring multiple EXISTING parents at creation (multi-parent followup; MULTI_PARENT_FOLLOWUP_DEFERRED=yes - must CAS all participating parent aggregates if later authorized)",
+      "any other mutation spanning two pre-existing Subject aggregates",
+      "cross-Subject reference updates beyond followup creation"
+    ],
+    "deferred_rule": "cross-existing-Subject transactions are minimized and deferred: their semantics contract (atomicity, CAS ordering, idempotency, conflict behavior) follows this artifact, but no authoritative operation defines them in A3 scope and no implementation exists",
+    "justification_section": "any future explicit serialization must be recorded in this policy with scope + reason; silent global serialization is a contract violation"
+  },
+  "concurrency_rules": {
+    "LOST_UPDATE_ALLOWED": "no",
+    "SILENT_LAST_WRITE_WINS": "no",
+    "STALE_REVISION_MUTATION": "fail_closed",
+    "CONCURRENT_VALID_MUTATION": "CAS_or_explicit_serialization",
+    "independent_subjects": "independent Subject aggregates mutate concurrently; each commit CASes its own aggregate revision token; no global lock, no whole-graph revision",
+    "same_aggregate": "concurrent mutations of the same aggregate: exactly one commits (expected == current); every other requester receives REVISION_CONFLICT and must re-validate with fresh facts; no merging and no silent overwrite of a committed update",
+    "read_path": "reads (projections, diagnostics) are never blocked by mutation; they may observe a pre-commit or post-commit snapshot, never a partial authoritative transition",
+    "retry_policy": "retry is allowed only after fresh validation: new lease with the new expected revision, new authority evaluation, re-verified semantic basis; blind replay with stale facts is denied",
+    "ordering_guarantee": "within one aggregate, committed revisions are totally ordered by revision_number; across aggregates, no global ordering exists and none is needed"
+  },
+  "idempotency_model": {
+    "IDEMPOTENT_REPLAY": "must_not_duplicate_semantic_effects",
+    "scope": "authoritative bounded mutations of Subject aggregates, including the followup transaction; read-only projections and diagnostics are outside idempotency scope",
+    "content": {
+      "idempotency_key_binding": "principal/authority context + operation (contract identity) + typed target (object_kind + object_id + expected revision context) + semantic fingerprint",
+      "semantic_fingerprint": "deterministic digest of the semantic payload of the request (for followup: the source Decision reference + statement + target references; for transitions: the requested transition + evidence references)",
+      "key_rule": "the key binds actor and operation and target so that a different principal, different operation, or different target can never consume the same dedupe slot"
+    },
+    "request_vs_semantic_effect": {
+      "request_dedupe": "the request layer returns the recorded outcome for an identical request without re-executing (replay protection at the request boundary)",
+      "semantic_effect_dedupe": "the durable effect layer guarantees that a replay can never duplicate a semantic effect: a child Subject is created at most once, a mechanical transition applies at most once, a Completion records at most once; the two layers are distinct and both required"
+    },
+    "retention": "idempotency records are retained at least until the committed outcome is fully derivable from the durable record set and downstream projection/audit consumption is complete; the exact retention duration and storage are M3-B implementation",
+    "replay": "replay with the same key and same semantic fingerprint returns the previously recorded outcome and creates no new semantic effect",
+    "mismatch": "the same idempotency key with a different payload/fingerprint is REJECTED with IDEMPOTENCY_CONFLICT; it is never silently overwritten and never silently reused (same key/different payload is a contract violation)",
+    "duplicate_effect_denied": "a duplicate child Subject, duplicate Completion, or duplicate transition caused by replay is a design violation: IDEMPOTENT_REPLAY=must_not_duplicate_semantic_effects"
+  },
+  "conflict_taxonomy": {
+    "ERROR_SEMANTICS_DISTINCT": "yes",
+    "conflicts": [
+      {
+        "CODE": "REVISION_CONFLICT",
+        "meaning": "CAS pre-commit check failed: expected revision token != current revision token of the target aggregate (a concurrent committed mutation won)",
+        "retryable": "yes_after_fresh_validation",
+        "notes": "the core concurrency conflict; stale mutation fails closed; no merge, no last-write-wins"
+      },
+      {
+        "CODE": "IDEMPOTENCY_CONFLICT",
+        "meaning": "an idempotency key was reused with a different payload/fingerprint, or with a different bound principal/operation/target",
+        "retryable": "no",
+        "notes": "same key/different payload is rejected; resolution requires explicit semantic choice, never silent overwrite"
+      },
+      {
+        "CODE": "PREDECESSOR_STATE_CONFLICT",
+        "meaning": "the requested mechanical transition is invalid from the Subject's current mechanical state (e.g., PROPOSED->ACTIVE from COMPLETED), independent of any revision race",
+        "retryable": "no",
+        "notes": "state-machine validity, distinct from concurrency: revision conflicts are about timing, predecessor conflicts are about legality of the transition"
+      },
+      {
+        "CODE": "AUTHORITY_STALE",
+        "meaning": "the authority facts were valid at issuance but stale at consumption: unexpired lease whose expected_revision no longer equals the current target revision, or a lease/principal binding invalidated since issuance",
+        "retryable": "yes_after_new_lease",
+        "notes": "staleness is a hard denial even when the lease has not expired (STALE_UNEXPIRED_LEASE_DENIED=yes); a fresh lease through issuance rules is required"
+      },
+      {
+        "CODE": "TRANSACTION_CONFLICT",
+        "meaning": "a multi-root (followup) transaction could not commit atomically: e.g., the parent CAS failed after the child side was prepared",
+        "retryable": "yes_after_fresh_validation",
+        "notes": "no partial authoritative transition is ever visible; the whole transaction reports the conflict; replay is idempotency-protected"
+      }
+    ]
+  },
+  "crash_atomicity": {
+    "PARTIAL_AUTHORITATIVE_TRANSITION_VISIBLE": "no",
+    "commit_atomicity": "the authoritative transaction is atomic: observers never see a partial authoritative transition (no child without edge, no edge without child, no half-applied mechanical transition)",
+    "crash_before_commit": "nothing of the transaction is durable and nothing is visible; retry is safe and idempotency-protected",
+    "crash_after_commit": "the full commit unit is durable and visible; projections and audit are rebuildable from the durable record set; no second application (idempotency)",
+    "crash_during_commit": "the outcome is exactly committed-or-not: an atomic commit primitive is required at implementation time (M3-B); the design freezes that no intermediate state is observable",
+    "recovery_relation": "recovery (M4 lane) reconciles from durable records; the durable record set plus idempotency records are sufficient to detect and complete or reject uncertain operations; no hidden intermediate state is representable",
+    "no_dual_write": "projection and audit writes are post-commit and never part of the atomicity unit"
+  },
+  "projection_relation": {
+    "definition": "projections (current decision per kind, current plan selection, current followup, binding 0/1/many) are derived deterministically from the committed durable record set after the authoritative commit",
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+    "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes",
+    "projection_failure_dual_authority_rationale": "projections are never competing authority: they are derived, rebuildable read-models over the committed durable record set (CURRENT_POINTERS_ARE_PROJECTIONS=yes) and can never become a second authoritative write; a projection failure therefore leaves the durable record set as the sole authority and never creates a dual authoritative source (DUAL_AUTHORITATIVE_WRITE=no preserved)",
+    "projection_lag": "permitted: a projection may lag the authoritative commit, but it can never add authority and never binds a wrong subject (stale pointer state cannot hide or substitute a durable Subject)",
+    "rebuildable": "projections are rebuildable from durable records alone (A1 CURRENT_POINTERS_ARE_PROJECTIONS=yes)",
+    "fail_closed": "ambiguous projections return NEEDS_SEMANTIC_CHOICE (SUBJECT_BINDING_ZERO_ONE_MANY; A5 lane)"
+  },
+  "audit_relation": {
+    "definition": "the canonical audit record captures, per authoritative transaction: bound principal (A2 design requirement AUDIT_RECORDS_PRINCIPAL=required_design), operation, typed target, expected and resulting revision, outcome, and idempotency key",
+    "audit_character": "audit is a diagnostic/provenance trace, never graph authority: it records what happened after the fact and participates in no authoritative state, no projection, and no selection (EVENT_LOG_IS_SUBJECT_AUTHORITY=no)",
+    "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+    "after_commit": "audit is written after the authoritative commit and is evidence, never a second authoritative write (DUAL_AUTHORITATIVE_WRITE=no)",
+    "AUDIT_FAILURE_ROLLS_BACK": "no",
+    "audit_repair": "audit records are reconstructible from the durable record set; missing audit does not corrupt the authoritative graph state"
+  },
+  "concurrency_scenarios": [
+    {
+      "SCENARIO_ID": "C1",
+      "NAME": "stale writer rejected after concurrent commit",
+      "given": "Subject S at revision 4; writers A and B both read revision 4",
+      "when": "A commits first (S advances to revision 5); B then attempts its commit with expected revision 4",
+      "expected": "B is rejected with REVISION_CONFLICT (STALE_REVISION_MUTATION=fail_closed); nothing is written by B; no lost update and no silent last-write-wins; B must re-read revision 5 and re-validate with fresh facts before retry"
+    },
+    {
+      "SCENARIO_ID": "C2",
+      "NAME": "independent Subjects succeed without global serialization",
+      "given": "two different Subject aggregates S1 and S2, each with valid unexpired leases at their correct expected revisions",
+      "when": "two agents mutate S1 and S2 concurrently",
+      "expected": "both commits succeed via per-aggregate CAS; no global serialization, no global lock, no whole-graph revision; S1 and S2 revisions advance independently"
+    },
+    {
+      "SCENARIO_ID": "C3",
+      "NAME": "two otherwise-valid writers on the same Subject/revision",
+      "given": "Subject S at revision R; two writers A and B, both otherwise valid (fresh leases, expected revision R, authority facts satisfied)",
+      "when": "A and B attempt their mutations concurrently against the same expected revision R",
+      "expected": "exactly one CAS succeeds and S advances; the other receives a deterministic REVISION_CONFLICT; no merge, no silent last-write-wins, no lost update; the loser must re-validate with fresh facts"
+    },
+    {
+      "SCENARIO_ID": "C4",
+      "NAME": "stale unexpired lease denied on revision mismatch",
+      "given": "Subject S at revision 7 when lease L is issued with expected_revision 7; the target advances to revision 8 before consumption",
+      "when": "the holder presents the still-unexpired lease L to mutate S",
+      "expected": "denied due to revision mismatch (revision 7 -> revision 8; REVISION_MISMATCH / AUTHORITY_STALE; STALE_LEASE_REVISION_MUTATION=denied); the unexpired lease cannot mutate the moved target and lease expiry cannot silently expand authority; LEASE_REISSUE_REQUIRED_AFTER_REVISION_CHANGE=yes (a fresh lease with expected_revision 8 must be issued)"
+    },
+    {
+      "SCENARIO_ID": "C5",
+      "NAME": "lost response retry with same idempotency key",
+      "given": "a mutation committed but the client lost the response; the durable idempotency record holds the outcome",
+      "when": "the client retries the same request with the same idempotency key and same semantic fingerprint",
+      "expected": "the same idempotency key returns the same recorded result (returned or reconstructed deterministically); no semantic effect is duplicated (no second child, no second transition, no second Completion); IDEMPOTENT_REPLAY=must_not_duplicate_semantic_effects"
+    },
+    {
+      "SCENARIO_ID": "C6",
+      "NAME": "same idempotency key with different semantic payload",
+      "given": "idempotency key K was already used for semantic payload P1",
+      "when": "the same key K is presented with a different semantic payload P2",
+      "expected": "fails closed with IDEMPOTENCY_CONFLICT; the payload is never silently overwritten and the key is never silently reused; resolution requires an explicit semantic choice"
+    },
+    {
+      "SCENARIO_ID": "C7",
+      "NAME": "concurrent materialization of the same decided followup",
+      "given": "an already-decided followup (materialized Decision D) on parent Subject P; two agents attempt to materialize it concurrently, possibly with different idempotency keys",
+      "when": "both attempts reach the followup transaction commit path",
+      "expected": "at most one child semantic effect is created even across attempts with different idempotency keys: exactly one attempt commits (parent CAS + edge + child initial revision); every other attempt fails closed with REVISION_CONFLICT (parent CAS race) or TRANSACTION_CONFLICT (two-root atomicity); because the competing attempts carry different idempotency keys, this is distinct-key contention, not key reuse, so IDEMPOTENCY_CONFLICT is not the loser outcome for this case; no duplicate child ever exists; crash atomicity is covered by crash_atomicity, not by this scenario"
+    }
+  ],
+  "regression_design_proofs": [
+    {
+      "FAILURE_CLASS": "B011",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite none)",
+      "A3_INVARIANT": "Mechanical lifecycle transitions are revisioned per Subject aggregate with fail-closed stale mutation: a bootstrap/PLAN_INIT-style transition requested from an already-initialized state is either a PREDECESSOR_STATE_CONFLICT (state legality) or a REVISION_CONFLICT (concurrency timing); the lifecycle state cannot cycle back and no stale revision can commit.",
+      "A3_DESIGN_PROOF": "design proof over revision_model + cas_model + conflict_taxonomy: the revision unit is the Subject aggregate, CAS rejects stale mutations, and predecessor-state legality is a distinct fail-closed conflict; monotonic transition re-entry is unrepresentable in a committed record set. Mechanical transition execution itself is M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M2 owner, prerequisite M4)",
+      "A3_INVARIANT": "Current Plan selection is a post-commit derived projection over durable PlanSubject records (revisioned per Subject aggregate); it is never an authoritative pointer, never part of any transaction, and stale pointer/pointer-less state cannot select a stale or retired plan (CURRENT_POINTERS_ARE_AUTHORITY=no).",
+      "A3_DESIGN_PROOF": "design proof over transaction_boundary + projection_relation: projections are derived after the authoritative commit, rebuildable from durable records, and fail closed on ambiguity; no projection write participates in an authoritative transaction, so no dual authoritative selection exists. The read-only normalization owner stays M2 per the matrix; the A3-adjacent selection mechanics are M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4 (read-only normalization owner M2 per matrix)",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A3_INVARIANT": "Post-binding lifecycle re-entry (producer/consumer PLAN_INIT ping-pong) is denied by predecessor-state legality and revision CAS on the bound Subject aggregate; binding itself is a durable record of the aggregate, so re-entry against a bound aggregate cannot commit.",
+      "A3_DESIGN_PROOF": "design proof over cas_model + conflict_taxonomy (PREDECESSOR_STATE_CONFLICT distinct from REVISION_CONFLICT) + aggregate_boundary: the binding and lifecycle state share one aggregate and one revision unit; any stale or illegal transition fails closed. Mechanical binding and the transition engine are M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "B014-F",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite none)",
+      "A3_INVARIANT": "Materialization success/failure surfaces authoritatively through the canonical machine result of the authoritative transaction: the Commit record, the Completion record and the resulting revision are one atomic unit, so a hidden failure or a success without a Commit/Completion is unrepresentable.",
+      "A3_DESIGN_PROOF": "design proof over crash_atomicity + audit_relation + transaction_boundary: authoritative commits are atomic and observable only as committed-or-not; audit is post-commit evidence and can never hide a failed materialization; retry is idempotency-protected (no duplicate effect). The materialization authority engine itself is M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M3, prerequisite none)",
+      "A3_INVARIANT": "Current decision/followup resolution reads only durable committed records (Decisions, FollowupEdges) after the authoritative commit; conflicting legacy current_* pointer state never binds the wrong subject because pointers are not authority and are never CAS sources; ambiguous resolution fails closed with NEEDS_SEMANTIC_CHOICE.",
+      "A3_DESIGN_PROOF": "design proof over projection_relation + cas_model.authoritative_read + followup_transaction: projections derive from the committed record set, edges commit atomically with their child and verified Decision basis, and idempotent replay cannot duplicate decision/followup effects. The projection engine and binding enforcement are M3-B/M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M3-B/M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A3_INVARIANT": "PROJECT_DECISION stays distinct from PROJECT_BINDING (A1 decision kinds on ProjectSubject); a binding decision commits as a revisioned record of the ProjectSubject aggregate only against a real validated ProjectSubject, so fake binding before initialization is unrepresentable in a committed record set; binding projection follows SUBJECT_BINDING_ZERO_ONE_MANY (A5).",
+      "A3_DESIGN_PROOF": "design proof over aggregate_boundary + cas_model + conflict_taxonomy: binding records commit under one aggregate with CAS and predecessor-state validation; decision/binding separation is enforced by distinct record kinds within the same revision unit. Mechanical binding and 0/1/many enforcement are M4 (A5 contract).",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "RC2-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite none)",
+      "A3_INVARIANT": "A failing materialization produces an authoritative failed outcome in the committed record set (Completion with failure outcome plus a new revision) and never a usable-success surface; worker/handoff/ack cannot appear usable while the authoritative failure is recorded.",
+      "A3_DESIGN_PROOF": "design proof over crash_atomicity + audit_relation + idempotency_model: the outcome is atomic with the revision, audit is post-commit evidence, and retries are idempotent (M4 idempotent retry semantics per the matrix). The authoritative materialization path is M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A3_INVARIANT": "Recovery operates over durable committed records and idempotency records: every recovery input is an explicit durable reference (subject_ref, source_decision_ref), uncertain operations resolve to committed-or-not via atomicity and idempotency, and missing prerequisite evidence yields either deterministic reconciliation or exactly one explicit NEEDS_SEMANTIC_CHOICE; guessing another lifecycle subject is unrepresentable.",
+      "A3_DESIGN_PROOF": "design proof over crash_atomicity + followup_transaction + conflict_taxonomy: no hidden intermediate state exists to guess from; uncertain commits are idempotency-resolvable; blind replay and silent not_required are denied by the distinct-conflict contract. The mechanical recovery engine is M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    }
+  ],
+  "deferred_questions": {
+    "resolved_by_a3": [
+      {
+        "id": "OQ-M3A4-01",
+        "topic": "graph write transaction scope",
+        "normalized_owner": "M3-A3",
+        "resolution": "transaction scope = one Subject aggregate by default, plus the single canonical two-root followup creation shape; no whole-graph transactions; cross-existing-Subject transactions deferred (transaction_boundary, multi_subject_policy)"
+      },
+      {
+        "id": "CAS-SEMANTICS",
+        "topic": "CAS semantics / exact revision mechanics",
+        "normalized_owner": "M3-A3",
+        "resolution": "canonical CAS contract: expected vs current revision token, pre-commit check, fail-closed stale mutation, no bypass except A4 bootstrap/cutover (cas_model)"
+      },
+      {
+        "id": "REVISION-UNIT",
+        "topic": "canonical revision unit",
+        "normalized_owner": "M3-A3",
+        "resolution": "Subject aggregate, proven against A1 ownership and regression classes; alternative models evaluated and rejected (revision_model)"
+      },
+      {
+        "id": "IDEMPOTENCY-TRANSACTION",
+        "topic": "idempotency transaction semantics",
+        "normalized_owner": "M3-A3",
+        "resolution": "idempotency key binds principal/authority context + operation + typed target + semantic fingerprint; request vs semantic effect dedupe distinguished; replay must not duplicate semantic effects; retention/mismatch defined (idempotency_model)"
+      }
+    ],
+    "deferred_to_a4": [
+      {
+        "QUESTION_ID": "OQ-M3A5-01",
+        "topic": "bootstrap input ordering / selection",
+        "normalized_owner": "M3-A4",
+        "note": "deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources; A3 only defines that bootstrap is the sole CAS-bypass class"
+      },
+      {
+        "QUESTION_ID": "OQ-M3A5-02",
+        "topic": "current-pointer cutover rule",
+        "normalized_owner": "M3-A4",
+        "note": "exact cutover rule replacing current_* authority with derived projections; A3 defines that cutover is the sole second CAS-bypass class and that projections are never authoritative"
+      }
+    ],
+    "deferred_to_a5": [
+      {
+        "id": "SUBJECT-BINDING-ZERO-ONE-MANY",
+        "topic": "zero/one/many subject binding",
+        "normalized_owner": "M3-A5",
+        "note": "binding projection 0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE; A3 covers the concurrency/atomicity of binding record commits only"
+      }
+    ],
+    "deferred_to_implementation": [
+      {
+        "QUESTION_ID": "A1-DEFER-01",
+        "topic": "ID Broker minting mechanics / deterministic hash / collision protocol",
+        "normalized_owner": "M3-A4/M3-A5",
+        "note": "retained from A1/A12"
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-02",
+        "topic": "projection engine implementation",
+        "normalized_owner": "M3-B",
+        "note": "retained from A1/A12"
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-03",
+        "topic": "mechanical state transition engine",
+        "normalized_owner": "M3-B/M4",
+        "note": "retained from A1/A12"
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-04",
+        "topic": "executor_kind enum / executor_execution_ref schema",
+        "normalized_owner": "M5",
+        "note": "retained from A1/A12"
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-05",
+        "topic": "storage engine / database schema / graph serialization",
+        "normalized_owner": "M3-B",
+        "note": "retained from A1/A12; NO_STORAGE_ENGINE_FROZEN=yes"
+      },
+      {
+        "id": "A3-DEFER-01",
+        "topic": "atomic commit primitive (committed-or-not enforcement)",
+        "normalized_owner": "M3-B",
+        "note": "required by crash_atomicity; design frozen, implementation future"
+      },
+      {
+        "id": "A3-DEFER-02",
+        "topic": "multi-root / cross-existing-Subject transaction mechanics",
+        "normalized_owner": "M3-B",
+        "note": "semantics contract frozen by multi_subject_policy; no authoritative operation defines them in A3 scope"
+      },
+      {
+        "id": "A3-DEFER-03",
+        "topic": "idempotency record retention duration and storage",
+        "normalized_owner": "M3-B",
+        "note": "minimum retention bound frozen by idempotency_model"
+      },
+      {
+        "id": "A3-DEFER-04",
+        "topic": "mechanical recovery engine",
+        "normalized_owner": "M4",
+        "note": "recovery semantics relation frozen by crash_atomicity"
+      }
+    ]
+  },
+  "invariants": {
+    "preserved_contract_flags": {
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "ID_IS_AUTHORITY": "no",
+      "AUTHORITY_TARGET_IS_TYPED": "yes",
+      "EXECUTOR_IDENTITY_EQUALS_PRINCIPAL": "no",
+      "LEASE_REVISION_BOUND": "yes",
+      "REVISION_SEMANTICS_OWNER": "M3-A3",
+      "AUTHORITY_ENGINE_MAY_INFER_FOLLOWUP_INTENT": "no",
+      "AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION": "yes",
+      "CHILD_SUBJECT_CREATION_SEMANTIC_DECISION_SOURCE": "LLM_or_user_materialized_decision",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "DUAL_AUTHORITATIVE_WRITE": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+      "ERROR_SEMANTICS_DISTINCT": "yes"
+    },
+    "frozen_concurrency_flags": {
+      "LOST_UPDATE_ALLOWED": "no",
+      "SILENT_LAST_WRITE_WINS": "no",
+      "STALE_REVISION_MUTATION": "fail_closed",
+      "CONCURRENT_VALID_MUTATION": "CAS_or_explicit_serialization",
+      "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+      "CAS_BYPASS_ONLY_BOOTSTRAP_CUTOVER": "yes",
+      "NO_CAS_BYPASS_FOR_NORMAL_MUTATION": "yes",
+      "IDEMPOTENT_REPLAY": "must_not_duplicate_semantic_effects",
+      "PARTIAL_AUTHORITATIVE_TRANSITION_VISIBLE": "no",
+      "STALE_UNEXPIRED_LEASE_DENIED": "yes",
+      "STALE_LEASE_REVISION_MUTATION": "denied",
+      "LEASE_REISSUE_REQUIRED_AFTER_REVISION_CHANGE": "yes",
+      "GLOBAL_PROCESS_MUTEX_CANONICAL": "no",
+      "GLOBAL_PROCESS_LOCK_IS_CANONICAL_CONCURRENCY_MODEL": "no",
+      "DUPLICATE_CHILD_SEMANTIC_EFFECT_FORBIDDEN": "yes",
+      "FORBIDDEN_ORPHAN_CHILD": "yes",
+      "FORBIDDEN_EDGE_WITHOUT_CHILD": "yes",
+      "FORBIDDEN_CHILD_WITHOUT_VERIFIED_DECISION": "yes",
+      "AUDIT_FAILURE_ROLLS_BACK": "no",
+      "CANONICAL_COMMIT_SUCCEEDS_IF_PROJECTION_PUBLICATION_FAILS": "yes",
+      "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "NO_AUTHORITATIVE_GRAPH_WRITES": "yes"
+    },
+    "revision_contract_flags": {
+      "REVISION_UNIT": "subject_aggregate",
+      "REVISION_REPRESENTATION_STORAGE_INDEPENDENT": "yes",
+      "MODEL_DOES_NOT_CHOREOGRAPH_REVISION": "yes",
+      "MODEL_MANAGES_REVISION_CHOREOGRAPHY": "no",
+      "WORKFLOW_REVISION_IN_SUBJECT_AGGREGATE": "no",
+      "WORKFLOW_RECORD_REVISION_SCOPE": "independent",
+      "WORKFLOW_REVISION_SERIALIZES_WORKSUBJECTS": "no",
+      "CHILD_INITIAL_REVISION_INDEPENDENT": "yes",
+      "PARENT_CHILD_CREATION_ATOMIC": "yes"
+    },
+    "engine_boundary": {
+      "NO_STORAGE_ENGINE_FROZEN": "yes",
+      "NO_GRAPH_MUTATION_IMPLEMENTATION": "yes",
+      "NO_AUTHORITY_ENGINE": "yes",
+      "NO_LEASE_ENGINE": "yes",
+      "NO_CAS_ENGINE": "yes",
+      "NO_TRANSACTION_ENGINE": "yes",
+      "NO_LOCK_LEASE_RECOVERY_ENGINE": "yes",
+      "NO_RUNTIME_BEHAVIOR": "yes",
+      "GRAPH_STORAGE_LOCATIONS": [],
+      "SOURCE_CODE_CHANGED": "no"
+    }
+  },
+  "implementation_boundary": {
+    "implemented_nothing": [
+      "CAS runtime",
+      "revision store",
+      "transaction runtime",
+      "lock / lease runtime",
+      "recovery runtime",
+      "graph storage engine",
+      "authoritative graph writes",
+      "cutover"
+    ],
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a3-revision-cas-transaction.json",
+      "scripts/m3_a3_revision_cas_guard.py"
+    ],
+    "forbidden_paths": ["aota_forge/core/**", "aota_forge/adapters/**"],
+    "prior_artifacts_preserved": {
+      "a0_artifact_preserved": "yes",
+      "a1_artifact_preserved": "yes",
+      "a2_artifact_preserved": "yes",
+      "a12_artifact_preserved": "yes",
+      "m2_corpus_and_matrix_preserved": "yes"
+    },
+    "future_lane_notes": "M3-A4 owns bootstrap/cutover execution and projection rebuild; M3-A5 owns binding 0/1/many; M3-B+ implements CAS/transaction/storage mechanics frozen here; nothing here is implemented."
+  },
+  "report_metrics": {
+    "revision_models_evaluated": 4,
+    "conflict_code_count": 5,
+    "concurrency_scenario_count": 7,
+    "regression_proof_count": 8,
+    "frozen_concurrency_flag_count": 23,
+    "a3_resolved_deferred_count": 4,
+    "a3_deferred_to_implementation_count": 9
+  }
+}
