@@ -1,0 +1,487 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A1/A2 contract reconciliation (design-only cross-contract freeze)",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "gate": "M3-A1-A2-CONTRACT-RECONCILIATION",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "m3_a_common_base": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "inputs": {
+    "a0": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+    "a1": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+    "a2": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json"
+  },
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40"
+  },
+  "reconciliation_scope": {
+    "modifies_a1_source_contracts": false,
+    "modifies_a2_source_contracts": false,
+    "modifies_a0_artifact": false,
+    "modifies_a1_guard": false,
+    "modifies_a2_guard": false,
+    "modifies_m2_corpus_or_matrix": false,
+    "sources_cherry_picked_a0_to_a1_to_a2": true,
+    "reset_or_revert_performed": false,
+    "no_source_mutation": "yes",
+    "design_artifacts_only": "yes"
+  },
+  "cross_contract_rules": {
+    "A_SUBJECT_IDENTITY_TO_OBJECT_REF": {
+      "SUBJECT_AUTHORITY_OBJECT_REFERENCE_RULE": "A lease targeting a Subject uses a typed object reference with object_kind/type=Subject and object_id equal to the canonical Subject internal ID. Possessing a bare Subject ID is not itself authority and is not sufficient to authorize any operation. Model-facing semantic references must be resolved to the typed object reference at the trusted boundary; raw internal IDs are not normal model input.",
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "source": "A1 subject_identity_rule SUBJECT_ID_IS_AUTHORITY=no + A2 id_model (semantic_public_reference explicit_contract_only; internal_durable_object_id model_facing=no)"
+    },
+    "B_PRINCIPAL_TO_EXECUTOR": {
+      "EXECUTOR_IDENTITY_EQUALS_PRINCIPAL": "no",
+      "executor_identity_flag_source": "A2 exact frozen truth (design_truths.EXECUTOR_IDENTITY_IS_PRINCIPAL=no); not context-dependent",
+      "trusted_mapping_boundary": "Only the trusted runtime/adapter injection boundary may bind a channel to a typed Principal, with channel/provenance/freshness evidence. executor_kind and executor_execution_ref remain adapter-private; an executor change creates a new Execution under the same Subject.",
+      "CHANGE_EXECUTOR_NOT_CHANGE_SUBJECT": "yes",
+      "CHANGE_EXECUTOR_MUST_NOT_SILENTLY_CHANGE_AUTHORITY": "yes",
+      "authority_change_rule": "Any principal/authority change requires explicit trusted mapping plus authority evaluation plus a valid capability lease; never silent derivation from executor identity.",
+      "source": "A1 D-M3A1-03 / Execution record (CHANGE_EXECUTOR != CHANGE_SUBJECT) + A2 principal_model/principal_binding_rule (EXECUTOR_IDENTITY_IS_PRINCIPAL=no)"
+    },
+    "C_EXECUTION_TO_AUTHORITY_TARGET": {
+      "AUTHORITY_TARGET_IS_TYPED": "yes",
+      "universal_target_rule": "No single universal authority target is chosen. Authority targets are operation-specific and typed; no heuristic target inference and no heuristic subject selection.",
+      "typed_target_map": {
+        "Subject": "typed authority target for Subject mechanical/lifecycle/lineage operations (the Subject aggregate)",
+        "Execution": "typed authority target for execution attempt/status/completion-related operations",
+        "Decision": "typed authority target only where the exact Decision operation is declared by the operation contract; Decision is append-only and its creation is owned/bound by its Subject",
+        "FollowupEdge_and_other_canonical_objects": "typed authority targets only when explicitly declared by the operation contract",
+        "Execution.subject_ref": "context/relationship reference only; it does not silently become an authority target"
+      },
+      "HEURISTIC_TARGET_INFERENCE_ALLOWED": "no",
+      "source": "A1 canonical_records (Subject/Execution/Decision/FollowupEdge ownership and relationship semantics) + A2 authority_evaluation_model (never chooses subjects, never invents scope) + lease object_ref exact target"
+    },
+    "D_REVISION_HANDOFF": {
+      "LEASE_REVISION_BOUND": "yes",
+      "expected_revision_semantics": "expected_revision refers to the canonical revision of the exact typed authority target defined by M3-A3; this lane defines no revision numbering, hash, or CAS mechanics.",
+      "REVISION_SEMANTICS_OWNER": "M3-A3",
+      "TRANSACTION_CAS_OWNER": "M3-A3",
+      "source": "A2 capability_lease_contract (LEASE_REVISION_BOUND=yes, expected_revision field) + A2 implementation_boundary.future_lane_notes (M3-A3 owns CAS transaction implementation)"
+    },
+    "E_DECISION_BACKED_FOLLOWUP": {
+      "semantic_followup_shape": "A semantic followup is an A1 Decision-backed child Subject (FollowupEdge with source_decision_ref), never an engine-inferred intent.",
+      "AUTHORITY_ENGINE_MAY_INFER_FOLLOWUP_INTENT": "no",
+      "AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION": "yes",
+      "decision_role": "A Decision is already-materialized semantic evidence/basis only. The authority engine mechanically verifies the exact Decision ownership/reference/operation/object/revision/scope as applicable; it never performs semantic reasoning, never creates a Decision, never chooses a parent, and never grants authority by itself. A valid lease plus the exact target revision remain required.",
+      "source": "A1 OQ-M3A1-04/OQ-M3A1-05 + D-M3A1-05/D-M3A1-06 (Decision owned by one Subject; followup = child Subject with source Decision) + A2 authority_evaluation_model (no semantic reasoning; semantic decision evidence checked and bound)"
+    },
+    "F_CHILD_SUBJECT_CREATION": {
+      "CHILD_SUBJECT_CREATION_SEMANTIC_DECISION_SOURCE": "LLM_or_user_materialized_decision",
+      "child_creation_rule": "The semantic decision that a followup should exist is LLM/user authority materialized as a Decision record. Mechanical child Subject creation is a future bounded transition authorized by a valid Decision plus a valid lease plus the exact target revision.",
+      "source": "A1 OQ-M3A1-05 (followup = child Subject, FOLLOWUP_REQUIRES_SOURCE_DECISION=yes) + A2 authority evaluation (semantic decision evidence bound; engine never creates Decisions)"
+    }
+  },
+  "accepted_contracts": {
+    "a1": {
+      "accepted": "yes",
+      "source_artifact": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+      "note": "A1 candidate accepted truth, machine-readable; PASS markers correspond to the A1 defined markers (GRAPH_CANONICAL_SCHEMA/SUBJECT_IDENTITY_RULE).",
+      "status": {
+        "GRAPH_CANONICAL_SCHEMA": "PASS",
+        "SUBJECT_IDENTITY_RULE": "PASS",
+        "SUBJECT_ID_IS_AUTHORITY": "no",
+        "RETRY_CREATES_NEW_SUBJECT": "no",
+        "CHANGE_EXECUTOR_CREATES_NEW_SUBJECT": "no",
+        "HERMES_PRIVATE_IDENTITY_IN_CORE_ONTOLOGY": "no",
+        "CURRENT_POINTERS_ARE_SUBJECT_AUTHORITY": "no",
+        "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+        "HEURISTIC_SUBJECT_IDENTITY_ALLOWED": "no"
+      }
+    },
+    "a2": {
+      "accepted": "yes",
+      "source_artifact": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+      "note": "A2 candidate accepted truth, machine-readable; PASS markers summarize the A2 contract sections (id_model/principal_model/authority_evaluation_model/capability_lease_contract/nf2_resolution_contract).",
+      "status": {
+        "INTERNAL_ID_MODEL": "PASS",
+        "PRINCIPAL_MODEL": "PASS",
+        "AUTHORITY_EVALUATION_MODEL": "PASS",
+        "CAPABILITY_LEASE_LIFECYCLE": "PASS",
+        "ID_IS_AUTHORITY": "no",
+        "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+        "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL": "no",
+        "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+        "LEASE_PRINCIPAL_BOUND": "yes",
+        "LEASE_OPERATION_BOUND": "yes",
+        "LEASE_OBJECT_BOUND": "yes",
+        "LEASE_REVISION_BOUND": "yes",
+        "LEASE_SCOPE_EXPANSION": "denied",
+        "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no",
+        "NF2_RESOLUTION_CONTRACT": "PASS",
+        "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes"
+      }
+    }
+  },
+  "lane_owner_dag": [
+    { "lane": "M3-A1", "scope": "Subject Graph Schema & Identity" },
+    { "lane": "M3-A2", "scope": "Internal ID / Principal / Authority / Capability Lease" },
+    { "lane": "M3-A3", "scope": "Revision / CAS / Transaction / Concurrency" },
+    { "lane": "M3-A4", "scope": "Bootstrap / Migration / Cutover / Projection Rebuild" },
+    { "lane": "M3-A5", "scope": "Subject Binding / Ambiguity / Recovery Design Proof" },
+    { "lane": "M3-A6", "scope": "Integrated Design Proof" }
+  ],
+  "lane_owner_normalization": [
+    {
+      "id": "OQ-M3A1-01",
+      "topic": "Work Item == Subject? (work_item_id canonical subject identity)",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1); resolved by A1 identity decision OQ-M3A1-01 (Work Item is NOT a Subject kind)."
+    },
+    {
+      "id": "OQ-M3A1-02",
+      "topic": "Plan/Milestone aggregate boundary (one subject vs separate subjects)",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1); resolved by A1 identity decision OQ-M3A1-02 (PlanSubject single aggregate)."
+    },
+    {
+      "id": "OQ-M3A1-03",
+      "topic": "Review subject semantics (review as Subject vs attribute/edge)",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1) and retained in the A2 deferred list; resolved by A1 identity decision OQ-M3A1-03 (REVIEW_NOT_SUBJECT_KIND)."
+    },
+    {
+      "id": "OQ-M3A1-04",
+      "topic": "Decision-as-subject semantics / current decision pointer",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1); resolved by A1 identity decision OQ-M3A1-04 (Decision = durable record owned by one Subject; no authoritative current pointer)."
+    },
+    {
+      "id": "OQ-M3A1-05",
+      "topic": "Followup binding target semantics (child Subject with edges vs projection)",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1); resolved by A1 identity decision OQ-M3A1-05 (followup = Decision-backed child Subject)."
+    },
+    {
+      "id": "OQ-M3A1-06",
+      "topic": "Workspace/project subject hierarchy (separate kinds vs project top aggregate)",
+      "normalized_owner": "M3-A1",
+      "input_sources": ["M3-A2"],
+      "note": "Deferred by A2 (DEFERRED_TO=M3-A1); resolved by A1 identity decision OQ-M3A1-06 (WorkspaceSubject -> ProjectSubject)."
+    },
+    {
+      "id": "OQ-M3A2-01",
+      "topic": "authority lease schema (grant/scope/expiry/renewal/revocation)",
+      "normalized_owner": "M3-A2",
+      "input_sources": ["M3-A1"],
+      "note": "Deferred by A1 (OWNER_LANE=M3-A2); resolved by A2 resolved design question OQ-M3A2-01 (capability_lease_contract)."
+    },
+    {
+      "id": "OQ-M3A2-02",
+      "topic": "principal typing vs trusted adapter metadata (NF2)",
+      "normalized_owner": "M3-A2",
+      "input_sources": ["M3-A1"],
+      "note": "Deferred by A1 (OWNER_LANE=M3-A2); resolved by A2 resolved design question OQ-M3A2-02 (typed principal model)."
+    },
+    {
+      "id": "OQ-M3A2-03",
+      "topic": "trusted adapter channel principal/lease binding (NF2)",
+      "normalized_owner": "M3-A2",
+      "input_sources": ["M3-A1"],
+      "note": "Deferred by A1 (OWNER_LANE=M3-A2); resolved by A2 resolved design question OQ-M3A2-03 (principal-bound trusted channel)."
+    },
+    {
+      "id": "OQ-M3A2-04",
+      "topic": "approval_required gating authority grants / capability leases",
+      "normalized_owner": "M3-A2",
+      "input_sources": ["M3-A1"],
+      "note": "Deferred by A1 (OWNER_LANE=M3-A2); resolved by A2 resolved design question OQ-M3A2-04 (approval prerequisite at lease issuance)."
+    },
+    {
+      "id": "OQ-M3A4-01",
+      "topic": "graph write transaction scope",
+      "normalized_owner": "M3-A3",
+      "input_sources": ["M3-A1", "M3-A2"],
+      "note": "A1 and A2 both recorded transaction scope under M3-A4; this reconciliation normalizes transaction/scope mechanics into the M3-A3 lane (Revision/CAS/Transaction/Concurrency)."
+    },
+    {
+      "id": "CAS-SEMANTICS",
+      "topic": "CAS semantics / exact revision mechanics",
+      "normalized_owner": "M3-A3",
+      "input_sources": ["M3-A2"],
+      "note": "A2 defers CAS transaction implementation (exact revision mechanics of LEASE_REVISION_BOUND) to M3-A3+; normalized owner M3-A3."
+    },
+    {
+      "id": "OQ-M3A5-01",
+      "topic": "bootstrap input ordering",
+      "normalized_owner": "M3-A4",
+      "input_sources": ["M3-A1", "M3-A2"],
+      "note": "Deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources normalizes to M3-A4 (Bootstrap/Migration)."
+    },
+    {
+      "id": "OQ-M3A5-02",
+      "topic": "current-pointer cutover rule",
+      "normalized_owner": "M3-A4",
+      "input_sources": ["M3-A1", "M3-A2"],
+      "note": "The cutover rule replacing current_* authority with derived projections normalizes to M3-A4 (Cutover)."
+    },
+    {
+      "id": "PROJECTION-REBUILD",
+      "topic": "projection rebuild semantics",
+      "normalized_owner": "M3-A4",
+      "input_sources": ["M3-A1"],
+      "note": "Projection/rebuild semantics (rebuildable projections per CURRENT_POINTERS_ARE_PROJECTIONS) normalize to M3-A4 (Projection Rebuild)."
+    },
+    {
+      "id": "SUBJECT-BINDING-ZERO-ONE-MANY",
+      "topic": "zero/one/many subject binding",
+      "normalized_owner": "M3-A5",
+      "input_sources": ["M3-A1", "M3-A2"],
+      "note": "SUBJECT_BINDING_ZERO_ONE_MANY (0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE) normalizes to M3-A5 (Subject Binding / Ambiguity)."
+    },
+    {
+      "id": "A1-DEFER-01",
+      "topic": "ID Broker minting mechanics, deterministic hash selection, collision resolution protocol",
+      "normalized_owner": "M3-A4/M3-A5",
+      "input_sources": ["M3-A1"],
+      "outside_m3_a_dag": false
+    },
+    {
+      "id": "A1-DEFER-04",
+      "topic": "concrete executor_kind enum values and executor_execution_ref schema",
+      "normalized_owner": "M5",
+      "input_sources": ["M3-A1"],
+      "outside_m3_a_dag": true,
+      "note": "Out-of-M3-A ownership retained from A1; recorded as outside this M3-A DAG, not re-owned."
+    },
+    {
+      "id": "A1-DEFER-05",
+      "topic": "storage engine / database schema / graph serialization",
+      "normalized_owner": "M3-B",
+      "input_sources": ["M3-A1"],
+      "outside_m3_a_dag": true,
+      "note": "Out-of-M3-A ownership retained from A1; recorded as outside this M3-A DAG, not re-owned."
+    },
+    {
+      "id": "A1-DEFER-02",
+      "topic": "projection engine implementation (fail-closed 0/1/many derivation)",
+      "normalized_owner": "M3-B",
+      "input_sources": ["M3-A1"],
+      "outside_m3_a_dag": true
+    },
+    {
+      "id": "A1-DEFER-03",
+      "topic": "mechanical state transition engine (revisioned monotonic transitions, lineage cycle detection)",
+      "normalized_owner": "M3-B/M4",
+      "input_sources": ["M3-A1"],
+      "outside_m3_a_dag": true
+    }
+  ],
+  "deferred_question_union": {
+    "computed_from": ["M3-A1", "M3-A2"],
+    "entry_count": 18,
+    "entries": [
+      {
+        "QUESTION_ID": "OQ-M3A1-01",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A1-02",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A1-03",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A1-04",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A1-05",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A1-06",
+        "normalized_owner": "M3-A1",
+        "input_sources": ["M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A2-01",
+        "normalized_owner": "M3-A2",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A2-02",
+        "normalized_owner": "M3-A2",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A2-03",
+        "normalized_owner": "M3-A2",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A2-04",
+        "normalized_owner": "M3-A2",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A4-01",
+        "normalized_owner": "M3-A3",
+        "input_sources": ["M3-A1", "M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A5-01",
+        "normalized_owner": "M3-A4",
+        "input_sources": ["M3-A1", "M3-A2"]
+      },
+      {
+        "QUESTION_ID": "OQ-M3A5-02",
+        "normalized_owner": "M3-A4",
+        "input_sources": ["M3-A1", "M3-A2"]
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-01",
+        "normalized_owner": "M3-A4/M3-A5",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-02",
+        "normalized_owner": "M3-B",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-03",
+        "normalized_owner": "M3-B/M4",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-04",
+        "normalized_owner": "M5",
+        "input_sources": ["M3-A1"]
+      },
+      {
+        "QUESTION_ID": "A1-DEFER-05",
+        "normalized_owner": "M3-B",
+        "input_sources": ["M3-A1"]
+      }
+    ]
+  },
+  "non_blocking_findings": [
+    {
+      "finding_id": "A2_DEFERRED_ID_ALLOWLIST_FINDING",
+      "classification": "non_blocking",
+      "DESIGN_CONTRACT_IMPACT": "none",
+      "evidence": "A2 artifact retains OQ-M3A1-03 in deferred_questions (not_answered_by_a2=true, DEFERRED_TO=M3-A1); the A2 guard's deferred-ID allowlist omits OQ-M3A1-03.",
+      "action": "No guard cleanup performed; the omission does not alter A2 contract truth."
+    },
+    {
+      "finding_id": "A2_NON_JSON_ARTIFACT_DIAGNOSTIC_PATH",
+      "classification": "non_blocking",
+      "A2_CONTRACT_BLOCKING": "no",
+      "M3_A3_BLOCKING": "no",
+      "evidence": "A2 guard human-diagnostic (non-JSON) output path with an external --artifact path is a design-tooling edge case.",
+      "action": "No guard UX repair performed; contract checks remain valid."
+    }
+  ],
+  "a3_handoff": {
+    "readiness_criteria": {
+      "A1_CONTRACT_ACCEPTED": "yes",
+      "A2_CONTRACT_ACCEPTED": "yes",
+      "SUBJECT_AUTHORITY_INTERFACE": "PASS",
+      "PRINCIPAL_EXECUTOR_INTERFACE": "PASS",
+      "REVISION_HANDOFF_TO_A3": "PASS",
+      "FOLLOWUP_AUTHORITY_INTERFACE": "PASS",
+      "LANE_OWNER_NORMALIZATION": "PASS",
+      "NO_A1_A2_CONTRADICTION": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "M3_A3_READY": "yes"
+    },
+    "next_action": "return to ChatGPT for M3-A3 Revision/CAS/Transaction/Concurrency design lane",
+    "autostart_a3": false
+  },
+  "invariants": {
+    "A1_CONTRACT_ACCEPTED": "yes",
+    "A2_CONTRACT_ACCEPTED": "yes",
+    "SUBJECT_ID_IS_AUTHORITY": "no",
+    "ID_IS_AUTHORITY": "no",
+    "EXECUTOR_IDENTITY_DEFINES_SUBJECT_IDENTITY": "no",
+    "EXECUTOR_IDENTITY_DEFINES_PRINCIPAL_AUTHORITY": "no",
+    "EXECUTOR_IDENTITY_EQUALS_PRINCIPAL": "no",
+    "CHANGE_EXECUTOR_NOT_CHANGE_SUBJECT": "yes",
+    "CHANGE_EXECUTOR_MUST_NOT_SILENTLY_CHANGE_AUTHORITY": "yes",
+    "AUTHORITY_TARGET_IS_TYPED": "yes",
+    "LEASE_REVISION_BOUND": "yes",
+    "LEASE_SCOPE_EXPANSION": "denied",
+    "REVISION_SEMANTICS_OWNER": "M3-A3",
+    "AUTHORITY_ENGINE_MAY_INFER_FOLLOWUP_INTENT": "no",
+    "AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION": "yes",
+    "CHILD_SUBJECT_CREATION_SEMANTIC_DECISION_SOURCE": "LLM_or_user_materialized_decision",
+    "TRANSACTION_CAS_OWNER": "M3-A3",
+    "BOOTSTRAP_CUTOVER_OWNER": "M3-A4",
+    "BINDING_AMBIGUITY_OWNER": "M3-A5",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "NO_AUTHORITATIVE_GRAPH_WRITES": "yes",
+    "NO_A1_A2_CONTRADICTION": "yes"
+  },
+  "source_boundary": {
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+      "scripts/m3_a12_contract_reconciliation_guard.py"
+    ],
+    "forbidden_paths": ["aota_forge/core/**", "aota_forge/adapters/**"],
+    "a1_a2_artifacts_preserved": "yes",
+    "a1_a2_guards_preserved": "yes",
+    "a0_artifact_preserved": "yes",
+    "m2_corpus_and_matrix_preserved": "yes"
+  },
+  "provenance": {
+    "a1_blob_identical_to_input_commit": "yes",
+    "a2_blob_identical_to_input_commit": "yes",
+    "a0_map_blob_identical_to_input_commit": "yes",
+    "a1_guard_blob_identical_to_input_commit": "yes",
+    "a2_guard_blob_identical_to_input_commit": "yes",
+    "cherry_pick_chain": "A0 (10b8018) -> A1 (7dbc2225) -> A2 (b29fe5f6)"
+  },
+  "report": {
+    "accepted_a1_truth_checks": {
+      "GRAPH_CANONICAL_SCHEMA": "defined",
+      "SUBJECT_IDENTITY_RULE": "defined",
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "RETRY_CREATES_NEW_SUBJECT": "no",
+      "CHANGE_EXECUTOR_CREATES_NEW_SUBJECT": "no",
+      "CHANGE_EXECUTOR_NOT_CHANGE_SUBJECT": "yes",
+      "DECISION_OWNED_BY_ONE_SUBJECT": "yes",
+      "FOLLOWUP_REQUIRES_SEMANTIC_LINEAGE": "yes",
+      "FOLLOWUP_REQUIRES_SOURCE_DECISION": "yes"
+    },
+    "accepted_a2_truth_checks": {
+      "ID_IS_AUTHORITY": "no",
+      "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+      "RAW_INTERNAL_ID_MODEL_SURFACE": "denied_by_default",
+      "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL": "no",
+      "EXECUTOR_IDENTITY_IS_PRINCIPAL": "no",
+      "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "LEASE_PRINCIPAL_BOUND": "yes",
+      "LEASE_OPERATION_BOUND": "yes",
+      "LEASE_OBJECT_BOUND": "yes",
+      "LEASE_REVISION_BOUND": "yes",
+      "LEASE_OBJECT_SCOPE_EXPANSION": "denied",
+      "LEASE_OPERATION_SCOPE_EXPANSION": "denied",
+      "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no",
+      "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+      "OQ_M3A1_03_RETAINED_IN_DEFERRED": "yes"
+    }
+  }
+}
