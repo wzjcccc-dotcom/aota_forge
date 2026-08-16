@@ -1,0 +1,1089 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A4 bootstrap / migration / cutover / projection rebuild design proof",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A4",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "common_base": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "m3_a_common_base": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "inputs": {
+    "a0": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+    "a1": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+    "a2": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+    "a12": "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+    "a3": "deploy/evidence/issues/9/m3-a/a3-revision-cas-transaction.json",
+    "matrix": "deploy/evidence/issues/9/m2-successor-regression-matrix.json"
+  },
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+    "a3": "2485a8d51b6fb5722a0da02e9dc93e5615401277"
+  },
+  "design_proof_only": {
+    "no_graph_storage_engine": "yes",
+    "no_graph_mutation_implementation": "yes",
+    "no_authoritative_graph_writes": "yes",
+    "no_authority_engine": "yes",
+    "no_lease_engine": "yes",
+    "no_cas_engine": "yes",
+    "no_transaction_engine": "yes",
+    "no_cutover_runtime": "yes",
+    "no_projection_rebuild_runtime": "yes",
+    "no_runtime_behavior": "yes",
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "bootstrap_input_contract": {
+    "GRAPH_BOOTSTRAP_STRATEGY": "A future bootstrap is a read, normalize, cross-validate, and materialize-candidate procedure. It processes source classes in dependency order Workspace -> Project -> Plan, then considers legacy lifecycle evidence only when an explicit canonical record mapping is complete. No source class is authoritative merely because A0 labels it AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE. Candidate facts are accepted only after every candidate validation gate passes; unresolved facts remain evidence or quarantine and do not become graph records.",
+    "ordering_rule": [
+      "1. Resolve exactly one workspace identity from the canonical workspace registry; zero or many candidates fail closed.",
+      "2. Resolve project manifests within that workspace; project.id plus the validated workspace identity supplies the deterministic ProjectSubject identity tuple.",
+      "3. Normalize the Portable Plan and validate its stable plan_id and project context; content digest is revision/provenance data, not identity.",
+      "4. Inspect legacy evidence only after the canonical parent context exists; materialize only records with explicit subject, execution, decision, and lineage references.",
+      "5. Validate the complete candidate graph, initialize revisions, and produce a cutover-eligible snapshot without publishing authority."
+    ],
+    "source_classes": [
+      {
+        "SOURCE_CLASS": "legacy_runtime_session_state",
+        "SOURCE_IDS": ["MI-01"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Record pointer observations and superseded_by evidence only; conflicting session pointers are divergence, never a winner."
+      },
+      {
+        "SOURCE_CLASS": "legacy_active_plan_binding",
+        "SOURCE_IDS": ["MI-02"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Re-read and compare as legacy selection evidence; a stale or mismatched revision is evidence of divergence, not a graph selection instruction."
+      },
+      {
+        "SOURCE_CLASS": "legacy_active_frozen_spec_binding",
+        "SOURCE_IDS": ["MI-03"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Retain frozen SPEC and approval observations as executor evidence; conflicting bindings are quarantined and cannot create a Subject."
+      },
+      {
+        "SOURCE_CLASS": "legacy_plan_artifacts",
+        "SOURCE_IDS": ["MI-04"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Use as shadow evidence against the normalized Plan; retirement, cancellation, and pointer conflicts remain evidence or quarantine until canonical semantics are explicit."
+      },
+      {
+        "SOURCE_CLASS": "legacy_project_registry",
+        "SOURCE_IDS": ["MI-05"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Compare with the successor manifest; the derived legacy index cannot override manifest identity or select a project."
+      },
+      {
+        "SOURCE_CLASS": "legacy_decision_store",
+        "SOURCE_IDS": ["MI-06"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "A record is a Decision candidate only with an exact canonical owner and complete statement/basis; conflicting owners or pointer claims are quarantined."
+      },
+      {
+        "SOURCE_CLASS": "legacy_handoffs",
+        "SOURCE_IDS": ["MI-07"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Use only to corroborate completion/notification evidence; handoff acknowledgement never creates or selects a Subject."
+      },
+      {
+        "SOURCE_CLASS": "legacy_task_result_artifacts",
+        "SOURCE_IDS": ["MI-08"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Profile Task paths and private IDs are opaque evidence_refs only; inconsistent task artifacts are quarantined."
+      },
+      {
+        "SOURCE_CLASS": "legacy_completion_receipts",
+        "SOURCE_IDS": ["MI-09"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Completion is a canonical record candidate only after exact Execution and Subject references validate; duplicate or conflicting outcomes fail closed."
+      },
+      {
+        "SOURCE_CLASS": "legacy_audit_ledgers",
+        "SOURCE_IDS": ["MI-10"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Use for provenance and consistency checks only; audit outcomes cannot create a missing canonical mutation."
+      },
+      {
+        "SOURCE_CLASS": "legacy_authority_declarations",
+        "SOURCE_IDS": ["MI-11"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Use as historical contract evidence; prose cannot materialize graph records or override A1/A2/A3/A4 rules."
+      },
+      {
+        "SOURCE_CLASS": "legacy_verification_scripts",
+        "SOURCE_IDS": ["MI-12"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Executable legacy checks are corroborating evidence; a passing script is not canonical graph truth."
+      },
+      {
+        "SOURCE_CLASS": "legacy_source_code",
+        "SOURCE_IDS": ["MI-13"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Source inspection reconstructs semantics only; legacy code is never imported or executed as graph authority."
+      },
+      {
+        "SOURCE_CLASS": "successor_project_manifest",
+        "SOURCE_IDS": ["MI-14"],
+        "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "yes",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "The manifest is a candidate fact source, not a graph write; duplicate or conflicting workspace/project ownership fails closed."
+      },
+      {
+        "SOURCE_CLASS": "portable_plan_document_normalized",
+        "SOURCE_IDS": ["MI-15"],
+        "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "yes",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "The governing issue body remains Plan authority before a separately authorized migration, but it still cannot independently establish Subject Graph truth; normalize and cross-validate first."
+      },
+      {
+        "SOURCE_CLASS": "plan_historical_appendix",
+        "SOURCE_IDS": ["MI-16"],
+        "PRIMARY_CLASSIFICATION": "HISTORICAL_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Preserve as provenance; it can never override a normalized current section."
+      },
+      {
+        "SOURCE_CLASS": "control_projection_snapshot",
+        "SOURCE_IDS": ["MI-17"],
+        "PRIMARY_CLASSIFICATION": "PROJECTION_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Record governance projection drift only; never arbitrate body state or materialize a graph record."
+      },
+      {
+        "SOURCE_CLASS": "workspace_registry",
+        "SOURCE_IDS": ["MI-18"],
+        "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "yes",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "The registry enumerates candidates only; path, workspace_id, and manifest validation must agree before a WorkspaceSubject candidate exists."
+      },
+      {
+        "SOURCE_CLASS": "managed_deployment_receipts",
+        "SOURCE_IDS": ["MI-19"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Deployment and backup receipts corroborate operational evidence only; receipt presence never establishes lifecycle state."
+      },
+      {
+        "SOURCE_CLASS": "runtime_identity_files",
+        "SOURCE_IDS": ["MI-20"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Runtime identity is diagnostic provenance, never Subject identity or lifecycle truth."
+      },
+      {
+        "SOURCE_CLASS": "git_history",
+        "SOURCE_IDS": ["MI-21"],
+        "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Reject any attempt to derive graph truth from commits, branch, HEAD, or timestamps; retain only bounded provenance and exact-base evidence."
+      },
+      {
+        "SOURCE_CLASS": "issue_event_log",
+        "SOURCE_IDS": ["MI-22"],
+        "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Reject event ordering or comment IDs as Subject identity/state; retain bounded human-review history only."
+      },
+      {
+        "SOURCE_CLASS": "control_comments",
+        "SOURCE_IDS": ["MI-23"],
+        "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "no",
+        "CAN_SUPPLY_STATE_FACTS": "no",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Reject control comments as Plan or Subject arbitration; observe governance projection drift only."
+      },
+      {
+        "SOURCE_CLASS": "successor_m1_m2_evidence",
+        "SOURCE_IDS": ["MI-24"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Use milestone evidence to reconstruct contracts and provenance only; it cannot create a Subject."
+      },
+      {
+        "SOURCE_CLASS": "successor_regression_matrix",
+        "SOURCE_IDS": ["MI-25"],
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "CAN_SUPPLY_IDENTITY_FACTS": "no",
+        "CAN_SUPPLY_LINEAGE_FACTS": "yes",
+        "CAN_SUPPLY_STATE_FACTS": "yes",
+        "REQUIRES_CROSS_VALIDATION": "yes",
+        "CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH": "no",
+        "CONFLICT_BEHAVIOR": "Carry regression dispositions and future conditions only; the matrix is not lifecycle state or graph authority."
+      }
+    ],
+    "a0_migration_input_classifications": [
+      {"source_id": "MI-01", "SOURCE_CLASS": "legacy_runtime_session_state", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-02", "SOURCE_CLASS": "legacy_active_plan_binding", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-03", "SOURCE_CLASS": "legacy_active_frozen_spec_binding", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-04", "SOURCE_CLASS": "legacy_plan_artifacts", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-05", "SOURCE_CLASS": "legacy_project_registry", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-06", "SOURCE_CLASS": "legacy_decision_store", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-07", "SOURCE_CLASS": "legacy_handoffs", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-08", "SOURCE_CLASS": "legacy_task_result_artifacts", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-09", "SOURCE_CLASS": "legacy_completion_receipts", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-10", "SOURCE_CLASS": "legacy_audit_ledgers", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-11", "SOURCE_CLASS": "legacy_authority_declarations", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-12", "SOURCE_CLASS": "legacy_verification_scripts", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-13", "SOURCE_CLASS": "legacy_source_code", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-14", "SOURCE_CLASS": "successor_project_manifest", "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE"},
+      {"source_id": "MI-15", "SOURCE_CLASS": "portable_plan_document_normalized", "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE"},
+      {"source_id": "MI-16", "SOURCE_CLASS": "plan_historical_appendix", "PRIMARY_CLASSIFICATION": "HISTORICAL_ONLY"},
+      {"source_id": "MI-17", "SOURCE_CLASS": "control_projection_snapshot", "PRIMARY_CLASSIFICATION": "PROJECTION_ONLY"},
+      {"source_id": "MI-18", "SOURCE_CLASS": "workspace_registry", "PRIMARY_CLASSIFICATION": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE"},
+      {"source_id": "MI-19", "SOURCE_CLASS": "managed_deployment_receipts", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-20", "SOURCE_CLASS": "runtime_identity_files", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-21", "SOURCE_CLASS": "git_history", "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE"},
+      {"source_id": "MI-22", "SOURCE_CLASS": "issue_event_log", "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE"},
+      {"source_id": "MI-23", "SOURCE_CLASS": "control_comments", "PRIMARY_CLASSIFICATION": "FORBIDDEN_AUTHORITY_SOURCE"},
+      {"source_id": "MI-24", "SOURCE_CLASS": "successor_m1_m2_evidence", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"},
+      {"source_id": "MI-25", "SOURCE_CLASS": "successor_regression_matrix", "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY"}
+    ],
+    "candidate_acceptance_rule": "Every candidate source is a fact input, not an authority input. A candidate fact becomes a canonical record candidate only after deterministic normalization, exact identity/lineage checks, cross-source consistency, and the full GRAPH_CANDIDATE_VALIDATION_RULE. No majority vote among evidence sources is permitted.",
+    "no_majority_vote": "yes",
+    "legacy_evidence_independently_establishes_graph_truth": "no"
+  },
+  "migration_mapping": {
+    "rule": "Legacy concepts are mapped conservatively to canonical record candidates, metadata, projections, evidence, or an explicit unresolved state. A legacy object is not required to have a canonical graph counterpart.",
+    "PROFILE_TASK_PRIVATE_ID_NOT_CANONICAL_SUBJECT_ID": "yes",
+    "LEGACY_CURRENT_POINTER_NOT_CANONICAL_IDENTITY": "yes",
+    "provenance_rule": "Old IDs are retained only as opaque migration provenance or evidence_refs with source class, source location, legacy ID, observed digest, and mapping status. They are never copied into subject_id, object_id authority targets, parent/child identity, or current-pointer authority.",
+    "mappings": [
+      {
+        "LEGACY_CONCEPT": "legacy Work Item",
+        "SOURCE_CLASS": "legacy_plan_artifacts",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "MIGRATION_EVIDENCE_ONLY",
+        "CANONICAL_TARGET": "no direct record; possible semantic input to an explicitly registered WorkSubject",
+        "VALIDATION_RULE": "work_item_id, title, and status may describe evidence but cannot allocate a Subject ID; a WorkSubject requires an explicit authorized registration and minted identity.",
+        "CONFLICT_BEHAVIOR": "duplicate or competing Work Items are not merged; unresolved identity is NEEDS_SEMANTIC_CHOICE or UNMIGRATABLE"
+      },
+      {
+        "LEGACY_CONCEPT": "Profile Task",
+        "SOURCE_CLASS": "legacy_task_result_artifacts",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "MIGRATION_EVIDENCE_ONLY",
+        "CANONICAL_TARGET": "Execution evidence_refs plus an already identified Subject; never a Subject identity",
+        "VALIDATION_RULE": "pt_* and task-directory identity remain opaque executor_execution_ref/provenance only; exact Subject ownership must come from a separate validated mapping.",
+        "CONFLICT_BEHAVIOR": "conflicting task ownership or task-path evidence is quarantined; no Profile Task winner is selected"
+      },
+      {
+        "LEGACY_CONCEPT": "SPEC",
+        "SOURCE_CLASS": "legacy_active_frozen_spec_binding",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "CANONICAL_METADATA_ONLY",
+        "CANONICAL_TARGET": "opaque evidence_refs/non_semantic_metadata on a candidate Execution or Decision",
+        "VALIDATION_RULE": "frozen revision, canonical_hash, and approval observations may corroborate a record but never create identity or authority.",
+        "CONFLICT_BEHAVIOR": "hash or approval mismatch is conflict evidence and blocks that candidate record"
+      },
+      {
+        "LEGACY_CONCEPT": "completion",
+        "SOURCE_CLASS": "legacy_completion_receipts",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "CANONICAL_RECORD_CANDIDATE",
+        "CANONICAL_TARGET": "Completion owned by exactly one validated Execution",
+        "VALIDATION_RULE": "execution_ref, outcome, evidence_refs, and recorded_at must validate; the owning Subject and Execution must already be uniquely identified.",
+        "CONFLICT_BEHAVIOR": "missing owner, multiple outcomes, or duplicate semantic effect fails the candidate and quarantines the receipt"
+      },
+      {
+        "LEGACY_CONCEPT": "decision",
+        "SOURCE_CLASS": "legacy_decision_store",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "CANONICAL_RECORD_CANDIDATE",
+        "CANONICAL_TARGET": "Decision owned by exactly one validated Subject",
+        "VALIDATION_RULE": "decision_kind, statement, exact subject_ref, target_refs, and semantic basis must be complete; current_decision is never used as the owner.",
+        "CONFLICT_BEHAVIOR": "conflicting owners or statements do not use latest/first/timestamp selection; the record is NEEDS_SEMANTIC_CHOICE or quarantined"
+      },
+      {
+        "LEGACY_CONCEPT": "followup",
+        "SOURCE_CLASS": "legacy_decision_store",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "UNMIGRATABLE_WITHOUT_SEMANTIC_CHOICE",
+        "CANONICAL_TARGET": "new WorkSubject plus FollowupEdge with source_decision_ref, only after explicit semantic choice",
+        "VALIDATION_RULE": "legacy followup text or pointer cannot choose parent or child; an existing materialized Decision, explicit parent, and explicit semantic choice are required.",
+        "CONFLICT_BEHAVIOR": "no heuristic parent, title, timestamp, pointer, or executor merge; leave evidence quarantined"
+      },
+      {
+        "LEGACY_CONCEPT": "handoff",
+        "SOURCE_CLASS": "legacy_handoffs",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "IGNORED_FOR_CANONICAL_GRAPH",
+        "CANONICAL_TARGET": "adapter-private notification evidence only",
+        "VALIDATION_RULE": "handoff and acknowledgement may corroborate an outcome but cannot create Completion, Decision, Subject, or authority.",
+        "CONFLICT_BEHAVIOR": "acknowledgement disagreement is evidence divergence, not graph arbitration"
+      },
+      {
+        "LEGACY_CONCEPT": "project binding",
+        "SOURCE_CLASS": "legacy_runtime_session_state",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "CANONICAL_RECORD_CANDIDATE",
+        "CANONICAL_TARGET": "Decision decision_kind=project_binding on a real validated ProjectSubject",
+        "VALIDATION_RULE": "PROJECT_DECISION != PROJECT_BINDING; binding candidate requires a uniquely validated ProjectSubject and exact target evidence.",
+        "CONFLICT_BEHAVIOR": "no real ProjectSubject or multiple targets yields NEEDS_SEMANTIC_CHOICE/UNMIGRATABLE; a legacy binding pointer cannot manufacture one"
+      },
+      {
+        "LEGACY_CONCEPT": "project decision",
+        "SOURCE_CLASS": "legacy_decision_store",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "CANONICAL_RECORD_CANDIDATE",
+        "CANONICAL_TARGET": "Decision decision_kind=project_decision when its canonical owner is validated",
+        "VALIDATION_RULE": "Preserve project intent as a Decision; it is never treated as a project binding and does not grant authority.",
+        "CONFLICT_BEHAVIOR": "pre-project intent with no validated owner remains migration evidence or NEEDS_SEMANTIC_CHOICE"
+      },
+      {
+        "LEGACY_CONCEPT": "legacy current_* pointers",
+        "SOURCE_CLASS": "legacy_runtime_session_state",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "PROJECTION_ONLY",
+        "CANONICAL_TARGET": "derived current Plan/Work/Decision/Followup/binding indexes after cutover",
+        "VALIDATION_RULE": "Pointers are compared for divergence and provenance only; they never define identity, ownership, parenthood, or graph state.",
+        "CONFLICT_BEHAVIOR": "stale or conflicting pointers are marked stale/divergent and cannot hide a valid canonical Subject"
+      },
+      {
+        "LEGACY_CONCEPT": "orchestration lineage",
+        "SOURCE_CLASS": "legacy_decision_store",
+        "PRIMARY_CLASSIFICATION": "MIGRATION_EVIDENCE_ONLY",
+        "MAPPING_OUTCOME": "MIGRATION_EVIDENCE_ONLY",
+        "CANONICAL_TARGET": "candidate FollowupEdge only when explicit parent, child, and source Decision are independently validated",
+        "VALIDATION_RULE": "stored lineage links are evidence of a possible edge, not sufficient canonical lineage; cycles and ambiguous owners fail closed.",
+        "CONFLICT_BEHAVIOR": "never silently reduce multiple parents or select a parent heuristically"
+      }
+    ]
+  },
+  "migration_identity_rule": {
+    "AMBIGUOUS_MIGRATION_IDENTITY": "NEEDS_SEMANTIC_CHOICE",
+    "HEURISTIC_IDENTITY_MERGE_ALLOWED": "no",
+    "deterministic_subjects": [
+      {
+        "kind": "WorkspaceSubject",
+        "identity_tuple": "canonical namespace + validated workspace_id",
+        "derivation": "A1 deterministic canonical hash",
+        "allocation": "allocate when the workspace registry resolves exactly one valid workspace; no graph authority is published in M3-A4"
+      },
+      {
+        "kind": "ProjectSubject",
+        "identity_tuple": "canonical namespace + validated workspace Subject identity + manifest project.id",
+        "derivation": "A1 deterministic canonical hash",
+        "allocation": "allocate only after workspace and manifest cross-validation"
+      },
+      {
+        "kind": "PlanSubject",
+        "identity_tuple": "canonical namespace + validated ProjectSubject identity + stable plan_id",
+        "derivation": "A1 deterministic canonical hash; Plan content digest is revision/provenance only",
+        "allocation": "allocate only after normalized Portable Plan and project ownership validate"
+      }
+    ],
+    "minted_subjects": [
+      {
+        "kind": "WorkSubject",
+        "identity_tuple": "none derived from legacy evidence",
+        "derivation": "minted once by the future ID Broker, non-inferable",
+        "allocation": "only after an explicit semantic choice and authorized registration/materialization boundary; never from work_item_id, pt_* ID, title, timestamp, pointer, or similarity"
+      }
+    ],
+    "allocation_failure": "A deterministic collision fails closed and requires explicit semantic resolution. A minted ID is never reused after a failed allocation; a failed allocation is not converted into a guessed legacy identity.",
+    "duplicate_legacy_evidence_rule": "Multiple evidence rows map to one deterministic Subject only when their canonical identity tuples are byte-for-byte equal after normalization and all ownership/state checks agree. Duplicate evidence is deduplicated by provenance/evidence reference, not by majority vote. For a WorkSubject, multiple legacy rows map to one Subject only after one explicit semantic choice binds them to one minted ID; otherwise they remain separate evidence and are not merged.",
+    "multiple_plausible_subjects_rule": "If evidence supports multiple plausible canonical Subjects, return NEEDS_SEMANTIC_CHOICE and quarantine the affected evidence. If no explicit choice is supplied, the state is UNMIGRATABLE. Never choose by latest, first, timestamp proximity, title similarity, current pointer, or executor.",
+    "old_id_provenance_rule": "Old IDs remain opaque references in migration_provenance/evidence_refs with their source and mapping outcome. They are not canonical subject_id values, typed authority object IDs, or parent/child selectors.",
+    "identity_authority_separation": "Canonical identity identifies a record only; identity possession never grants authority. Authority and cutover are separately authorized under A2/A3 contracts."
+  },
+  "candidate_validation": {
+    "GRAPH_CANDIDATE_VALIDATION_RULE": "A graph candidate is cutover-eligible only if every required gate below passes for every proposed canonical record and every conflict is resolved explicitly or excluded into bounded quarantine. A failed gate creates no authoritative record, no partial graph truth, and no implicit identity merge.",
+    "required_gates": [
+      {
+        "GATE": "schema_validity",
+        "RULE": "Every candidate uses an A1 canonical record shape, required fields, valid enums, exact references, and no legacy-only ontology kind.",
+        "FAILURE": "reject candidate; preserve source as evidence or quarantine"
+      },
+      {
+        "GATE": "identity_uniqueness",
+        "RULE": "Every Subject has exactly one deterministic or minted identity derivation, no reuse, no collision, and no duplicate semantic identity without an explicit deterministic identity tuple.",
+        "FAILURE": "NEEDS_SEMANTIC_CHOICE or UNMIGRATABLE; no heuristic merge"
+      },
+      {
+        "GATE": "lineage_consistency",
+        "RULE": "Every parent/child relation is an explicit FollowupEdge with a source Decision owned by the parent; legacy pointers and executor relationships do not establish parenthood.",
+        "FAILURE": "quarantine affected evidence; no orphan child or inferred edge"
+      },
+      {
+        "GATE": "no_forbidden_cycles",
+        "RULE": "The proposed FollowupEdge relation contains no lineage cycle and no self-edge; a cycle is never repaired by dropping an edge silently.",
+        "FAILURE": "reject the affected candidate and require semantic resolution"
+      },
+      {
+        "GATE": "revision_initialization",
+        "RULE": "Each bootstrap Subject aggregate starts at revision_number 1 with its own aggregate_id and deterministic content-derived revision_token; no legacy revision or pointer is copied as authority.",
+        "FAILURE": "candidate invalid; no cutover eligibility"
+      },
+      {
+        "GATE": "decision_followup_basis_consistency",
+        "RULE": "A Decision has one canonical owner; a followup child has a materialized source Decision, explicit parent reference, and atomic child-plus-edge shape; project_decision and project_binding remain distinct.",
+        "FAILURE": "reject or quarantine; return NEEDS_SEMANTIC_CHOICE where the basis is ambiguous"
+      },
+      {
+        "GATE": "no_orphan_records",
+        "RULE": "No Execution lacks a Subject, Completion lacks an Execution, Decision lacks a Subject, FollowupEdge lacks a child/parent/source Decision, or child lacks its required edge.",
+        "FAILURE": "reject the entire affected aggregate/candidate unit; do not publish partial records"
+      },
+      {
+        "GATE": "no_duplicate_semantic_effect",
+        "RULE": "Equivalent legacy evidence may not create duplicate Completion, Decision, child Subject, or transition effects; semantic uniqueness is checked independently of legacy IDs and idempotency keys.",
+        "FAILURE": "conflict; no latest-wins or silent deduplication"
+      },
+      {
+        "GATE": "provenance_completeness",
+        "RULE": "Every migrated candidate records source class, source location, legacy IDs/digests where present, mapping outcome, validation evidence, and conflict status without placing provenance in identity.",
+        "FAILURE": "candidate remains migration evidence only and is not cutover-eligible"
+      },
+      {
+        "GATE": "conflict_resolution_state",
+        "RULE": "Every source disagreement has one explicit state: RESOLVED_EXPLICITLY, NEEDS_SEMANTIC_CHOICE, UNMIGRATABLE, or QUARANTINED_EVIDENCE; unresolved disagreement cannot be silently accepted.",
+        "FAILURE": "candidate is not eligible; safe read-only diagnosis remains allowed"
+      }
+    ],
+    "cutover_eligibility": "Only a complete validated candidate snapshot, with every excluded item explicitly quarantined and no unresolved conflict affecting the proposed canonical scope, may proceed to cutover preconditions."
+  },
+  "unmigratable_state_rule": {
+    "rule": "When legacy evidence cannot be uniquely reconstructed, do not invent semantic truth merely to complete bootstrap. Keep the affected evidence outside the canonical graph and return an explicit bounded outcome.",
+    "allowed_outcomes": [
+      "NEEDS_SEMANTIC_CHOICE",
+      "UNMIGRATABLE",
+      "QUARANTINED_EVIDENCE",
+      "READONLY_DIAGNOSTIC_ONLY"
+    ],
+    "forbidden_resolution": [
+      "latest wins",
+      "first match",
+      "timestamp proximity",
+      "title similarity",
+      "blind current-pointer trust",
+      "majority vote among evidence sources",
+      "silent many-to-one reduction",
+      "force semantic resolution solely to make cutover complete"
+    ],
+    "state_transition_rule": "An unresolved evidence item may move from observed to NEEDS_SEMANTIC_CHOICE, UNMIGRATABLE, or QUARANTINED_EVIDENCE with provenance. It may become a canonical candidate only after the exact semantic choice and validation gates are recorded.",
+    "UNMIGRATABLE_STATE_DOES_NOT_BLOCK_SAFE_READONLY_DIAGNOSIS": "yes",
+    "cutover_effect": "Unmigratable evidence blocks only the affected canonical scope. A bounded candidate may be cutover-eligible when the item is explicitly quarantined and cannot hide, replace, or conflict with a valid canonical Subject; a conflict that could change the candidate scope blocks cutover until semantic choice.",
+    "no_silent_success": "An incomplete migration is reported as incomplete evidence, never as an authoritative graph success."
+  },
+  "shadow_read_model": {
+    "phase": "Before cutover, the legacy runtime remains the current operational behavior for compatibility, while the graph candidate is a read-only shadow. This operational compatibility role is not Subject Graph authority: LEGACY_GRAPH_INPUT_IS_AUTHORITY remains no.",
+    "SHADOW_GRAPH_CAN_WRITE_AUTHORITATIVE_STATE": "no",
+    "SHADOW_GRAPH_CAN_OVERRIDE_LEGACY_AUTHORITY": "no",
+    "legacy_operational_role": "sole pre-cutover operational lifecycle source for existing legacy consumers, with writes controlled by the cutover serialization boundary",
+    "shadow_graph_role": "read-only candidate and comparison model; it can report what would be canonical but cannot publish, select, bind, or override",
+    "comparison_dimensions": [
+      "identity",
+      "lineage",
+      "mechanical state",
+      "Completion/Decision basis",
+      "current projection expectations",
+      "provenance completeness"
+    ],
+    "SHADOW_READ_DIVERGENCE": "bounded evidence, not silent arbitration",
+    "divergence_outcomes": [
+      "MATCH",
+      "DIVERGENCE_REPORTED",
+      "NEEDS_SEMANTIC_CHOICE",
+      "UNMIGRATABLE",
+      "QUARANTINED_EVIDENCE"
+    ],
+    "read_rule": "Shadow comparison can expose a valid durable Subject candidate even when a legacy current_* pointer is stale. It never converts divergence into an authority decision and never hides a candidate because a pointer disagrees.",
+    "safe_diagnosis": "Read-only diagnostics and migration comparison remain available without Subject binding, graph write, cutover, or mutation lease."
+  },
+  "cutover_rule": {
+    "GRAPH_CUTOVER_RULE": "A validated graph candidate plus all cutover preconditions plus one explicit authorized cutover transaction causes one one-way authority transition. Before the atomic authority flip, legacy operational authority remains sole. After a committed flip, the Durable Subject Graph is the sole lifecycle authority and all legacy state is history, shadow, or derived compatibility projection evidence only.",
+    "ONE_CUTOVER_AUTHORITY": "yes",
+    "CUTOVER_PRECONDITIONS": [
+      "The candidate snapshot passed GRAPH_CANDIDATE_VALIDATION_RULE with no unresolved conflict affecting its declared canonical scope.",
+      "Every excluded legacy item has an explicit QUARANTINED_EVIDENCE, NEEDS_SEMANTIC_CHOICE, or UNMIGRATABLE state and provenance; exclusion cannot hide a valid Subject.",
+      "Workspace, Project, and Plan identity/lineage roots are unique and the candidate revision initialization is complete.",
+      "Decision/followup basis, orphan, cycle, duplicate-effect, and provenance checks all pass.",
+      "A shadow comparison report exists for identity, lineage, state, and projection expectations; divergences are bounded and explicitly resolved or excluded.",
+      "Legacy authoritative writes are quiesced, blocked, or held by the bounded cutover serialization boundary; no in-flight legacy write can commit after the snapshot boundary.",
+      "No graph authoritative write is permitted before the flip; the graph remains a candidate/shadow until the flip commits.",
+      "A single explicit cutover authority approves the exact candidate digest, source scope, authority epoch, and transaction boundary.",
+      "A deterministic projection rebuild preview exists for all current_* compatibility projections.",
+      "The cutover has not already committed for this source/authority epoch."
+    ],
+    "CUTOVER_AUTHORITY": "One explicitly authorized operator or migration control-plane principal, bound to the exact cutover operation, candidate digest, source scope, expected authority epoch, and bounded serialization lease. No Subject ID, legacy pointer, Git commit, event, or control comment can authorize cutover.",
+    "CUTOVER_TRANSACTION_BOUNDARY": "The authority flip is one atomic committed-or-not transition over the bounded migration scope. It publishes the graph-authority epoch and the post-cutover legacy role together; no observer may see legacy and graph as simultaneous lifecycle authorities. Candidate record materialization and projection publication are separate phases and never make a projection a second authority.",
+    "CUTOVER_REVISION_INITIALIZATION": "Every bootstrap Subject aggregate is initialized at A3 revision 1 with an aggregate-specific token before eligibility. The cutover flip does not copy legacy revisions, pointers, or Git SHAs into canonical revision state and does not increment an aggregate merely because authority changed. The A3 bootstrap/cutover CAS exception is limited to this one-time candidate population/flip and is not a normal mutation bypass.",
+    "CUTOVER_AUTHORITY_STATE": ["PRE_CUTOVER", "CUTOVER_IN_PROGRESS", "POST_CUTOVER"],
+    "POST_CUTOVER_LEGACY_ROLE": "Legacy records and pointers are immutable history/shadow evidence or derived compatibility projections. They are not lifecycle authority, identity, lineage, selection, or graph-write inputs. Legacy consumers may read an adapter projection, but a legacy write cannot change canonical state.",
+    "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+    "one_way_rule": "The authority flip is irreversible as an authority decision. A later repair may rebuild projections or append canonical corrective records; it may not reactivate legacy authority or roll back the graph to create dual authority."
+  },
+  "cutover_concurrency": {
+    "CUTOVER_SERIALIZATION_ALLOWED": "yes",
+    "GLOBAL_PROCESS_LOCK_IS_NORMAL_MUTATION_MODEL": "no",
+    "serialization_scope": "One bounded project/workspace migration scope and one authority epoch only; this is a one-time cutover gate, not a global process mutex and not the normal per-Subject mutation model.",
+    "LEGACY_WRITE_DURING_CUTOVER": "blocked_or_serialized",
+    "GRAPH_WRITE_BEFORE_CUTOVER": "denied",
+    "GRAPH_WRITE_DURING_CUTOVER": "denied except for the serialized candidate population/authority-flip transaction",
+    "GRAPH_WRITE_AFTER_CUTOVER": "allowed only through the future A2-authorized, A3-CAS-controlled normal mutation path",
+    "race_rule": "The cutover serialization boundary drains or blocks legacy authoritative writes before the candidate snapshot and holds that boundary through the atomic flip. A graph authoritative write cannot occur before the flip, so a legacy write and graph authoritative write cannot race as two authorities.",
+    "A3_HANDOFF": {
+      "CAS_BYPASS_ONLY_BOOTSTRAP_CUTOVER": "yes",
+      "NO_CAS_BYPASS_FOR_NORMAL_MUTATION": "yes",
+      "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+      "CAS_CHECK_NOTE": "CAS is required for normal mutation; bootstrap/cutover are the only A3-defined exceptions.",
+      "GLOBAL_PROCESS_MUTEX_CANONICAL": "no",
+      "EXPLICIT_SERIALIZATION_ALLOWED": "yes only when bounded and justified, including this one-time cutover"
+    }
+  },
+  "cutover_failure_model": {
+    "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY": "yes",
+    "failure_stages": [
+      {
+        "STAGE": "before_graph_validation",
+        "FAILURE_BEHAVIOR": "No candidate is eligible or authoritative. Legacy operational behavior is unchanged. Failed evidence remains evidence/quarantine and safe read-only diagnosis continues.",
+        "ROLLBACK": "not applicable; no authority changed"
+      },
+      {
+        "STAGE": "after_validation_before_authority_flip",
+        "FAILURE_BEHAVIOR": "The validated graph candidate remains read-only shadow data. The legacy state remains the sole operational authority. Candidate materialization is discarded or retained as non-authoritative evidence according to provenance; no graph write is retried as a normal mutation.",
+        "ROLLBACK": "candidate abandonment only; no authority rollback exists because the flip did not commit"
+      },
+      {
+        "STAGE": "during_authority_flip",
+        "FAILURE_BEHAVIOR": "The flip is atomic and committed-or-not. Before a committed flip is observed, legacy remains sole authority; after a committed flip is observed, graph is sole authority. An uncertain result is reconciled from the durable cutover record/epoch, never guessed or independently retried.",
+        "ROLLBACK": "no partial rollback and no mixed mode; resolve committed-or-not from the cutover boundary"
+      },
+      {
+        "STAGE": "after_authority_flip_before_projection_rebuild",
+        "FAILURE_BEHAVIOR": "The Durable Subject Graph remains sole authority. Legacy current_* values may be stale/missing shadow evidence. Projection state is marked stale/missing and a deterministic rebuild is required; the graph is not rolled back.",
+        "ROLLBACK": "forbidden as authority rollback; repair is canonical projection rebuild or a new canonical corrective record"
+      }
+    ],
+    "rollback_after_authority_flip": "no",
+    "repair_after_authority_flip": "Repair derives from the canonical graph and legitimate authority only. It may republish projections, record an audit/provenance fact, or append an explicitly authorized corrective canonical record; it may never restore legacy subject authority.",
+    "uncertain_outcome_rule": "An uncertain flip is resolved by the durable cutover boundary/epoch as committed-or-not. The system never runs legacy and graph mutation paths concurrently to test which one won.",
+    "no_dual_authority": "A failure at every stage has exactly one authority outcome: legacy before a committed flip, graph after a committed flip. There is no rollback path that can create two subject authorities."
+  },
+  "projection_rebuild_rule": {
+    "PROJECTION_REBUILD_SOURCE": "canonical_authority_only",
+    "PROJECTION_REBUILD_MUTATES_GRAPH": "no",
+    "STALE_PROJECTION_MAY_BE_REBUILT": "yes",
+    "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT": "yes",
+    "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes",
+    "source_rule": "After cutover, projection rebuild reads the committed Durable Subject Graph authority and other legitimate canonical authority defined by the future contract. It never reads a legacy current_* pointer, Git history, Event Log, control comment, or stale projection as a source of truth.",
+    "commit_relation": "A canonical graph commit can succeed when projection publication fails. The canonical graph remains authoritative; the affected projection is marked stale or missing and is deterministically rebuildable. Projection failure never causes graph rollback because projections are not part of the canonical transaction in A3.",
+    "projections": [
+      {
+        "PROJECTION": "current Plan pointer",
+        "DERIVATION": "derive from non-superseded validated PlanSubject records and explicit project/workspace ancestry; zero or many candidates fail closed",
+        "LEGACY_ROLE": "legacy active-plan pointer is comparison/provenance only"
+      },
+      {
+        "PROJECTION": "active Work Item pointer",
+        "DERIVATION": "derive from active canonical WorkSubject records; legacy work_item_id is not a canonical Subject ID and cannot hide an active valid WorkSubject",
+        "LEGACY_ROLE": "legacy active_work_item_id is stale/shadow evidence only"
+      },
+      {
+        "PROJECTION": "current task index",
+        "DERIVATION": "derive from canonical Subject/Execution state and explicit ownership; never from Profile Task or session pointers",
+        "LEGACY_ROLE": "adapter compatibility index only"
+      },
+      {
+        "PROJECTION": "current decision index",
+        "DERIVATION": "derive from append-only Decision records per Subject and decision_kind; ambiguous 0/1/many behavior fails closed per A5",
+        "LEGACY_ROLE": "current_decision pointer is migration evidence only"
+      },
+      {
+        "PROJECTION": "current followup index",
+        "DERIVATION": "derive from explicit FollowupEdge records with verified source Decisions; no pointer or heuristic parent selection",
+        "LEGACY_ROLE": "current_followup pointer is migration evidence only"
+      },
+      {
+        "PROJECTION": "project binding index",
+        "DERIVATION": "derive from validated ProjectSubject and decision_kind=project_binding; PROJECT_DECISION remains distinct",
+        "LEGACY_ROLE": "legacy project binding is historical/shadow evidence"
+      },
+      {
+        "PROJECTION": "other current_* indexes",
+        "DERIVATION": "derive deterministically from canonical records and state; absent or ambiguous values are explicit missing/NEEDS_SEMANTIC_CHOICE, not guessed",
+        "LEGACY_ROLE": "compatibility projection only"
+      }
+    ],
+    "stale_projection_behavior": "A stale, missing, or failed projection is observable as stale/missing and may be rebuilt. It cannot suppress a valid canonical Subject, authorize a mutation, or become an alternate authority.",
+    "rebuild_idempotency": "Repeated rebuilds with the same canonical graph revision produce the same projection value and no graph mutation or semantic effect."
+  },
+  "legacy_pointer_transition": {
+    "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "phase_rules": {
+      "PRE_CUTOVER": {
+        "read_authority": "Legacy current_* values may drive existing legacy operational consumers as compatibility authority only; they are simultaneously read as migration evidence and never as Subject Graph authority.",
+        "write_authority": "Legacy lifecycle writes remain the sole operational writes for the legacy runtime, subject to the cutover drain; graph authoritative writes are denied.",
+        "projection_status": "legacy values are legacy state/evidence; graph projections are shadow/preview only",
+        "rebuildability": "future graph projections are preview-rebuildable from a validated candidate; legacy pointers themselves do not define identity",
+        "compatibility_adapter": "read legacy values for old consumers and expose bounded divergence; never pass them as canonical graph identity"
+      },
+      "CUTOVER": {
+        "read_authority": "Read a frozen legacy snapshot only for comparison/provenance while the bounded serialization boundary is held.",
+        "write_authority": "Legacy authoritative writes are blocked_or_serialized; graph writes before the atomic flip are denied; the flip is the only authority transition.",
+        "projection_status": "current_* values are transitioning from legacy evidence to derived compatibility projections",
+        "rebuildability": "all target projections must have a deterministic rebuild preview before flip",
+        "compatibility_adapter": "may stage derived values but cannot publish a second authority or arbitrate divergence"
+      },
+      "POST_CUTOVER": {
+        "read_authority": "Canonical graph authority determines lifecycle state; legacy current_* is history/shadow or a derived compatibility read model only.",
+        "write_authority": "Legacy current_* authoritative writes are denied. Only future canonical graph mutations may change lifecycle state; compatibility publication is projection-only.",
+        "projection_status": "all current_* values are projections and can be stale/missing without changing graph authority",
+        "rebuildability": "yes, from canonical authority only; rebuild never mutates graph",
+        "compatibility_adapter": "serve a derived graph projection to legacy consumers; reject or quarantine attempts to use legacy pointer writes as authority"
+      }
+    },
+    "pointer_inventory_transition": [
+      {"POINTER": "plan.active_plan_id", "PRE_CUTOVER": "legacy manifest compatibility read", "CUTOVER": "frozen comparison input", "POST_CUTOVER": "derived Plan projection; not identity"},
+      {"POINTER": "Portable Plan projection fields", "PRE_CUTOVER": "Plan authority remains issue body for Plan semantics", "CUTOVER": "frozen comparison/provenance", "POST_CUTOVER": "derived graph projection; body remains history unless separately migrated"},
+      {"POINTER": "legacy session current_* pointers", "PRE_CUTOVER": "legacy operational compatibility read", "CUTOVER": "writes blocked and snapshot frozen", "POST_CUTOVER": "shadow/history or derived adapter projection only"},
+      {"POINTER": "legacy active plan binding", "PRE_CUTOVER": "legacy compatibility read", "CUTOVER": "serialized snapshot evidence", "POST_CUTOVER": "derived current Plan projection only"},
+      {"POINTER": "legacy active frozen spec binding", "PRE_CUTOVER": "executor compatibility read", "CUTOVER": "frozen evidence", "POST_CUTOVER": "adapter-private evidence/projection only"},
+      {"POINTER": "legacy plan.json active pointers", "PRE_CUTOVER": "legacy shadow read", "CUTOVER": "frozen comparison input", "POST_CUTOVER": "stale/history evidence; cannot hide a valid Subject"}
+    ]
+  },
+  "governance_evidence_boundary": {
+    "ISSUE_BODY_IS_PORTABLE_PLAN_AUTHORITY": "yes",
+    "ISSUE_BODY_IS_SUBJECT_GRAPH_AUTHORITY": "no",
+    "ISSUE_BODY_ROLE": "The governing Issue body remains Portable Plan authority until a separately authorized Plan-authority migration; it is a bootstrap candidate/evidence source, not Durable Subject Graph authority.",
+    "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+    "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+    "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+    "GIT_HISTORY_ROLE": "bounded provenance, exact-base verification, and drift evidence only",
+    "EVENT_LOG_ROLE": "bounded Plan/issue history and human-review context only",
+    "CONTROL_COMMENT_ROLE": "projection-drift observation only; no body arbitration",
+    "PLAN_ISSUE_AND_GIT_EVIDENCE_RULE": "Issue body, Git history, Event Log, and control comments may supply evidence only according to A0 classification. None can create Subject identity, lifecycle state, lineage, authority, or cutover authority."
+  },
+  "contract_handoff": {
+    "A1": {
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "PROFILE_TASK_ID_IS_SUBJECT_ID": "no",
+      "WORK_ITEM_ID_NOT_SUBJECT_ID": "yes",
+      "PLAN_IS_SINGLE_AGGREGATE": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "FOLLOWUP_REQUIRES_SOURCE_DECISION": "yes",
+      "NO_HEURISTIC_PARENT_SELECTION": "yes"
+    },
+    "A2": {
+      "ID_IS_AUTHORITY": "no",
+      "CAPABILITY_LEASE_REQUIRED_FOR_BOUNDED_MUTATION": "yes",
+      "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "LEASE_REVISION_BOUND": "yes",
+      "LEASE_OBJECT_SCOPE_EXPANSION": "denied",
+      "LEASE_OPERATION_SCOPE_EXPANSION": "denied",
+      "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes"
+    },
+    "A12": {
+      "AUTHORITY_TARGET_IS_TYPED": "yes",
+      "REVISION_SEMANTICS_OWNER": "M3-A3",
+      "TRANSACTION_CAS_OWNER": "M3-A3",
+      "BOOTSTRAP_CUTOVER_OWNER": "M3-A4",
+      "BINDING_AMBIGUITY_OWNER": "M3-A5",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no"
+    },
+    "A3": {
+      "REVISION_UNIT": "subject_aggregate",
+      "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+      "CAS_BYPASS_ONLY_BOOTSTRAP_CUTOVER": "yes",
+      "NO_CAS_BYPASS_FOR_NORMAL_MUTATION": "yes",
+      "GLOBAL_PROCESS_MUTEX_CANONICAL": "no",
+      "GLOBAL_PROCESS_LOCK_IS_CANONICAL_CONCURRENCY_MODEL": "no",
+      "CANONICAL_COMMIT_SUCCEEDS_IF_PROJECTION_PUBLICATION_FAILS": "yes",
+      "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no"
+    },
+    "A5_boundary": "A4 does not resolve SUBJECT_BINDING_ZERO_ONE_MANY semantics; ambiguous binding remains fail-closed or NEEDS_SEMANTIC_CHOICE and is owned by M3-A5."
+  },
+  "regression_design_proofs": [
+    {
+      "FAILURE_CLASS": "B011",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Bootstrap materializes a PlanSubject candidate exactly once from a validated stable plan_id and cannot re-enter or overwrite an already initialized aggregate; stale/duplicate candidate evidence fails closed.",
+      "DESIGN_PROOF": "The deterministic PlanSubject identity, complete candidate validation, revision initialization, one-way cutover, and no graph write before cutover together prevent bootstrap from silently becoming a repeat lifecycle authority. The mechanical transition engine remains future M4 behavior.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "A stale active-plan pointer cannot select, replace, or hide a valid PlanSubject; current Plan is a rebuildable graph projection and ambiguity fails closed.",
+      "DESIGN_PROOF": "The pointer transition and projection rebuild rules derive current Plan from canonical PlanSubject records and keep legacy pointers as evidence. The M2 read owner and future retirement implementation remain unchanged.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4 (read normalization owner M2)",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Project binding candidates require a real validated ProjectSubject and remain distinct from project decisions; cutover cannot create a fake binding or permit legacy producer/consumer authority after the flip.",
+      "DESIGN_PROOF": "Migration mapping enforces PROJECT_DECISION != PROJECT_BINDING, candidate validation enforces ownership, and one-way cutover removes legacy lifecycle authority. Mechanical binding and state transitions are future M4 behavior.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "B014-F",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "A completion/materialization failure cannot be hidden by a successful legacy pointer, handoff, or projection; only a validated canonical Completion candidate can enter the graph candidate.",
+      "DESIGN_PROOF": "Completion mapping requires exact Execution/Subject ownership, candidate validation forbids orphan/duplicate effects, and projection failure leaves canonical failure state authoritative. The materialization engine is not implemented by A4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "B014-F1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Review/finalizer artifacts remain executor-private migration evidence or Decision evidence; they cannot create a ReviewSubject, canonical identity, or authority during bootstrap/cutover.",
+      "DESIGN_PROOF": "The A1 review boundary and A0 Profile Task classification are preserved in migration mapping and provenance rules. Finalizer behavior remains M5 ExecutorAdapter scope; A4 claims no implementation.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M5",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Current decision/followup projections derive from canonical Decision/FollowupEdge records; conflicting or stale legacy current_* pointers never choose a Subject, and ambiguous binding remains NEEDS_SEMANTIC_CHOICE.",
+      "DESIGN_PROOF": "Shadow reads report pointer divergence without arbitration, migration mapping rejects pointer identity, and projection rebuild uses canonical authority only. Projection/binding runtime remains M3-B/M4/M3-A5 scope.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M3-B/M4 with M3-A5 binding ambiguity",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "WCTX-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Missing workspace/project/Plan/active WorkSubject evidence remains pairwise distinct during migration; a stale pointer cannot collapse a valid Subject into ACTIVE_WORK_ITEM_MISSING or another root cause.",
+      "DESIGN_PROOF": "Workspace -> Project -> Plan validation and explicit WorkSubject identity rules preserve distinct absence states; safe diagnosis can report missing or unmigratable evidence without guessing.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M3-B/M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "A project decision never becomes a project binding by migration convenience; binding candidates target only a validated ProjectSubject and 0/1/many ambiguity is not silently resolved.",
+      "DESIGN_PROOF": "The mapping, validation, and post-cutover projection rules retain decision-kind separation and reject fake or ambiguous binding. Binding automation is future M4 and ambiguity ownership remains A5.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4 with M3-A5 ambiguity",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "A4_BOOTSTRAP_OR_CUTOVER_INVARIANT": "Missing or conflicting migration prerequisites become deterministic evidence, NEEDS_SEMANTIC_CHOICE, or quarantine; recovery never guesses another Subject or silently treats a missing prerequisite as not required.",
+      "DESIGN_PROOF": "The unmigratable rule and provenance-complete validation gate make unresolved semantics explicit and preserve safe read-only diagnosis. The mechanical recovery engine remains M4.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED",
+      "A4_PROOF_STATUS": "DESIGN_PROVEN_ONLY"
+    }
+  ],
+  "design_scenarios": [
+    {
+      "SCENARIO_ID": "A4-S1",
+      "NAME": "clean deterministic migration",
+      "given": "One validated workspace registry entry, one project manifest, one normalized Portable Plan, and consistent legacy evidence have unique identity and lineage facts.",
+      "when": "The ordered bootstrap procedure normalizes, cross-validates, initializes revisions, and evaluates cutover eligibility.",
+      "expected": "One validated graph candidate is produced, every aggregate starts at revision 1, provenance is complete, no duplicate semantic effect exists, and the candidate is cutover eligible. No authority is published by M3-A4.",
+      "INVARIANTS": ["CAN_INDEPENDENTLY_ESTABLISH_GRAPH_TRUTH=no", "GRAPH_WRITE_BEFORE_CUTOVER=denied", "HEURISTIC_IDENTITY_MERGE_ALLOWED=no"]
+    },
+    {
+      "SCENARIO_ID": "A4-S2",
+      "NAME": "conflicting legacy evidence",
+      "given": "Two legacy evidence sets claim different plausible owners or semantic Subjects for one apparent lifecycle item.",
+      "when": "Candidate identity and conflict-resolution gates run.",
+      "expected": "No heuristic merge occurs. The result is an explicit semantic choice request (NEEDS_SEMANTIC_CHOICE) or UNMIGRATABLE, affected evidence is quarantined, and no majority vote, latest wins, first match, timestamp proximity, title similarity, or pointer trust resolves it.",
+      "INVARIANTS": ["HEURISTIC_IDENTITY_MERGE_ALLOWED=no", "AMBIGUOUS_MIGRATION_IDENTITY=NEEDS_SEMANTIC_CHOICE"]
+    },
+    {
+      "SCENARIO_ID": "A4-S3",
+      "NAME": "stale current pointer with valid durable Subject evidence",
+      "given": "A legacy current_* pointer names a stale/missing work item while a validated durable WorkSubject candidate and its evidence are present.",
+      "when": "Shadow comparison and candidate validation inspect identity, state, and projection expectations.",
+      "expected": "The stale pointer is reported as bounded divergence; the pointer does not hide, replace, or invalidate the valid Subject candidate. No pointer-derived canonical identity or authority is created.",
+      "INVARIANTS": ["CURRENT_POINTERS_ARE_AUTHORITY=no", "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT=yes"]
+    },
+    {
+      "SCENARIO_ID": "A4-S4",
+      "NAME": "projection rebuild after graph authoritative commit",
+      "given": "The graph authority commit succeeds but one or more current_* projection publications fail or are stale.",
+      "when": "A deterministic rebuild runs from the canonical graph revision.",
+      "expected": "The affected projection is restored or remains explicitly stale/missing; the graph is unchanged (graph unchanged) and remains authoritative; rebuild does not create a second authority or semantic effect.",
+      "INVARIANTS": ["PROJECTION_REBUILD_SOURCE=canonical_authority_only", "PROJECTION_REBUILD_MUTATES_GRAPH=no", "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY=yes"]
+    },
+    {
+      "SCENARIO_ID": "A4-S5",
+      "NAME": "cutover interrupted before authority flip",
+      "given": "Candidate validation passed, cutover serialization is held, and the authority flip has not committed.",
+      "when": "Cutover is interrupted before the authority boundary commits.",
+      "expected": "The legacy runtime remains the sole operational authority (legacy remains the sole authority); the graph candidate remains read-only shadow data; no graph authoritative write is visible and retry/reconciliation uses the cutover boundary rather than guessing.",
+      "INVARIANTS": ["GRAPH_WRITE_BEFORE_CUTOVER=denied", "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY=yes"]
+    },
+    {
+      "SCENARIO_ID": "A4-S6",
+      "NAME": "cutover succeeds but projection publish fails",
+      "given": "The atomic authority flip commits and the Durable Subject Graph becomes sole authority, but a current_* compatibility projection publication fails.",
+      "when": "The failure is observed and projection repair is scheduled.",
+      "expected": "The graph remains sole authority; the failed projection is marked stale/missing and requires deterministic rebuild; legacy pointers are not reactivated as authority and the graph is not rolled back.",
+      "INVARIANTS": ["POST_CUTOVER_DUAL_SUBJECT_AUTHORITY=no", "STALE_PROJECTION_MAY_BE_REBUILT=yes", "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY=yes"]
+    },
+    {
+      "SCENARIO_ID": "A4-S7",
+      "NAME": "forbidden authority evidence attempts to define graph truth",
+      "given": "Git history, an Issue Event Log, a control comment, or a legacy current pointer is presented as the source of Subject identity/state.",
+      "when": "Bootstrap source classification and candidate acceptance run.",
+      "expected": "The source is rejected as graph authority and may be retained only as bounded evidence/provenance according to A0. It cannot create, select, bind, cut over, or override a canonical Subject.",
+      "INVARIANTS": ["GIT_HISTORY_IS_SUBJECT_AUTHORITY=no", "EVENT_LOG_IS_SUBJECT_AUTHORITY=no", "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY=no", "LEGACY_GRAPH_INPUT_IS_AUTHORITY=no"]
+    }
+  ],
+  "deferred_questions": {
+    "resolved_by_a4": [
+      "OQ-M3A5-01 bootstrap input ordering and deterministic candidate acceptance",
+      "OQ-M3A5-02 current-pointer cutover and legacy retirement role",
+      "PROJECTION-REBUILD projection source and failure relation"
+    ],
+    "deferred_to_a5": [
+      "SUBJECT-BINDING-ZERO-ONE-MANY exact binding projection enforcement and semantic-choice workflow",
+      "A1-DEFER-01 final ID Broker collision protocol boundary"
+    ],
+    "deferred_to_m3_b_or_later": [
+      "storage engine and graph serialization",
+      "atomic commit primitive and durable cutover record implementation",
+      "projection engine implementation and stale-marker storage",
+      "mechanical recovery engine",
+      "normal authoritative graph mutation runtime"
+    ],
+    "ownership_rule": "A4 freezes authority semantics and boundaries only. It does not implement storage, ID minting, graph writes, cutover runtime, projection publication, binding enforcement, CAS, or recovery."
+  },
+  "invariants": {
+    "frozen_authority_flags": {
+      "DURABLE_SUBJECT_GRAPH_IS_AUTHORITY": "yes",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+      "DUAL_AUTHORITATIVE_WRITE": "no",
+      "GRAPH_BOOTSTRAP_STRATEGY_REQUIRED": "yes",
+      "GRAPH_CUTOVER_RULE_REQUIRED": "yes",
+      "SHADOW_READ_ALLOWED": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "PROFILE_TASK_PRIVATE_ID_NOT_CANONICAL_SUBJECT_ID": "yes",
+      "LEGACY_CURRENT_POINTER_NOT_CANONICAL_IDENTITY": "yes",
+      "HEURISTIC_IDENTITY_MERGE_ALLOWED": "no",
+      "ONE_CUTOVER_AUTHORITY": "yes",
+      "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+      "CUTOVER_SERIALIZATION_ALLOWED": "yes",
+      "GLOBAL_PROCESS_LOCK_IS_NORMAL_MUTATION_MODEL": "no",
+      "LEGACY_WRITE_DURING_CUTOVER": "blocked_or_serialized",
+      "GRAPH_WRITE_BEFORE_CUTOVER": "denied",
+      "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY": "yes",
+      "PROJECTION_REBUILD_SOURCE": "canonical_authority_only",
+      "PROJECTION_REBUILD_MUTATES_GRAPH": "no",
+      "STALE_PROJECTION_MAY_BE_REBUILT": "yes",
+      "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT": "yes",
+      "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes",
+      "AMBIGUOUS_MIGRATION_IDENTITY": "NEEDS_SEMANTIC_CHOICE",
+      "UNMIGRATABLE_STATE_DOES_NOT_BLOCK_SAFE_READONLY_DIAGNOSIS": "yes"
+    },
+    "a3_concurrency_flags": {
+      "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+      "CAS_BYPASS_ONLY_BOOTSTRAP_CUTOVER": "yes",
+      "NO_CAS_BYPASS_FOR_NORMAL_MUTATION": "yes",
+      "LOST_UPDATE_ALLOWED": "no",
+      "SILENT_LAST_WRITE_WINS": "no",
+      "GLOBAL_PROCESS_MUTEX_CANONICAL": "no",
+      "GLOBAL_PROCESS_LOCK_IS_CANONICAL_CONCURRENCY_MODEL": "no",
+      "CANONICAL_COMMIT_SUCCEEDS_IF_PROJECTION_PUBLICATION_FAILS": "yes",
+      "PROJECTION_FAILURE_DOES_NOT_CREATE_DUAL_AUTHORITY": "yes"
+    },
+    "engine_boundary": {
+      "NO_STORAGE_ENGINE_FROZEN": "yes",
+      "NO_GRAPH_MUTATION_IMPLEMENTATION": "yes",
+      "NO_AUTHORITY_ENGINE": "yes",
+      "NO_LEASE_ENGINE": "yes",
+      "NO_CAS_ENGINE": "yes",
+      "NO_TRANSACTION_ENGINE": "yes",
+      "NO_CUTOVER_RUNTIME": "yes",
+      "NO_PROJECTION_REBUILD_RUNTIME": "yes",
+      "NO_RUNTIME_BEHAVIOR": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "SOURCE_CODE_CHANGED": "no",
+      "GRAPH_STORAGE_LOCATIONS": []
+    },
+    "negative_proof_required": {
+      "M3_A4_NEGATIVE_GUARD_PROOF": "PASS after six temporary artifact mutations are each rejected",
+      "mutations": [
+        "Git history promoted to Subject authority",
+        "current pointer promoted to authority",
+        "shadow graph allowed authoritative writes",
+        "heuristic migration merge enabled",
+        "post-cutover dual authority enabled",
+        "projection rebuild mutates graph"
+      ]
+    }
+  },
+  "implementation_boundary": {
+    "implemented_nothing": [
+      "graph storage",
+      "graph persistence",
+      "migration runtime",
+      "authoritative graph writes",
+      "authority flip runtime",
+      "cutover transaction runtime",
+      "projection rebuild runtime",
+      "ID Broker",
+      "authority engine",
+      "CAS/transaction engine",
+      "legacy pointer retirement runtime"
+    ],
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a4-bootstrap-cutover.json",
+      "scripts/m3_a4_bootstrap_cutover_guard.py"
+    ],
+    "forbidden_paths": ["aota_forge/core/**", "aota_forge/adapters/**"],
+    "SOURCE_CODE_CHANGED": "no",
+    "GRAPH_IMPLEMENTATION_STARTED": "no",
+    "CUTOVER_IMPLEMENTATION_STARTED": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_PERFORMED": "no"
+  },
+  "report_metrics": {
+    "a0_migration_input_count": 25,
+    "bootstrap_source_class_count": 25,
+    "bootstrap_candidate_source_class_count": 3,
+    "migration_mapping_count": 11,
+    "candidate_validation_gate_count": 10,
+    "pointer_transition_count": 6,
+    "regression_proof_count": 9,
+    "design_scenario_count": 7,
+    "forbidden_authority_source_count": 3,
+    "m3_a4_negative_mutation_count": 6,
+    "unsupported_success_claims": 0
+  }
+}
