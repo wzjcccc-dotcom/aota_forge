@@ -1,0 +1,514 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #8 successor regression matrix (M2-C materialization)",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "lane": "M2-C",
+  "milestone": "M2",
+  "base_sha": "a380056b70ec11d45259f31babdfb38311672893",
+  "source": "Issue #9 Plan prose sections: 'Issue #8 Legacy Regression Corpus' and 'Successor Failure Classes' (WCTX-1, BIND-1, DRIFT-1, RC2-1, CLASSIFY-1, RECOVERY-1, RUNNER-1, E2E-1) and 'Regression Test Principle'",
+  "legacy_runtime_required_for_corpus": "no",
+  "new_core_imports_legacy_control_plane": "no",
+  "allowed_dispositions": [
+    "ELIMINATED_BY_CONSTRUCTION",
+    "DETERMINISTICALLY_RECONCILED",
+    "NEEDS_SEMANTIC_CHOICE",
+    "NOT_YET_IMPLEMENTED"
+  ],
+  "allowed_owner_milestones": ["M1", "M2", "M3", "M4", "M5", "M6", "M7"],
+  "m2_capability_boundary": {
+    "M2_SIGNIFICANT_MUTATION": "no",
+    "M2_WORKER_DISPATCH": "no",
+    "M2_DEPLOYMENT": "no",
+    "M2_RUNTIME_ACTIVATION": "no",
+    "M2_DEPLOYMENT_E2E_REQUIRED": "no",
+    "M2_RUNTIME_ACTIVATION_REQUIRED": "no",
+    "false_pass_rule": "any disposition other than NOT_YET_IMPLEMENTED on an entry whose successor_owner_milestone is M3 or later is rejected during M2",
+    "evidence_rule": "ELIMINATED_BY_CONSTRUCTION / DETERMINISTICALLY_RECONCILED / NEEDS_SEMANTIC_CHOICE require at least one executable fixture evidence marked proves=successor_pass"
+  },
+  "failure_classes": [
+    {
+      "failure_class": "B011",
+      "legacy_evidence": "Issue #8 M7 failure class: pre-binding PLAN_INIT bootstrap/lifecycle cycle. M1 mapping (m1-issue8-regression-mapping.json): PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER; M1 Core has no PLAN_INIT lifecycle; lifecycle mutations belong to M2/M3/M4.",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": [],
+      "given": "The successor Core owns no PLAN_INIT lifecycle at M2. M4 introduces the mechanical plan lifecycle transition engine (Portable Plan mutation contracts, mechanical transition).",
+      "when": "The M4 plan lifecycle transition engine handles a pre-binding bootstrap transition request.",
+      "then": "Bootstrap is a bounded, monotonic mechanical transition; PLAN_INIT cannot be re-entered from an already-initialized state; every transition is deterministic with revision/CAS enforcement; no producer-consumer cycle can form before binding exists.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a plan subject exists in the durable subject graph with an already-initialized lifecycle state",
+        "when": "a bootstrap or PLAN_INIT transition is requested again from that state",
+        "then": "the transition is rejected with a distinct canonical error; the lifecycle state cannot cycle back into PLAN_INIT; stale revision mutation fails closed"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-b011-static-ingress-guard",
+          "kind": "static",
+          "source": "aota_forge/core/ingress.py",
+          "check": "contains",
+          "marker": "operation is not read-only in M1",
+          "proves": "foundation",
+          "description": "BASE ingress rejects every non-read-only operation, so no lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b011-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no PLAN_INIT transition operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "B013",
+      "legacy_evidence": "Issue #8 M7 failure class: stale Plan ambiguity / missing bounded retirement lifecycle. M1 mapping: PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER; M1 read model treats Plan state as shadow evidence only; no dual authority. Successor requirements: R_PORTABLE_PLAN_NORMALIZATION (M2 read side) and a bounded retirement lifecycle (M4 write side).",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": ["M4"],
+      "given": "A project has multiple plan records; legacy selected the current Plan by stale or ambiguous state without a bounded retirement lifecycle.",
+      "when": "The successor read-only plan normalization resolves which plan state is current.",
+      "then": "Normalization distinguishes current authoritative Plan state from historical provenance and superseded blocks; stale or retired plans are never selected as current; retirement is bounded by an explicit lifecycle at M4; no dual authority exists.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a project with one active plan and at least one stale or retired plan record",
+        "when": "the normalized plan reader resolves the current Plan state read-only",
+        "then": "only the non-retired, non-superseded plan is reported current; superseded blocks are returned as provenance; ambiguity is bounded or fails closed; no dual authoritative selection"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-b013-static-shadow-only",
+          "kind": "static",
+          "source": "aota_forge/core/plan/read_model.py",
+          "check": "contains",
+          "marker": "Shadow/migration evidence ONLY",
+          "proves": "foundation",
+          "description": "BASE plan reader is explicitly shadow/migration evidence only; no current/stale classification exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b013-static-no-retirement",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "retire",
+          "proves": "foundation",
+          "description": "No retirement lifecycle symbol exists anywhere in the successor Core package at BASE."
+        }
+      ]
+    },
+    {
+      "failure_class": "B014",
+      "legacy_evidence": "Issue #8 M7 failure class: post-binding PLAN_INIT producer-consumer cycle. M1 mapping: PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER. M2-C explicitly forbids recording B014=ELIMINATED_BY_CONSTRUCTION while M4 does not exist: the successor binding and lifecycle authority do not exist yet, so elimination cannot be claimed.",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": ["M3"],
+      "given": "After the M3 durable subject graph and M4 mechanical binding exist, a bound lifecycle subject receives PLAN_INIT producer/consumer transitions.",
+      "when": "A producer (plan authoring) or consumer (execution) transition requests re-entry into PLAN_INIT after binding.",
+      "then": "Post-binding PLAN_INIT re-entry is impossible; producer and consumer roles cannot ping-pong the lifecycle; binding is a durable subject (M3) and transitions are mechanical and deterministic (M4) with revision/CAS enforcement.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a lifecycle subject that is already bound to a durable binding subject",
+        "when": "a PLAN_INIT transition is requested by producer or consumer after the binding exists",
+        "then": "the transition is rejected with a distinct canonical error; no producer-consumer PLAN_INIT cycle can form; stale revision mutation fails closed"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-b014-static-ingress-guard",
+          "kind": "static",
+          "source": "aota_forge/core/ingress.py",
+          "check": "contains",
+          "marker": "operation is not read-only in M1",
+          "proves": "foundation",
+          "description": "BASE ingress rejects every non-read-only operation; no binding or lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b014-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no post-binding mutation operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "B014-F",
+      "legacy_evidence": "Issue #8 M7 failure class: production materialization authority gap. M1 mapping: PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER; M1 performs no production materialization. Successor requirement: M4 authoritative materialization (SILENT_MATERIALIZATION_FAILURE=denied, AUTHORITATIVE_FAILURE_SURFACING=PASS).",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": [],
+      "given": "M4 introduces the authoritative materialization path for durable/mechanical artifacts.",
+      "when": "A materialization step is requested through the authorized canonical operation.",
+      "then": "Materialization occurs only through the authorized mechanical path; the canonical machine result reflects authoritative success or failure; no non-authoritative side channel can materialize production artifacts.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "an authorized materialization operation on a bound lifecycle subject",
+        "when": "the materialization step succeeds or fails",
+        "then": "the canonical machine result reflects the authoritative outcome; a failure is never hidden or reported as usable while the authoritative materialization did not happen"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-b014f-static-no-materialize",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "materializ",
+          "proves": "foundation",
+          "description": "No materialization surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b014f-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no materialization operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "B014-F1",
+      "legacy_evidence": "Issue #8 M7 failure class: finalizer lifecycle-recognition drift. M1 mapping: PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER; finalizer lifecycle is outside the M1 Core boundary. Successor: finalizer behavior is executor/Hermes-specific (M5 ExecutorAdapter); completion/result maps into canonical result.",
+      "successor_owner_milestone": "M5",
+      "prerequisite_milestones": [],
+      "given": "M5 introduces the Hermes executor adapter and canonical execution abstractions (CanonicalTaskState, CanonicalResult).",
+      "when": "An executor finalizer reports lifecycle recognition for a task.",
+      "then": "Lifecycle recognition derives from canonical result state, never from private finalizer bookkeeping; finalizer drift is detectable against the canonical operation contract; legacy finalizer lifecycle semantics remain adapter-private.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "an M5 executor adapter finalizes a task through the canonical execution contract",
+        "when": "the finalizer reports completion or lifecycle state",
+        "then": "the canonical task state and result match the executor-neutral contract; private finalizer state cannot contradict or drift from the canonical lifecycle recognition"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-b014f1-static-no-finalizer",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "finaliz",
+          "proves": "foundation",
+          "description": "No finalizer lifecycle surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b014f1-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no executor/finalizer operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "ACTIVATE-R-current-binding",
+      "legacy_evidence": "Issue #8 M7 failure class: current decision/followup subject binding conflict. M1 mapping: PREVENTED_FROM_REENTERING_CORE_BUT_FIXED_LATER; current_* pointers are not Core authority (m1 fixture legacy_current_pointer_not_authority). Successor: M3 durable subject graph replaces current_* authority; current_* projections derive from durable subjects.",
+      "successor_owner_milestone": "M3",
+      "prerequisite_milestones": [],
+      "given": "Decision and followup subjects are recorded in the M3 durable subject graph.",
+      "when": "The current decision or current followup is resolved for a lifecycle subject.",
+      "then": "The current projection derives deterministically from durable subject state; conflicting current_* pointers cannot bind the wrong subject; binding follows SUBJECT_BINDING_ZERO_ONE_MANY (0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE); heuristics are denied.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a durable subject graph containing decision and followup subjects with conflicting current_* pointer records",
+        "when": "the current decision/followup projection is resolved",
+        "then": "the projection derives from durable subject state; stale pointer state cannot hide or substitute an otherwise valid durable subject; ambiguous binding returns NEEDS_SEMANTIC_CHOICE"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-current-binding-fixture-shadow",
+          "kind": "fixture",
+          "scenario": "shadow-pointer-not-authority",
+          "proves": "foundation",
+          "description": "Foundation proof: BASE read model already strips current_* pointer authority (legacy shadow read); the durable-subject replacement is M3."
+        }
+      ]
+    },
+    {
+      "failure_class": "ACTIVATE-R-host-inspection-escalation",
+      "legacy_evidence": "Issue #8 M7 failure class: safe Host read-only inspection unnecessarily escalated into classification / SPEC / Profile Task / approval / completion / decision / followup. M1 evidence: ELIMINATED_BY_CONSTRUCTION (m1 fixture host_inspection_no_plan_required); aota host status / host.status ingress route requires no Plan/Milestone/Work Item/SPEC/Profile Task.",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": [],
+      "given": "An operator or model issues a read-only Host inspection request through the unified ingress.",
+      "when": "The host.status operation contract handles the request.",
+      "then": "The operation completes with only host/environment evidence; no Plan, Milestone, Work Item, SPEC, Profile Task, approval, completion, decision, or followup is required or created; the contract declares no such inputs, so escalation is impossible by construction.",
+      "expected_successor_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "executable_evidence": [
+        {
+          "id": "corpus-host-inspection-fixture",
+          "kind": "fixture",
+          "scenario": "host-inspection-no-plan-required",
+          "proves": "successor_pass",
+          "description": "Executable pass proof: host.status succeeds through the ingress with no Plan/SPEC/Profile Task inputs, and its contract declares no plan-related inputs."
+        }
+      ]
+    },
+    {
+      "failure_class": "ACTIVATE-R-wrong-source-checkout",
+      "legacy_evidence": "Issue #8 M7 failure class: validation used the wrong source checkout instead of the reviewed activation source. M1 evidence: ELIMINATED_BY_CONSTRUCTION (m1 fixture git_boundary_escape_fails_closed); Git inspection is bounded to the resolved project root; project resolution is deterministic with fail-closed ambiguity.",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": [],
+      "given": "A validated activation source is resolved to exactly one canonical project root (0/1/many fail-closed).",
+      "when": "Read-only git inspection runs for that source.",
+      "then": "Git discovery is bounded to the resolved project root and returns the full 40-char HEAD SHA; any inspection start outside the boundary fails closed; the inspected checkout can never be a different source checkout.",
+      "expected_successor_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "executable_evidence": [
+        {
+          "id": "corpus-wrong-source-fixture",
+          "kind": "fixture",
+          "scenario": "git-boundary-escape-fails-closed",
+          "proves": "successor_pass",
+          "description": "Executable pass proof: git inspection resolves within the project root, nested paths resolve to the same root, boundary escapes raise GitBoundaryViolationError, and a repository above the boundary is not followed."
+        }
+      ]
+    },
+    {
+      "failure_class": "WCTX-1",
+      "legacy_evidence": "Issue #9 amendment: distinct lifecycle error semantics. Legacy failure: project binding missing / Plan missing / Plan workspace_context missing / active Work Item missing collapsed into incorrect downstream error semantics. REQUIRED_DISTINCT_STATES: PROJECT_BINDING_MISSING, PLAN_MISSING, PLAN_WORKSPACE_CONTEXT_MISSING, ACTIVE_WORK_ITEM_MISSING. Successor: M2 normalized semantic error taxonomy (ERROR_SEMANTICS_DISTINCT=yes); different root causes MUST NOT collapse into the same canonical error.",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": ["M3", "M4"],
+      "given": "The M2 canonical error taxonomy is exercised by operations whose required context is missing.",
+      "when": "Each of the four WCTX-1 root causes (project binding missing, plan missing, plan workspace context missing, active work item missing) produces its canonical error through the unified ingress.",
+      "then": "The four canonical error codes are pairwise distinct; no root cause collapses into another root cause's error semantics; the taxonomy is the single declarative error contract.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "four distinct root causes PROJECT_BINDING_MISSING, PLAN_MISSING, PLAN_WORKSPACE_CONTEXT_MISSING, ACTIVE_WORK_ITEM_MISSING are exercised through the unified ingress",
+        "when": "each missing-prerequisite operation returns its canonical error envelope",
+        "then": "the four canonical error codes are pairwise distinct; no root cause collapses into another's error semantics; each error is machine-readable and non-retryable where appropriate"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-wctx1-fixture-taxonomy",
+          "kind": "fixture",
+          "scenario": "distinct-error-taxonomy-foundation",
+          "proves": "foundation",
+          "description": "Foundation proof: the BASE taxonomy already returns distinct canonical codes for distinct root causes (PROJECT_NOT_FOUND vs RUNTIME_NOT_RUNNING vs UNSUPPORTED_OPERATION), demonstrating the no-collapse contract foundation."
+        },
+        {
+          "id": "corpus-wctx1-static-no-states",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "PLAN_MISSING",
+          "proves": "foundation",
+          "description": "The four WCTX-1 distinct states are not yet materialized anywhere in the successor Core at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        }
+      ]
+    },
+    {
+      "failure_class": "BIND-1",
+      "legacy_evidence": "Issue #9 amendment: Project Decision vs Binding. PROJECT_DECISION != PROJECT_BINDING; project decision may exist before project creation; project binding requires a real canonical validated project; fake project binding before initialization = denied. Successor: SUBJECT_BINDING_AUTOMATION_RULE and SUBJECT_BINDING_ZERO_ONE_MANY (M3/M4).",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": ["M3"],
+      "given": "A project decision exists for a project that has not been created or validated yet.",
+      "when": "A binding operation is attempted against that decision.",
+      "then": "Binding is denied with a distinct canonical error because a real canonical validated project does not exist; the decision remains a decision; fake binding before initialization is impossible by the binding automation rule.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a project decision without a real canonical validated project, plus a durable binding subject",
+        "when": "a mechanical binding is attempted before the project is validated",
+        "then": "binding is denied with a distinct canonical error; PROJECT_DECISION remains distinct from PROJECT_BINDING; SUBJECT_BINDING_ZERO_ONE_MANY is enforced (zero candidates bounded, one deterministic, many NEEDS_SEMANTIC_CHOICE)"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-bind1-static-no-binding",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "binding",
+          "proves": "foundation",
+          "description": "No binding surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-bind1-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no binding operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "DRIFT-1",
+      "legacy_evidence": "Issue #9 amendment: contract / role surface drift. Legacy evidence: SOUL / Skill / canonical contract / capability registry / runtime assembly / docs / fixture semantics diverged. SUCCESSOR_REQUIREMENT: one declarative canonical operation contract source; adapter projections derived deterministically; contract drift detectable (protocol_version / deterministic contract_hash; ADAPTER_CORE_CONTRACT_DRIFT_DETECTABLE=yes).",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": [],
+      "given": "Adapters project their command surface from the Core operation contract registry.",
+      "when": "The Core contract registry changes or an adapter declares a mismatched schema.",
+      "then": "Adapters derive projections deterministically from the single declarative registry; a deterministic contract_hash over the registry detects drift; mismatched command/tool schemas never silently run.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "the Core operation contract registry plus an adapter projection of that surface",
+        "when": "the registry content changes or the adapter projection is stale or mismatched",
+        "then": "the deterministic contract_hash over the registry differs from the projected hash; drift is reported with bounded evidence; mismatched schemas are rejected before execution"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-drift1-fixture-surface",
+          "kind": "fixture",
+          "scenario": "single-declarative-contract-surface",
+          "proves": "foundation",
+          "description": "Foundation proof: library ingress and CLI project the same operation surface from the single registry; the surface is deterministic across invocations."
+        },
+        {
+          "id": "corpus-drift1-static-protocol-version",
+          "kind": "static",
+          "source": "aota_forge/__init__.py",
+          "check": "contains",
+          "marker": "CORE_PROTOCOL_VERSION",
+          "proves": "foundation",
+          "description": "protocol_version constant exists at BASE; deterministic contract_hash and drift detection are later M2 work."
+        },
+        {
+          "id": "corpus-drift1-static-no-contract-hash",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "contract_hash",
+          "proves": "foundation",
+          "description": "deterministic contract_hash is not implemented at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        }
+      ]
+    },
+    {
+      "failure_class": "RC2-1",
+      "legacy_evidence": "Issue #9 amendment: silent / non-authoritative materialization failure. GIVEN: a durable/mechanical materialization step fails. THEN: canonical machine result MUST reflect authoritative failure. FORBIDDEN: worker/handoff/ack appears usable while authoritative materialization failure is hidden or non-authoritative. Successor: M4 AUTHORITATIVE_FAILURE_SURFACING=PASS, SILENT_MATERIALIZATION_FAILURE=denied.",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": [],
+      "given": "A durable/mechanical materialization step is requested through the authorized canonical operation and fails.",
+      "when": "The operation completes and returns its canonical machine result.",
+      "then": "The canonical machine result reflects the authoritative failure; worker/handoff/ack must never appear usable while the authoritative materialization failure is hidden or non-authoritative.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a durable materialization step that fails after partial mechanical progress",
+        "when": "the canonical operation returns",
+        "then": "the machine result reports the authoritative failure with bounded evidence; no worker/handoff/ack is reported usable; retry semantics are idempotent (M4)"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-rc21-static-no-materialize",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "materializ",
+          "proves": "foundation",
+          "description": "No materialization surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-rc21-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no materialization operation can hide a failure."
+        }
+      ]
+    },
+    {
+      "failure_class": "CLASSIFY-1",
+      "legacy_evidence": "Issue #9 amendment: existing project candidate classification. Registered exact existing project must not disappear due to heuristic/ALL-term candidate matching; project hint remains non-authoritative. M1: deterministic project resolution with fail-closed ambiguity and no hint authority.",
+      "successor_owner_milestone": "M2",
+      "prerequisite_milestones": [],
+      "given": "A registered project exists in the workspace and is requested by its exact project id, while other candidate projects would match the request under heuristic/ALL-term matching.",
+      "when": "Read-only candidate classification and project resolution run.",
+      "then": "The exact registered project remains present in the deterministic candidate scan and resolves to itself; there is no heuristic/ALL-term matching path in the successor resolver; the operation contract exposes no hint parameter, so a hint can never gain authority.",
+      "expected_successor_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "executable_evidence": [
+        {
+          "id": "corpus-classify1-fixture",
+          "kind": "fixture",
+          "scenario": "exact-registered-project-classification",
+          "proves": "successor_pass",
+          "description": "Executable pass proof: with a decoy candidate whose name matches under ALL-term logic, the exact registered project still appears in the scan and resolves to itself; the contract exposes no hint input."
+        },
+        {
+          "id": "corpus-classify1-static-no-hint-authority",
+          "kind": "static",
+          "source": "aota_forge/core/project/resolver.py",
+          "check": "contains",
+          "marker": "No project hint authority",
+          "proves": "successor_pass",
+          "description": "Source-level proof: the resolver declares no project hint authority."
+        }
+      ]
+    },
+    {
+      "failure_class": "RECOVERY-1",
+      "legacy_evidence": "Issue #9 amendment: post-binding deterministic recovery. Missing prerequisite evidence after an already-valid binding must either deterministically reconcile or return one explicit semantic choice. FORBIDDEN: silent not_required, blind replay, guessing another lifecycle subject. Successor: M4 R_MECHANICAL_RECOVERY, semantic decisions remain outside the transition engine.",
+      "successor_owner_milestone": "M4",
+      "prerequisite_milestones": ["M3"],
+      "given": "A valid binding exists and some prerequisite evidence is missing when a recovery step is requested.",
+      "when": "The mechanical recovery engine processes the missing-prerequisite case.",
+      "then": "The engine either deterministically reconciles the evidence or returns exactly one explicit semantic choice; silent not_required, blind replay, and guessing another lifecycle subject are forbidden.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a valid binding whose prerequisite evidence is missing",
+        "when": "a recovery operation runs",
+        "then": "the result is either a deterministic reconciliation with bounded evidence or exactly one explicit NEEDS_SEMANTIC_CHOICE; it is never silent not_required, never a blind replay, and never a guess of another lifecycle subject"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-recovery1-static-no-recover",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "recover",
+          "proves": "foundation",
+          "description": "No recovery engine surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-recovery1-fixture-all-read-only",
+          "kind": "fixture",
+          "scenario": "all-operations-read-only",
+          "proves": "foundation",
+          "description": "Executable negative proof: at BASE every registered operation is read-only; no recovery mutation operation exists."
+        }
+      ]
+    },
+    {
+      "failure_class": "RUNNER-1",
+      "legacy_evidence": "Issue #9 amendment: wrong runtime/runner selection. Host-only Hermes is canonical Hermes runtime; Docker-era Hermes/WebUI/runtime candidates must never become the selected runtime merely because they are discoverable; Hermes-specific proof remains adapter-level, not Forge Core ontology; Host-only deployment boundary must remain aligned with the existing Host deployment contract. Successor: M5 ExecutorAdapter / executor selection.",
+      "successor_owner_milestone": "M5",
+      "prerequisite_milestones": [],
+      "given": "A host-only Hermes runtime is the canonical runtime, and Docker-era Hermes/WebUI/runtime candidates are discoverable on the host.",
+      "when": "Executor/runtime selection runs.",
+      "then": "The canonical runtime is selected per the existing Host deployment contract; discoverable-but-unsupported candidates are never selected merely because they are discoverable; Hermes-specific proof remains adapter-level, never Forge Core ontology.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "an executor selection request with a canonical host-only Hermes runtime and discoverable Docker-era candidates",
+        "when": "selection resolves the executor",
+        "then": "the selected runtime is the canonical host runtime per the Host deployment contract; Docker-era candidates are not selected merely because they are discoverable; executor identity is adapter-level"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-runner1-static-no-executor",
+          "kind": "static",
+          "source": "aota_forge",
+          "check": "absent",
+          "marker": "ExecutorAdapter",
+          "proves": "foundation",
+          "description": "No executor adapter surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+        }
+      ]
+    },
+    {
+      "failure_class": "E2E-1",
+      "legacy_evidence": "Issue #9 amendment: production-chain behavioral evidence gap. Fixture-only shape validation is insufficient where acceptance claims real chained behavior; behavioral successor validation must exist at the milestone where the corresponding real operation is introduced; M2_DEPLOYMENT_E2E_REQUIRED=no; M2_RUNTIME_ACTIVATION_REQUIRED=no.",
+      "successor_owner_milestone": "M5",
+      "prerequisite_milestones": [],
+      "given": "M5 introduces the first real executor task chain operations (task start/status/result) that replace fixture-only shape validation.",
+      "when": "The milestone claims chained behavioral behavior for those real operations.",
+      "then": "Behavioral successor validation runs against the real operation chain at that milestone; fixture-only shape validation is not sufficient where real chained behavior is claimed; M2 claims no deployment or runtime-activation E2E.",
+      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
+      "future_pass_condition": {
+        "given": "a milestone that introduces a real chained production operation (M5 runtime chain, later deployment chain)",
+        "when": "that milestone claims chained behavior in its acceptance",
+        "then": "a behavioral successor validation executes against the real chain and passes; fixture-only shape checks cannot substitute; deployment/runtime E2E remains out of M2 scope"
+      },
+      "executable_evidence": [
+        {
+          "id": "corpus-e2e1-static-no-dispatch",
+          "kind": "static",
+          "source": "aota_forge/__init__.py",
+          "check": "contains",
+          "marker": "no Worker dispatch",
+          "proves": "foundation",
+          "description": "BASE declares no worker/task dispatch chain, consistent with M2_DEPLOYMENT_E2E_REQUIRED=no and M2_RUNTIME_ACTIVATION_REQUIRED=no (honest basis for NOT_YET_IMPLEMENTED)."
+        }
+      ]
+    }
+  ],
+  "claim_boundary": "M2-C materializes the successor regression matrix and executable corpus validator only; it does not implement M3/M4/M5 capabilities. NOT_YET_IMPLEMENTED entries carry frozen Given/When/Then and future PASS conditions; M3+ owned entries must not claim implemented dispositions until their milestone capability exists. Corpus execution requires no legacy runtime and no network."
+}
