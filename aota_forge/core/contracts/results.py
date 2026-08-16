@@ -35,8 +35,9 @@ def success(
     next_action: str | None = None,
     semantic_choices: list[dict[str, Any]] | None = None,
     correlation_id: str | None = None,
+    audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    envelope = {
         "ok": True,
         "operation": operation,
         "data": data if data is not None else {},
@@ -50,6 +51,9 @@ def success(
         "next_action": next_action,
         "correlation_id": correlation_id or new_correlation_id(),
     }
+    if audit is not None:
+        envelope["audit"] = audit
+    return envelope
 
 
 def failure(
@@ -60,8 +64,9 @@ def failure(
     correlation_id: str | None = None,
     blockers: list[str] | None = None,
     next_action: str | None = None,
+    audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    envelope = {
         "ok": False,
         "operation": operation,
         "data": {},
@@ -76,6 +81,43 @@ def failure(
         "next_action": next_action,
         "correlation_id": correlation_id or new_correlation_id(),
     }
+    if audit is not None:
+        envelope["audit"] = audit
+    return envelope
+
+
+def failure_from_error(
+    operation: str,
+    exc: Exception,
+    correlation_id: str | None = None,
+    blockers: list[str] | None = None,
+    next_action: str | None = None,
+    audit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize any canonical ForgeError into the machine envelope."""
+    from aota_forge.core.contracts.errors import ForgeError
+
+    if isinstance(exc, ForgeError):
+        return failure(
+            operation,
+            exc.code,
+            exc.message,
+            exc.retryable,
+            correlation_id=correlation_id,
+            blockers=blockers,
+            next_action=next_action,
+            audit=audit,
+        )
+    return failure(
+        operation,
+        "FORGE_ERROR",
+        f"internal error: {type(exc).__name__}",
+        False,
+        correlation_id=correlation_id,
+        blockers=blockers,
+        next_action=next_action,
+        audit=audit,
+    )
 
 
 def to_json(payload: dict[str, Any]) -> str:

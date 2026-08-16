@@ -1,106 +1,373 @@
-"""Canonical machine-readable error contract (M1-G).
+"""Canonical machine-readable error contract (M1-G / M2-B).
 
 Error codes are stable bounded strings.  Legacy executor-specific errors
 (SPEC_NOT_APPROVED / PROFILE_FORBIDDEN / STALE_WORKER) are NOT part of Core;
 an adapter may map them at an executor boundary later.
+
+M2-B repair (I9-B005):
+
+* every registered class exposes a class-level canonical ``code`` so the
+  registry never collapses to a single FORGE_ERROR entry
+* ``error_from_dict`` reconstructs heterogeneous subclasses through the
+  canonical base payload (``from_payload``), never through a positional
+  ``cls(message, retryable)`` assumption
+* every registered error round-trips: instance -> to_dict -> error_from_dict
+  preserves semantic code, message, retryable and details
+* unknown future codes degrade deterministically to ``UnknownFutureError``
+  carrying the original machine code; they never crash, never map to an
+  unrelated subclass and never drop the original code.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 
 class ForgeError(Exception):
-    """Base error for executor-neutral Forge Core failures."""
+    """Base error for executor-neutral Forge Core failures.
+
+    The base class keeps the M1-compatible ``(code, message, retryable)``
+    positional signature; registered subclasses use the canonical
+    ``(message, retryable, details)`` payload signature together with a
+    class-level ``code`` / ``default_message`` / ``default_retryable``.
+    """
 
     code: str = "FORGE_ERROR"
+    default_message: str = "forge error"
+    default_retryable: bool = False
 
-    def __init__(self, code: str, message: str, retryable: bool = False) -> None:
+    def __init__(self, code: str, message: str, retryable: bool = False, details: object = None) -> None:
         self.code = code
         self.message = message
         self.retryable = retryable
+        self.details = details
         super().__init__(message)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "code": self.code,
             "message": self.message,
             "retryable": self.retryable,
         }
+        if self.details is not None:
+            payload["details"] = self.details
+        return payload
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, object]) -> "ForgeError":
+        """Rebuild an error from its canonical dict payload.
+
+        Registered subclasses share the ``(message, retryable, details)``
+        payload signature, so one canonical reconstruction works for the
+        whole registry without per-class positional guessing.
+        """
+        message = payload.get("message")
+        retryable = payload.get("retryable")
+        details = payload.get("details")
+        if cls is ForgeError:
+            return cls(
+                str(payload.get("code") or cls.code),
+                str(message if message is not None else cls.default_message),
+                retryable=bool(retryable) if retryable is not None else cls.default_retryable,
+                details=details,
+            )
+        return cls(
+            str(message if message is not None else cls.default_message),
+            retryable=bool(retryable) if retryable is not None else cls.default_retryable,
+            details=details,
+        )
+
+
+def _canonical_init(self: ForgeError, message: object, retryable: object, details: object) -> None:
+    ForgeError.__init__(
+        self,
+        type(self).code,
+        str(message) if message is not None else type(self).default_message,
+        retryable=bool(retryable) if retryable is not None else type(self).default_retryable,
+        details=details,
+    )
 
 
 class ProjectNotFoundError(ForgeError):
-    def __init__(self, message: str = "project not found", retryable: bool = False) -> None:
-        super().__init__("PROJECT_NOT_FOUND", message, retryable)
+    code = "PROJECT_NOT_FOUND"
+    default_message = "project not found"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class ProjectAmbiguousError(ForgeError):
-    def __init__(self, message: str = "project resolution is ambiguous", retryable: bool = False) -> None:
-        super().__init__("PROJECT_AMBIGUOUS", message, retryable)
+    code = "PROJECT_AMBIGUOUS"
+    default_message = "project resolution is ambiguous"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class ProjectManifestInvalidError(ForgeError):
-    def __init__(self, message: str = "project manifest is invalid", detail: str | None = None, retryable: bool = False) -> None:
+    code = "PROJECT_MANIFEST_INVALID"
+    default_message = "project manifest is invalid"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, detail: str | None = None, retryable: bool | None = None, details: object = None) -> None:
         if detail is not None:
             message = f"{message}: {detail}"
-        super().__init__("PROJECT_MANIFEST_INVALID", message, retryable)
+        _canonical_init(self, message, retryable, details)
 
 
 class ProjectRegistryInvalidError(ForgeError):
-    def __init__(self, message: str = "project registry is invalid", retryable: bool = False) -> None:
-        super().__init__("PROJECT_REGISTRY_INVALID", message, retryable)
+    code = "PROJECT_REGISTRY_INVALID"
+    default_message = "project registry is invalid"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class GitNotFoundError(ForgeError):
-    def __init__(self, message: str = "git repository not found within boundary", retryable: bool = False) -> None:
-        super().__init__("GIT_NOT_FOUND", message, retryable)
+    code = "GIT_NOT_FOUND"
+    default_message = "git repository not found within boundary"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class GitBoundaryViolationError(ForgeError):
-    def __init__(self, message: str = "git search crossed the resolved project boundary", retryable: bool = False) -> None:
-        super().__init__("GIT_BOUNDARY_VIOLATION", message, retryable)
+    code = "GIT_BOUNDARY_VIOLATION"
+    default_message = "git search crossed the resolved project boundary"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class RuntimeNotRunningError(ForgeError):
-    def __init__(self, message: str = "runtime is not running", retryable: bool = False) -> None:
-        super().__init__("RUNTIME_NOT_RUNNING", message, retryable)
+    code = "RUNTIME_NOT_RUNNING"
+    default_message = "runtime is not running"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class RuntimeIdentityUnavailableError(ForgeError):
-    def __init__(self, message: str = "runtime identity is unavailable", retryable: bool = False) -> None:
-        super().__init__("RUNTIME_IDENTITY_UNAVAILABLE", message, retryable)
+    code = "RUNTIME_IDENTITY_UNAVAILABLE"
+    default_message = "runtime identity is unavailable"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class ReceiptInvalidError(ForgeError):
-    def __init__(self, message: str = "receipt is invalid", retryable: bool = False) -> None:
-        super().__init__("RECEIPT_INVALID", message, retryable)
+    code = "RECEIPT_INVALID"
+    default_message = "receipt is invalid"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class SourceParityMismatchError(ForgeError):
-    def __init__(self, message: str = "source/runtime parity mismatch", retryable: bool = True) -> None:
-        super().__init__("SOURCE_PARITY_MISMATCH", message, retryable)
+    code = "SOURCE_PARITY_MISMATCH"
+    default_message = "source/runtime parity mismatch"
+    default_retryable = True
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class UnsupportedOperationError(ForgeError):
-    def __init__(self, message: str = "unsupported operation", retryable: bool = False) -> None:
-        super().__init__("UNSUPPORTED_OPERATION", message, retryable)
+    code = "UNSUPPORTED_OPERATION"
+    default_message = "unsupported operation"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class ContractVersionMismatchError(ForgeError):
-    def __init__(self, message: str = "contract version mismatch", retryable: bool = False) -> None:
-        super().__init__("CONTRACT_VERSION_MISMATCH", message, retryable)
+    code = "CONTRACT_VERSION_MISMATCH"
+    default_message = "contract version mismatch"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
 
 
 class WorkspaceError(ForgeError):
     """Workspace registry-level failure, kept executor-neutral."""
 
-    def __init__(self, message: str = "workspace error", retryable: bool = False) -> None:
-        super().__init__("WORKSPACE_ERROR", message, retryable)
+    code = "WORKSPACE_ERROR"
+    default_message = "workspace error"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+# ---------------------------------------------------------------------------
+# M2-B stable semantic codes (distinct root causes must NOT collapse).
+# ---------------------------------------------------------------------------
+
+
+class ProjectBindingMissingError(ForgeError):
+    """Caller explicitly required project/workspace-bound semantics but the
+    binding context (registry/workspace/project identifiers) is incomplete."""
+
+    code = "PROJECT_BINDING_MISSING"
+    default_message = "project binding context is missing"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class PlanMissingError(ForgeError):
+    code = "PLAN_MISSING"
+    default_message = "plan is missing"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class PlanWorkspaceContextMissingError(ForgeError):
+    code = "PLAN_WORKSPACE_CONTEXT_MISSING"
+    default_message = "plan workspace context is missing"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class ActiveWorkItemMissingError(ForgeError):
+    code = "ACTIVE_WORK_ITEM_MISSING"
+    default_message = "active work item is missing"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class ProjectInitializationRequiredError(ForgeError):
+    code = "PROJECT_INITIALIZATION_REQUIRED"
+    default_message = "project initialization is required"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class NeedsSemanticChoiceError(ForgeError):
+    code = "NEEDS_SEMANTIC_CHOICE"
+    default_message = "semantic choice is required"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class GovernanceProjectionDriftError(ForgeError):
+    code = "GOVERNANCE_PROJECTION_DRIFT"
+    default_message = "governance projection drift"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class ContextNotSupportedError(ForgeError):
+    """Deterministic bounded outcome for context requirements M2 cannot yet
+    satisfy; the resolver never fabricates future-milestone context."""
+
+    code = "CONTEXT_NOT_SUPPORTED"
+    default_message = "operation context is not supported in this milestone"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class UnknownInputError(ForgeError):
+    code = "UNKNOWN_INPUT"
+    default_message = "unknown input"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class MissingRequiredInputError(ForgeError):
+    code = "REQUIRED_INPUT_MISSING"
+    default_message = "required input is missing"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class InputTypeError(ForgeError):
+    code = "INPUT_TYPE_INVALID"
+    default_message = "input type is invalid"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class InputSizeError(ForgeError):
+    code = "INPUT_SIZE_EXCEEDED"
+    default_message = "input size bound exceeded"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class UnknownFutureError(ForgeError):
+    """Deterministic degradation for error codes not registered yet.
+
+    Never crashes, never maps to an unrelated subclass and never drops the
+    original machine code: ``original_code`` preserves it in the dict form.
+    """
+
+    code = "UNKNOWN_FUTURE_ERROR"
+    default_message = "unknown error code"
+    default_retryable = False
+
+    def __init__(self, original_code: object = None, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        self.original_code = original_code
+        _canonical_init(
+            self,
+            message if message is not None else f"unknown error code: {original_code}",
+            retryable,
+            details,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        payload = super().to_dict()
+        if self.original_code is not None:
+            payload["original_code"] = self.original_code
+        return payload
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, object]) -> "UnknownFutureError":
+        return cls(
+            original_code=payload.get("original_code"),
+            message=payload.get("message"),
+            retryable=payload.get("retryable"),
+            details=payload.get("details"),
+        )
 
 
 ERROR_CLASSES: dict[str, type[ForgeError]] = {
     cls.code: cls
     for cls in (
+        ForgeError,
         ProjectNotFoundError,
         ProjectAmbiguousError,
         ProjectManifestInvalidError,
@@ -113,6 +380,20 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         SourceParityMismatchError,
         UnsupportedOperationError,
         ContractVersionMismatchError,
+        WorkspaceError,
+        ProjectBindingMissingError,
+        PlanMissingError,
+        PlanWorkspaceContextMissingError,
+        ActiveWorkItemMissingError,
+        ProjectInitializationRequiredError,
+        NeedsSemanticChoiceError,
+        GovernanceProjectionDriftError,
+        ContextNotSupportedError,
+        UnknownInputError,
+        MissingRequiredInputError,
+        InputTypeError,
+        InputSizeError,
+        UnknownFutureError,
     )
 }
 
@@ -122,10 +403,27 @@ def forge_error_to_dict(exc: ForgeError) -> dict[str, object]:
 
 
 def error_from_dict(payload: Optional[dict[str, object]]) -> Optional[ForgeError]:
+    """Reconstruct any registered error from its canonical dict payload.
+
+    Unregistered codes degrade deterministically to ``UnknownFutureError``
+    while preserving the original code and details.
+    """
     if not isinstance(payload, dict):
         return None
     code = payload.get("code")
-    cls = ERROR_CLASSES.get(code if isinstance(code, str) else "")
+    if not isinstance(code, str) or not code:
+        return None
+    cls = ERROR_CLASSES.get(code)
     if cls is None:
-        return ForgeError(str(code or "FORGE_ERROR"), str(payload.get("message") or "unknown error"), bool(payload.get("retryable")))
-    return cls(str(payload.get("message") or cls.__name__), bool(payload.get("retryable")))
+        return UnknownFutureError(
+            original_code=code,
+            message=payload.get("message"),
+            retryable=payload.get("retryable"),
+            details=payload.get("details"),
+        )
+    return cls.from_payload(payload)
+
+
+def serialize_error(exc: ForgeError) -> dict[str, Any]:
+    """Canonical serialization helper for machine envelopes."""
+    return exc.to_dict()
