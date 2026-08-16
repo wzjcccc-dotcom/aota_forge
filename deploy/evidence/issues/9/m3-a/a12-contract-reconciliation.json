@@ -49,14 +49,18 @@
     },
     "C_EXECUTION_TO_AUTHORITY_TARGET": {
       "AUTHORITY_TARGET_IS_TYPED": "yes",
-      "universal_target_rule": "No single universal authority target is chosen. Authority targets are operation-specific and typed; no heuristic target inference and no heuristic subject selection.",
+      "universal_target_rule": "No single universal authority target is chosen. Typed semantic/addressable targets are operation-specific, but normal M3 authoritative lifecycle mutation resolves to the owning Subject aggregate authority root; Workflow is an aggregate authority root only where an actual Workflow metadata mutation contract applies. Execution/Completion/Decision references do not establish independent mutation roots. No heuristic target inference and no heuristic subject selection.",
       "typed_target_map": {
-        "Subject": "typed authority target for Subject mechanical/lifecycle/lineage operations (the Subject aggregate)",
-        "Execution": "typed authority target for execution attempt/status/completion-related operations",
-        "Decision": "typed authority target only where the exact Decision operation is declared by the operation contract; Decision is append-only and its creation is owned/bound by its Subject",
-        "FollowupEdge_and_other_canonical_objects": "typed authority targets only when explicitly declared by the operation contract",
-        "Execution.subject_ref": "context/relationship reference only; it does not silently become an authority target"
+        "Subject": "typed aggregate authority root for normal Subject mechanical/lifecycle/lineage operations; expected_revision is the Subject aggregate revision",
+        "Workflow": "typed aggregate authority root only for an actual Workflow metadata mutation contract; its independent Workflow-record revision applies",
+        "Execution": "typed semantic object reference for execution attempt/status/completion-related operations; normal M3 lifecycle mutation resolves to its owning Subject aggregate and Execution is not an independent mutation revision root",
+        "Completion": "typed semantic object reference for a completion record; resolve Completion.execution_ref to Execution and then the owning Subject aggregate; Completion is not an independent mutation revision root",
+        "Decision": "typed semantic object reference for a Decision operation; normal M3 lifecycle mutation resolves to its owning Subject aggregate and Decision is not an independent mutation revision root",
+        "FollowupEdge_and_other_canonical_objects": "typed semantic object references only when explicitly declared by the operation contract; they do not become independent authority roots unless a separate canonical contract exists",
+        "Execution.subject_ref": "context/relationship reference used to resolve the owning Subject; it does not silently become an authority target"
       },
+      "TYPED_SEMANTIC_OBJECT_REF_IS_INDEPENDENT_AUTHORITY_ROOT": "no",
+      "RECORD_OPERATION_AUTHORITY_RESOLVES_TO_OWNING_SUBJECT": "yes",
       "HEURISTIC_TARGET_INFERENCE_ALLOWED": "no",
       "source": "A1 canonical_records (Subject/Execution/Decision/FollowupEdge ownership and relationship semantics) + A2 authority_evaluation_model (never chooses subjects, never invents scope) + lease object_ref exact target"
     },
@@ -78,6 +82,18 @@
       "CHILD_SUBJECT_CREATION_SEMANTIC_DECISION_SOURCE": "LLM_or_user_materialized_decision",
       "child_creation_rule": "The semantic decision that a followup should exist is LLM/user authority materialized as a Decision record. Mechanical child Subject creation is a future bounded transition authorized by a valid Decision plus a valid lease plus the exact target revision.",
       "source": "A1 OQ-M3A1-05 (followup = child Subject, FOLLOWUP_REQUIRES_SOURCE_DECISION=yes) + A2 authority evaluation (semantic decision evidence bound; engine never creates Decisions)"
+    }
+  },
+  "contract_repair_amendment": {
+    "repair_id": "M3-A-R1",
+    "REPAIR_REASON": "independent_review_blocker",
+    "ORIGINAL_ASSERTION": {
+      "universal_target_rule": "No single universal authority target is chosen. Authority targets are operation-specific and typed; no heuristic target inference and no heuristic subject selection.",
+      "typed_target_map": "Execution and Decision were described as operation-specific typed authority targets without resolving normal lifecycle mutation to an owning Subject revision root."
+    },
+    "REPAIRED_ASSERTION": {
+      "universal_target_rule": "Normal M3 authoritative lifecycle mutation uses the owning Subject aggregate as its authority and revision root; Execution/Completion/Decision are typed semantic references that resolve to that owner.",
+      "typed_target_map": "Subject and applicable Workflow metadata are aggregate authority roots; Execution/Completion/Decision are not independent mutation revision roots."
     }
   },
   "accepted_contracts": {

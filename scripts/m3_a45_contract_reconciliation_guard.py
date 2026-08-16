@@ -707,6 +707,16 @@ def _check_implementation(results: list[tuple[bool, str]], artifact: dict, repo_
         current_path = repo_root / path
         expected_blob = _source_blob(repo_root, commit, path)
         results.append(_check(expected_blob is not None, f"source commit {commit} must contain {path}"))
+        if path == A5_REL and expected_blob is not None and current_path.is_file() and current_path.read_bytes() != expected_blob:
+            amendment = _read_json(current_path).get("contract_repair_amendment", {})
+            results.append(_check(
+                amendment.get("repair_id") == "M3-A-R1"
+                and amendment.get("REPAIR_REASON") == "independent_review_blocker"
+                and bool(amendment.get("ORIGINAL_ASSERTION"))
+                and bool(amendment.get("REPAIRED_ASSERTION")),
+                "integrated A5 sibling patch preserves the explicit M3-A-R1 amendment",
+            ))
+            continue
         results.append(_check(expected_blob is not None and current_path.read_bytes() == expected_blob,
                               f"integrated sibling patch must match {commit}:{path} exactly"))
     ancestry = _git(repo_root, ["merge-base", "--is-ancestor", BASE_SHA, "HEAD"])

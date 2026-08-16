@@ -78,6 +78,10 @@ A45_COMMIT = "0f75ec4091abf3897bc638c6ba985f13ff1dfc9c"
 PROOF_REL = Path("deploy/evidence/issues/9/m3-a/m3-a-design-proof.json")
 GUARD_REL = Path("scripts/m3_a6_integrated_design_guard.py")
 MD_REL = Path("deploy/evidence/issues/9/m3-a/m3-a-design-proof.md")
+R1_REL = Path("deploy/evidence/issues/9/m3-a/m3-a-r1-contract-repair.json")
+R1_GUARD_REL = Path("scripts/m3_a_r1_contract_repair_guard.py")
+A12_GUARD_REL = Path("scripts/m3_a12_contract_reconciliation_guard.py")
+A45_GUARD_REL = Path("scripts/m3_a45_contract_reconciliation_guard.py")
 
 A0_REL = Path("deploy/evidence/issues/9/m3-a/a0-input-map.json")
 A1_REL = Path("deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json")
@@ -200,7 +204,7 @@ def _git(repo_root: Path, args: list[str]) -> tuple[int, str]:
         text=True,
         timeout=90,
     )
-    return proc.returncode, proc.stdout.strip()
+    return proc.returncode, proc.stdout.rstrip("\n")
 
 
 def _blob(repo_root: Path, commit: str, path: str) -> bytes | None:
@@ -335,6 +339,20 @@ def _check_provenance_blobs(results: list, repo_root: Path) -> None:
     ):
         expected = _blob(repo_root, commit, str(rel))
         current = (repo_root / rel).read_bytes() if (repo_root / rel).is_file() else None
+        if rel == A5_REL and current != expected:
+            amendment = {}
+            try:
+                amendment = _read_json(repo_root / rel).get("contract_repair_amendment", {})
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+            results.append(_check(
+                amendment.get("repair_id") == "M3-A-R1"
+                and amendment.get("REPAIR_REASON") == "independent_review_blocker"
+                and bool(amendment.get("ORIGINAL_ASSERTION"))
+                and bool(amendment.get("REPAIRED_ASSERTION")),
+                "checked-out A5 amendment must preserve original and repaired assertions",
+            ))
+            continue
         results.append(_check(
             expected is not None and current == expected,
             f"checked-out {rel} must match {commit} blob exactly",
@@ -913,7 +931,16 @@ def _check_invariants(results: list, proof: dict) -> None:
 def _check_source_boundary(results: list, proof: dict, repo_root: Path) -> None:
     ok, changed = _changed_paths(repo_root)
     results.append(_check(ok, "git changed-path inspection failed"))
-    allowed = {str(PROOF_REL), str(GUARD_REL)}
+    allowed = {
+        str(PROOF_REL),
+        str(GUARD_REL),
+        str(R1_REL),
+        str(R1_GUARD_REL),
+        str(A12_REL),
+        str(A12_GUARD_REL),
+        str(A45_GUARD_REL),
+        str(A5_REL),
+    }
     if MD_REL.is_file():
         allowed.add(str(MD_REL))
     results.append(_check(

@@ -148,11 +148,11 @@
       },
       {
         "BINDING_KIND": "completion_subject",
-        "CANDIDATE_SOURCE": "the durable Subject aggregate referenced by the Completion record's explicit subject_ref",
-        "VALIDITY_RULE": "canonical Completion record type; explicit subject_ref to an existing Subject aggregate with valid lineage; authority eligibility; revision compatibility; no heuristic signals",
+        "CANDIDATE_SOURCE": "the durable Subject aggregate resolved by Completion.execution_ref -> Execution.subject_ref",
+        "VALIDITY_RULE": "canonical Completion record type; execution_ref resolves to exactly one existing Execution whose subject_ref identifies the owning Subject aggregate with valid lineage; authority eligibility; revision compatibility; no heuristic signals",
         "ZERO_RESULT": "SUBJECT_NOT_FOUND / missing prerequisite evidence; never a fake Subject",
-        "ONE_RESULT": "bind/reconcile to the exactly-one referenced Subject after all requirements hold; unique alone is insufficient",
-        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: multiple Subject aggregates claim the same Completion",
+        "ONE_RESULT": "bind/reconcile to the exactly-one Subject resolved through the Completion's Execution after all requirements hold; unique alone is insufficient",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: Completion.execution_ref or its Execution ownership does not resolve to one Subject",
         "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
       },
       {
@@ -174,6 +174,18 @@
         "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
       }
     ]
+  },
+  "contract_repair_amendment": {
+    "repair_id": "M3-A-R1",
+    "REPAIR_REASON": "independent_review_blocker",
+    "ORIGINAL_ASSERTION": {
+      "completion_subject.CANDIDATE_SOURCE": "the durable Subject aggregate referenced by the Completion record's explicit subject_ref",
+      "completion_subject.VALIDITY_RULE": "canonical Completion record type; explicit subject_ref to an existing Subject aggregate with valid lineage; authority eligibility; revision compatibility; no heuristic signals"
+    },
+    "REPAIRED_ASSERTION": {
+      "completion_subject.CANDIDATE_SOURCE": "the durable Subject aggregate resolved by Completion.execution_ref -> Execution.subject_ref",
+      "completion_subject.VALIDITY_RULE": "Completion has no direct subject_ref requirement; resolve Completion.execution_ref to Execution and then the owning Subject"
+    }
   },
   "recovery_boundary": {
     "definition": "recovery is the bounded, deterministic read-then-repair process that re-establishes correct binding/projection state from durable authority; it never performs semantic reasoning",

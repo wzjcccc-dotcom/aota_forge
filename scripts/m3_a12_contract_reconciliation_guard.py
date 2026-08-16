@@ -124,7 +124,9 @@ TRUSTED_MAPPING_PHRASES = ("trusted runtime", "injection boundary", "provenance"
 # C. Execution <-> authority target.
 TYPED_TARGET_KEYS = {
     "Subject",
+    "Workflow",
     "Execution",
+    "Completion",
     "Decision",
     "FollowupEdge_and_other_canonical_objects",
     "Execution.subject_ref",
@@ -516,7 +518,7 @@ def run_checks(recon: dict, repo_root: Path, a0_map: dict, a1: dict, a2: dict) -
     target_map = rule_c.get("typed_target_map", {})
     results.append(_check(isinstance(target_map, dict) and set(target_map) == TYPED_TARGET_KEYS,
                           f"rule C typed_target_map must be exactly {sorted(TYPED_TARGET_KEYS)}"))
-    for key in ("Subject", "Execution", "Decision", "FollowupEdge_and_other_canonical_objects"):
+    for key in ("Subject", "Workflow", "Execution", "Completion", "Decision", "FollowupEdge_and_other_canonical_objects"):
         results.append(_check(isinstance(target_map.get(key), str) and target_map[key].strip(),
                               f"rule C typed_target_map.{key} must be a non-empty explanation"))
     results.append(_check(
