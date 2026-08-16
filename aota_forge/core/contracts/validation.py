@@ -35,7 +35,7 @@ import json
 import math
 from typing import Any
 
-from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor, ensure_unique_input_names
 from aota_forge.core.contracts.errors import (
     InputSizeError,
     InputTypeError,
@@ -185,6 +185,7 @@ def validate_inputs(
     if len(params) > MAX_PARAMS_KEYS:
         raise InputSizeError(f"too many input keys: {len(params)}")
 
+    ensure_unique_input_names(descriptor.name, descriptor.inputs)
     spec_by_name = {spec.name: spec for spec in descriptor.inputs}
     validated: dict[str, Any] = {}
     for key, value in params.items():

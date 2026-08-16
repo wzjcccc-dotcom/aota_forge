@@ -340,6 +340,19 @@ class InputSizeError(ForgeError):
         _canonical_init(self, message, retryable, details)
 
 
+class DuplicateOperationInputError(ForgeError):
+    """Deterministic contract-definition failure (I9-B007): a descriptor
+    declares the same semantic operation input name more than once.
+    """
+
+    code = "DUPLICATE_OPERATION_INPUT"
+    default_message = "duplicate operation input declaration"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
 class UnknownFutureError(ForgeError):
     """Deterministic degradation for error codes not registered yet.
 
@@ -406,6 +419,7 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         MissingRequiredInputError,
         InputTypeError,
         InputSizeError,
+        DuplicateOperationInputError,
         UnknownFutureError,
     )
 }

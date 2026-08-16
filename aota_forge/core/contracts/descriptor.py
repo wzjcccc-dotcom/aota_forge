@@ -28,6 +28,8 @@ from typing import Any
 
 from aota_forge.core.contracts.version import PROTOCOL_VERSION
 
+from aota_forge.core.contracts.errors import DuplicateOperationInputError
+
 READ_ONLY = "read"
 WRITE_ONLY = "write"
 READ_WRITE = "read-write"
@@ -41,6 +43,23 @@ class InputSpec:
 
     name: str
     type: str
+
+
+def ensure_unique_input_names(operation: str, inputs: tuple[InputSpec, ...]) -> None:
+    """Reject duplicate semantic input names (I9-B007).
+
+    Each semantic operation input name must occur exactly once within
+    ``OperationContractDescriptor.inputs``; identical and conflicting
+    duplicate declarations are both invalid contract definitions.
+    """
+    seen: set[str] = set()
+    for spec in inputs:
+        if spec.name in seen:
+            raise DuplicateOperationInputError(
+                f"duplicate operation input declaration in contract '{operation}': {spec.name}",
+                details={"operation": operation, "input": spec.name},
+            )
+        seen.add(spec.name)
 
 
 @dataclass(frozen=True)
@@ -134,11 +153,12 @@ class OperationContractDescriptor:
         for spec in self.inputs:
             if not isinstance(spec, InputSpec) or not spec.name or not spec.type:
                 raise ValueError(f"descriptor inputs must be InputSpec entries with name and type: {self.name}")
+        ensure_unique_input_names(self.name, self.inputs)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "OperationContractDescriptor":
         """Rebuild a descriptor from its plain dict form (JSON round-trip)."""
-        return cls(
+        descriptor = cls(
             name=raw["name"],
             description=raw["description"],
             inputs=tuple(InputSpec(name=item["name"], type=item["type"]) for item in raw.get("inputs", [])),
@@ -156,3 +176,5 @@ class OperationContractDescriptor:
             errors=tuple(raw.get("errors", [])),
             protocol_version=raw.get("protocol_version", PROTOCOL_VERSION),
         )
+        descriptor.validate()
+        return descriptor
