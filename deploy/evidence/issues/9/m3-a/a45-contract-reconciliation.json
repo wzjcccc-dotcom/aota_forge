@@ -1,0 +1,481 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A4/A5 serial contract reconciliation",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "gate": "M3-A4-A5-CONTRACT-RECONCILIATION",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "common_base": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "inputs": {
+    "a0": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+    "a1": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+    "a2": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+    "a12": "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+    "a3": "deploy/evidence/issues/9/m3-a/a3-revision-cas-transaction.json",
+    "a4": "deploy/evidence/issues/9/m3-a/a4-bootstrap-cutover.json",
+    "a5": "deploy/evidence/issues/9/m3-a/a5-binding-recovery.json",
+    "matrix": "deploy/evidence/issues/9/m2-successor-regression-matrix.json"
+  },
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+    "a3": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+    "a4": "6552b9a2b4d38de2c947e22ea4c30972266bb54a",
+    "a5": "4573712a1f89f5610635c9a77231be7509fb4957"
+  },
+  "integration_sequence": {
+    "start_commit": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+    "ordered_lanes": [
+      {
+        "order": 1,
+        "lane": "M3-A4",
+        "source_commit": "6552b9a2b4d38de2c947e22ea4c30972266bb54a",
+        "contents_verified_exactly": "yes"
+      },
+      {
+        "order": 2,
+        "lane": "M3-A5",
+        "source_commit": "4573712a1f89f5610635c9a77231be7509fb4957",
+        "contents_verified_exactly": "yes"
+      }
+    ],
+    "merge_scope": "design artifacts and guards only; no source-code merge",
+    "source_patch_paths": [
+      "deploy/evidence/issues/9/m3-a/a4-bootstrap-cutover.json",
+      "scripts/m3_a4_bootstrap_cutover_guard.py",
+      "deploy/evidence/issues/9/m3-a/a5-binding-recovery.json",
+      "scripts/m3_a5_binding_recovery_guard.py"
+    ]
+  },
+  "design_proof_only": {
+    "no_graph_storage_engine": "yes",
+    "no_graph_mutation_implementation": "yes",
+    "no_authoritative_graph_writes": "yes",
+    "no_binding_engine": "yes",
+    "no_recovery_engine": "yes",
+    "no_projection_engine": "yes",
+    "no_authority_engine": "yes",
+    "no_cutover_runtime": "yes",
+    "no_runtime_behavior": "yes",
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "accepted_lane_truth": {
+    "a4": {
+      "GRAPH_BOOTSTRAP_STRATEGY": "PASS",
+      "MIGRATION_MAPPING": "PASS",
+      "GRAPH_CANDIDATE_VALIDATION": "PASS",
+      "AMBIGUOUS_MIGRATION_IDENTITY": "NEEDS_SEMANTIC_CHOICE",
+      "HEURISTIC_IDENTITY_MERGE_ALLOWED": "no",
+      "SHADOW_GRAPH_CAN_WRITE_AUTHORITATIVE_STATE": "no",
+      "GRAPH_CUTOVER_RULE": "PASS",
+      "ONE_CUTOVER_AUTHORITY": "yes",
+      "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+      "GRAPH_WRITE_BEFORE_CUTOVER": "denied",
+      "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY": "yes",
+      "PROJECTION_REBUILD_RULE": "PASS",
+      "PROJECTION_REBUILD_MUTATES_GRAPH": "no",
+      "STALE_PROJECTION_MAY_BE_REBUILT": "yes",
+      "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no"
+    },
+    "a5": {
+      "SUBJECT_BINDING_RULE": "PASS",
+      "ZERO_CANDIDATE_RULE": "bounded_not_found_or_reconciliation",
+      "ONE_CANDIDATE_RULE": "materialized_decision + authority + revision + predecessor_validity",
+      "MANY_CANDIDATE_RULE": "NEEDS_SEMANTIC_CHOICE",
+      "CANDIDATE_COUNT_COMPUTED_AFTER_DETERMINISTIC_VALIDITY_FILTER": "yes",
+      "HEURISTIC_PRE_FILTER_ALLOWED": "no",
+      "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+      "MATERIALIZED_DECISION_REQUIRED_FOR_SEMANTIC_FOLLOWUP": "yes",
+      "UNIQUE_CANDIDATE_BYPASSES_AUTHORITY": "no",
+      "UNIQUE_CANDIDATE_BYPASSES_CAS": "no",
+      "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT": "yes",
+      "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+      "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+      "AMBIGUITY_RESULT": "NEEDS_SEMANTIC_CHOICE"
+    }
+  },
+  "source_error_codes_added": [],
+  "pre_cutover_binding_model": {
+    "PRE_CUTOVER_SHADOW_GRAPH_CAN_SUPPLY_DIAGNOSTIC_CANDIDATES": "yes",
+    "PRE_CUTOVER_SHADOW_GRAPH_CAN_AUTHORITATIVELY_BIND": "no",
+    "PRE_CUTOVER_BINDING_AUTHORITY_SOURCE": "the existing legacy runtime lifecycle authority after deterministic legacy validation; the shadow graph supplies diagnostic evidence only",
+    "SHADOW_CANDIDATE_VALIDITY_DOES_NOT_EQUAL_AUTHORITY": "yes",
+    "shadow_candidate_uses": [
+      "comparison against legacy evidence",
+      "migration candidate validation",
+      "safe read-only diagnostics"
+    ],
+    "candidate_count_rule": "candidate_count is computed after deterministic validity filtering, but candidate_count=1 never transfers binding authority from the legacy runtime to the shadow graph",
+    "shadow_graph_role": "non-authoritative read model until successful explicit cutover",
+    "pre_cutover_binding_rule": "runtime binding remains on the legacy authority; a valid shadow candidate may be reported, never selected as the authoritative target"
+  },
+  "post_cutover_binding_model": {
+    "POST_CUTOVER_BINDING_CANDIDATE_SOURCE": "canonical_durable_subject_graph",
+    "POST_CUTOVER_LEGACY_POINTER_CAN_OVERRIDE_GRAPH": "no",
+    "GRAPH_IS_LIFECYCLE_AUTHORITY": "yes",
+    "BINDING_AUTHORITY_SOURCE": "the canonical durable Subject Graph after the successful authority flip",
+    "legacy_pointer_role": "compatibility and projection lookup only; pointers cannot override, select, or replace a canonical graph Subject",
+    "unique_candidate_rule": "one valid graph candidate still requires materialized Decision, authority, revision, and predecessor validity",
+    "post_cutover_binding_rule": "binding enumerates and validates canonical durable graph records; stale pointers are repairable projections, not authority"
+  },
+  "candidate_validity_contract": {
+    "CANDIDATE_VALIDITY_EVALUATED_BEFORE_COUNT": "yes",
+    "CANDIDATE_COUNT_COMPUTED_AFTER_DETERMINISTIC_VALIDITY_FILTER": "yes",
+    "HEURISTIC_PRE_FILTER_ALLOWED": "no",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "SHADOW_CANDIDATE_VALIDITY_DOES_NOT_EQUAL_AUTHORITY": "yes",
+    "ZERO_CANDIDATE_RULE": "bounded_not_found_or_reconciliation",
+    "ONE_CANDIDATE_RULE": "materialized_decision + authority + revision + predecessor_validity",
+    "MANY_CANDIDATE_RULE": "NEEDS_SEMANTIC_CHOICE",
+    "MATERIALIZED_DECISION_REQUIRED_FOR_SEMANTIC_FOLLOWUP": "yes",
+    "UNIQUE_CANDIDATE_BYPASSES_AUTHORITY": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_CAS": "no",
+    "allowed_validity_filters": [
+      "correct project and workflow scope",
+      "canonical record type",
+      "valid lineage",
+      "valid predecessor",
+      "explicit materialized Decision",
+      "authority eligibility",
+      "revision compatibility"
+    ],
+    "forbidden_selection_signals": [
+      "recency or newest",
+      "title or text similarity",
+      "nearest timestamp",
+      "path proximity",
+      "first match",
+      "LLM similarity"
+    ],
+    "one_candidate_requirements": [
+      "materialized semantic Decision basis",
+      "valid typed authority",
+      "valid current and expected revision",
+      "valid predecessor state"
+    ],
+    "many_candidate_result": "NEEDS_SEMANTIC_CHOICE",
+    "many_candidate_rule": "deterministic validity may expose many candidates for evidence, but neither pre-cutover binding nor post-cutover binding may reduce many to one heuristically"
+  },
+  "ambiguity_reconciliation": {
+    "AMBIGUOUS_MIGRATION_IDENTITY": "NEEDS_SEMANTIC_CHOICE",
+    "MIGRATION_AMBIGUITY_RESULT": "MIGRATION_REQUIRES_SEMANTIC_CHOICE",
+    "RUNTIME_BINDING_AMBIGUITY_RESULT": "NEEDS_SEMANTIC_CHOICE",
+    "SHARED_SEMANTIC_CLASS": "NEEDS_SEMANTIC_CHOICE",
+    "MIGRATION_AMBIGUITY_AND_RUNTIME_MANY_SHARE_SEMANTIC_CLASS": "yes",
+    "evidence_context_is_distinct": "yes",
+    "migration_context": "legacy identity evidence is non-unique or unmigratable and cannot mint a canonical Subject without an explicit semantic choice",
+    "runtime_context": "more than one valid canonical binding candidate remains after deterministic validity filtering",
+    "MIGRATION_AMBIGUITY_AUTOMATICALLY_RESOLVED_BY_RUNTIME_BINDING": "no",
+    "RUNTIME_BINDING_AUTOMATICALLY_RESOLVES_MIGRATION_AMBIGUITY": "no",
+    "followup_rule": "later runtime mechanics cannot silently repair or reinterpret an unresolved migration semantic ambiguity"
+  },
+  "bounded_result_taxonomy": [
+    {
+      "RESULT": "SUBJECT_NOT_FOUND",
+      "WHEN": "no canonical durable Subject exists for the requested identity or lineage",
+      "SEMANTIC_CLASS": "bounded_not_found",
+      "RECOVERY": "do not fabricate a Subject; safe diagnosis remains available"
+    },
+    {
+      "RESULT": "MIGRATION_REQUIRES_SEMANTIC_CHOICE",
+      "WHEN": "migration evidence exists but identity candidates are non-unique or unmigratable",
+      "SEMANTIC_CLASS": "NEEDS_SEMANTIC_CHOICE",
+      "RECOVERY": "do not mint a Subject or infer a winner; preserve evidence and await explicit semantic choice"
+    },
+    {
+      "RESULT": "PROJECTION_STALE_RECONCILABLE",
+      "WHEN": "a canonical durable Subject exists but its current pointer or projection is missing or stale",
+      "SEMANTIC_CLASS": "mechanical_projection_drift",
+      "RECOVERY": "rebuild the projection deterministically from the canonical graph without graph mutation"
+    },
+    {
+      "RESULT": "MATERIALIZED_DECISION_MISSING",
+      "WHEN": "a candidate exists but the semantic Decision prerequisite for the requested followup is not materialized",
+      "SEMANTIC_CLASS": "bounded_missing_prerequisite",
+      "RECOVERY": "do not infer intent or create a semantic followup; report the missing prerequisite"
+    },
+    {
+      "RESULT": "NEEDS_SEMANTIC_CHOICE",
+      "WHEN": "multiple valid runtime candidates remain after deterministic validity filtering",
+      "SEMANTIC_CLASS": "semantic_ambiguity",
+      "RECOVERY": "do not select between candidates; require an explicit semantic choice"
+    }
+  ],
+  "projection_recovery_contract": {
+    "PROJECTION_REBUILD_IS_MECHANICAL_RECOVERY": "yes",
+    "PROJECTION_REBUILD_REQUIRES_SEMANTIC_CHOICE": "no",
+    "PROJECTION_REBUILD_REQUIRES_SEMANTIC_CHOICE_CONDITION": "no when the canonical source is uniquely deterministic; an ambiguous or invalid graph is not repairable by guessing",
+    "PROJECTION_REBUILD_CAN_CHANGE_GRAPH": "no",
+    "PROJECTION_REBUILD_CAN_SELECT_BETWEEN_MULTIPLE_SEMANTIC_SUBJECTS": "no",
+    "STALE_POINTER_BLOCKS_CANONICAL_SUBJECT_DISCOVERY": "no",
+    "STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT": "yes",
+    "STALE_POINTER_REPAIR_REQUIRES_PROFILE_TASK": "no",
+    "STALE_POINTER_REPAIR_REQUIRES_NEW_SEMANTIC_DECISION": "no",
+    "canonical_source": "canonical durable Subject Graph",
+    "rebuild_scope": "deterministically derive current_* projections from one already-valid canonical Subject",
+    "rebuild_effect": "mechanical projection repair only; no new Subject, edge, Decision, authority, or lifecycle transition",
+    "ambiguous_graph_behavior": "an ambiguous or invalid canonical graph is not repairable by guessing; leave the projection unrepaired and return NEEDS_SEMANTIC_CHOICE or a bounded invalid-state result, and never guess",
+    "replay_rule": "replaying the same rebuild converges to the same projection and duplicates no semantic effect"
+  },
+  "cutover_recovery_boundary": {
+    "RECOVERY_ENGINE_MAY_TRIGGER_AUTHORITY_CUTOVER": "no",
+    "CUTOVER_REQUIRES_EXPLICIT_AUTHORIZED_TRANSITION": "yes",
+    "RECOVERY_ENGINE_MAY_REPAIR_POST_CUTOVER_PROJECTION": "yes",
+    "RECOVERY_ENGINE_MAY_REPAIR_PRE_CUTOVER_SHADOW_EVIDENCE": "diagnostic_only",
+    "RECOVERY_ENGINE_MAY_RESOLVE_UNMIGRATABLE_SEMANTIC_STATE": "no",
+    "recovery_never_flips_lifecycle_authority": "yes",
+    "cutover_boundary": "only an explicit authorized transition may atomically make the validated Durable Subject Graph authoritative",
+    "failed_pre_flip_cutover": {
+      "FAILED_PRE_FLIP_CUTOVER_CHANGES_BINDING_AUTHORITY": "no",
+      "legacy_authority": "remains sole lifecycle and binding authority",
+      "shadow_graph": "remains non-authoritative and diagnostic only",
+      "binding_behavior": "must not switch to graph candidates"
+    },
+    "post_flip_projection_failure": {
+      "POST_FLIP_PROJECTION_FAILURE_CHANGES_BINDING_AUTHORITY": "no",
+      "graph_authority": "remains sole lifecycle and binding authority",
+      "projection_behavior": "pointer publication may be retried or rebuilt mechanically from graph authority"
+    },
+    "cutover_replay": "a successful replay returns already_cut_over or an equivalent bounded result and performs no second authority transition"
+  },
+  "pointer_phase_model": [
+    {
+      "PHASE": "PRE_CUTOVER",
+      "POINTER_READ_ROLE": "legacy operational lookup authority for the existing runtime only; not canonical Subject identity authority",
+      "POINTER_WRITE_ROLE": "existing legacy runtime authoritative write path; no authoritative shadow graph write",
+      "GRAPH_AUTHORITY": "shadow graph is non-authoritative diagnostic evidence",
+      "BINDING_AUTHORITY": "legacy runtime lifecycle authority; shadow candidates cannot authoritatively bind"
+    },
+    {
+      "PHASE": "CUTOVER",
+      "POINTER_READ_ROLE": "legacy reads support comparison while the explicit transition is serialized",
+      "POINTER_WRITE_ROLE": "no dual-authoritative write; publication is held at the explicit transition boundary",
+      "GRAPH_AUTHORITY": "not authoritative until the successful explicit authority flip",
+      "BINDING_AUTHORITY": "legacy until the flip, then canonical graph after the flip"
+    },
+    {
+      "PHASE": "POST_CUTOVER",
+      "POINTER_READ_ROLE": "projection and compatibility lookup only",
+      "POINTER_WRITE_ROLE": "projection publisher or bounded mechanical rebuild only; never lifecycle authority",
+      "GRAPH_AUTHORITY": "canonical durable Subject Graph is sole lifecycle authority",
+      "BINDING_AUTHORITY": "canonical durable Subject Graph; legacy pointers cannot override it"
+    }
+  ],
+  "pointer_global_invariants": {
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "CURRENT_POINTERS_ARE_AUTHORITY_AFTER_CUTOVER": "no",
+    "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+    "POINTERS_ARE_CANONICAL_SUBJECT_IDENTITY": "no",
+    "pre_cutover_qualification": "a legacy pointer may be operationally authoritative inside the legacy runtime before cutover, without becoming canonical Subject authority"
+  },
+  "readonly_boundary": {
+    "MIGRATION_AMBIGUITY_BLOCKS_SAFE_READONLY_DIAGNOSIS": "no",
+    "CUTOVER_STATE_BLOCKS_SAFE_INDEPENDENT_DIAGNOSIS": "no_where_technically_safe",
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE": "no",
+    "available_phases": [
+      "before cutover",
+      "during cutover where technically safe",
+      "after cutover",
+      "with stale projections",
+      "with migration ambiguity"
+    ],
+    "diagnostic_rule": "read-only Host diagnosis may report evidence, authority phase, ambiguity, and projection drift without lifecycle mutation or forced Subject binding",
+    "mutation_boundary": "diagnosis cannot mint a Subject, select semantics, flip authority, or repair a projection unless a separate bounded recovery operation is authorized"
+  },
+  "idempotency_cross_contract": {
+    "CUTOVER_REPLAY_AFTER_SUCCESS": "returns_already_cut_over_or_equivalent_bounded_result",
+    "CUTOVER_REPLAY_CREATES_SECOND_AUTHORITY_TRANSITION": "no",
+    "PROJECTION_REBUILD_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "BINDING_RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "replay_rule": "replay may re-read or converge mechanical state, but never creates a second authority, Subject, edge, Decision, or semantic followup effect",
+    "cutover_once_rule": "authority flips at most once and a successful replay cannot create a second transition",
+    "projection_once_rule": "projection rebuild is deterministic and replay-safe",
+    "binding_once_rule": "binding recovery reuses an existing semantic effect and never duplicates it"
+  },
+  "cross_scenarios": [
+    {
+      "SCENARIO_ID": "A45-S1",
+      "NAME": "pre-cutover shadow graph has one candidate",
+      "given": "before cutover, the shadow graph contains one structurally valid candidate and candidate_count=1 after deterministic validity filtering",
+      "when": "runtime binding evaluates the candidate",
+      "expected": "candidate is available for comparison and diagnostics only; it cannot authoritatively bind because PRE_CUTOVER_SHADOW_GRAPH_CAN_AUTHORITATIVELY_BIND=no, so binding authority remains legacy",
+      "result": "diagnostic_candidate_only",
+      "authority": "legacy runtime",
+      "semantic_effect": "none"
+    },
+    {
+      "SCENARIO_ID": "A45-S2",
+      "NAME": "pre-cutover migration has two valid identity candidates",
+      "given": "migration evidence yields two valid identity candidates and no deterministic semantic winner",
+      "when": "migration and runtime binding are evaluated",
+      "expected": "MIGRATION_REQUIRES_SEMANTIC_CHOICE with semantic class NEEDS_SEMANTIC_CHOICE; runtime binding cannot collapse the candidates",
+      "result": "MIGRATION_REQUIRES_SEMANTIC_CHOICE",
+      "authority": "legacy runtime remains authority; shadow is diagnostic",
+      "semantic_effect": "none"
+    },
+    {
+      "SCENARIO_ID": "A45-S3",
+      "NAME": "post-cutover graph Subject with stale pointer",
+      "given": "after cutover, the canonical graph has one valid Subject and the current_* pointer is missing or stale",
+      "when": "binding performs canonical discovery and bounded recovery",
+      "expected": "graph Subject remains discoverable, result is PROJECTION_STALE_RECONCILABLE, and projection is rebuilt deterministically without semantic escalation",
+      "result": "PROJECTION_STALE_RECONCILABLE",
+      "authority": "canonical durable Subject Graph",
+      "semantic_effect": "mechanical projection repair only"
+    },
+    {
+      "SCENARIO_ID": "A45-S4",
+      "NAME": "post-cutover graph has two valid semantic candidates",
+      "given": "after cutover, deterministic validity filtering leaves two valid canonical Subject candidates",
+      "when": "binding or projection recovery evaluates the candidates",
+      "expected": "NEEDS_SEMANTIC_CHOICE; projection rebuild cannot select between multiple semantic Subjects and the graph is not changed",
+      "result": "NEEDS_SEMANTIC_CHOICE",
+      "authority": "canonical durable Subject Graph",
+      "semantic_effect": "none"
+    },
+    {
+      "SCENARIO_ID": "A45-S5",
+      "NAME": "cutover fails before authority flip",
+      "given": "cutover validation or publication fails before the authority flip",
+      "when": "the failure boundary is handled",
+      "expected": "legacy remains sole binding authority, shadow graph remains non-authoritative diagnostic evidence, and binding does not switch to graph",
+      "result": "cutover_failed_pre_flip",
+      "authority": "legacy runtime",
+      "semantic_effect": "no authority transition"
+    },
+    {
+      "SCENARIO_ID": "A45-S6",
+      "NAME": "cutover succeeds but pointer publication fails",
+      "given": "the explicit authority flip succeeds and graph authority is durable, but pointer projection publication fails",
+      "when": "binding and recovery continue",
+      "expected": "graph remains binding authority, valid graph Subjects remain discoverable, and mechanical projection recovery is allowed without changing authority",
+      "result": "post_flip_projection_failure",
+      "authority": "canonical durable Subject Graph",
+      "semantic_effect": "authority transition already completed; projection repair only"
+    },
+    {
+      "SCENARIO_ID": "A45-S7",
+      "NAME": "unmigratable legacy evidence exists",
+      "given": "legacy evidence is incomplete, conflicting, or non-unique and cannot establish a canonical identity",
+      "when": "recovery inspects the evidence",
+      "expected": "recovery may preserve evidence and diagnose, but may not invent a Subject or resolve UNMIGRATABLE or NEEDS_SEMANTIC_CHOICE by heuristic inference",
+      "result": "MIGRATION_REQUIRES_SEMANTIC_CHOICE",
+      "authority": "legacy until explicit cutover; no invented graph authority",
+      "semantic_effect": "none"
+    },
+    {
+      "SCENARIO_ID": "A45-S8",
+      "NAME": "safe Host diagnostic during migration ambiguity",
+      "given": "migration identity is ambiguous while a safe read-only Host diagnostic is requested",
+      "when": "the diagnostic plane evaluates the request",
+      "expected": "safe independent diagnosis remains available; MIGRATION_AMBIGUITY_BLOCKS_SAFE_READONLY_DIAGNOSIS=no and no Subject binding is forced",
+      "result": "readonly_diagnostic_available",
+      "authority": "diagnostic plane only",
+      "semantic_effect": "none"
+    },
+    {
+      "SCENARIO_ID": "A45-S9",
+      "NAME": "replayed successful cutover",
+      "given": "the explicit cutover has already completed successfully",
+      "when": "the same cutover request is replayed",
+      "expected": "returns_already_cut_over_or_equivalent_bounded_result; CUTOVER_REPLAY_CREATES_SECOND_AUTHORITY_TRANSITION=no and there is no second authority transition",
+      "result": "already_cut_over",
+      "authority": "canonical durable Subject Graph",
+      "semantic_effect": "none"
+    }
+  ],
+  "a6_handoff": {
+    "A4_CONTRACT_ACCEPTED": "yes",
+    "A5_CONTRACT_ACCEPTED": "yes",
+    "PRE_CUTOVER_BINDING_AUTHORITY": "PASS",
+    "POST_CUTOVER_BINDING_AUTHORITY": "PASS",
+    "MIGRATION_RUNTIME_AMBIGUITY_CONTRACT": "PASS",
+    "PROJECTION_RECOVERY_CONTRACT": "PASS",
+    "CUTOVER_RECOVERY_AUTHORITY_BOUNDARY": "PASS",
+    "UNMIGRATABLE_RECOVERY_BOUNDARY": "PASS",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "NO_A4_A5_CONTRADICTION": "yes",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "M3_A6_READY": "yes",
+    "authorization_scope": "integrated design proof only; do not start M3-A6, M3-B, or any runtime implementation"
+  },
+  "invariants": {
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "CURRENT_POINTERS_ARE_AUTHORITY_POST_CUTOVER": "no",
+    "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+    "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+    "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+    "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+    "SHADOW_GRAPH_CAN_WRITE_AUTHORITATIVE_STATE": "no",
+    "ONE_CUTOVER_AUTHORITY": "yes",
+    "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+    "GRAPH_WRITE_BEFORE_CUTOVER": "denied",
+    "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY": "yes",
+    "PROJECTION_REBUILD_MUTATES_GRAPH": "no",
+    "STALE_PROJECTION_MAY_BE_REBUILT": "yes",
+    "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT": "yes",
+    "HEURISTIC_IDENTITY_MERGE_ALLOWED": "no",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+    "RECOVERY_ENGINE_MAY_TRIGGER_AUTHORITY_CUTOVER": "no",
+    "RECOVERY_ENGINE_MAY_RESOLVE_UNMIGRATABLE_SEMANTIC_STATE": "no",
+    "FAILED_PRE_FLIP_CUTOVER_CHANGES_BINDING_AUTHORITY": "no",
+    "POST_FLIP_PROJECTION_FAILURE_CHANGES_BINDING_AUTHORITY": "no",
+    "MIGRATION_AMBIGUITY_AUTOMATICALLY_RESOLVED_BY_RUNTIME_BINDING": "no",
+    "RUNTIME_BINDING_AUTOMATICALLY_RESOLVES_MIGRATION_AMBIGUITY": "no",
+    "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "CUTOVER_REPLAY_CREATES_SECOND_AUTHORITY_TRANSITION": "no",
+    "MIGRATION_AMBIGUITY_BLOCKS_SAFE_READONLY_DIAGNOSIS": "no",
+    "CUTOVER_STATE_BLOCKS_SAFE_INDEPENDENT_DIAGNOSIS": "no_where_technically_safe",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "SOURCE_CODE_CHANGED": "no"
+  },
+  "implementation_boundary": {
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a45-contract-reconciliation.json",
+      "scripts/m3_a45_contract_reconciliation_guard.py"
+    ],
+    "forbidden_paths": [
+      "aota_forge/core/**",
+      "aota_forge/adapters/**"
+    ],
+    "SOURCE_CODE_CHANGED": "no",
+    "GRAPH_IMPLEMENTATION_STARTED": "no",
+    "CUTOVER_IMPLEMENTATION_STARTED": "no",
+    "BINDING_IMPLEMENTATION_STARTED": "no",
+    "RECOVERY_IMPLEMENTATION_STARTED": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_PERFORMED": "no",
+    "implemented_nothing": [
+      "graph storage",
+      "graph mutation",
+      "subject binding",
+      "semantic recovery",
+      "projection mutation",
+      "authority cutover",
+      "migration execution",
+      "runtime behavior"
+    ]
+  },
+  "report_metrics": {
+    "cross_scenario_count": 9,
+    "pointer_phase_count": 3,
+    "bounded_result_count": 5,
+    "source_patch_file_count": 4,
+    "negative_mutation_count": 7,
+    "source_error_code_count": 0,
+    "unsupported_success_claims": 0
+  }
+}
