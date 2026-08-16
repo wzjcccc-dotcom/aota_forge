@@ -1,0 +1,1287 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A6",
+  "artifact": "Issue #9 M3-A6 integrated graph and authority design proof",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "integration_base": "0f75ec4091abf3897bc638c6ba985f13ff1dfc9c",
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+    "a3": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+    "a4": "6552b9a2b4d38de2c947e22ea4c30972266bb54a",
+    "a5": "4573712a1f89f5610635c9a77231be7509fb4957",
+    "a45": "0f75ec4091abf3897bc638c6ba985f13ff1dfc9c"
+  },
+  "integrated_serial_lineage": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1_serial": "0dd2a11876fec105fecd8593b1586fc9f04932e0",
+    "a2_serial": "18980097b0bb15a285c28e25a5e3284f067af2f8",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+    "a3": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+    "a4_serial": "271e9ea332c9bf1970e401b74109e4fd2da6a2b3",
+    "a5_serial": "24c580582d7c8afea707f3d7f9ff42cf5ea9690c",
+    "a45": "0f75ec4091abf3897bc638c6ba985f13ff1dfc9c"
+  },
+  "patch_provenance": {
+    "a0": "original A0 commit 10b8018 is the integration root on ccce2e0 (M2 review-fix head)",
+    "a1": "serial copy 0dd2a11 has tree identical to original 7dbc222 (362ea672...) and same parent 10b8018 -> patch identical",
+    "a2": "serial copy 1898009 re-applies A2 on top of A1-copy; A2-owned file contents (a2 json + guard) verified identical to original b29fe5f (git diff b29fe5f 1898009 shows only A1 files added)",
+    "a12": "original reconciliation commit 8dad2d3 (adds only a12 json + guard)",
+    "a3": "original A3 commit 2485a8d on top of 8dad2d3",
+    "a4": "serial copy 271e9ea has tree identical to original 6552b9a (4de6aba...) and same parent 2485a8d -> patch identical",
+    "a5": "serial copy 24c5805 re-applies A5 on top of A4-copy; A5-owned file contents (a5 json + guard) verified identical to original 4573712 (git diff 4573712 24c5805 shows only A4 files added)",
+    "a45": "original reconciliation commit 0f75ec4 (adds only a45 json + guard)"
+  },
+  "required_plan_outputs": {
+    "GRAPH_CANONICAL_SCHEMA": {
+      "status": "PASS",
+      "owner": "M3-A1",
+      "artifact": "a1-subject-schema-identity.json",
+      "note": "A1 canonical_records: Workflow/Subject/Execution/Completion/Decision/FollowupEdge (ParentChildEdge alias); executor-neutral logical records, no storage engine"
+    },
+    "SUBJECT_IDENTITY_RULE": {
+      "status": "PASS",
+      "owner": "M3-A1",
+      "artifact": "a1-subject-schema-identity.json",
+      "note": "deterministic or minted derivation; SUBJECT_ID_IS_AUTHORITY=no; ID never reused; collision fails closed"
+    },
+    "GRAPH_BOOTSTRAP_STRATEGY": {
+      "status": "PASS",
+      "owner": "M3-A4",
+      "artifact": "a4-bootstrap-cutover.json",
+      "note": "read/normalize/cross-validate/materialize candidate; legacy = input/evidence only; no heuristic merge"
+    },
+    "GRAPH_CUTOVER_RULE": {
+      "status": "PASS",
+      "owner": "M3-A4/M3-A45",
+      "artifact": "a4-bootstrap-cutover.json + a45",
+      "note": "PRE_CUTOVER/CUTOVER/POST_CUTOVER; ONE_CUTOVER_AUTHORITY=yes; failure cannot create dual authority"
+    },
+    "REVISION_MODEL": {
+      "status": "PASS",
+      "owner": "M3-A3",
+      "artifact": "a3-revision-cas-transaction.json",
+      "note": "revision unit = Subject aggregate; Workflow record has independent revision; no whole-graph serialization"
+    },
+    "CAS_MODEL": {
+      "status": "PASS",
+      "owner": "M3-A3",
+      "artifact": "a3-revision-cas-transaction.json",
+      "note": "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT=yes; stale mutation fail_closed; bypass only A4 bootstrap/cutover"
+    },
+    "TRANSACTION_BOUNDARY": {
+      "status": "PASS",
+      "owner": "M3-A3",
+      "artifact": "a3-revision-cas-transaction.json",
+      "note": "one Subject aggregate per CAS commit; canonical two-root followup; no whole-graph transaction"
+    },
+    "CAPABILITY_LEASE_LIFECYCLE": {
+      "status": "PASS",
+      "owner": "M3-A2",
+      "artifact": "a2-authority-lease.json",
+      "note": "issuance/validation/expiry/consumption/replay/revocation/renewal/expansion/substitution/delegation frozen"
+    },
+    "IDEMPOTENT_REPLAY_RULE": {
+      "status": "PASS",
+      "owner": "M3-A3",
+      "artifact": "a3-revision-cas-transaction.json",
+      "note": "same key+same fingerprint -> recorded outcome, no duplicate semantic effect; mismatch fail_closed; cutover/recovery replay obeys same principle"
+    },
+    "PROJECTION_REBUILD_RULE": {
+      "status": "PASS",
+      "owner": "M3-A4",
+      "artifact": "a4-bootstrap-cutover.json",
+      "note": "rebuild from canonical authority only; STALE_PROJECTION_MAY_BE_REBUILT=yes; rebuild mutates graph=no"
+    },
+    "CONFLICT_RULE": {
+      "status": "PASS",
+      "owner": "M3-A3/M3-A5",
+      "artifact": "a3 + a5 conflict taxonomies",
+      "note": "REVISION_CONFLICT / IDEMPOTENCY_CONFLICT / PREDECESSOR_STATE_CONFLICT / AUTHORITY_STALE / binding conflicts distinct"
+    },
+    "CONCURRENCY_RULE": {
+      "status": "PASS",
+      "owner": "M3-A3",
+      "artifact": "a3-revision-cas-transaction.json",
+      "note": "LOST_UPDATE_ALLOWED=no; SILENT_LAST_WRITE_WINS=no; independent Subjects mutate concurrently; no global lock"
+    },
+    "AUTHORITY_EVALUATION_MODEL": {
+      "status": "PASS",
+      "owner": "M3-A2",
+      "artifact": "a2-authority-lease.json",
+      "note": "deterministic engine inputs; decision classes ALLOW/DENY/NEEDS_APPROVAL/NEEDS_APPROVAL_BLOCKED; no semantic reasoning"
+    },
+    "PRINCIPAL_BINDING_RULE": {
+      "status": "PASS",
+      "owner": "M3-A2",
+      "artifact": "a2-authority-lease.json",
+      "note": "principal bound at trusted adapter/runtime boundary; model cannot self-assert; fail-closed without trusted binding"
+    },
+    "TRUSTED_CONTEXT_AUTHORITY_RULE": {
+      "status": "PASS",
+      "owner": "M3-A2",
+      "artifact": "a2-authority-lease.json",
+      "note": "trusted resource implies no mutation authority; principal-bound before trusted resolution; lease-scoped for mutation"
+    },
+    "SUBJECT_BINDING_RULE": {
+      "status": "PASS",
+      "owner": "M3-A5",
+      "artifact": "a5-binding-recovery.json",
+      "note": "SUBJECT_BINDING_ZERO_ONE_MANY frozen; deterministic validity filter first; automation rule; heuristics denied"
+    },
+    "MECHANICAL_RECOVERY_BOUNDARY": {
+      "status": "PASS",
+      "owner": "M3-A5",
+      "artifact": "a5-binding-recovery.json",
+      "note": "recovery = bounded deterministic read-then-repair; may/may_not lists; never semantic reasoning; never triggers cutover"
+    }
+  },
+  "canonical_subject_model": {
+    "accepted_records": [
+      "Workflow",
+      "Subject",
+      "Execution",
+      "Completion",
+      "Decision",
+      "FollowupEdge"
+    ],
+    "work_item_is_migration_evidence_not_canonical_subject": {
+      "WORK_ITEM_NOT_SUBJECT": "yes",
+      "WORK_ITEM_ID_NOT_SUBJECT_ID": "yes",
+      "WORK_SUBJECT_MINTED_OR_EXPLICIT_REGISTRATION": "yes",
+      "source": "A1 OQ-M3A1-01"
+    },
+    "plan_subject_consistent_with_a1": "PLAN_IS_SINGLE_AGGREGATE=yes; milestone is Plan-internal structural reference, not a Subject kind; PlanSubject identity stable across revisions",
+    "decision_owned_by_one_subject": "YES_DECISION_OWNED_BY_EXACTLY_ONE_SUBJECT",
+    "semantic_followup_child_only_through_decision_lineage": {
+      "FOLLOWUP_IS_CHILD_SUBJECT": "yes",
+      "FOLLOWUP_REQUIRES_SOURCE_DECISION": "yes",
+      "FOLLOWUP_REQUIRES_SEMANTIC_LINEAGE": "yes",
+      "NO_HEURISTIC_PARENT_SELECTION": "yes"
+    },
+    "RETRY_CREATES_NEW_SUBJECT": "no",
+    "CHANGE_EXECUTOR_CREATES_NEW_SUBJECT": "no",
+    "HERMES_PRIVATE_IDENTITY_IN_CORE_ONTOLOGY": "no",
+    "CURRENT_POINTERS_ARE_SUBJECT_AUTHORITY": "no"
+  },
+  "identity_authority_model": {
+    "SUBJECT_ID_IS_AUTHORITY": "no",
+    "ID_IS_AUTHORITY": "no",
+    "AUTHORITY_TARGET_IS_TYPED": "yes",
+    "authority_target": {
+      "object_kind": "Subject",
+      "object_id": "canonical Subject internal ID (typed object_ref)"
+    },
+    "bare_object_id_is_authority": "no",
+    "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+    "RAW_INTERNAL_ID_MODEL_SURFACE": "denied_by_default",
+    "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL": "no",
+    "EXECUTOR_IDENTITY_EQUALS_PRINCIPAL": "no",
+    "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no"
+  },
+  "principal_lease_model": {
+    "bound_to": [
+      "principal",
+      "operation",
+      "typed object",
+      "expected revision",
+      "bounded mutation scope",
+      "expiry",
+      "authority basis"
+    ],
+    "flags": {
+      "LEASE_PRINCIPAL_BOUND": "yes",
+      "LEASE_OPERATION_BOUND": "yes",
+      "LEASE_OBJECT_BOUND": "yes",
+      "LEASE_REVISION_BOUND": "yes",
+      "LEASE_SCOPE_EXPANSION": "denied",
+      "EXPIRED_LEASE_MUTATION": "denied",
+      "STALE_LEASE_REVISION_MUTATION": "denied",
+      "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no"
+    },
+    "lifecycle_stages": [
+      "issuance",
+      "validation",
+      "expiry",
+      "consumption",
+      "replay",
+      "revocation",
+      "renewal",
+      "expansion",
+      "substitution",
+      "delegation"
+    ],
+    "semantic_boundary": "A lease never contains semantic planning decisions; no Plan/Work Item/SPEC/Profile Task semantics inside the lease; the lease is mechanical evidence only."
+  },
+  "revision_cas_model": {
+    "primary_revision_boundary": "Subject aggregate",
+    "workflow_metadata_revision": "independent (WORKFLOW_RECORD_REVISION_SCOPE=independent)",
+    "whole_graph_serialization": "no",
+    "flags": {
+      "LOST_UPDATE_ALLOWED": "no",
+      "SILENT_LAST_WRITE_WINS": "no",
+      "STALE_REVISION_MUTATION": "fail_closed",
+      "CAS_CHECK_BEFORE_AUTHORITATIVE_COMMIT": "yes",
+      "GLOBAL_PROCESS_LOCK_IS_CANONICAL_CONCURRENCY_MODEL": "no",
+      "INDEPENDENT_SUBJECTS_CONCURRENT_MUTATION": "yes"
+    },
+    "revision_representation": {
+      "canonical_form": "revision = (aggregate_id, revision_number, revision_token)",
+      "revision_type": "an opaque content-derived revision_token paired with a monotonic revision_number per aggregate; this is the canonical storage-independent revision type - no database, storage engine, or serialization format is selected (NO_STORAGE_ENGINE_FROZEN=yes)",
+      "aggregate_id": "canonical Subject internal ID (minted or deterministic per A1 subject_identity_rule); the revision unit is identified by the Subject aggregate, never by executor, session, path, or pointer",
+      "revision_number": "monotonically increasing integer >= 1 within the aggregate, never reused, no gaps required; the initial revision of any Subject is revision_number 1 (child Subjects start at their own independent revision 1)",
+      "revision_token": "opaque content-derived token: deterministic hash over the aggregate's committed record set plus the previous revision_token (chain) or the initial token for revision 1",
+      "storage_independent": "the representation is defined by the contract, not by any storage engine: any storage mapping must expose exactly this canonical revision unit, counter and token; NO_STORAGE_ENGINE_FROZEN=yes",
+      "ordering_semantics": "revision_number strictly increases on every committed mutation; revision_token changes if and only if the committed record set changed; equal token implies identical committed record set",
+      "no_choreography": "the model defines the revision contract but does not choreograph revision: no lock manager, no revision coordinator, no storage-specific revision table is defined by M3-A3"
+    },
+    "authoritative_read_source": "durable authoritative record set only; Event Log/git/pointers/projections never CAS sources"
+  },
+  "transaction_model": {
+    "authoritative_transaction_contents": [
+      "create Execution for the Subject",
+      "record Completion for an Execution",
+      "add Decision to the Subject",
+      "followup verification + edge + child creation (when the transaction is a followup transaction)",
+      "mechanical Subject state transition and the resulting revision update",
+      "atomic idempotency reservation and outcome metadata"
+    ],
+    "includes": [
+      "semantic records",
+      "aggregate revision",
+      "idempotency metadata"
+    ],
+    "followup_atomic_unit": {
+      "commit_unit": [
+        "child Subject record with its own independent initial revision (revision_number 1)",
+        "at least one FollowupEdge (parent_subject_ref, child_subject_ref, source_decision_ref)",
+        "mechanical verification that the source Decision exists, is owned by the parent Subject, and is already materialized (AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION=yes; the engine verifies, never infers intent and never creates the Decision)"
+      ],
+      "NO_ORPHAN_CHILD_SUBJECT": "yes",
+      "NO_EDGE_WITHOUT_CHILD": "yes",
+      "NO_CHILD_WITHOUT_DECISION_BASIS": "yes",
+      "NO_DUPLICATE_SEMANTIC_CHILD_EFFECT": "yes",
+      "PARTIAL_AUTHORITATIVE_TRANSITION_VISIBLE": "no"
+    }
+  },
+  "idempotency_model": {
+    "IDEMPOTENT_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "IDEMPOTENCY_PAYLOAD_MISMATCH": "fail_closed",
+    "same_key_same_payload": "returns recorded outcome; no new semantic effect",
+    "key_binding": {
+      "idempotency_key_binding": "principal/authority context + operation (contract identity) + typed target (object_kind + object_id + expected revision context) + semantic fingerprint",
+      "semantic_fingerprint": "deterministic digest of the semantic payload of the request (for followup: the source Decision reference + statement + target references; for transitions: the requested transition + evidence references)",
+      "key_rule": "the key binds actor and operation and target so that a different principal, different operation, or different target can never consume the same dedupe slot"
+    },
+    "cutover_recovery_replay_same_principle": "yes",
+    "source": "A3 idempotency_model + A5 idempotent_recovery + A45 idempotency_cross_contract"
+  },
+  "bootstrap_migration_model": {
+    "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+    "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+    "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+    "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+    "HEURISTIC_IDENTITY_MERGE_ALLOWED": "no",
+    "ambiguous_migration": "NEEDS_SEMANTIC_CHOICE or UNMIGRATABLE (explicit, bounded); never heuristic reconstruction",
+    "source_classifications": [
+      "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "MIGRATION_EVIDENCE_ONLY",
+      "PROJECTION_ONLY",
+      "HISTORICAL_ONLY",
+      "FORBIDDEN_AUTHORITY_SOURCE"
+    ],
+    "bootstrap_strategy": "A future bootstrap is a read, normalize, cross-validate, and materialize-candidate procedure. It processes source classes in dependency order Workspace -> Project -> Plan, then considers legacy lifecycle evidence only when an explicit canonical record mapping is complete. No source class is authoritative merely because A0 labels it AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE. Candidate facts are accepted only after every candidate validation gate passes; unresolved facts remain evidence or quarantine and do not become graph records."
+  },
+  "cutover_model": {
+    "phases": [
+      "PRE_CUTOVER",
+      "CUTOVER",
+      "POST_CUTOVER"
+    ],
+    "PRE_CUTOVER_SHADOW_GRAPH_CAN_AUTHORITATIVELY_BIND": "no",
+    "GRAPH_WRITE_BEFORE_CUTOVER": "denied",
+    "ONE_CUTOVER_AUTHORITY": "yes",
+    "CUTOVER_FAILURE_CANNOT_CREATE_DUAL_AUTHORITY": "yes",
+    "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+    "POST_CUTOVER_LEGACY_POINTER_CAN_OVERRIDE_GRAPH": "no",
+    "cutover_rule": "A validated graph candidate plus all cutover preconditions plus one explicit authorized cutover transaction causes one one-way authority transition. Before the atomic authority flip, legacy operational authority remains sole. After a committed flip, the Durable Subject Graph is the sole lifecycle authority and all legacy state is history, shadow, or derived compatibility projection evidence only."
+  },
+  "projection_model": {
+    "current_pointers_are_rebuildable_projections": "yes",
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "STALE_PROJECTION_MAY_BE_REBUILT": "yes",
+    "STALE_PROJECTION_MUST_NOT_HIDE_VALID_SUBJECT": "yes",
+    "PROJECTION_REBUILD_MUTATES_GRAPH": "no",
+    "PROJECTION_REBUILD_IS_MECHANICAL_RECOVERY": "yes",
+    "projection_failure_after_canonical_commit_changes_authority": "no",
+    "rebuild_source": "canonical_authority_only"
+  },
+  "binding_model": {
+    "ZERO": "no valid candidate remains after the deterministic validity filter",
+    "ONE": "automatic binding only if exactly one deterministic valid candidate AND materialized Decision AND valid authority AND valid revision AND valid predecessor",
+    "MANY": "NEEDS_SEMANTIC_CHOICE",
+    "HEURISTIC_PRE_FILTER_ALLOWED": "no",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_AUTHORITY": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_CAS": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_MATERIALIZED_DECISION": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_PREDECESSOR_VALIDATION": "no",
+    "SUBJECT_BINDING_AUTOMATION_RULE": "automatic binding/recovery iff candidate_count==1 AND candidate semantic decision durably materialized AND required authority valid AND required revision/predecessor valid. Otherwise NEEDS_SEMANTIC_CHOICE or a bounded deterministic not-found/conflict. HEURISTIC_SUBJECT_SELECTION_ALLOWED=no."
+  },
+  "recovery_model": {
+    "may": [
+      "rebuild a stale projection from the durable record set",
+      "resolve one unique durable Subject",
+      "repair deterministic index/projection drift",
+      "bind a uniquely determined already-decided followup",
+      "replay an idempotent projection"
+    ],
+    "may_not": [
+      "choose a project under ambiguity",
+      "choose a semantic followup",
+      "accept a review",
+      "change requirements/scope/worker role",
+      "close a milestone",
+      "invent a missing Decision"
+    ],
+    "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+    "RECOVERY_ENGINE_MAY_TRIGGER_AUTHORITY_CUTOVER": "no",
+    "RECOVERY_ENGINE_MAY_RESOLVE_UNMIGRATABLE_SEMANTIC_STATE": "no",
+    "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no"
+  },
+  "readonly_diagnostic_model": {
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE": "no",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "MIGRATION_AMBIGUITY_BLOCKS_SAFE_READONLY_DIAGNOSIS": "no",
+    "stale_projection_forces_spec_profile_task_approval_followup": "no",
+    "stale_projection_forces_unrelated_mutation_lease": "no"
+  },
+  "nf2_disposition": {
+    "NF2_RESOLUTION_CONTRACT": "PASS",
+    "NF2_SOURCE_FIXED": "no",
+    "NF2_IMPLEMENTATION_OWNER": "M3-B",
+    "resolved_design_rules": [
+      "principal becomes a typed executor-neutral identity bound at the trusted runtime boundary (OQ-M3A2-02 resolved)",
+      "the trusted adapter channel is principal-bound before trusted resources enter Core; adapter self-assertion is denied (OQ-M3A2-03 resolved)",
+      "bounded mutation is lease-scoped; contract-declared read-only diagnostic operations need no lease (readonly_authority_boundary)",
+      "the canonical audit record must include the bound principal (design requirement)",
+      "trusted resource roots become lease-scoped resources only for bounded mutation; resolution alone grants nothing"
+    ]
+  },
+  "i9_b008_disposition": {
+    "I9_B008_SOURCE_FIXED": "no",
+    "I9_B008_IMPLEMENTATION_OWNER": "M3-B",
+    "I9_B008_M3B_ORDERING": "early_prerequisite",
+    "canonical_target_invariant": "handler result must always normalize into bounded canonical ingress envelope; malformed internal handler result must not escape as uncaught AttributeError",
+    "m3b_prerequisite_evidence": "yes"
+  },
+  "regression_ownership": [
+    {
+      "FAILURE_CLASS": "B011",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M2"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "B014-F",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "B014-F1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M5"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M3"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-host-inspection-escalation",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "no"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-wrong-source-checkout",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "no"
+    },
+    {
+      "FAILURE_CLASS": "WCTX-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M2"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "DRIFT-1",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "no"
+    },
+    {
+      "FAILURE_CLASS": "RC2-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "yes",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "CLASSIFY-1",
+      "CURRENT_DISPOSITION": "ELIMINATED_BY_CONSTRUCTION",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "no"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "design",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M4"
+    },
+    {
+      "FAILURE_CLASS": "RUNNER-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M5"
+    },
+    {
+      "FAILURE_CLASS": "E2E-1",
+      "CURRENT_DISPOSITION": "NOT_YET_IMPLEMENTED",
+      "M3_A_DESIGN_PROOF": "n/a_or_construction",
+      "M3_B_BEHAVIORAL_PROOF_REQUIRED": "no",
+      "M4_PLUS_OWNER_IF_ANY": "M5"
+    }
+  ],
+  "open_question_triage": [
+    {
+      "QUESTION_ID": "A1-DEFER-01",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A1",
+      "question_summary": "ID Broker minting mechanics, deterministic hash function selection, and collision resolution protocol: graph-write lanes"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-02",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A1",
+      "question_summary": "projection engine implementing current decision/plan/binding derivation (fail-closed 0/1/many): M3-B"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-03",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A1",
+      "question_summary": "mechanical state transition engine (revisioned monotonic transitions, cycle detection on lineage): M3-B/M4"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-04",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A1",
+      "question_summary": "concrete executor_kind enum values and executor_execution_ref schema for real executors: M5 ExecutorAdapter"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-05",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A1",
+      "question_summary": "storage engine / database schema / graph serialization: explicitly NOT defined by A1 (NO_STORAGE_ENGINE_FROZEN=yes)"
+    },
+    {
+      "QUESTION_ID": "A3-DEFER-01",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A3:deferred_to_implementation",
+      "question_summary": "atomic commit primitive (committed-or-not enforcement)"
+    },
+    {
+      "QUESTION_ID": "A3-DEFER-02",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A3:deferred_to_implementation",
+      "question_summary": "multi-root / cross-existing-Subject transaction mechanics"
+    },
+    {
+      "QUESTION_ID": "A3-DEFER-03",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A3:deferred_to_implementation",
+      "question_summary": "idempotency record retention duration and storage"
+    },
+    {
+      "QUESTION_ID": "A3-DEFER-04",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A3:deferred_to_implementation",
+      "question_summary": "mechanical recovery engine"
+    },
+    {
+      "QUESTION_ID": "A4-DEFER-ATOMIC",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A4:deferred_to_m3_b_or_later",
+      "question_summary": "atomic commit primitive and durable cutover record implementation"
+    },
+    {
+      "QUESTION_ID": "A4-DEFER-MUTATION-RUNTIME",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A4:deferred_to_m3_b_or_later",
+      "question_summary": "normal authoritative graph mutation runtime"
+    },
+    {
+      "QUESTION_ID": "A4-DEFER-PROJECTION-RUNTIME",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A4:deferred_to_m3_b_or_later",
+      "question_summary": "projection engine implementation and stale-marker storage"
+    },
+    {
+      "QUESTION_ID": "A4-DEFER-RECOVERY",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A4:deferred_to_m3_b_or_later",
+      "question_summary": "mechanical recovery engine"
+    },
+    {
+      "QUESTION_ID": "A4-DEFER-STORAGE",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A4:deferred_to_m3_b_or_later",
+      "question_summary": "storage engine and graph serialization"
+    },
+    {
+      "QUESTION_ID": "A5-DEFER-01",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A5:deferred_to_implementation",
+      "question_summary": "mechanical binding engine"
+    },
+    {
+      "QUESTION_ID": "A5-DEFER-02",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A5:deferred_to_implementation",
+      "question_summary": "mechanical recovery engine"
+    },
+    {
+      "QUESTION_ID": "A5-DEFER-03",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A5:deferred_to_implementation",
+      "question_summary": "projection rebuild runtime"
+    },
+    {
+      "QUESTION_ID": "A5-DEFER-04",
+      "CLASSIFICATION": "M3_B_IMPLEMENTATION_DETAIL",
+      "source": "A5:deferred_to_implementation",
+      "question_summary": "ID Broker minting mechanics / deterministic hash / collision protocol"
+    },
+    {
+      "QUESTION_ID": "A5-DEFER-05",
+      "CLASSIFICATION": "M4_PLUS_SEMANTIC_SCOPE",
+      "source": "A5:deferred_to_implementation",
+      "question_summary": "SPEC / Profile Task acceptance"
+    },
+    {
+      "QUESTION_ID": "BINDING-AUTOMATION-RULE",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A5:resolved_by_a5",
+      "question_summary": "binding automation eligibility"
+    },
+    {
+      "QUESTION_ID": "CAS-SEMANTICS",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A3:resolved_by_a3",
+      "question_summary": "CAS semantics / exact revision mechanics"
+    },
+    {
+      "QUESTION_ID": "IDEMPOTENCY-TRANSACTION",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A3:resolved_by_a3",
+      "question_summary": "idempotency transaction semantics"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-01",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Is Work Item == Subject, or is Work Item a projection/attribute of another subject?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-02",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Are Plan and Milestone one subject aggregate or separate subjects, and where is the aggregate boundary?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-03",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Is review its own Subject (architect/reviewer role artifacts) or an attribute/edge of a task subject?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-04",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Do legacy decision records (od_*, project_decision) map to decision Subjects?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-05",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Is followup a Subject with binding edges or a derived projection, and how does SUBJECT_BINDING_ZERO_ONE_MANY apply?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-06",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Are workspace and project separate subject kinds with a parent/child edge, or is project the top aggregate?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-01",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "What is the exact authority lease schema (grant, scope, expiry, renewal, revocation)?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-02",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Does principal become a typed executor-neutral identity or remain trusted adapter metadata, and how is adapter self-asse"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-03",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Must the trusted adapter channel (raw resolved paths, trusted roots) be principal-bound / lease-scoped?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-04",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "Does approval_required gate authority grants / capability leases?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A4-01",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "What is the exact transaction scope for authoritative graph writes (operation-level, subject-level, aggregate-level)?"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-01",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "What is the deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources (project manifests, P"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-02",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A0",
+      "question_summary": "What is the exact cutover rule replacing current_* authority with derived projections, and what happens to legacy pointe"
+    },
+    {
+      "QUESTION_ID": "PROJECTION-REBUILD",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A4:resolved_by_a4",
+      "question_summary": "PROJECTION-REBUILD projection source and failure relation"
+    },
+    {
+      "QUESTION_ID": "READONLY-DIAGNOSTIC-EXEMPTION",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A5:resolved_by_a5",
+      "question_summary": "read-only diagnosis independence"
+    },
+    {
+      "QUESTION_ID": "RECOVERY-BOUNDARY",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A5:resolved_by_a5",
+      "question_summary": "recovery vs binding and allowed recovery actions"
+    },
+    {
+      "QUESTION_ID": "REVISION-UNIT",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A3:resolved_by_a3",
+      "question_summary": "canonical revision unit"
+    },
+    {
+      "QUESTION_ID": "SUBJECT-BINDING-ZERO-ONE-MANY",
+      "CLASSIFICATION": "RESOLVED_BY_M3_A",
+      "source": "A3:deferred_to_a5",
+      "question_summary": "zero/one/many subject binding"
+    }
+  ],
+  "m3_b_construction_map": [
+    {
+      "WORK_ITEM": "W-M3B-01 canonical graph model / storage abstraction",
+      "DEPENDS_ON": [
+        "W-M3B-12 I9-B008 ingress hardening (early prerequisite)"
+      ],
+      "SOURCE_OWNERSHIP": "A1 canonical_records + A2/A3/A4/A5 contracts",
+      "MUTATION_CLASS": "foundation (no authoritative writes)",
+      "REGRESSION_CLASSES": [
+        "B011",
+        "B013",
+        "WCTX-1"
+      ],
+      "ACCEPTANCE": "schema/model matches A1 records; storage-neutral; M3_A6_GUARD invariants preserved",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-11",
+        "W-M3B-12"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-02 Subject identity / graph record materialization",
+      "DEPENDS_ON": [
+        "W-M3B-01"
+      ],
+      "SOURCE_OWNERSHIP": "A1 subject_identity_rule + A4 bootstrap input contract",
+      "MUTATION_CLASS": "authoritative-gated",
+      "REGRESSION_CLASSES": [
+        "B011",
+        "B013",
+        "WCTX-1"
+      ],
+      "ACCEPTANCE": "deterministic/minted IDs; no legacy ID import as authority; ID collision fails closed",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-03",
+        "W-M3B-04"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-03 revision/CAS/transaction core",
+      "DEPENDS_ON": [
+        "W-M3B-01"
+      ],
+      "SOURCE_OWNERSHIP": "A3 revision_model/cas_model/transaction_boundary/idempotency_model",
+      "MUTATION_CLASS": "authoritative-gated",
+      "REGRESSION_CLASSES": [
+        "RC2-1",
+        "B014"
+      ],
+      "ACCEPTANCE": "CAS before authoritative commit; stale fails closed; two-root followup atomic; idempotency no dup effect",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-02",
+        "W-M3B-04"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-04 Internal ID Broker",
+      "DEPENDS_ON": [
+        "W-M3B-01"
+      ],
+      "SOURCE_OWNERSHIP": "A1 minted IDs (A1-DEFER-01) + A2 id_model",
+      "MUTATION_CLASS": "authoritative-gated",
+      "REGRESSION_CLASSES": [
+        "B011"
+      ],
+      "ACCEPTANCE": "minted once, non-inferable, never reused, collision protocol fail-closed",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-02",
+        "W-M3B-03"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-05 Principal/Authority Engine",
+      "DEPENDS_ON": [
+        "W-M3B-11 NF2 enforcement"
+      ],
+      "SOURCE_OWNERSHIP": "A2 principal_model + authority_evaluation_model",
+      "MUTATION_CLASS": "authoritative-gated",
+      "REGRESSION_CLASSES": [
+        "BIND-1"
+      ],
+      "ACCEPTANCE": "typed object_ref authority; no semantic reasoning; model cannot self-assert principal",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-06"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-06 Capability Lease",
+      "DEPENDS_ON": [
+        "W-M3B-05"
+      ],
+      "SOURCE_OWNERSHIP": "A2 capability_lease_contract",
+      "MUTATION_CLASS": "authoritative-gated",
+      "REGRESSION_CLASSES": [],
+      "ACCEPTANCE": "principal/operation/object/revision bound; expiry consumed; scope expansion denied",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-02"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-07 bootstrap/shadow migration mechanics",
+      "DEPENDS_ON": [
+        "W-M3B-01",
+        "W-M3B-02",
+        "W-M3B-03"
+      ],
+      "SOURCE_OWNERSHIP": "A4 bootstrap_input_contract + A0 classifications",
+      "MUTATION_CLASS": "authoritative-gated (bootstrap CAS-bypass exception)",
+      "REGRESSION_CLASSES": [
+        "B011",
+        "B013"
+      ],
+      "ACCEPTANCE": "legacy input is evidence only; heuristic merge denied; ambiguous -> NEEDS_SEMANTIC_CHOICE/UNMIGRATABLE",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-05"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-08 cutover authority mechanics",
+      "DEPENDS_ON": [
+        "W-M3B-07"
+      ],
+      "SOURCE_OWNERSHIP": "A4 cutover_rule + A45 pre/post binding models",
+      "MUTATION_CLASS": "authoritative-gated (one-time)",
+      "REGRESSION_CLASSES": [
+        "B013",
+        "BIND-1"
+      ],
+      "ACCEPTANCE": "ONE_CUTOVER_AUTHORITY=yes; failure cannot create dual authority; post-cutover graph is sole authority",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-09"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-09 projection reconstruction",
+      "DEPENDS_ON": [
+        "W-M3B-01",
+        "W-M3B-03"
+      ],
+      "SOURCE_OWNERSHIP": "A4 projection_rebuild_rule + A5 projection_recovery",
+      "MUTATION_CLASS": "non-authoritative (never mutates graph)",
+      "REGRESSION_CLASSES": [
+        "B013",
+        "ACTIVATE-R-current-binding",
+        "WCTX-1"
+      ],
+      "ACCEPTANCE": "rebuild from durable records only; stale projection never hides valid Subject",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-08"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-10 binding/recovery mechanics",
+      "DEPENDS_ON": [
+        "W-M3B-03",
+        "W-M3B-05",
+        "W-M3B-09"
+      ],
+      "SOURCE_OWNERSHIP": "A5 zero_one_many_rule + recovery_boundary + A45",
+      "MUTATION_CLASS": "authoritative-gated for binding; non-authoritative for projection repair",
+      "REGRESSION_CLASSES": [
+        "BIND-1",
+        "ACTIVATE-R-current-binding",
+        "RECOVERY-1(foundation only)"
+      ],
+      "ACCEPTANCE": "zero/one/many fail-closed; heuristic selection denied; recovery never semantic; never triggers cutover",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-08"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-11 NF2 enforcement",
+      "DEPENDS_ON": [],
+      "SOURCE_OWNERSHIP": "A2 nf2_resolution_contract + A0 NF2 seam",
+      "MUTATION_CLASS": "control plane hardening",
+      "REGRESSION_CLASSES": [],
+      "ACCEPTANCE": "principal bound at trusted boundary before authority-bearing trusted context use",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-01",
+        "W-M3B-12"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-12 I9-B008 ingress hardening",
+      "DEPENDS_ON": [],
+      "SOURCE_OWNERSHIP": "A0 I9-B008 seam (aota_forge/core/ingress.py)",
+      "MUTATION_CLASS": "control plane hardening",
+      "REGRESSION_CLASSES": [],
+      "ACCEPTANCE": "malformed handler result normalizes into bounded canonical ingress envelope; no uncaught AttributeError",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-01",
+        "W-M3B-11"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-13 behavioral successor regression scenarios",
+      "DEPENDS_ON": [
+        "W-M3B-02",
+        "W-M3B-03",
+        "W-M3B-10"
+      ],
+      "SOURCE_OWNERSHIP": "A3/A4/A5 regression_design_proofs + m2 matrix",
+      "MUTATION_CLASS": "behavioral proof (no production cutover)",
+      "REGRESSION_CLASSES": [
+        "B011",
+        "B013",
+        "B014",
+        "B014-F",
+        "ACTIVATE-R-current-binding",
+        "WCTX-1",
+        "BIND-1",
+        "RC2-1"
+      ],
+      "ACCEPTANCE": "each M3_B_BEHAVIORAL_PROOF_REQUIRED=yes class exercised with honest disposition",
+      "PARALLEL_SAFE_WITH": [
+        "W-M3B-14"
+      ]
+    },
+    {
+      "WORK_ITEM": "W-M3B-14 integration/review",
+      "DEPENDS_ON": [
+        "W-M3B-01",
+        "W-M3B-02",
+        "W-M3B-03",
+        "W-M3B-05",
+        "W-M3B-07",
+        "W-M3B-10",
+        "W-M3B-11",
+        "W-M3B-12"
+      ],
+      "SOURCE_OWNERSHIP": "all lanes",
+      "MUTATION_CLASS": "integration (no authoritative writes before gate)",
+      "REGRESSION_CLASSES": [],
+      "ACCEPTANCE": "independent review + M3_B_AUTHORITATIVE_WRITE_GATE prerequisites validated; no production cutover before this",
+      "PARALLEL_SAFE_WITH": []
+    }
+  ],
+  "m3_b_dependency_dag": {
+    "nodes": [
+      "W-M3B-01",
+      "W-M3B-02",
+      "W-M3B-03",
+      "W-M3B-04",
+      "W-M3B-05",
+      "W-M3B-06",
+      "W-M3B-07",
+      "W-M3B-08",
+      "W-M3B-09",
+      "W-M3B-10",
+      "W-M3B-11",
+      "W-M3B-12",
+      "W-M3B-13",
+      "W-M3B-14"
+    ],
+    "edges": [
+      [
+        "W-M3B-12",
+        "W-M3B-01"
+      ],
+      [
+        "W-M3B-12",
+        "W-M3B-02"
+      ],
+      [
+        "W-M3B-12",
+        "W-M3B-03"
+      ],
+      [
+        "W-M3B-11",
+        "W-M3B-05"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-02"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-03"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-04"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-07"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-09"
+      ],
+      [
+        "W-M3B-02",
+        "W-M3B-07"
+      ],
+      [
+        "W-M3B-03",
+        "W-M3B-07"
+      ],
+      [
+        "W-M3B-03",
+        "W-M3B-09"
+      ],
+      [
+        "W-M3B-03",
+        "W-M3B-10"
+      ],
+      [
+        "W-M3B-05",
+        "W-M3B-06"
+      ],
+      [
+        "W-M3B-05",
+        "W-M3B-10"
+      ],
+      [
+        "W-M3B-09",
+        "W-M3B-10"
+      ],
+      [
+        "W-M3B-07",
+        "W-M3B-08"
+      ],
+      [
+        "W-M3B-02",
+        "W-M3B-13"
+      ],
+      [
+        "W-M3B-03",
+        "W-M3B-13"
+      ],
+      [
+        "W-M3B-10",
+        "W-M3B-13"
+      ],
+      [
+        "W-M3B-01",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-02",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-03",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-05",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-07",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-10",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-11",
+        "W-M3B-14"
+      ],
+      [
+        "W-M3B-12",
+        "W-M3B-14"
+      ]
+    ],
+    "ordering_constraints": [
+      "I9-B008 ingress hardening before mutation-capable ingress relies on normalized handler results",
+      "NF2 principal enforcement before authority-bearing trusted context is used",
+      "Graph schema/model before graph mutation",
+      "Revision/CAS/transaction before concurrent authoritative mutation",
+      "Bootstrap/cutover only after canonical graph + authority + revision mechanics exist",
+      "Binding/recovery only after graph authority and revision semantics exist",
+      "No production cutover before behavioral proofs and independent review"
+    ],
+    "acyclic": "yes (topological order: 12,11 -> 01 -> 02/03/04 -> 05/07/09 -> 06/08/10 -> 13 -> 14)"
+  },
+  "m3_b_authoritative_write_gate": {
+    "M3_B_AUTHORITATIVE_WRITE_GATE": "authoritative graph writes remain denied until the following foundation invariants are implemented AND validated",
+    "prerequisites": [
+      "I9-B008 ingress hardening implemented and validated (handler results always normalize into bounded canonical ingress envelope)",
+      "NF2 principal enforcement implemented and validated (principal bound at trusted boundary; no self-assertion)",
+      "canonical graph model / storage abstraction implemented (A1 records, executor-neutral, storage-neutral)",
+      "Subject identity materialization implemented (deterministic + minted via ID Broker; no legacy ID authority)",
+      "revision/CAS/transaction core implemented and validated (CAS before commit; stale fail_closed; two-root followup atomic; idempotency no duplicate effect)",
+      "capability lease implemented (principal/operation/object/revision bound)",
+      "binding zero/one/many mechanics implemented (no heuristic selection)",
+      "M3_B behavioral successor regression scenarios pass for the M3-B-owned classes",
+      "independent review of the above"
+    ],
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "note": "M3-B may begin non-authoritative foundation construction before this gate; authoritative graph writes only after gate"
+  },
+  "cross_artifact_consistency": {
+    "Subject authority target": {
+      "value": "typed object_ref (object_kind=Subject, object_id=canonical internal ID)",
+      "sources": [
+        "A1 identity_vs_authority",
+        "A2 id_model",
+        "A12 invariants AUTHORITY_TARGET_IS_TYPED=yes",
+        "A3 preserved_contract_flags AUTHORITY_TARGET_IS_TYPED=yes",
+        "A5 preserved_contract_flags AUTHORITY_TARGET_IS_TYPED=yes"
+      ]
+    },
+    "lease revision target": {
+      "value": "LEASE_REVISION_BOUND=yes",
+      "sources": [
+        "A2 canonical_fields/expected_revision",
+        "A12 LEASE_REVISION_BOUND=yes",
+        "A3 cas_model expected_revision"
+      ]
+    },
+    "Subject aggregate revision": {
+      "value": "subject_aggregate; Workflow record independent",
+      "sources": [
+        "A3 revision_model",
+        "A1 relationships/revision_participation",
+        "A12 REVISION_SEMANTICS_OWNER=M3-A3"
+      ]
+    },
+    "followup transaction": {
+      "value": "atomic two-root parent->child with edge + verified Decision; no orphan/edge-without-child/dup effect",
+      "sources": [
+        "A3 followup_transaction",
+        "A1 OQ-M3A1-05 followup child Subject",
+        "A45 idempotency_cross_contract"
+      ]
+    },
+    "cutover authority": {
+      "value": "ONE_CUTOVER_AUTHORITY=yes; failure cannot create dual authority",
+      "sources": [
+        "A4 cutover_rule + cutover_failure_model",
+        "A45 invariants ONE_CUTOVER_AUTHORITY=yes"
+      ]
+    },
+    "post-cutover binding source": {
+      "value": "canonical_durable_subject_graph; POST_CUTOVER_LEGACY_POINTER_CAN_OVERRIDE_GRAPH=no",
+      "sources": [
+        "A45 post_cutover_binding_model"
+      ]
+    },
+    "projection recovery": {
+      "value": "rebuild from durable canonical records only; CURRENT_POINTERS_ARE_AUTHORITY=no",
+      "sources": [
+        "A4 projection_rebuild_rule",
+        "A5 projection_recovery",
+        "A45 pointer_global_invariants"
+      ]
+    },
+    "recovery cutover prohibition": {
+      "value": "RECOVERY_ENGINE_MAY_TRIGGER_AUTHORITY_CUTOVER=no",
+      "sources": [
+        "A5 recovery_boundary",
+        "A45 invariants"
+      ]
+    },
+    "consistency_result": "no contradictions detected across A1-A5/A12/A45"
+  },
+  "independent_design_self_check": {
+    "question": "Could an implementer begin M3-B without making a new semantic architecture decision about Subject identity/authority/revision/CAS/transaction/lease/bootstrap/cutover/projection/binding/recovery?",
+    "M3_B_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "blockers": [],
+    "implementation_detail_decisions_allowed": "yes (storage engine, database technology, lock primitive, serialization library, file layout)"
+  },
+  "storage_neutrality": {
+    "STORAGE_ENGINE_FROZEN": "no",
+    "check": "no M3-A contract froze SQLite/PostgreSQL/JSON/graph DB/Redis/specific lock; storage engines appear only as non-authoritative implementation examples"
+  },
+  "executor_neutrality": {
+    "M3_CORE_HERMES_DEPENDENCY": "no",
+    "check": "M3 contracts require no Hermes Profile ID / Session ID / Profile Task ID / WebUI / Docker Hermes / outbox / parent-wake; executor-private metadata stays adapter-private"
+  },
+  "llm_first": {
+    "CONTROL_PLANE_IS_SEMANTIC_ORCHESTRATOR": "no",
+    "SEMANTIC_AMBIGUITY_RETURNS_TO_LLM": "yes",
+    "check": "Core/control plane owns no requirement reasoning / architecture selection / review acceptance / scope expansion / worker-role selection / milestone acceptance / semantic followup choice"
+  },
+  "invariants": {
+    "DURABLE_SUBJECT_GRAPH_IS_AUTHORITY": "yes",
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "ID_IS_AUTHORITY": "no",
+    "SUBJECT_ID_IS_AUTHORITY": "no",
+    "LOST_UPDATE_ALLOWED": "no",
+    "SILENT_LAST_WRITE_WINS": "no",
+    "STALE_REVISION_MUTATION": "fail_closed",
+    "CAPABILITY_LEASE_LIFECYCLE": "PASS",
+    "IDEMPOTENT_REPLAY_RULE": "PASS",
+    "POST_CUTOVER_DUAL_SUBJECT_AUTHORITY": "no",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+    "STORAGE_ENGINE_FROZEN": "no",
+    "M3_CORE_HERMES_DEPENDENCY": "no",
+    "BLOCKING_UNRESOLVED_SEMANTIC_QUESTION_COUNT": 0,
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "NO_DUAL_SUBJECT_AUTHORITY": "yes",
+    "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+    "SUBJECT_BINDING_ZERO_ONE_MANY": "PASS",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "M3_B_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "AUTHORITATIVE_GRAPH_MUTATION_IMPLEMENTED": "no"
+  },
+  "acceptance": {
+    "GRAPH_CANONICAL_SCHEMA": "PASS",
+    "SUBJECT_IDENTITY_RULE": "PASS",
+    "GRAPH_BOOTSTRAP_STRATEGY": "PASS",
+    "GRAPH_CUTOVER_RULE": "PASS",
+    "REVISION_MODEL": "PASS",
+    "CAS_MODEL": "PASS",
+    "TRANSACTION_BOUNDARY": "PASS",
+    "CAPABILITY_LEASE_LIFECYCLE": "PASS",
+    "IDEMPOTENT_REPLAY_RULE": "PASS",
+    "PROJECTION_REBUILD_RULE": "PASS",
+    "CONFLICT_RULE": "PASS",
+    "CONCURRENCY_RULE": "PASS",
+    "LOST_UPDATE_ALLOWED": "no",
+    "SILENT_LAST_WRITE_WINS": "no",
+    "STALE_REVISION_MUTATION": "fail_closed",
+    "NO_DUAL_SUBJECT_AUTHORITY": "yes",
+    "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+    "SUBJECT_BINDING_ZERO_ONE_MANY": "PASS",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "STORAGE_ENGINE_FROZEN": "no",
+    "M3_CORE_HERMES_DEPENDENCY": "no",
+    "BLOCKING_UNRESOLVED_SEMANTIC_QUESTION_COUNT": 0,
+    "M3_B_REQUIRES_NEW_CORE_SEMANTIC_DESIGN_DECISION": "no",
+    "AUTHORITATIVE_GRAPH_MUTATION_IMPLEMENTED": "no"
+  },
+  "descendant_guard_policy": {
+    "SEMANTIC_CONTRACT_FAILURE": "classified separately from DESCENDANT_WORKTREE_CHANGED_PATH_ALLOWLIST_FINDING",
+    "DESCENDANT_WORKTREE_CHANGED_PATH_ALLOWLIST_FINDING": "ancestor guards (A1/A2/A12/A3/A4/A5) report changed-path allowlist findings when run from the A6 descendant worktree because the integrated tree carries later-lane files beyond the ancestor lane's own two files; these do not weaken any ancestor semantic check and are recorded distinctly"
+  },
+  "report_metrics": {
+    "required_plan_output_count": 17,
+    "mandatory_plan_output_count": 12,
+    "derived_contract_count": 5,
+    "regression_class_count": 16,
+    "unsupported_success_claims": 0,
+    "open_question_triage_count": 40,
+    "blocking_unresolved_semantic_question_count": 0,
+    "m3_b_work_item_count": 14
+  }
+}
