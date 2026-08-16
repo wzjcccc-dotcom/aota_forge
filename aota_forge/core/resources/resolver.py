@@ -24,18 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
-from aota_forge.core.contracts.errors import ForgeError
+from aota_forge.core.contracts.errors import ForgeError, HostResourceDeniedError
 
 MAX_RESOURCE_ID_LENGTH = 128
 
 RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-
-
-class HostResourceDeniedError(ForgeError):
-    """A model-facing resource reference was denied by the trusted boundary."""
-
-    def __init__(self, message: str = "host resource denied", retryable: bool = False) -> None:
-        super().__init__("HOST_RESOURCE_DENIED", message, retryable)
 
 
 @dataclass(frozen=True)

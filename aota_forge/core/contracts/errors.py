@@ -209,6 +209,18 @@ class WorkspaceError(ForgeError):
         _canonical_init(self, message, retryable, details)
 
 
+class HostResourceDeniedError(ForgeError):
+    """A model-facing logical host resource reference was denied by the
+    trusted resource boundary (M2-E, canonical registration in M2-I)."""
+
+    code = "HOST_RESOURCE_DENIED"
+    default_message = "host resource denied"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
 # ---------------------------------------------------------------------------
 # M2-B stable semantic codes (distinct root causes must NOT collapse).
 # ---------------------------------------------------------------------------
@@ -381,6 +393,7 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         UnsupportedOperationError,
         ContractVersionMismatchError,
         WorkspaceError,
+        HostResourceDeniedError,
         ProjectBindingMissingError,
         PlanMissingError,
         PlanWorkspaceContextMissingError,

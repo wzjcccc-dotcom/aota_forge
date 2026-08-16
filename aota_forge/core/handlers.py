@@ -1,8 +1,24 @@
-"""Canonical read-only operation handlers (M1).
+"""Canonical read-only operation handlers (M1, M2-I wiring).
 
 Handlers are thin routes: resolve context, call Core domain, return bounded
-payload.  They are registered into the Operation Contract Registry and are
-invoked exclusively through the Unified Ingress.
+payload.  They are attached onto the canonical descriptors owned by
+``core.catalog`` through the ``HandlerRegistry`` and invoked exclusively
+through the Unified Ingress.
+
+M2-I handler bootstrap: importing declarative contract modules never binds
+handlers; the canonical ingress binds them exactly once, lazily and
+idempotently, through ``core.bootstrap.ensure_handlers_bound`` (which imports
+this module).
+
+M2-I trusted-resource wiring: the host.status handler accepts logical host
+resource references (``pidfile_id`` / ``receipt_id`` / ``registry_id``,
+trusted channel) and resolves them through the operator trusted adapter
+configuration (``adapters.host.resources.host_resource_config_from_env``)
+and the M2-E ``TrustedResourceResolver`` into bounded host readers.  The
+legacy transitional trusted keys ``registry_path`` / ``pidfile`` /
+``receipt`` remain supported as adapter-private trusted RESOLVED paths
+produced by adapters through the same trusted boundary; raw paths are never
+model-facing descriptor inputs.
 """
 
 from __future__ import annotations
@@ -12,6 +28,7 @@ from typing import Any
 
 from aota_forge.adapters.host import environment as host_env
 from aota_forge.adapters.host import process as host_process
+from aota_forge.adapters.host import resources as host_resources
 from aota_forge.adapters.host import runtime as host_runtime
 from aota_forge.core.context import OperationContext
 from aota_forge.core.contracts.errors import (
@@ -19,7 +36,7 @@ from aota_forge.core.contracts.errors import (
     ProjectBindingMissingError,
     RuntimeIdentityUnavailableError,
 )
-from aota_forge.core.contracts.operations import OperationContract, available_operations, register
+from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.git.inspect import inspect_git
 from aota_forge.core.project.resolver import (
     resolve_project_with_fingerprint,
@@ -75,6 +92,15 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
     the independent Host diagnosis still completes, but every failed or
     unavailable optional check is explicitly visible through ``checks`` and
     ``warnings`` (never a silent errors=[]/warnings=[] success).
+
+    M2-I trusted-resource wiring: optional logical resource references
+    (trusted channel keys ``pidfile_id`` / ``receipt_id`` / ``registry_id``)
+    are resolved through the operator trusted adapter configuration
+    (``host_resources.host_resource_config_from_env``) and the M2-E
+    ``TrustedResourceResolver`` into bounded host readers.  Adapter-private
+    trusted resolved paths (``pidfile`` / ``receipt`` / ``registry_path``)
+    remain supported for adapters that already resolved them through the
+    trusted boundary; raw paths are never model-facing semantic inputs.
     """
     params = ctx.params
     warnings: list[str] = []
@@ -83,19 +109,22 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
         key: {"requested": False, "state": "not_requested", "error_code": None, "message": None}
         for key in ("project", "runtime_identity", "process", "deployment_receipt")
     }
+    trusted_config = host_resources.host_resource_config_from_env()
 
     workspace_id = params.get("workspace_id")
     project_id = params.get("project_id")
     registry_path = params.get("registry_path")
+    registry_id = params.get("registry_id")
     workspace_supplied = isinstance(workspace_id, str) and bool(workspace_id)
     project_supplied = isinstance(project_id, str) and bool(project_id)
-    registry_supplied = isinstance(registry_path, str) and bool(registry_path)
+    registry_path_supplied = isinstance(registry_path, str) and bool(registry_path)
+    registry_id_supplied = isinstance(registry_id, str) and bool(registry_id)
     project_requested = workspace_supplied and project_supplied
 
     if project_requested:
         checks["project"]["requested"] = True
         checks["runtime_identity"]["requested"] = True
-        if not registry_supplied:
+        if not registry_path_supplied and not registry_id_supplied:
             checks["project"]["state"] = "failed"
             checks["project"]["error_code"] = "PROJECT_BINDING_MISSING"
             checks["project"]["message"] = "registry_path is required for project-bound binding"
@@ -103,7 +132,15 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
                 "registry_path is required for project-bound host status"
             )
         try:
-            resolved = resolve_project_with_fingerprint(workspace_id, Path(registry_path), project_id)
+            if registry_path_supplied:
+                resolved_registry = Path(registry_path)
+            else:
+                resolved_registry = Path(
+                    host_resources.resolve_host_resource(
+                        "project_registry", registry_id, trusted_config
+                    )["path"]
+                )
+            resolved = resolve_project_with_fingerprint(workspace_id, resolved_registry, project_id)
         except ForgeError as exc:
             checks["project"]["state"] = "failed"
             checks["project"]["error_code"] = exc.code
@@ -132,6 +169,7 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
         warnings.append("project-bound binding incomplete: both workspace_id and project_id are required")
 
     pidfile = params.get("pidfile")
+    pidfile_id = params.get("pidfile_id")
     if isinstance(pidfile, str) and pidfile:
         checks["process"]["requested"] = True
         try:
@@ -142,12 +180,33 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
             checks["process"]["state"] = "failed"
             checks["process"]["error_code"] = exc.code
             warnings.append(f"process check failed: {exc.code}")
+    elif isinstance(pidfile_id, str) and pidfile_id:
+        checks["process"]["requested"] = True
+        try:
+            data["process"] = host_resources.host_process_status_ref(pidfile_id, trusted_config)
+            checks["process"]["state"] = "available"
+        except ForgeError as exc:
+            data["process"] = {"state": "failed", "error_code": exc.code, "message": exc.message}
+            checks["process"]["state"] = "failed"
+            checks["process"]["error_code"] = exc.code
+            warnings.append(f"process check failed: {exc.code}")
 
     receipt = params.get("receipt")
+    receipt_id = params.get("receipt_id")
     if isinstance(receipt, str) and receipt:
         checks["deployment_receipt"]["requested"] = True
         try:
             data["deployment_receipt"] = host_process.read_receipt(Path(receipt))
+            checks["deployment_receipt"]["state"] = "available"
+        except ForgeError as exc:
+            data["deployment_receipt"] = {"state": "failed", "error_code": exc.code, "message": exc.message}
+            checks["deployment_receipt"]["state"] = "failed"
+            checks["deployment_receipt"]["error_code"] = exc.code
+            warnings.append(f"deployment receipt check failed: {exc.code}")
+    elif isinstance(receipt_id, str) and receipt_id:
+        checks["deployment_receipt"]["requested"] = True
+        try:
+            data["deployment_receipt"] = host_resources.read_deployment_receipt_ref(receipt_id, trusted_config)
             checks["deployment_receipt"]["state"] = "available"
         except ForgeError as exc:
             data["deployment_receipt"] = {"state": "failed", "error_code": exc.code, "message": exc.message}
@@ -163,45 +222,24 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
 
 
 def _handle_operations_list(ctx: OperationContext) -> dict[str, Any]:
+    from aota_forge.core.contracts.operations import available_operations
+
     return {"data": {"operations": available_operations()}}
 
 
 def register_operations() -> None:
-    register(OperationContract(
-        name="project.resolve",
-        description="resolve exactly one registered project deterministically (0/1/many fail-closed)",
-        read_only=True,
-        inputs={"workspace_id": "str", "project_id": "str", "registry_path": "str"},
-        handler=_handle_project_resolve,
-    ))
-    register(OperationContract(
-        name="git.inspect",
-        description="read-only git state inspection within the resolved project boundary (full SHA)",
-        read_only=True,
-        inputs={"workspace_id": "str", "project_id": "str", "registry_path": "str"},
-        handler=_handle_git_inspect,
-    ))
-    register(OperationContract(
-        name="runtime.status",
-        description="executor-neutral runtime process status by pid",
-        read_only=True,
-        inputs={"pid": "int"},
-        handler=_handle_runtime_status,
-    ))
-    register(OperationContract(
-        name="host.status",
-        description="host mechanical read-only inspection; requires no Plan/SPEC/Profile Task",
-        read_only=True,
-        inputs={"pidfile": "str?", "receipt": "str?", "workspace_id": "str?", "project_id": "str?", "registry_path": "str?"},
-        handler=_handle_host_status,
-    ))
-    register(OperationContract(
-        name="operations.list",
-        description="list canonical operations registered in the ingress contract registry",
-        read_only=True,
-        inputs={},
-        handler=_handle_operations_list,
-    ))
+    """Attach the default canonical handlers onto their registered descriptors.
+
+    Descriptor registration is declarative and owned by ``core.catalog`` at
+    package import; this function attaches the runtime handlers exactly once
+    (the deterministic bootstrap guard owns idempotence).  Binding fails
+    closed on unknown descriptors or duplicate handler attachment.
+    """
+    DEFAULT_REGISTRY.bind_handler("project.resolve", _handle_project_resolve)
+    DEFAULT_REGISTRY.bind_handler("git.inspect", _handle_git_inspect)
+    DEFAULT_REGISTRY.bind_handler("runtime.status", _handle_runtime_status)
+    DEFAULT_REGISTRY.bind_handler("host.status", _handle_host_status)
+    DEFAULT_REGISTRY.bind_handler("operations.list", _handle_operations_list)
 
 
 register_operations()

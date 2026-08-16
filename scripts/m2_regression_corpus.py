@@ -451,33 +451,47 @@ def scenario_exact_registered_project_classification() -> tuple[bool, str]:
     try:
         workspace = workdir / "workspace"
         workspace.mkdir()
-        _make_project(workspace, "fixture-alpha")
-        _make_project(workspace, "fixture-alpha-allterm")
+        for index in range(60):
+            _make_project(workspace, f"proj-{index:03d}")
+        _make_project(workspace, "proj-054-allterm")
         _make_project(workspace, "unrelated-project")
         registry = _write_registry(workdir, workspace)
 
-        scanned = scan_projects(workspace)
-        ids = [item["project_id"] for item in scanned["projects"]]
-        if "fixture-alpha" not in ids:
-            return False, "exact registered project disappeared from the candidate scan"
-        if scanned["project_count"] < 3:
-            return False, "deterministic scan did not enumerate all registered projects"
+        complete = scan_projects(workspace, limit=None)
+        ids = [item["project_id"] for item in complete["projects"]]
+        if "proj-054" not in ids:
+            return False, "exact registered project beyond the first-50 listing boundary disappeared from the complete candidate scan"
+        if complete["project_count"] != 62:
+            return False, f"deterministic scan did not enumerate all registered projects: {complete['project_count']}"
 
         resolved = execute("project.resolve", {
-            "workspace_id": "corpus-ws", "project_id": "fixture-alpha",
+            "workspace_id": "corpus-ws", "project_id": "proj-054",
             "registry_path": str(registry),
         }, principal="corpus")
         if resolved.get("ok") is not True:
-            return False, "exact resolution failed: " + str(resolved.get("errors"))
-        if resolved["data"]["project_id"] != "fixture-alpha":
+            return False, "exact resolution beyond the listing boundary failed: " + str(resolved.get("errors"))
+        if resolved["data"]["project_id"] != "proj-054":
             return False, "resolution selected the wrong candidate"
-        if resolved["data"]["project_root"] != str((workspace / "fixture-alpha").resolve()):
-            return False, "resolution selected a non-canonical root"
+
+        duplicate_dir = workspace / "proj-054-copy"
+        (duplicate_dir / ".aota").mkdir(parents=True)
+        (duplicate_dir / ".aota" / "project.yaml").write_text(
+            (workspace / "proj-054" / ".aota" / "project.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        duplicate = execute("project.resolve", {
+            "workspace_id": "corpus-ws", "project_id": "proj-054",
+            "registry_path": str(registry),
+        }, principal="corpus")
+        if duplicate.get("ok") is not False:
+            return False, "duplicate target beyond the first-50 boundary did not fail closed"
+        if duplicate.get("errors", [{}])[0].get("code") != "PROJECT_AMBIGUOUS":
+            return False, "duplicate target did not surface PROJECT_AMBIGUOUS"
 
         contract = get_contract("project.resolve")
         if contract is None or any("hint" in str(k).casefold() for k in contract.inputs):
             return False, "project.resolve contract exposes a hint input"
-        return True, "exact registered project classified deterministically; no hint input"
+        return True, "exact registered project classified deterministically beyond the listing boundary; duplicates fail closed; no hint input"
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -560,6 +574,109 @@ def scenario_shadow_pointer_not_authority() -> tuple[bool, str]:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def scenario_contract_drift_detected_deterministically() -> tuple[bool, str]:
+    from aota_forge.adapters.hermes import build_request, execute_request
+    from aota_forge.adapters.hermes.invoke import detect_contract_drift
+    from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
+
+    descriptor = DEFAULT_REGISTRY.get("operations.list")
+    if descriptor is None:
+        return False, "operations.list descriptor missing"
+    current_hash = descriptor.contract_hash()
+    current_protocol = descriptor.protocol_version
+
+    hash_mismatch = execute_request(
+        build_request("operations.list", {}, expected_contract_hash="0" * 64)
+    )
+    proto_mismatch = execute_request(
+        build_request("operations.list", {}, expected_protocol_version="9.9")
+    )
+    for payload in (hash_mismatch, proto_mismatch):
+        if payload.get("ok") is not False:
+            return False, "drift request was executed instead of rejected"
+        codes = [item.get("code") for item in payload.get("errors", [])]
+        if "CONTRACT_VERSION_MISMATCH" not in codes:
+            return False, f"drift mismatch error missing: {codes}"
+        if payload.get("data") != {}:
+            return False, "mismatched schema was executed despite drift"
+
+    drifted_hash, field_hash = detect_contract_drift(
+        "operations.list", current_protocol, "0" * 64
+    )
+    drifted_proto, field_proto = detect_contract_drift(
+        "operations.list", "9.9", current_hash
+    )
+    if not drifted_hash or field_hash != "contract_hash":
+        return False, f"contract_hash drift not detected deterministically: {field_hash}"
+    if not drifted_proto or field_proto != "protocol_version":
+        return False, f"protocol_version drift not detected deterministically: {field_proto}"
+    drifted_none, _ = detect_contract_drift(
+        "operations.list", current_protocol, current_hash
+    )
+    if drifted_none:
+        return False, "matching contract identity reported as drifted"
+    return True, "deterministic drift detection; mismatched schemas never silently run"
+
+
+def scenario_plan_normalization_current_vs_historical() -> tuple[bool, str]:
+    from aota_forge.core.plan.normalize import normalize_portable_plan
+
+    body = (
+        "# [PLAN] corpus fixture\n"
+        "\n"
+        "## 1. Current State\n"
+        "\n"
+        "```text\n"
+        "PLAN_STATUS=in-progress\n"
+        "CURRENT_MILESTONE=M2\n"
+        "HANDOFF_STATE=m2_planning_ready\n"
+        "```\n"
+        "\n"
+        "## M1 Historical Evidence (superseded)\n"
+        "\n"
+        "```text\n"
+        "PLAN_STATUS=completed\n"
+        "CURRENT_MILESTONE=M1\n"
+        "HANDOFF_STATE=m1_closed\n"
+        "```\n"
+    )
+    doc = normalize_portable_plan(body, source_revision="corpus-m2i")
+    if doc.current_milestone != "M2" or doc.plan_status != "in-progress":
+        return False, "historical values overrode current authoritative state"
+    if doc.handoff_state != "m2_planning_ready":
+        return False, "current handoff state was lost"
+    provenance = doc.provenance_observations.get("M1 Historical Evidence (superseded)", {})
+    if provenance.get("CURRENT_MILESTONE") != "M1" or provenance.get("PLAN_STATUS") != "completed":
+        return False, "historical values were not preserved as provenance observations"
+    if len(doc.source_digest) != 64:
+        return False, "document digest is not deterministic"
+    return True, "current state stays authoritative; historical state is provenance only"
+
+
+def scenario_wctx1_lifecycle_producers_absent() -> tuple[bool, str]:
+    from aota_forge.core import execute
+
+    surface = execute("operations.list", {}, principal="corpus")
+    if surface.get("ok") is not True:
+        return False, "operations.list failed"
+    names = [op["operation"] for op in surface["data"]["operations"]]
+    absent_codes = ("PLAN_MISSING", "PLAN_WORKSPACE_CONTEXT_MISSING", "ACTIVE_WORK_ITEM_MISSING")
+    for name in names:
+        result = execute(
+            name,
+            {"workspace_id": "w", "project_id": "p", "registry_path": "/nonexistent/corpus-registry.json"},
+            principal="corpus",
+        )
+        codes = [item.get("code") for item in result.get("errors", [])]
+        for code in absent_codes:
+            if code in codes:
+                return False, f"{code} already produced by canonical operation {name}"
+    binding = execute("host.status", {"workspace_id": "w", "project_id": "p"}, principal="corpus")
+    if binding.get("errors", [{}])[0].get("code") != "PROJECT_BINDING_MISSING":
+        return False, "PROJECT_BINDING_MISSING is not produced distinctly"
+    return True, "no canonical operation produces the three later lifecycle errors yet"
+
+
 def scenario_all_operations_read_only() -> tuple[bool, str]:
     from aota_forge.core import execute
 
@@ -584,6 +701,9 @@ SCENARIOS = {
     "single-declarative-contract-surface": scenario_single_declarative_contract_surface,
     "shadow-pointer-not-authority": scenario_shadow_pointer_not_authority,
     "all-operations-read-only": scenario_all_operations_read_only,
+    "contract-drift-detected-deterministically": scenario_contract_drift_detected_deterministically,
+    "plan-normalization-current-vs-historical": scenario_plan_normalization_current_vs_historical,
+    "wctx1-lifecycle-producers-absent": scenario_wctx1_lifecycle_producers_absent,
 }
 
 

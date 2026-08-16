@@ -54,7 +54,30 @@ MAX_TOTAL_INPUT_BYTES = 256 * 1024
 # Explicitly enumerated trusted adapter/context metadata.  Non-semantic,
 # bounded, and separate from model-facing descriptor inputs.  Keys not
 # declared by the descriptor and not listed here are rejected.
-TRUSTED_ADAPTER_KEYS: frozenset[str] = frozenset({"registry_path", "pidfile", "receipt"})
+#
+# M2-I trusted-resource reconciliation:
+#
+#   registry_path / pidfile / receipt
+#       adapter-private trusted RESOLVED filesystem paths produced by an
+#       adapter through the M2-E TrustedResourceResolver; never model-facing
+#       semantic input and never accepted from the model-facing argument
+#       surface.
+#
+#   registry_id / pidfile_id / receipt_id
+#       trusted logical host resource references; resolved by the operation
+#       handler through the operator trusted adapter configuration
+#       (host_resource_config_from_env) and the M2-E TrustedResourceResolver
+#       into bounded host readers.
+TRUSTED_ADAPTER_KEYS: frozenset[str] = frozenset(
+    {
+        "registry_path",
+        "pidfile",
+        "receipt",
+        "registry_id",
+        "pidfile_id",
+        "receipt_id",
+    }
+)
 
 
 def _base_type(spec_type: str) -> str:

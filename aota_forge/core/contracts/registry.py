@@ -80,6 +80,23 @@ class HandlerRegistry:
         binding = self._bindings.get(name)
         return binding[1] if binding is not None else None
 
+    def bind_handler(self, name: str, handler: Handler) -> None:
+        """Attach the runtime handler onto an already-registered descriptor.
+
+        Fails closed: an unknown operation raises ``UnknownOperationError``
+        and rebinding an already-attached handler raises
+        ``DuplicateOperationRegistrationError``.  Attachment is exactly-once
+        per process; idempotence is owned by the deterministic bootstrap
+        guard (``core.bootstrap``).
+        """
+        binding = self._bindings.get(name)
+        if binding is None:
+            raise UnknownOperationError(name)
+        descriptor, existing = binding
+        if existing is not None:
+            raise DuplicateOperationRegistrationError(name)
+        self._bindings[name] = (descriptor, handler)
+
     def has(self, name: str) -> bool:
         return name in self._bindings
 

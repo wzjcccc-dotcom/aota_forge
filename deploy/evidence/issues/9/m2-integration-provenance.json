@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "artifact": "M2-I integration provenance (Issue #9 lane M2-I)",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "project": "aota_forge",
+  "milestone": "M2",
+  "lane": "M2-I",
+  "m2_common_base": "a380056b70ec11d45259f31babdfb38311672893",
+  "accepted_lineage": [
+    "7beffe91a76c07d3b8570ceb84ce63e8115def55",
+    "1a717f7e579d17c863263510617a1ee0595d36b4",
+    "1bb18d25b68cdfb3be93b59fccb685a0ca642a2c",
+    "59a5af31aff046b1dae0ce956daad36878171531",
+    "66eb6697e785e25e6e1e097f291e409fd1d3b454"
+  ],
+  "lanes": {
+    "M2-A": {
+      "commit": "7beffe91a76c07d3b8570ceb84ce63e8115def55",
+      "branch": "aota/m2/contract-foundation"
+    },
+    "M2-B": {
+      "commit": "1a717f7e579d17c863263510617a1ee0595d36b4",
+      "branch": "aota/m2/ingress-error-contract"
+    },
+    "M2-D": {
+      "original_commit": "427b97167abcae6d05ce66e1db13e1bf683f1786",
+      "assembled_commit": "1bb18d25b68cdfb3be93b59fccb685a0ca642a2c",
+      "assembled_via": "deterministic conflict-free cherry-pick of the original lane commit onto the accepted M2-B lineage",
+      "branch": "aota/m2/plan-normalization"
+    },
+    "M2-E": {
+      "original_commit": "d0194473c5a7094836bf9c770dc0a1e8aae09a32",
+      "assembled_commit": "59a5af31aff046b1dae0ce956daad36878171531",
+      "assembled_via": "deterministic conflict-free cherry-pick of the original lane commit onto the accepted M2-D lineage",
+      "branch": "aota/m2/resource-host-hardening"
+    },
+    "M2-F": {
+      "commit": "66eb6697e785e25e6e1e097f291e409fd1d3b454",
+      "branch": "aota/m2/adapter-convergence"
+    },
+    "M2-C": {
+      "original_commit": "6ef62cb67c3ab1f19b47dd09b35369050e88843c",
+      "integrated_commit": "11498198582dc58989d7ad07076540e6ecc9978c",
+      "integrated_via": "deterministic conflict-free cherry-pick of the original lane commit onto the accepted M2-F lineage",
+      "branch": "aota/m2/regression-corpus"
+    }
+  },
+  "integration_branch": "aota/m2/integration",
+  "starting_head": "66eb6697e785e25e6e1e097f291e409fd1d3b454",
+  "m2_i_commit": "recorded_in_final_report_only_avoid_self_referential_artifact",
+  "integration_scope": [
+    "shared-hot-file wiring",
+    "successor regression corpus reconciliation",
+    "M2 source acceptance candidate assembly"
+  ],
+  "accepted_lineage_confirmed": "yes"
+}

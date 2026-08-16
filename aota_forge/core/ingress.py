@@ -14,6 +14,10 @@ All canonical operations from all external adapters enter through
 Adapters MUST NOT reimplement operation routing, contract lookup or input
 validation; the ingress is the single internal entry point.
 
+The ingress lazily binds the default canonical handlers exactly once before
+routing (``core.bootstrap.ensure_handlers_bound``); handler binding is
+deterministic and idempotent and never triggered by package imports alone.
+
 Every canonical execution carries a bounded ``audit`` metadata record and a
 ``correlation_id`` (trusted caller-supplied when safely bounded, otherwise
 Core-generated).  Invalid input or context failure never executes the
@@ -33,6 +37,7 @@ from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.contracts.results import failure_from_error, success
 from aota_forge.core.contracts.validation import validate_inputs
 from aota_forge.core.contracts.version import PROTOCOL_VERSION
+from aota_forge.core.bootstrap import ensure_handlers_bound
 
 _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
@@ -80,6 +85,7 @@ def execute(
 
     Never raises ForgeError; canonical errors are returned in the envelope.
     """
+    ensure_handlers_bound()
     cid = resolve_correlation_id(correlation_id)
 
     descriptor = DEFAULT_REGISTRY.get(operation)

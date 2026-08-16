@@ -15,6 +15,8 @@
     "NOT_YET_IMPLEMENTED"
   ],
   "allowed_owner_milestones": ["M1", "M2", "M3", "M4", "M5", "M6", "M7"],
+  "reconciled_by_lane": "M2-I",
+  "reconciled_against": "M2-F lineage (66eb6697e785e25e6e1e097f291e409fd1d3b454) + M2-C integrated (11498198582dc58989d7ad07076540e6ecc9978c, cherry-pick of 6ef62cb67c3ab1f19b47dd09b35369050e88843c) + M2-I shared wiring",
   "m2_capability_boundary": {
     "M2_SIGNIFICANT_MUTATION": "no",
     "M2_WORKER_DISPATCH": "no",
@@ -46,16 +48,16 @@
           "kind": "static",
           "source": "aota_forge/core/ingress.py",
           "check": "contains",
-          "marker": "operation is not read-only in M1",
+          "marker": "operation is not read-only in M2",
           "proves": "foundation",
-          "description": "BASE ingress rejects every non-read-only operation, so no lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "The canonical ingress rejects every non-read-only operation in the integrated M2 source, so no lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-b011-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no PLAN_INIT transition operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no PLAN_INIT transition operation exists."
         }
       ]
     },
@@ -81,16 +83,23 @@
           "check": "contains",
           "marker": "Shadow/migration evidence ONLY",
           "proves": "foundation",
-          "description": "BASE plan reader is explicitly shadow/migration evidence only; no current/stale classification exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "The integrated M2 plan reader is explicitly shadow/migration evidence only; read normalization distinguishes current vs historical, but no bounded retirement lifecycle exists yet (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
-          "id": "corpus-b013-static-no-retirement",
+          "id": "corpus-b013-static-no-retirement-lifecycle",
           "kind": "static",
           "source": "aota_forge",
           "check": "absent",
-          "marker": "retire",
+          "marker": "retirement_lifecycle",
           "proves": "foundation",
-          "description": "No retirement lifecycle symbol exists anywhere in the successor Core package at BASE."
+          "description": "No bounded retirement lifecycle engine exists in the integrated M2 source; the M4 write-side retirement lifecycle remains out of scope (honest basis for NOT_YET_IMPLEMENTED)."
+        },
+        {
+          "id": "corpus-b013-fixture-current-vs-historical",
+          "kind": "fixture",
+          "scenario": "plan-normalization-current-vs-historical",
+          "proves": "foundation",
+          "description": "Executable foundation proof: normalization keeps current authoritative state authoritative and preserves historical values only as provenance observations."
         }
       ]
     },
@@ -114,16 +123,16 @@
           "kind": "static",
           "source": "aota_forge/core/ingress.py",
           "check": "contains",
-          "marker": "operation is not read-only in M1",
+          "marker": "operation is not read-only in M2",
           "proves": "foundation",
-          "description": "BASE ingress rejects every non-read-only operation; no binding or lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "The canonical ingress rejects every non-read-only operation in the integrated M2 source; no binding or lifecycle mutation surface exists yet (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-b014-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no post-binding mutation operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no post-binding mutation operation exists."
         }
       ]
     },
@@ -149,14 +158,14 @@
           "check": "absent",
           "marker": "materializ",
           "proves": "foundation",
-          "description": "No materialization surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No materialization surface exists in the successor Core package in the integrated M2 source (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-b014f-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no materialization operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no materialization operation exists."
         }
       ]
     },
@@ -182,14 +191,14 @@
           "check": "absent",
           "marker": "finaliz",
           "proves": "foundation",
-          "description": "No finalizer lifecycle surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No finalizer lifecycle surface exists in the successor Core package in the integrated M2 source (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-b014f1-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no executor/finalizer operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no executor/finalizer operation exists."
         }
       ]
     },
@@ -213,7 +222,7 @@
           "kind": "fixture",
           "scenario": "shadow-pointer-not-authority",
           "proves": "foundation",
-          "description": "Foundation proof: BASE read model already strips current_* pointer authority (legacy shadow read); the durable-subject replacement is M3."
+          "description": "Foundation proof: the integrated read model strips current_* pointer authority (legacy shadow read); the durable-subject replacement is M3."
         }
       ]
     },
@@ -275,16 +284,14 @@
           "kind": "fixture",
           "scenario": "distinct-error-taxonomy-foundation",
           "proves": "foundation",
-          "description": "Foundation proof: the BASE taxonomy already returns distinct canonical codes for distinct root causes (PROJECT_NOT_FOUND vs RUNTIME_NOT_RUNNING vs UNSUPPORTED_OPERATION), demonstrating the no-collapse contract foundation."
+          "description": "Foundation proof: the canonical taxonomy returns distinct canonical codes for distinct root causes (PROJECT_NOT_FOUND vs RUNTIME_NOT_RUNNING vs UNSUPPORTED_OPERATION), demonstrating the no-collapse contract foundation."
         },
         {
-          "id": "corpus-wctx1-static-no-states",
-          "kind": "static",
-          "source": "aota_forge",
-          "check": "absent",
-          "marker": "PLAN_MISSING",
+          "id": "corpus-wctx1-fixture-lifecycle-producers-absent",
+          "kind": "fixture",
+          "scenario": "wctx1-lifecycle-producers-absent",
           "proves": "foundation",
-          "description": "The four WCTX-1 distinct states are not yet materialized anywhere in the successor Core at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "Executable foundation proof: no canonical M2 operation produces PLAN_MISSING / PLAN_WORKSPACE_CONTEXT_MISSING / ACTIVE_WORK_ITEM_MISSING through the unified ingress; PROJECT_BINDING_MISSING remains distinct. Full lifecycle producers remain M3/M4 (explicit future gate)."
         }
       ]
     },
@@ -308,16 +315,16 @@
           "kind": "static",
           "source": "aota_forge",
           "check": "absent",
-          "marker": "binding",
+          "marker": "subject_binding",
           "proves": "foundation",
-          "description": "No binding surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No durable subject binding surface exists in the integrated M2 source; runtime-local handler binding is not subject binding (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-bind1-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no binding operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no binding operation exists."
         }
       ]
     },
@@ -329,19 +336,14 @@
       "given": "Adapters project their command surface from the Core operation contract registry.",
       "when": "The Core contract registry changes or an adapter declares a mismatched schema.",
       "then": "Adapters derive projections deterministically from the single declarative registry; a deterministic contract_hash over the registry detects drift; mismatched command/tool schemas never silently run.",
-      "expected_successor_disposition": "NOT_YET_IMPLEMENTED",
-      "future_pass_condition": {
-        "given": "the Core operation contract registry plus an adapter projection of that surface",
-        "when": "the registry content changes or the adapter projection is stale or mismatched",
-        "then": "the deterministic contract_hash over the registry differs from the projected hash; drift is reported with bounded evidence; mismatched schemas are rejected before execution"
-      },
+      "expected_successor_disposition": "ELIMINATED_BY_CONSTRUCTION",
       "executable_evidence": [
         {
           "id": "corpus-drift1-fixture-surface",
           "kind": "fixture",
           "scenario": "single-declarative-contract-surface",
           "proves": "foundation",
-          "description": "Foundation proof: library ingress and CLI project the same operation surface from the single registry; the surface is deterministic across invocations."
+          "description": "Foundation proof: library ingress, CLI and the Hermes adapter project the same operation surface from the single declarative registry; the surface is deterministic across invocations."
         },
         {
           "id": "corpus-drift1-static-protocol-version",
@@ -350,16 +352,23 @@
           "check": "contains",
           "marker": "CORE_PROTOCOL_VERSION",
           "proves": "foundation",
-          "description": "protocol_version constant exists at BASE; deterministic contract_hash and drift detection are later M2 work."
+          "description": "protocol_version constant exists; deterministic contract_hash and drift detection are now integrated M2 behavior."
         },
         {
-          "id": "corpus-drift1-static-no-contract-hash",
+          "id": "corpus-drift1-static-contract-hash-deterministic",
           "kind": "static",
-          "source": "aota_forge",
-          "check": "absent",
-          "marker": "contract_hash",
-          "proves": "foundation",
-          "description": "deterministic contract_hash is not implemented at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "source": "aota_forge/core/contracts/descriptor.py",
+          "check": "contains",
+          "marker": "Deterministic semantic hash",
+          "proves": "successor_pass",
+          "description": "Source-level proof: the descriptor computes a deterministic semantic contract_hash (canonical serialization incl. protocol_version; handler identity excluded)."
+        },
+        {
+          "id": "corpus-drift1-fixture-drift-detection",
+          "kind": "fixture",
+          "scenario": "contract-drift-detected-deterministically",
+          "proves": "successor_pass",
+          "description": "Executable pass proof: mismatched expected contract_hash / protocol_version are detected before execution with CONTRACT_VERSION_MISMATCH; matching contract identity is not flagged; mismatched schemas never silently run."
         }
       ]
     },
@@ -385,14 +394,14 @@
           "check": "absent",
           "marker": "materializ",
           "proves": "foundation",
-          "description": "No materialization surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No materialization surface exists in the successor Core package in the integrated M2 source (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-rc21-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no materialization operation can hide a failure."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no materialization operation can hide a failure."
         }
       ]
     },
@@ -411,7 +420,7 @@
           "kind": "fixture",
           "scenario": "exact-registered-project-classification",
           "proves": "successor_pass",
-          "description": "Executable pass proof: with a decoy candidate whose name matches under ALL-term logic, the exact registered project still appears in the scan and resolves to itself; the contract exposes no hint input."
+          "description": "Executable pass proof: 60+ registered projects; the exact target sorted beyond the first-50 listing boundary still appears in the complete scan and resolves to itself; a duplicate target beyond the first-50 boundary fails closed as PROJECT_AMBIGUOUS; an ALL-term decoy never interferes; the contract exposes no hint input."
         },
         {
           "id": "corpus-classify1-static-no-hint-authority",
@@ -444,16 +453,16 @@
           "kind": "static",
           "source": "aota_forge",
           "check": "absent",
-          "marker": "recover",
+          "marker": "recovery_engine",
           "proves": "foundation",
-          "description": "No recovery engine surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No mechanical recovery engine surface exists in the integrated M2 source (honest basis for NOT_YET_IMPLEMENTED)."
         },
         {
           "id": "corpus-recovery1-fixture-all-read-only",
           "kind": "fixture",
           "scenario": "all-operations-read-only",
           "proves": "foundation",
-          "description": "Executable negative proof: at BASE every registered operation is read-only; no recovery mutation operation exists."
+          "description": "Executable negative proof: in the integrated M2 source every registered operation is read-only; no recovery mutation operation exists."
         }
       ]
     },
@@ -479,7 +488,7 @@
           "check": "absent",
           "marker": "ExecutorAdapter",
           "proves": "foundation",
-          "description": "No executor adapter surface exists in the successor Core package at BASE (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "No executor adapter surface exists in the successor Core package in the integrated M2 source (honest basis for NOT_YET_IMPLEMENTED)."
         }
       ]
     },
@@ -505,10 +514,10 @@
           "check": "contains",
           "marker": "no Worker dispatch",
           "proves": "foundation",
-          "description": "BASE declares no worker/task dispatch chain, consistent with M2_DEPLOYMENT_E2E_REQUIRED=no and M2_RUNTIME_ACTIVATION_REQUIRED=no (honest basis for NOT_YET_IMPLEMENTED)."
+          "description": "The integrated package declares no worker/task dispatch chain, consistent with M2_DEPLOYMENT_E2E_REQUIRED=no and M2_RUNTIME_ACTIVATION_REQUIRED=no (honest basis for NOT_YET_IMPLEMENTED)."
         }
       ]
     }
   ],
-  "claim_boundary": "M2-C materializes the successor regression matrix and executable corpus validator only; it does not implement M3/M4/M5 capabilities. NOT_YET_IMPLEMENTED entries carry frozen Given/When/Then and future PASS conditions; M3+ owned entries must not claim implemented dispositions until their milestone capability exists. Corpus execution requires no legacy runtime and no network."
+  "claim_boundary": "M2-C materializes the successor regression matrix and executable corpus validator only; it does not implement M3/M4/M5 capabilities. NOT_YET_IMPLEMENTED entries carry frozen Given/When/Then and future PASS conditions; M3+ owned entries must not claim implemented dispositions until their milestone capability exists. Corpus execution requires no legacy runtime and no network. M2-I reconciliation (post-lane-integration): dispositions and executable evidence re-verified against the integrated M2 source; only evidence supported by executable integrated proof is retained."
 }

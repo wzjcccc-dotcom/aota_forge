@@ -11,9 +11,10 @@ The request envelope has two namespaces:
   inputs only).  Semantic validation deliberately stays at the canonical
   ingress; the adapter performs pure transport syntax checks only.
 * ``trusted`` — the explicitly trusted adapter metadata channel, restricted
-  to the canonical trusted-key enumeration (registry_path / pidfile /
-  receipt).  Model-facing filesystem paths are denied: trusted metadata
-  cannot enter through ``arguments``.
+  to the canonical trusted-key enumeration (adapter-private resolved paths
+  registry_path / pidfile / receipt, and logical host resource references
+  registry_id / pidfile_id / receipt_id).  Model-facing filesystem paths
+  are denied: trusted metadata cannot enter through ``arguments``.
 """
 
 from __future__ import annotations
