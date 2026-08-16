@@ -1,0 +1,1265 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A0 accepted-base reconnaissance and evidence classification",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A0",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "accepted_writable_base": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "m2_known_good_checkpoint": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "m3_a_common_base": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "classification_categories": [
+    "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+    "MIGRATION_EVIDENCE_ONLY",
+    "PROJECTION_ONLY",
+    "HISTORICAL_ONLY",
+    "FORBIDDEN_AUTHORITY_SOURCE"
+  ],
+  "classification_semantics": {
+    "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE": "potential input to a future explicit deterministic bootstrap process; NOT currently authoritative graph state; used very conservatively",
+    "MIGRATION_EVIDENCE_ONLY": "useful to reconstruct or validate lifecycle semantics; cannot independently establish canonical graph truth",
+    "PROJECTION_ONLY": "a value/index that may be rebuilt from future canonical authority (e.g. current_* pointers per the Plan)",
+    "HISTORICAL_ONLY": "useful for provenance/audit/context; not canonical state construction",
+    "FORBIDDEN_AUTHORITY_SOURCE": "explicitly prohibited from becoming graph authority by the Plan; may still carry bounded EVIDENCE_UTILITY"
+  },
+  "source_seams": [
+    {
+      "seam": "project identity seam",
+      "location": "aota_forge/core/project/manifest.py (project.id, schema_version 1), core/project/discovery.py (scan_projects), core/project/resolver.py (resolve_project / resolve_project_with_fingerprint, 0/1/many fail-closed)",
+      "concepts": "project, project manifest, project registry fingerprint",
+      "notes": "Deterministic 0/1/many resolution; no hint authority; no candidate ranking heuristics. Project identity today = manifest project.id. Legacy project binding semantics are NOT carried over."
+    },
+    {
+      "seam": "workspace seam",
+      "location": "aota_forge/core/project/resolver.py (resolve_workspace, load_workspace_registry)",
+      "concepts": "workspace, workspace_id, workspace registry (workspaces.json via trusted resource kind project_registry)",
+      "notes": "Registry path is injected (operator trusted config); no hard-coded host path in Core. Fail-closed on symlink/ambiguity."
+    },
+    {
+      "seam": "Portable Plan document seam",
+      "location": "aota_forge/core/plan/normalize.py (normalize_portable_plan), core/plan/sections.py (parse_body_sections / classify_section), core/plan/read_model.py (PortablePlanDocument), adapters/plan_authority/__init__.py (PlanAuthoritySnapshot)",
+      "concepts": "Portable Plan, current vs historical sections, milestone definitions/status, governance observations, provenance observations, plan digest",
+      "notes": "Issue body remains Plan authority today (read-only adapter boundary; GitHub mechanics adapter-private). Historical blocks can never override current state; contradictions raise PlanNormalizationError."
+    },
+    {
+      "seam": "milestone / work item seam",
+      "location": "aota_forge/core/plan/read_model.py (MilestoneSnapshot, WorkItemSnapshot, LegacyPlanStateReader), core/plan/validation.py (PLAN_ID_RE, MILESTONE_ID_RE, WORK_ITEM_ID_RE)",
+      "concepts": "milestone, work item, plan_id",
+      "notes": "Legacy plan.json state is read only via LegacyPlanStateReader as shadow/migration evidence. WorkItemSnapshot is a read-model projection of legacy plan.json work_items."
+    },
+    {
+      "seam": "operation contract seam",
+      "location": "aota_forge/core/contracts/descriptor.py (OperationContractDescriptor, InputSpec, contract_hash), core/contracts/registry.py (HandlerRegistry), core/contracts/operations.py (legacy shim), core/catalog.py (canonical operation set), core/contracts/version.py (PROTOCOL_VERSION)",
+      "concepts": "operation, contract identity, contract_hash, protocol_version, internal_ids_required/created, mutation_scope, required_authority, approval_required, valid_predecessor/successor_state, idempotency",
+      "notes": "M3/M4 mutation fields are declarative placeholders (empty/None) in M2; no mutation runtime. Handler binding is runtime-local and excluded from contract_hash. Canonical operations: project.resolve, git.inspect, runtime.status, host.status, operations.list."
+    },
+    {
+      "seam": "operation context seam",
+      "location": "aota_forge/core/context.py (OperationContext, ContextResolver, SATISFIABLE_CONTEXT_KEYS)",
+      "concepts": "operation context, correlation_id, principal, protocol_version, contract_hash, params, semantic_inputs, trusted, session, workspace, project; reserved placeholders workflow/subject/internal_ids/revision/authority/capability_lease",
+      "notes": "Reserved future fields MUST remain None in M2 and never act as authority. ContextResolver MUST NOT search current_* pointers, create subjects, mint authority/leases, bind followups, or perform semantic project selection."
+    },
+    {
+      "seam": "principal seam",
+      "location": "aota_forge/core/context.py (OperationContext.principal), core/ingress.py (execute(principal=\"library\")), cli/__main__.py (principal=\"cli\"), adapters/hermes/invoke.py (PRINCIPAL = \"hermes\")",
+      "concepts": "principal",
+      "notes": "Principal is a free-form self-asserted string; no derivation, no verification, no enforcement. Audit record does not include principal. See nf2_design_input."
+    },
+    {
+      "seam": "correlation id seam",
+      "location": "aota_forge/core/contracts/results.py (new_correlation_id), core/ingress.py (resolve_correlation_id, bounded ^[A-Za-z0-9._:-]{1,128}$)",
+      "concepts": "correlation_id, audit",
+      "notes": "Caller-supplied correlation id honored only when bounded safe string; otherwise Core-generated. Every canonical execution carries bounded audit metadata."
+    },
+    {
+      "seam": "result / evidence seam",
+      "location": "aota_forge/core/contracts/results.py (success / failure / failure_from_error, canonical five-key envelope), core/ingress.py (normalization)",
+      "concepts": "canonical machine result, evidence, warnings, semantic_choices, next_action, blockers, error envelope",
+      "notes": "Envelope invariant: 'Never raises ForgeError; canonical errors are returned in the envelope'. Non-dict handler payloads are not covered by any guard (see i9_b008_design_input)."
+    },
+    {
+      "seam": "trusted adapter metadata seam",
+      "location": "aota_forge/core/contracts/validation.py (TRUSTED_ADAPTER_KEYS), adapters/hermes/schema.py (AdapterRequest arguments vs trusted namespaces)",
+      "concepts": "trusted adapter metadata, trusted resolved paths, logical host resource references",
+      "notes": "registry_path/pidfile/receipt are adapter-private trusted RESOLVED paths; registry_id/pidfile_id/receipt_id are logical references. Raw paths are never model-facing descriptor inputs; trusted metadata cannot enter through arguments."
+    },
+    {
+      "seam": "trusted resource resolution seam",
+      "location": "aota_forge/core/resources/resolver.py (TrustedResourceResolver, TrustedResourceConfig, RESOURCE_KINDS), adapters/host/resources.py (host_resource_config_from_env, AOTA_FORGE_HOST_ROOT_* allowlist)",
+      "concepts": "trusted resource config, resource kind, resource id, bounded path resolution",
+      "notes": "Fail-closed: traversal denied, symlink escape denied, unknown kind denied, no trusted root denied. Operator-configured roots only; model cannot configure roots."
+    },
+    {
+      "seam": "runtime identity seam",
+      "location": "aota_forge/core/runtime/model.py (RuntimeIdentity/RuntimeStatus/CapabilityStatus/RuntimeObservation), core/runtime/inspect.py (process_status, version_identity, file_sha256)",
+      "concepts": "runtime identity, runtime status, process, VERSION file, source/runtime parity",
+      "notes": "Executor-neutral; must NOT contain Hermes Profile ID / session ID / Profile Task ID / ProcessRegistry identity."
+    },
+    {
+      "seam": "git inspection seam",
+      "location": "aota_forge/core/git/inspect.py (inspect_git, find_git_root, boundary enforcement, full 40-char HEAD SHA)",
+      "concepts": "git HEAD SHA, branch, dirty state, boundary",
+      "notes": "Git discovery never walks above the resolved project root. Git state is read-only evidence (see forbidden_authority_sources)."
+    },
+    {
+      "seam": "host inspection seam",
+      "location": "aota_forge/adapters/host/ (environment.py, process.py, runtime.py, deployment_read.py, resources.py), core/handlers.py (_handle_host_status)",
+      "concepts": "host inspection, deployment receipts, backup/rollback readiness, environment identity",
+      "notes": "host.status requires no Plan/SPEC/Profile Task; project-bound semantics only when explicitly requested (PROJECT_BINDING_MISSING otherwise)."
+    },
+    {
+      "seam": "governance projection drift seam",
+      "location": "aota_forge/core/plan/normalize.py (derive_expected_projection, observe_governance_projection_drift)",
+      "concepts": "expected projection, control projections, GOVERNANCE_PROJECTION_DRIFT",
+      "notes": "Issue body always wins; control comments are projection_only; no automatic repair (BODY_CONTROL_COMMENT_CONFLICT_ARBITRATION_REQUIRED=no)."
+    }
+  ],
+  "lifecycle_concepts": [
+    {
+      "concept": "project",
+      "source": "aota_forge/core/project/manifest.py + .aota/project.yaml (schema_version 1); legacy: _project_registry.py, _project_binding.py",
+      "meaning": "canonical registered project with manifest identity, status, capabilities, paths",
+      "durability": "durable (manifest)",
+      "executor_specific": false,
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "m3_notes": "project.id is the natural identity fact for a future project subject; legacy binding/decision semantics are evidence only."
+    },
+    {
+      "concept": "workspace",
+      "source": "aota_forge/core/project/resolver.py (resolve_workspace); registry = workspaces.json via trusted resource kind project_registry",
+      "meaning": "registered workspace root containing projects",
+      "durability": "durable (operator registry)",
+      "executor_specific": false,
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "m3_notes": "workspace_id + candidate roots are the enumeration basis for workspace identity bootstrap; resolution is 0/1/many fail-closed."
+    },
+    {
+      "concept": "Portable Plan",
+      "source": "aota_forge/core/plan/normalize.py + read_model.py + adapters/plan_authority/__init__.py",
+      "meaning": "normalized authoritative Plan document from the governing issue body",
+      "durability": "durable (issue body; read-only snapshot adapter)",
+      "executor_specific": false,
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "m3_notes": "Plan authority today is the issue body; normalized document is the natural bootstrap input for Plan/Milestone subjects (B011/B013/B014 future conditions reference a 'plan subject')."
+    },
+    {
+      "concept": "milestone",
+      "source": "aota_forge/core/plan/read_model.py (MilestoneSnapshot), core/plan/validation.py (MILESTONE_ID_RE M<digits>), plan body milestone sections",
+      "meaning": "Plan milestone with status and work items",
+      "durability": "durable (Plan document)",
+      "executor_specific": false,
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "m3_notes": "milestone_id is Plan-scoped; whether milestone is its own subject or part of the Plan aggregate is open (OQ-M3A1-02)."
+    },
+    {
+      "concept": "work item",
+      "source": "aota_forge/core/plan/read_model.py (WorkItemSnapshot, from legacy plan.json via LegacyPlanStateReader)",
+      "meaning": "plan work unit with id/status/title",
+      "durability": "legacy durable (plan.json), successor read-model only",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Whether Work Item == Subject is explicitly open (OQ-M3A1-01); today it exists only as a legacy-sourced read model."
+    },
+    {
+      "concept": "operation",
+      "source": "aota_forge/core/contracts/descriptor.py + catalog.py + registry.py",
+      "meaning": "canonical operation contract with declarative inputs/context/authority fields",
+      "durability": "durable (declarative source)",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Operation is a mechanical contract concept, not a lifecycle subject; descriptor mutation_scope/required_authority/approval_required are M3/M4 placeholders."
+    },
+    {
+      "concept": "operation context",
+      "source": "aota_forge/core/context.py (OperationContext)",
+      "meaning": "executor-neutral canonical context for one operation execution",
+      "durability": "transient (per execution)",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Reserved subject/revision/authority/capability_lease fields are None placeholders; subject field is the future M3 subject reference seam."
+    },
+    {
+      "concept": "principal",
+      "source": "aota_forge/core/context.py (OperationContext.principal), ingress.execute(principal=...), adapters/hermes/invoke.py PRINCIPAL",
+      "meaning": "self-asserted free-form principal string ('library' / 'cli' / 'hermes')",
+      "durability": "transient",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Identity-only today; no enforcement; see nf2_design_input (M3-A2 decision)."
+    },
+    {
+      "concept": "correlation id",
+      "source": "aota_forge/core/contracts/results.py + core/ingress.py (resolve_correlation_id)",
+      "meaning": "bounded machine-readable execution correlation id",
+      "durability": "transient (also recorded in audit)",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Execution-scoped; not a subject identity candidate."
+    },
+    {
+      "concept": "executor context",
+      "source": "aota_forge/adapters/hermes/ (schema.py, invoke.py), adapters/host/ (environment.py)",
+      "meaning": "adapter-side request envelope and environment identity",
+      "durability": "transient",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Adapter projections derive deterministically from the canonical registry (DRIFT-1)."
+    },
+    {
+      "concept": "trusted adapter metadata",
+      "source": "aota_forge/core/contracts/validation.py (TRUSTED_ADAPTER_KEYS), adapters/hermes/schema.py",
+      "meaning": "bounded non-semantic adapter channel: resolved paths and logical host resource references",
+      "durability": "transient",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Channel is not principal-bound today (NF2 gap); M3-A2 must decide coupling."
+    },
+    {
+      "concept": "trusted resource config",
+      "source": "aota_forge/core/resources/resolver.py (TrustedResourceConfig), adapters/host/resources.py (AOTA_FORGE_HOST_ROOT_* allowlist)",
+      "meaning": "operator-configured trusted roots per resource kind",
+      "durability": "durable (operator env/config)",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Resolution gate today; no principal coupling (NF2)."
+    },
+    {
+      "concept": "revision / hash concepts",
+      "source": "contract_hash (contracts/descriptor.py), snapshot_sha256 + source_revision/source_digest (plan/read_model.py), registry fingerprint (project/discovery.py), head_sha (git/inspect.py), known_good_checkpoints (plan/normalize.py), VERSION identity (runtime/inspect.py)",
+      "meaning": "deterministic content hashes, source revisions, checkpoint references",
+      "durability": "varies",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Hash mechanics are evidence today; Git-derived values are FORBIDDEN as subject authority (GIT_HISTORY_IS_SUBJECT_AUTHORITY=no); revision/CAS mechanics belong to M3 graph-write lanes."
+    },
+    {
+      "concept": "Profile Task",
+      "source": "aota-hermes-tools plugin/aota-tools/_profile_task_*.py (pt_<ts>_<8hex> identity)",
+      "meaning": "legacy executor profile-worker execution unit (SPEC -> run -> terminal outcome)",
+      "durability": "legacy durable (task dirs under AOTA_PROFILE_TASK_ROOT)",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Executor-specific ontology; retired from Core (m1-h-migration-inventory RETIRE_FROM_CORE); must NOT become canonical Subject identity."
+    },
+    {
+      "concept": "SPEC",
+      "source": "aota-hermes-tools plugin/aota-tools/_task_spec_*.py, _spec_contract.py (frozen revision + canonical_hash + APPROVAL.json)",
+      "meaning": "legacy frozen, hash-bound worker contract with human approval",
+      "durability": "legacy durable",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Approval artifact, not identity; executor-specific (M5 concern); approval/authority coupling is an M3-A2 question."
+    },
+    {
+      "concept": "completion",
+      "source": "aota-hermes-tools plugin/aota-tools/_completion_subject_resolver.py, _completion_observation.py, _worker_outcome_submit.py",
+      "meaning": "legacy terminal-outcome event mapped to task/result evidence",
+      "durability": "legacy durable (task meta + receipts)",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Result-like evidence; canonical result state concept is the successor equivalent."
+    },
+    {
+      "concept": "decision",
+      "source": "aota-hermes-tools plugin/aota-tools/_orchestration_decision_record.py, _project_decision_record.py (od_<ts>_<8hex> store + current_decision pointer)",
+      "meaning": "legacy durable orchestration/project intent records",
+      "durability": "legacy durable",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Whether decision becomes its own Subject is open (OQ-M3A1-04); ACTIVATE-R-current-binding depends on decision identity semantics."
+    },
+    {
+      "concept": "followup",
+      "source": "aota-hermes-tools plugin/aota-tools/_followup_task_create.py",
+      "meaning": "legacy next-generation draft task derived from a decision (lineage links never model-supplied)",
+      "durability": "legacy durable",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Binding target semantics are ambiguous; ACTIVATE-R-current-binding and OQ-M3A1-05 own this."
+    },
+    {
+      "concept": "handoff",
+      "source": "aota-hermes-tools plugin/aota-tools/_handoff_common.py, _handoff_ack.py (ho_<ts>_<8hex>)",
+      "meaning": "legacy durable worker->operator completion notification with explicit ack",
+      "durability": "legacy durable",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Notification/evidence artifact; not a canonical subject identity candidate."
+    },
+    {
+      "concept": "execution attempt",
+      "source": "aota_forge/core/runtime/inspect.py (process_status), runtime/model.py (RuntimeStatus)",
+      "meaning": "mechanical process execution observation",
+      "durability": "transient",
+      "executor_specific": false,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Mechanical; not a subject."
+    },
+    {
+      "concept": "operator inbox",
+      "source": "aota-hermes-tools plugin/aota-tools/_operator_inbox_list.py, _operator_inbox_open.py",
+      "meaning": "legacy read-only unified derived view over handoffs/decisions/tasks/approvals",
+      "durability": "transient (pure derived view)",
+      "executor_specific": true,
+      "primary_class": "PROJECTION_ONLY",
+      "m3_notes": "Textbook projection class: rebuildable from future canonical authority; never a graph truth source."
+    },
+    {
+      "concept": "orchestration lineage",
+      "source": "aota-hermes-tools plugin/aota-tools/_orchestration_lineage.py (task -> handoff -> decision -> followup -> predecessor edges)",
+      "meaning": "legacy durable traversal of authoritative lineage edges stored inside records",
+      "durability": "legacy durable (derived traversal)",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Edge semantics are migration evidence for future graph edge design (M3-A1 input); legacy traversal is not graph authority."
+    },
+    {
+      "concept": "legacy current_* pointers",
+      "source": "aota-hermes-tools plugin/aota-tools/_session_state_authority.py, _session_active_plan_binding.py, _session_active_spec_binding.py",
+      "meaning": "legacy per-session current lifecycle subject pointers (active_task, current_decision, current_followup, current_project_binding, ...)",
+      "durability": "legacy durable (session-state files)",
+      "executor_specific": true,
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "m3_notes": "Were authoritative in legacy; superseded_by chains preserved; see current_pointer_inventory."
+    }
+  ],
+  "subject_identity_ambiguities": [
+    {
+      "concept": "Work Item",
+      "source": "aota_forge/core/plan/read_model.py WorkItemSnapshot.work_item_id; legacy plan.json work_items",
+      "lifecycle_meaning": "plan work unit",
+      "durability": "legacy durable / read-model only",
+      "identity_kind": "mechanical (work_item_id string)",
+      "parent_child": "child of milestone/plan",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": false,
+      "notes": "OPEN: whether Work Item == Subject (OQ-M3A1-01). Legacy-sourced identity today; no durable graph backing."
+    },
+    {
+      "concept": "Profile Task",
+      "source": "aota-hermes-tools _profile_task_common.py (pt_<ts>_<8hex>)",
+      "lifecycle_meaning": "executor profile-worker execution unit",
+      "durability": "legacy durable",
+      "identity_kind": "mechanical + path-embedded (task dir = identity)",
+      "parent_child": "child of workspace",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Executor-specific ontology retired from Core; must NOT become canonical Subject identity."
+    },
+    {
+      "concept": "task_id / active task context",
+      "source": "aota-hermes-tools _active_task_context.py, _task_spec_common.py generate_task_id",
+      "lifecycle_meaning": "current worker task identity injected via env",
+      "durability": "legacy durable (task dir) / context transient",
+      "identity_kind": "mechanical",
+      "parent_child": "child of workspace",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Executor/session-scoped; must NOT become canonical Subject identity."
+    },
+    {
+      "concept": "SPEC",
+      "source": "aota-hermes-tools _task_spec_freeze.py, _spec_contract.py (revision + canonical_hash + APPROVAL.json)",
+      "lifecycle_meaning": "frozen hash-bound worker contract with approval",
+      "durability": "legacy durable",
+      "identity_kind": "mechanical (spec revision/hash)",
+      "parent_child": "child of task",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Approval artifact, not identity. Approval->authority coupling is an M3-A2 question."
+    },
+    {
+      "concept": "completion",
+      "source": "aota-hermes-tools _completion_subject_resolver.py, _worker_outcome_submit.py",
+      "lifecycle_meaning": "terminal outcome event mapped to task/result evidence",
+      "durability": "legacy durable",
+      "identity_kind": "event/result",
+      "parent_child": "child of task",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Result-like; successor equivalent is canonical result state."
+    },
+    {
+      "concept": "decision",
+      "source": "aota-hermes-tools _orchestration_decision_record.py, _project_decision_record.py (od_<ts>_<8hex>)",
+      "lifecycle_meaning": "durable orchestration/project intent record",
+      "durability": "legacy durable",
+      "identity_kind": "semantic (decision_id)",
+      "parent_child": "linked to task/handoff/followup",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": false,
+      "notes": "OPEN: whether decision becomes its own Subject (OQ-M3A1-04). ACTIVATE-R-current-binding depends on this."
+    },
+    {
+      "concept": "followup",
+      "source": "aota-hermes-tools _followup_task_create.py",
+      "lifecycle_meaning": "next-generation draft task derived from a decision",
+      "durability": "legacy durable",
+      "identity_kind": "semantic binding target",
+      "parent_child": "child of decision (lineage links)",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": false,
+      "notes": "Binding semantics ambiguous; ACTIVATE-R-current-binding / OQ-M3A1-05 own the resolution."
+    },
+    {
+      "concept": "handoff",
+      "source": "aota-hermes-tools _handoff_common.py (ho_<ts>_<8hex>)",
+      "lifecycle_meaning": "worker->operator completion notification with ack",
+      "durability": "legacy durable",
+      "identity_kind": "mechanical (handoff_id)",
+      "parent_child": "linked to task/decision",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Notification/evidence artifact."
+    },
+    {
+      "concept": "execution attempt",
+      "source": "aota_forge/core/runtime/inspect.py process_status, runtime/model.py RuntimeStatus",
+      "lifecycle_meaning": "mechanical process observation",
+      "durability": "transient",
+      "identity_kind": "mechanical (pid)",
+      "parent_child": "none",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": true,
+      "notes": "Mechanical runtime identity."
+    },
+    {
+      "concept": "Plan",
+      "source": "aota_forge/core/plan/read_model.py PortablePlanDocument/plan_id (plan_*); legacy plan.json",
+      "lifecycle_meaning": "governing Plan document and its normalized state",
+      "durability": "durable (issue body / legacy plan.json)",
+      "identity_kind": "semantic (plan_id)",
+      "parent_child": "parent of milestones/work items; child of project",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": false,
+      "notes": "Strong subject candidate: B011/B013/B014 future_pass_conditions reference 'a plan subject in the durable subject graph'. Aggregate boundary open (OQ-M3A1-02)."
+    },
+    {
+      "concept": "Milestone",
+      "source": "aota_forge/core/plan/validation.py MILESTONE_ID_RE (M<digits>), read_model.py MilestoneSnapshot",
+      "lifecycle_meaning": "Plan milestone",
+      "durability": "durable (Plan document)",
+      "identity_kind": "semantic (milestone_id)",
+      "parent_child": "child of Plan; parent of work items",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": false,
+      "notes": "Own subject vs Plan-aggregate part is open (OQ-M3A1-02)."
+    },
+    {
+      "concept": "project",
+      "source": "aota_forge/core/project/manifest.py project.id; legacy _project_registry.py",
+      "lifecycle_meaning": "registered canonical project",
+      "durability": "durable (manifest)",
+      "identity_kind": "semantic (project_id)",
+      "parent_child": "parent of plans; child of workspace",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": false,
+      "notes": "Strong subject candidate; binding subject per BIND-1 (PROJECT_DECISION != PROJECT_BINDING)."
+    },
+    {
+      "concept": "workspace",
+      "source": "aota_forge/core/project/resolver.py resolve_workspace (workspace_id)",
+      "lifecycle_meaning": "registered workspace root",
+      "durability": "durable (operator registry)",
+      "identity_kind": "semantic (workspace_id)",
+      "parent_child": "parent of projects",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": false,
+      "notes": "Subject candidate; root enumeration via workspaces.json."
+    },
+    {
+      "concept": "operation contract",
+      "source": "aota_forge/core/contracts/descriptor.py (name, contract_hash)",
+      "lifecycle_meaning": "canonical operation contract identity",
+      "durability": "durable (declarative)",
+      "identity_kind": "mechanical (contract_hash)",
+      "parent_child": "none",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": true,
+      "notes": "Contract identity, not lifecycle subject."
+    },
+    {
+      "concept": "correlation id",
+      "source": "aota_forge/core/contracts/results.py new_correlation_id",
+      "lifecycle_meaning": "execution correlation",
+      "durability": "transient",
+      "identity_kind": "mechanical (uuid hex)",
+      "parent_child": "none",
+      "executor_specific": false,
+      "obviously_not_canonical_subject": true,
+      "notes": "Execution-scoped."
+    },
+    {
+      "concept": "current active task",
+      "source": "aota-hermes-tools _session_state_authority.py (active_task pointer)",
+      "lifecycle_meaning": "legacy per-session current task pointer",
+      "durability": "legacy durable (pointer file)",
+      "identity_kind": "pointer (not identity)",
+      "parent_child": "none",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": true,
+      "notes": "Pointer, not identity; projection class per Plan (CURRENT_POINTERS_ARE_PROJECTIONS=yes)."
+    },
+    {
+      "concept": "orchestration decision",
+      "source": "aota-hermes-tools _orchestration_decision_record.py (current_decision pointer + decision store)",
+      "lifecycle_meaning": "legacy durable orchestration intent and its current pointer",
+      "durability": "legacy durable",
+      "identity_kind": "semantic (decision_id)",
+      "parent_child": "linked to task/handoff/followup",
+      "executor_specific": true,
+      "obviously_not_canonical_subject": false,
+      "notes": "Open decision-as-subject semantics (OQ-M3A1-04); lineage edges are M3-A1 input."
+    }
+  ],
+  "authority_candidates": [
+    {
+      "authority_candidate": "possession of an ID",
+      "source": "aota_forge/core/contracts/descriptor.py internal_ids_required/internal_ids_created (declared, unused in M2)",
+      "is_currently_authority": "no",
+      "is_identity_only": true,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": false,
+      "notes": "Frozen: ID_IS_AUTHORITY=no. internal_ids semantics (what they name in M3) are an M3-A1 question, not an authority question."
+    },
+    {
+      "authority_candidate": "current task pointer",
+      "source": "aota-hermes-tools _session_state_authority.py active_task/current_* pointer files",
+      "is_currently_authority": "legacy_only",
+      "is_identity_only": false,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": false,
+      "notes": "Frozen: CURRENT_POINTERS_ARE_AUTHORITY=no; projection-only in M3. No lease/authority decision needed."
+    },
+    {
+      "authority_candidate": "project binding",
+      "source": "legacy: _project_binding.py current_project_binding + aota_workspace_selection_record; successor: core/project/resolver.py deterministic resolution",
+      "is_currently_authority": "partial",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": true,
+      "notes": "Successor resolution is mechanically authoritative for read-only resolution (0/1/many fail-closed) but no durable binding subject exists. BIND-1: PROJECT_DECISION != PROJECT_BINDING; SUBJECT_BINDING_ZERO_ONE_MANY enforcement is M3/M4."
+    },
+    {
+      "authority_candidate": "project decision",
+      "source": "aota-hermes-tools _project_decision_record.py (project_decision: new_project/new_workspace intent)",
+      "is_currently_authority": "legacy_only",
+      "is_identity_only": false,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": true,
+      "notes": "Pre-project intent record; never a binding. Decision-as-subject semantics feed M3-A1; authority coupling is M3-A2."
+    },
+    {
+      "authority_candidate": "task spec",
+      "source": "aota-hermes-tools _task_spec_freeze.py frozen SPEC revision + canonical_hash",
+      "is_currently_authority": "legacy_only",
+      "is_identity_only": false,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": false,
+      "notes": "Executor-specific approval artifact (M5 ExecutorAdapter concern); not a Forge Core authority candidate."
+    },
+    {
+      "authority_candidate": "approval",
+      "source": "aota_forge/core/contracts/descriptor.py approval_required (declared, never enforced); legacy APPROVAL.json human checkpoint",
+      "is_currently_authority": "no",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": true,
+      "notes": "Declared-but-unenforced in the successor; M3-A2 must decide whether approval gates authority grants/capability leases."
+    },
+    {
+      "authority_candidate": "profile role",
+      "source": "aota-hermes-tools _security_context.py / _orchestrator_security_context.py role checks",
+      "is_currently_authority": "legacy_only",
+      "is_identity_only": true,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": false,
+      "notes": "Executor role ontology; M5 adapter concern."
+    },
+    {
+      "authority_candidate": "operator context",
+      "source": "legacy: _operator_inbox_*.py; successor: operator env config (AOTA_FORGE_HOST_ROOT_*) and trusted config channel",
+      "is_currently_authority": "partial",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": true,
+      "notes": "Trusted roots gate which host resources are reachable; no principal coupling today (NF2). M3-A2 decides root/lease coupling."
+    },
+    {
+      "authority_candidate": "trusted resource config",
+      "source": "aota_forge/core/resources/resolver.py TrustedResourceConfig; adapters/host/resources.py host_resource_config_from_env",
+      "is_currently_authority": "partial",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": true,
+      "notes": "Resolution gate for trusted resources; fail-closed; not principal-bound (NF2)."
+    },
+    {
+      "authority_candidate": "principal field",
+      "source": "aota_forge/core/context.py OperationContext.principal; ingress.execute(principal=...); adapters/hermes/invoke.py PRINCIPAL = 'hermes'",
+      "is_currently_authority": "no",
+      "is_identity_only": true,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": true,
+      "notes": "Free-form self-asserted string; never enforced; audit does not record it. NF2 core gap; M3-A2 decision required."
+    },
+    {
+      "authority_candidate": "Git / Plan revision",
+      "source": "aota_forge/core/git/inspect.py head_sha; plan/read_model.py source_revision/source_digest; plan/normalize.py known_good_checkpoints; contracts/descriptor.py contract_hash",
+      "is_currently_authority": "no",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": false,
+      "notes": "Frozen: GIT_HISTORY_IS_SUBJECT_AUTHORITY=no. Revisions are evidence/identity checks; revision/CAS mechanics are M3 graph-write lanes, not the authority engine."
+    },
+    {
+      "authority_candidate": "handler registry",
+      "source": "aota_forge/core/contracts/registry.py DEFAULT_REGISTRY (runtime-local handler binding)",
+      "is_currently_authority": "partial",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": false,
+      "notes": "Runtime authority for 'which executable implements a contract' — contract machinery, not lifecycle authority; never part of contract_hash."
+    },
+    {
+      "authority_candidate": "descriptor registry",
+      "source": "aota_forge/core/catalog.py + core/contracts/registry.py (single declarative contract surface)",
+      "is_currently_authority": "partial",
+      "is_identity_only": false,
+      "is_executor_specific": false,
+      "m3_a2_requires_decision": false,
+      "notes": "Single source for canonical serialization/contract_hash (DRIFT-1); contract authority, not subject authority."
+    },
+    {
+      "authority_candidate": "orchestration decision store",
+      "source": "aota-hermes-tools _orchestration_common.py decision store + flock (legacy lineage authority)",
+      "is_currently_authority": "legacy_only",
+      "is_identity_only": false,
+      "is_executor_specific": true,
+      "m3_a2_requires_decision": false,
+      "notes": "Legacy durable lineage authority; edge semantics are M3-A1 input, not M3-A2 lease authority."
+    }
+  ],
+  "current_pointer_inventory": [
+    {
+      "name": "plan.active_plan_id",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota_forge/.aota/project.yaml plan.active_plan_id; validated in aota_forge/core/project/manifest.py",
+      "semantic_target": "the current Plan for a project",
+      "producer": "operator / manifest author",
+      "consumer": "none in Core today (validation only); future plan selection",
+      "durable": true,
+      "reconstructable": "yes (declared in manifest; later derivable from durable Plan subjects per CURRENT_POINTERS_ARE_PROJECTIONS)",
+      "currently_treated_as_authority_in_legacy": "legacy equivalent yes (active plan binding via _plan_select.py); successor field no (unused)",
+      "future_m3_classification": "PROJECTION_ONLY"
+    },
+    {
+      "name": "Portable Plan projection fields",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota_forge/core/plan/normalize.py PROJECTION_FIELDS (CURRENT_MILESTONE, PLAN_STATUS, CURRENT_BLOCKER, HANDOFF_STATE) + CANONICAL_STATE_KEYS (CURRENT_STATUS, CURRENT_NEXT_ACTION, COMPLETED_MILESTONES) of the governing issue body",
+      "semantic_target": "current lifecycle projection of the Plan",
+      "producer": "Plan author (authoritative issue body)",
+      "consumer": "derive_expected_projection / observe_governance_projection_drift",
+      "durable": true,
+      "reconstructable": "yes (derivable from durable graph state per the frozen principle; today read from the authoritative body)",
+      "currently_treated_as_authority_in_legacy": "yes (fields of the authoritative Plan document today; GOVERNING_PLAN remains Plan authority until a separately authorized Plan-authority migration)",
+      "future_m3_classification": "PROJECTION_ONLY"
+    },
+    {
+      "name": "legacy session current_* pointers",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota-hermes-tools plugin/aota-tools/_session_state_authority.py (current_draft_spec, active_frozen_spec, active_task, current_completion, current_handoff, current_decision, current_completed_task, current_work_classification, current_project_binding) under $AOTA_RUNTIME_ROOT/session-state/...",
+      "semantic_target": "per-session current lifecycle subjects (task/spec/completion/handoff/decision/binding)",
+      "producer": "legacy task-main/coordinator tools",
+      "consumer": "legacy _reference_resolver.py / _completion_subject_resolver.py",
+      "durable": true,
+      "reconstructable": "partial (superseded_by chains retained; not independently reconstructable; no longer maintained)",
+      "currently_treated_as_authority_in_legacy": "yes (session-scoped authoritative pointers in the legacy runtime)",
+      "future_m3_classification": "MIGRATION_EVIDENCE_ONLY"
+    },
+    {
+      "name": "legacy active plan binding",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota-hermes-tools plugin/aota-tools/_plan_select.py / _session_active_plan_binding.py ($AOTA_RUNTIME_ROOT/session-active-plan/<ws>/<session>/active-plan.json)",
+      "semantic_target": "the current Plan for a session",
+      "producer": "legacy task-main (_plan_select)",
+      "consumer": "legacy _reference_resolver.resolve_current_plan (re-reads plan artifact; fails closed on parked/cancelled/revision mismatch)",
+      "durable": true,
+      "reconstructable": "yes (legacy re-read of the plan artifact with fail-closed revision check)",
+      "currently_treated_as_authority_in_legacy": "yes",
+      "future_m3_classification": "MIGRATION_EVIDENCE_ONLY"
+    },
+    {
+      "name": "legacy active frozen spec binding",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota-hermes-tools plugin/aota-tools/_task_spec_freeze.py / _session_active_spec_binding.py ($AOTA_RUNTIME_ROOT/session-active-spec/<ws>/<session>/active-spec.json)",
+      "semantic_target": "the current frozen SPEC for a session",
+      "producer": "legacy task-main (spec freeze)",
+      "consumer": "legacy active task context / scope enforcement",
+      "durable": true,
+      "reconstructable": "yes (active_frozen_spec pointer)",
+      "currently_treated_as_authority_in_legacy": "yes",
+      "future_m3_classification": "MIGRATION_EVIDENCE_ONLY"
+    },
+    {
+      "name": "legacy plan.json active pointers",
+      "pointer_kind": "lifecycle_current_pointer",
+      "source_location": "aota-hermes-tools .aota/forge/plans/plan_*/plan.json (active_milestone_id, active_work_item_id, current_state, next_action)",
+      "semantic_target": "current milestone/work item within a legacy plan",
+      "producer": "legacy plan mutation tools (_plan_mutation.py / _plan_open.py)",
+      "consumer": "legacy plan readers and context resolution",
+      "durable": true,
+      "reconstructable": "yes (plan.json is the artifact itself)",
+      "currently_treated_as_authority_in_legacy": "yes (within the legacy plan artifact)",
+      "future_m3_classification": "MIGRATION_EVIDENCE_ONLY"
+    }
+  ],
+  "migration_inputs": [
+    {
+      "id": "MI-01",
+      "source": "legacy runtime session state (current_* pointers)",
+      "location": "aota-hermes-tools _session_state_authority.py; $AOTA_RUNTIME_ROOT/session-state/**",
+      "description": "per-session legacy current lifecycle pointers with superseded_by chains",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Reconstructs legacy projection mechanics and validates ACTIVATE-R-current-binding semantics; cannot independently establish canonical graph truth."
+    },
+    {
+      "id": "MI-02",
+      "source": "legacy active plan binding",
+      "location": "aota-hermes-tools _plan_select.py / _session_active_plan_binding.py; $AOTA_RUNTIME_ROOT/session-active-plan/**",
+      "description": "session-scoped current Plan selection with fail-closed revision re-read",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Evidence of current-plan selection semantics (B013 adjacency); not graph truth."
+    },
+    {
+      "id": "MI-03",
+      "source": "legacy active frozen spec binding",
+      "location": "aota-hermes-tools _task_spec_freeze.py / _session_active_spec_binding.py; $AOTA_RUNTIME_ROOT/session-active-spec/**",
+      "description": "session-scoped current frozen SPEC pointer",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Executor-specific approval/contract evidence; M5 concern."
+    },
+    {
+      "id": "MI-04",
+      "source": "legacy plan artifacts",
+      "location": "aota-hermes-tools .aota/forge/plans/plan_*/ (plan.json, PLAN.md, retirement.json, cancel.json); .aota/forge/plan-retirement-snapshots/prs_*.json",
+      "description": "revisioned legacy plan state incl. active_milestone_id/active_work_item_id, retirement records",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Already read only via LegacyPlanStateReader as shadow/migration evidence; retirement lifecycle is M4."
+    },
+    {
+      "id": "MI-05",
+      "source": "legacy project registry",
+      "location": "aota-hermes-tools _project_registry.py; <workspace>/.aota/registry/projects.json",
+      "description": "derived, rebuildable project index (SCHEMA_VERSION 1)",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Derived index; successor project manifests supersede it as identity source."
+    },
+    {
+      "id": "MI-06",
+      "source": "legacy decision store",
+      "location": "aota-hermes-tools _orchestration_decision_record.py / _project_decision_record.py; $AOTA_RUNTIME_ROOT/decisions/<ws>/DECISION.<od_*>.json + flock",
+      "description": "durable orchestration and project decision records (od_<ts>_<8hex>), incl. aota_workspace_selection_record",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Decision semantics feed OQ-M3A1-04 and BIND-1 design; never graph truth without a bootstrap mapping."
+    },
+    {
+      "id": "MI-07",
+      "source": "legacy handoffs",
+      "location": "aota-hermes-tools _handoff_common.py / _handoff_ack.py; $AOTA_RUNTIME_ROOT/handoffs/<ws>/**",
+      "description": "durable worker->operator completion notifications with ack",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Notification/evidence artifacts; validate completion semantics."
+    },
+    {
+      "id": "MI-08",
+      "source": "legacy task/result artifacts",
+      "location": "aota-hermes-tools _profile_task_*.py; $AOTA_PROFILE_TASK_ROOT/<ws>/pt_*/ (meta.json, SPEC.md, scope.json, RESULT.md, DIAGNOSIS.md, REVIEW.md, ARCHITECT_REVIEW.md, STEWARD_RESULT.md)",
+      "description": "durable executor task execution units and role result artifacts",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Executor-specific execution evidence; canonical result state is the successor equivalent."
+    },
+    {
+      "id": "MI-09",
+      "source": "legacy completion receipts / worker outcomes",
+      "location": "aota-hermes-tools _completion_observation.py / _worker_outcome_submit.py (task meta.execution + receipt state)",
+      "description": "terminal outcome + bounded one-time recovery evidence",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Validates completion/result lifecycle semantics."
+    },
+    {
+      "id": "MI-10",
+      "source": "legacy audit ledgers",
+      "location": "aota-hermes-tools _profile_task_scope.py scope-events.jsonl; _plan_audit.py .aota/forge/audit/plan-mutations/pa_*.json; _mutation_audit.py",
+      "description": "append-only scope events and plan mutation audit records (prepared/committed/denied/aborted/reconciliation_required)",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Audit evidence that validates lifecycle mutation semantics (states, CAS-like revision behavior); not canonical state construction."
+    },
+    {
+      "id": "MI-11",
+      "source": "legacy authority declarations (docs)",
+      "location": "aota-hermes-tools docs/acf/ACF-ARCHITECTURE.md (authority table; CONTROL_COMMENTS_PLAN_AUTHORITY=no, EVENT_LOG_PLAN_AUTHORITY=no), docs/aota-development/AOTA-PROJECT-LIFECYCLE-CONTRACT.md, docs/aota-forge-plan/ORCHESTRATION-LIFECYCLE.md, docs/aota-forge-plan/PLAN-CONTRACT.md, docs/aota-project-continuity/PCF-WI-09C-SPEC-CONTRACT.md",
+      "description": "declarative legacy authority/principal boundary contracts",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Reconstructs legacy authority model for M3-A2 design comparison; never graph truth."
+    },
+    {
+      "id": "MI-12",
+      "source": "legacy verification scripts",
+      "location": "aota-hermes-tools scripts/verify-*.py",
+      "description": "executable evidence contracts for legacy lifecycle concepts",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Executable semantic evidence for reconstruction/validation."
+    },
+    {
+      "id": "MI-13",
+      "source": "legacy source code",
+      "location": "aota-hermes-tools plugin/aota-tools/**, scripts/**",
+      "description": "legacy control-plane implementation (semantic inventory source for this map)",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Mechanics extraction source; never imported by aota_forge (NEW_CORE_IMPORTS_LEGACY_CONTROL_PLANE=no)."
+    },
+    {
+      "id": "MI-14",
+      "source": "successor project manifests",
+      "location": "aota_forge workspace project.yaml manifests (aota_forge/core/project/manifest.py schema)",
+      "description": "current canonical project identity/status/capability facts",
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "rationale": "project.id is the current canonical project identity fact; conservative candidate input to a future deterministic project-subject bootstrap."
+    },
+    {
+      "id": "MI-15",
+      "source": "Portable Plan document (normalized)",
+      "location": "governing issue body via adapters/plan_authority PlanAuthoritySnapshot + aota_forge/core/plan/normalize.py normalize_portable_plan",
+      "description": "normalized authoritative Plan state: current fields, milestone definitions/status, project context, known-good checkpoints",
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "rationale": "Plan remains Plan authority today; normalized document is the conservative bootstrap candidate for Plan/Milestone subjects (see OQ-M3A5-01 for ordering)."
+    },
+    {
+      "id": "MI-16",
+      "source": "Plan historical / appendix sections",
+      "location": "aota_forge/core/plan/sections.py KIND_HISTORICAL / KIND_APPENDIX sections of the Plan body; PortablePlanDocument.provenance_observations",
+      "description": "superseded/historical blocks and structured provenance",
+      "primary_class": "HISTORICAL_ONLY",
+      "rationale": "Provenance/audit/context only; can never override current state (enforced by normalization)."
+    },
+    {
+      "id": "MI-17",
+      "source": "control projection snapshots",
+      "location": "aota_forge/core/plan/normalize.py observe_governance_projection_drift (control_projections); PlanAuthoritySnapshot.control_projections",
+      "description": "canonical control-comment projection snapshots for drift observation",
+      "primary_class": "PROJECTION_ONLY",
+      "rationale": "Already declared projection_only by the drift observer (control_comment_authority=projection_only); rebuildable from future canonical authority."
+    },
+    {
+      "id": "MI-18",
+      "source": "workspace registry",
+      "location": "workspaces.json (trusted resource kind project_registry); consumed by aota_forge/core/project/resolver.py resolve_workspace",
+      "description": "operator-registered workspace_id -> candidate root mapping",
+      "primary_class": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "rationale": "Current canonical workspace-root enumeration source; conservative candidate for workspace-subject bootstrap enumeration."
+    },
+    {
+      "id": "MI-19",
+      "source": "managed deployment receipts / backup receipts",
+      "location": "aota_forge/adapters/host/process.py read_receipt + deployment_read.py; trusted kinds managed_deployment_receipt / backup_receipt",
+      "description": "bounded deployment/rollback evidence",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Deployment lifecycle evidence; validates semantics, not graph truth."
+    },
+    {
+      "id": "MI-20",
+      "source": "runtime identity files",
+      "location": "aota_forge/core/runtime/inspect.py version_identity (VERSION files); trusted kind runtime_identity",
+      "description": "executor-neutral runtime identity evidence",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Runtime identity evidence; not lifecycle state."
+    },
+    {
+      "id": "MI-21",
+      "source": "Git history",
+      "location": "aota_forge/core/git/inspect.py head_sha/branch/dirty state; repository commit history",
+      "description": "commit history, HEAD SHA, branch state",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "provenance/audit; known-good checkpoint verification (exact base SHA check); source/runtime parity and drift detection; read-only git.inspect evidence",
+      "rationale": "Frozen: GIT_HISTORY_IS_SUBJECT_AUTHORITY=no."
+    },
+    {
+      "id": "MI-22",
+      "source": "Issue Event Log",
+      "location": "governing GitHub issue event history (comments/timeline) via adapter metadata only; never in Core schema",
+      "description": "issue event/timeline history",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "audit history of Plan/issue changes; human review context",
+      "rationale": "Frozen: EVENT_LOG_IS_SUBJECT_AUTHORITY=no; GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID=no."
+    },
+    {
+      "id": "MI-23",
+      "source": "control comments",
+      "location": "governing issue control comments; consumed only as control_projections in PlanAuthoritySnapshot",
+      "description": "control-comment projection snapshots and comment history",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "GOVERNANCE_PROJECTION_DRIFT observation only; never Plan arbitration (BODY_CONTROL_COMMENT_CONFLICT_ARBITRATION_REQUIRED=no)",
+      "rationale": "Frozen: CONTROL_COMMENT_IS_SUBJECT_AUTHORITY=no."
+    },
+    {
+      "id": "MI-24",
+      "source": "M1/M2 successor evidence artifacts",
+      "location": "aota_forge deploy/evidence/issues/9/m1-*.json, m2-integration-provenance.json",
+      "description": "repository migration, migration inventory, Issue #8 regression mapping, integration provenance",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Milestone evidence; reconstructs migration/regression semantics."
+    },
+    {
+      "id": "MI-25",
+      "source": "M2 successor regression matrix",
+      "location": "aota_forge deploy/evidence/issues/9/m2-successor-regression-matrix.json",
+      "description": "16-class successor regression matrix with dispositions and evidence",
+      "primary_class": "MIGRATION_EVIDENCE_ONLY",
+      "rationale": "Carries Issue #8 legacy failure evidence and frozen successor requirements; disposition source for successor_regression_ownership; not lifecycle state."
+    }
+  ],
+  "forbidden_authority_sources": [
+    {
+      "source": "Git history",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "provenance/audit; exact-base verification; parity/drift detection; read-only git.inspect evidence",
+      "plan_reference": "GIT_HISTORY_IS_SUBJECT_AUTHORITY=no"
+    },
+    {
+      "source": "Issue Event Log",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "audit history of Plan/issue changes; human review context",
+      "plan_reference": "EVENT_LOG_IS_SUBJECT_AUTHORITY=no; GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID=no"
+    },
+    {
+      "source": "control comments",
+      "primary_class": "FORBIDDEN_AUTHORITY_SOURCE",
+      "evidence_utility": "GOVERNANCE_PROJECTION_DRIFT observation only; never Plan arbitration",
+      "plan_reference": "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY=no; control_comment_authority=projection_only"
+    }
+  ],
+  "nf2_design_input": {
+    "NF2": "trusted raw-path library context lacks principal enforcement",
+    "NF2_CURRENT_MECHANICS": [
+      "principal enters OperationContext through ingress.execute(principal=...) as a plain str; defaults: 'library' (ingress default), 'cli' (CLI), 'hermes' (adapter constant PRINCIPAL in adapters/hermes/invoke.py); no derivation, no verification",
+      "ContextResolver.resolve() stores principal verbatim; OperationContext.principal is identity-only metadata; the ingress audit record (_audit) does NOT include principal",
+      "trusted resource roots enter via adapters/host/resources.py host_resource_config_from_env() from the AOTA_FORGE_HOST_ROOT_* env allowlist, or an explicitly constructed TrustedResourceConfig; the model can never configure roots",
+      "trusted adapter paths (registry_path/pidfile/receipt) and logical refs (*_id) enter through TRUSTED_ADAPTER_KEYS into ctx.params/ctx.trusted; handlers resolve them to raw paths and open files (handlers.py _handle_host_status: Path(registry_path), host_process_status(Path(pidfile)), read_receipt(Path(receipt)))",
+      "raw resolved paths exist after logical resolution inside handlers (TrustedResourceResolver.resolve returns a Path; adapters/host/resources.py resolve_host_resource returns {kind, resource_id, path})",
+      "no current enforcement couples principal to authority: only mechanical gates exist (read-only gate, contract validation, trusted-channel bounds)"
+    ],
+    "NF2_AUTHORITY_GAP": "principal is a free-form self-asserted string with zero enforcement: any library caller can pass any principal while also supplying trusted resolved paths through the trusted channel; no principal-to-trusted-root coupling, no principal-to-operation coupling, no principal-to-audit coupling; adapters can effectively self-assert principal (hermes PRINCIPAL constant). 'Who may use the trusted raw-path library context' is not enforced at all.",
+    "NF2_M3_A2_INPUT": [
+      "decide whether principal becomes a typed executor-neutral identity (e.g. principal-of-record) vs trusted adapter metadata (OQ-M3A2-02)",
+      "decide whether the trusted adapter channel / raw resolved paths require principal-bound authority or capability lease (OQ-M3A2-03)",
+      "decide whether the canonical audit record must include principal",
+      "decide how adapter self-assertion is constrained (derived from adapter identity rather than free-form string)",
+      "decide whether trusted resource roots become lease-scoped resources in the authority engine"
+    ]
+  },
+  "i9_b008_design_input": {
+    "I9_B008": "canonical ingress may allow malformed non-dict handler payload to escape canonical error envelope",
+    "I9_B008_CURRENT_SEAM": "aota_forge/core/ingress.py execute(): the handler invocation `payload = handler(context)` is guarded by try/except (ForgeError + bounded generic guard), but the success normalization block after `if isinstance(payload, dict) and payload.get('ok') is False:` calls payload.get(...) unconditionally on the assumption payload is a dict; a non-dict handler return (list/str/None/int) raises AttributeError OUTSIDE any guard and escapes execute(), violating the documented invariant 'Never raises ForgeError; canonical errors are returned in the envelope'. Exact seam: from `audit['handler'] = 'success'` through the `return success(...)` block (ingress.py, handler-success normalization).",
+    "I9_B008_DESIGN_IMPACT": "envelope-totality invariant; orthogonal to the durable subject graph schema and the authority model; affects the canonical result contract robustness and audit integrity; must hold before any M3-B write handler exists so a malformed mutation handler payload cannot escape the envelope.",
+    "I9_B008_M3B_PREREQUISITE": "yes",
+    "not_fixed": "M3-A0 records the seam only; no repair performed (see guard static check on ingress.py marker)."
+  },
+  "successor_regression_ownership": [
+    {
+      "failure_class": "B011",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "plan-subject identity in the durable graph and bootstrap adjacency (future_pass_condition references 'a plan subject in the durable subject graph'); lifecycle transition engine stays M4."
+    },
+    {
+      "failure_class": "B013",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M2",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "stale/current Plan selection semantics feed current-pointer projection design and Plan-subject selection; bounded retirement lifecycle remains M4."
+    },
+    {
+      "failure_class": "B014",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "durable binding subject and post-binding lifecycle constraints bound the subject aggregate design (prerequisite M3)."
+    },
+    {
+      "failure_class": "B014-F",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "authoritative materialization authority gap; authority-engine design input (AUTHORITATIVE_FAILURE_SURFACING=PASS at M4)."
+    },
+    {
+      "failure_class": "B014-F1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M5",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "executor-specific finalizer; canonical result state concept is the only M3-adjacent element (M5 ExecutorAdapter)."
+    },
+    {
+      "failure_class": "ACTIVATE-R-current-binding",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M3",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "current decision/followup binding conflict; core M3-A1 subject-binding input (SUBJECT_BINDING_ZERO_ONE_MANY)."
+    },
+    {
+      "failure_class": "ACTIVATE-R-host-inspection-escalation",
+      "current_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "current_owner": "M2",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "implementation",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "eliminated by construction (host.status requires no Plan/SPEC/Profile Task)."
+    },
+    {
+      "failure_class": "ACTIVATE-R-wrong-source-checkout",
+      "current_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "current_owner": "M2",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "implementation",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "eliminated by construction (git boundary fail-closed, deterministic resolution)."
+    },
+    {
+      "failure_class": "WCTX-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M2",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "lifecycle producers PLAN_MISSING / PLAN_WORKSPACE_CONTEXT_MISSING / ACTIVE_WORK_ITEM_MISSING arrive with M3/M4 subject lifecycle (prerequisite milestones M3, M4); taxonomy stays distinct."
+    },
+    {
+      "failure_class": "BIND-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "PROJECT_DECISION != PROJECT_BINDING; SUBJECT_BINDING_ZERO_ONE_MANY and binding-subject identity (prerequisite M3)."
+    },
+    {
+      "failure_class": "DRIFT-1",
+      "current_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "current_owner": "M2",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "implementation",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "eliminated by construction (single declarative contract surface; deterministic contract_hash drift detection)."
+    },
+    {
+      "failure_class": "RC2-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "authoritative failure surfacing contract (SILENT_MATERIALIZATION_FAILURE=denied); result/authority design input."
+    },
+    {
+      "failure_class": "CLASSIFY-1",
+      "current_disposition": "ELIMINATED_BY_CONSTRUCTION",
+      "current_owner": "M2",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "implementation",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "eliminated by construction (deterministic 0/1/many resolution; no hint authority)."
+    },
+    {
+      "failure_class": "RECOVERY-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M4",
+      "m3_relevance": "yes",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "M3-A",
+      "m3_relevance_note": "deterministic post-binding recovery; graph state recovery design input (prerequisite M3)."
+    },
+    {
+      "failure_class": "RUNNER-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M5",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "executor selection; M5 ExecutorAdapter concern."
+    },
+    {
+      "failure_class": "E2E-1",
+      "current_disposition": "NOT_YET_IMPLEMENTED",
+      "current_owner": "M5",
+      "m3_relevance": "no",
+      "design_or_implementation_proof": "design",
+      "proposed_m3_phase_owner": "not_M3",
+      "m3_relevance_note": "behavioral successor validation at the milestone introducing real chained operations."
+    }
+  ],
+  "open_design_questions": [
+    {
+      "QUESTION_ID": "OQ-M3A1-01",
+      "QUESTION": "Is Work Item == Subject, or is Work Item a projection/attribute of another subject?",
+      "WHY_IT_MATTERS": "Defines the core subject identity rule; legacy plan.json work_items and WorkItemSnapshot are the only current referents.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-02",
+      "QUESTION": "Are Plan and Milestone one subject aggregate or separate subjects, and where is the aggregate boundary?",
+      "WHY_IT_MATTERS": "B011/B013/B014 future_pass_conditions reference 'a plan subject in the durable subject graph'; milestone_status and milestone_specs are Plan-document data today.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-03",
+      "QUESTION": "Is review its own Subject (architect/reviewer role artifacts) or an attribute/edge of a task subject?",
+      "WHY_IT_MATTERS": "Legacy role result artifacts (REVIEW.md, ARCHITECT_REVIEW.md) and finalizer semantics (B014-F1) need a canonical mapping.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-04",
+      "QUESTION": "Do legacy decision records (od_*, project_decision) map to decision Subjects?",
+      "WHY_IT_MATTERS": "ACTIVATE-R-current-binding (current decision/followup binding conflict, M3-owned) cannot be resolved without decision identity semantics.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-05",
+      "QUESTION": "Is followup a Subject with binding edges or a derived projection, and how does SUBJECT_BINDING_ZERO_ONE_MANY apply?",
+      "WHY_IT_MATTERS": "Followup binding is the ACTIVATE-R conflict locus; legacy lineage links (never model-supplied) are the evidence base.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-06",
+      "QUESTION": "Are workspace and project separate subject kinds with a parent/child edge, or is project the top aggregate?",
+      "WHY_IT_MATTERS": "BIND-1 binding subject and bootstrap enumeration (workspaces.json -> project manifests) depend on this hierarchy.",
+      "OWNER_LANE": "M3-A1"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-01",
+      "QUESTION": "What is the exact authority lease schema (grant, scope, expiry, renewal, revocation)?",
+      "WHY_IT_MATTERS": "Required by the Plan (capability lease); M3-A0 must not guess it.",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-02",
+      "QUESTION": "Does principal become a typed executor-neutral identity or remain trusted adapter metadata, and how is adapter self-assertion constrained?",
+      "WHY_IT_MATTERS": "NF2 gap: principal is a free-form self-asserted string with zero enforcement today.",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-03",
+      "QUESTION": "Must the trusted adapter channel (raw resolved paths, trusted roots) be principal-bound / lease-scoped?",
+      "WHY_IT_MATTERS": "NF2 gap: any caller can supply trusted paths while asserting any principal.",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-04",
+      "QUESTION": "Does approval_required gate authority grants / capability leases?",
+      "WHY_IT_MATTERS": "Descriptor approval_required is declared but never enforced; legacy APPROVAL.json was a human checkpoint.",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A4-01",
+      "QUESTION": "What is the exact transaction scope for authoritative graph writes (operation-level, subject-level, aggregate-level)?",
+      "WHY_IT_MATTERS": "LOST_UPDATE_ALLOWED=no and SILENT_LAST_WRITE_WINS=no require a defined write transaction and revision/CAS semantics.",
+      "OWNER_LANE": "M3-A4",
+      "note": "Candidate lane assignment; verify lane numbering in the M3-A phase plan (A3/A4/A5 names)."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-01",
+      "QUESTION": "What is the deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources (project manifests, Portable Plan document, workspace registry)?",
+      "WHY_IT_MATTERS": "GRAPH_BOOTSTRAP_STRATEGY_REQUIRED=yes; bootstrap must be explicit and deterministic, never heuristic.",
+      "OWNER_LANE": "M3-A5",
+      "note": "Candidate lane assignment; verify lane numbering in the M3-A phase plan."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-02",
+      "QUESTION": "What is the exact cutover rule replacing current_* authority with derived projections, and what happens to legacy pointer state during cutover?",
+      "WHY_IT_MATTERS": "GRAPH_CUTOVER_RULE_REQUIRED=yes; CURRENT_POINTERS_ARE_PROJECTIONS=yes must be realized without dual authoritative write (DUAL_AUTHORITATIVE_WRITE=no).",
+      "OWNER_LANE": "M3-A5",
+      "note": "Candidate lane assignment; verify lane numbering in the M3-A phase plan."
+    }
+  ],
+  "invariants": {
+    "frozen_plan_facts": {
+      "DURABLE_SUBJECT_GRAPH_IS_AUTHORITY": "yes",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "ID_IS_AUTHORITY": "no",
+      "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+      "DUAL_AUTHORITATIVE_WRITE": "no",
+      "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+      "GRAPH_BOOTSTRAP_STRATEGY_REQUIRED": "yes",
+      "GRAPH_CUTOVER_RULE_REQUIRED": "yes",
+      "LOST_UPDATE_ALLOWED": "no",
+      "SILENT_LAST_WRITE_WINS": "no"
+    },
+    "m3_a0_constraints": {
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "AUTHORITATIVE_STATE_MUTATION_ALLOWED": "no",
+      "AUTHORITATIVE_GRAPH_WRITES_LOCATIONS": [],
+      "SOURCE_CODE_CHANGED": "no"
+    },
+    "matrix_carried_facts": {
+      "SUBJECT_BINDING_ZERO_ONE_MANY": "0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE",
+      "ERROR_SEMANTICS_DISTINCT": "yes",
+      "ADAPTER_CORE_CONTRACT_DRIFT_DETECTABLE": "yes",
+      "SILENT_MATERIALIZATION_FAILURE": "denied",
+      "AUTHORITATIVE_FAILURE_SURFACING": "PASS (M4)",
+      "GITHUB_IS_FORGE_CORE_ONTOLOGY": "no",
+      "GITHUB_API_IS_CORE_CONTRACT": "no",
+      "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no"
+    }
+  },
+  "graph_storage_locations": [],
+  "declared_scope": {
+    "M3_A0_IMPLEMENTED_NOTHING": [
+      "durable subject graph",
+      "graph storage",
+      "graph records",
+      "ID Broker",
+      "Authority Engine",
+      "Capability Lease",
+      "revision/CAS",
+      "transition/recovery",
+      "subject/followup binding",
+      "current_* cutover",
+      "legacy lifecycle mutation",
+      "M3-B functionality"
+    ],
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "report_metrics": {
+    "current_pointer_inventory_count": 6,
+    "subject_identity_ambiguity_count": 17,
+    "authority_candidate_count": 14,
+    "open_design_question_count": 13,
+    "migration_input_count": 25,
+    "regression_class_count": 16,
+    "m3_relevant_regression_count": 9,
+    "regression_not_yet_implemented_count": 12,
+    "unsupported_success_claims": 0
+  }
+}
