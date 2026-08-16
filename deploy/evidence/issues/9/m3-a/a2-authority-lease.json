@@ -1,0 +1,763 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A2 authority model and capability lease contract (design-only freeze)",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A2",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+  "a0_commit_sha": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+  "m3_a_common_base": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "source_inputs": [
+    {
+      "id": "SI-A0-MAP",
+      "kind": "evidence",
+      "path": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+      "purpose": "A0 accepted-base reconnaissance: seams, lifecycle concepts, authority candidates, NF2 design input, A2 open questions OQ-M3A2-01..04"
+    },
+    {
+      "id": "SI-A0-GUARD",
+      "kind": "guard",
+      "path": "scripts/m3_a0_reconnaissance_guard.py",
+      "purpose": "A0 lane guard; proves M3-A0 invariants still hold at the A2 base"
+    },
+    {
+      "id": "SI-M2-MATRIX",
+      "kind": "evidence",
+      "path": "deploy/evidence/issues/9/m2-successor-regression-matrix.json",
+      "purpose": "16-class successor regression matrix; dispositions and future pass conditions for regression design proofs"
+    },
+    {
+      "id": "SI-SOURCE",
+      "kind": "source_reference",
+      "path": "aota_forge/**",
+      "purpose": "read-only source reference; M2 placeholders (capability_lease: None, required_authority, approval_required) stay untouched"
+    },
+    {
+      "id": "SI-PLAN",
+      "kind": "plan",
+      "path": "governing issue wzjcccc-dotcom/aota-hermes-tools#9",
+      "purpose": "governing Plan: capability lease requirement, NF2 gap, regression classes WCTX-1/BIND-1/B014-F/RC2-1/RECOVERY-1/ACTIVATE-R-current-binding"
+    }
+  ],
+  "resolved_design_questions": [
+    {
+      "QUESTION_ID": "OQ-M3A2-01",
+      "QUESTION": "What is the exact authority lease schema (grant, scope, expiry, renewal, revocation)?",
+      "RESOLUTION": "Resolved by the capability_lease_contract section: canonical fields lease_id, principal, operation, object_ref, expected_revision, mutation_scope, issued_at, expires_at, authority_basis, optional approval_basis, delegation_policy. Lease is operation-scoped, object-bound, principal-bound, exact-revision-bound, short-lived with a bounded max TTL, non-semantic, non-delegable by default. Expiry is a hard denial (now >= expires_at). Consumption is atomic and one-time; reuse/replay is denied; optional revocation is explicit; no implicit renewal, expansion, or substitution. Lease IDs are trusted runtime/private and never model-facing.",
+      "FROZEN_RULES": [
+        "LEASE_PRINCIPAL_BOUND=yes",
+        "LEASE_OPERATION_BOUND=yes",
+        "LEASE_OBJECT_BOUND=yes",
+        "LEASE_REVISION_BOUND=yes",
+        "LEASE_EXPIRY_ENFORCED=yes",
+        "LEASE_OBJECT_SCOPE_EXPANSION=denied",
+        "LEASE_OPERATION_SCOPE_EXPANSION=denied",
+        "LEASE_PRINCIPAL_SUBSTITUTION=denied"
+      ],
+      "resolution_status": "resolved",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-02",
+      "QUESTION": "Does principal become a typed executor-neutral identity or remain trusted adapter metadata, and how is adapter self-assertion constrained?",
+      "RESOLUTION": "Resolved: principal becomes a typed executor-neutral semantic identity (principal_model), separate from authority. Five classes are frozen: human, llm_agent_session, executor_adapter, system_mechanical, operator_debug. Principal enters OperationContext only through a trusted injection boundary; the untrusted model cannot self-assert a privileged principal, adapters cannot self-assert, and executor identity is not principal by default. Principal alone grants no mutation authority.",
+      "FROZEN_RULES": [
+        "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL=no",
+        "ADAPTER_CAN_SELF_ASSERT_PRINCIPAL=no",
+        "EXECUTOR_IDENTITY_IS_PRINCIPAL=no",
+        "PRINCIPAL_GRANTS_MUTATION_AUTHORITY=no"
+      ],
+      "resolution_status": "resolved",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-03",
+      "QUESTION": "Must the trusted adapter channel (raw resolved paths, trusted roots) be principal-bound / lease-scoped?",
+      "RESOLUTION": "Resolved: the trusted adapter channel is principal-bound at the trusted runtime boundary before trusted resources enter Core; adapter self-assertion is denied. Trusted resource resolution alone grants no mutation authority. Bounded mutation requires authority evaluation plus a capability lease (CAPABILITY_LEASE_REQUIRED_FOR_BOUNDED_MUTATION=yes). A contract-declared read-only diagnostic operation needs no mutation lease (SAFE_READONLY_LEASE_REQUIRED=no); trusted provenance/identity/resource resolution may still be required for protected resources.",
+      "FROZEN_RULES": [
+        "CAPABILITY_LEASE_REQUIRED_FOR_BOUNDED_MUTATION=yes",
+        "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY=no",
+        "TRUSTED_ADAPTER_IMPLIES_UNBOUNDED_AUTHORITY=no",
+        "SAFE_READONLY_LEASE_REQUIRED=no",
+        "READONLY_DIAGNOSTIC_PLANE_PRESERVED=yes"
+      ],
+      "resolution_status": "resolved",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-04",
+      "QUESTION": "Does approval_required gate authority grants / capability leases?",
+      "RESOLUTION": "Resolved: approval is a prerequisite at lease issuance, never an authority identity. A boolean/token alone is never unrestricted authority; approval evidence must be bound to the exact operation/object/revision/scope and to a trusted approver/evidence digest before it may enter the bounded authority basis (approval_basis). Approval is not implemented in M3-A2; the descriptor approval_required remains a declared M2 placeholder.",
+      "FROZEN_RULES": [
+        "APPROVAL_IS_AUTHORITY_IDENTITY=no",
+        "APPROVAL_PREREQUISITE_AT_LEASE_ISSUANCE=yes",
+        "APPROVAL_EVIDENCE_BOUND_TO_OPERATION_OBJECT_REVISION_SCOPE=yes"
+      ],
+      "resolution_status": "resolved",
+      "OWNER_LANE": "M3-A2"
+    }
+  ],
+  "id_model": {
+    "summary": "Frozen ID taxonomy for M3-A2. An ID is identity, never authority by possession. Raw internal IDs and lease IDs are never normal model input; semantic public references and correlation id enter the model-facing contract only under explicit bounds.",
+    "id_categories": [
+      {
+        "category": "semantic_public_reference",
+        "examples": [
+          "project_id",
+          "workspace_id",
+          "plan_id",
+          "milestone_id",
+          "work_item_id",
+          "logical resource references (registry_id, pidfile_id, receipt_id)"
+        ],
+        "meaning": "semantic identity of a durable subject or resource as declared by the operation contract",
+        "model_facing": "explicit_contract_only",
+        "durable": "yes",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "explicit_contract_only",
+        "adapter_private": "no",
+        "audit_visible": "yes",
+        "operator_diagnostic_visible": "yes",
+        "notes": "Subject identity semantics remain an M3-A1 question; A2 only freezes the ID model policy. Guessability is allowed only for inputs the contract explicitly declares."
+      },
+      {
+        "category": "internal_durable_object_id",
+        "examples": [
+          "Core-minted object IDs for durable graph records (M3-B+ generation)"
+        ],
+        "meaning": "durable Core-internal identity for a graph object",
+        "model_facing": "no",
+        "durable": "yes",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "no",
+        "adapter_private": "no",
+        "audit_visible": "yes",
+        "operator_diagnostic_visible": "bounded",
+        "notes": "Never accepted as normal model input (RAW_INTERNAL_ID_MODEL_SURFACE=denied_by_default); operator diagnostics may expose bounded trace identity separately, never as normal model input."
+      },
+      {
+        "category": "execution_private_id",
+        "examples": [
+          "per-execution runtime handles",
+          "internal execution-scoped identifiers"
+        ],
+        "meaning": "transient identity valid only within one execution",
+        "model_facing": "no",
+        "durable": "no",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "no",
+        "adapter_private": "no",
+        "audit_visible": "no",
+        "operator_diagnostic_visible": "bounded",
+        "notes": "Execution-scoped transient identity; never crosses the model-facing contract."
+      },
+      {
+        "category": "correlation_id",
+        "examples": [
+          "bounded correlation id (existing ^[A-Za-z0-9._:-]{1,128}$ rule)"
+        ],
+        "meaning": "bounded machine-readable execution correlation metadata",
+        "model_facing": "bounded",
+        "durable": "no",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "bounded",
+        "adapter_private": "no",
+        "audit_visible": "yes",
+        "operator_diagnostic_visible": "yes",
+        "notes": "Diagnostic metadata only; recorded in audit; possession conveys no authority. Never a subject identity candidate."
+      },
+      {
+        "category": "adapter_private_executor_id",
+        "examples": [
+          "Hermes session ID",
+          "Profile ID",
+          "Profile Task pt_id",
+          "ProcessRegistry identity"
+        ],
+        "meaning": "executor-specific identity inside an adapter",
+        "model_facing": "no",
+        "durable": "bounded",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "no",
+        "adapter_private": "yes",
+        "audit_visible": "bounded",
+        "operator_diagnostic_visible": "bounded",
+        "notes": "Executor-specific ontology (retired from Core per m1-h-migration-inventory); never canonical subject identity, never normal model input."
+      },
+      {
+        "category": "lease_id",
+        "examples": [
+          "capability lease identifier minted at issuance"
+        ],
+        "meaning": "trusted runtime/private identity of one capability lease",
+        "model_facing": "no",
+        "durable": "bounded",
+        "authority_bearing": "no",
+        "guessable_input_allowed": "no",
+        "adapter_private": "yes",
+        "audit_visible": "yes",
+        "operator_diagnostic_visible": "bounded",
+        "notes": "Lease ID alone is not authority; the bounded grant is validated at use by the authority engine. Lease records are trusted runtime/private, never model-facing."
+      }
+    ],
+    "normal_model_input_allowlist": [
+      "semantic_public_reference (only inputs explicitly declared by the operation contract)",
+      "logical resource reference (kind + resource id, e.g. registry_id, pidfile_id, receipt_id)",
+      "correlation_id (bounded diagnostic metadata only)"
+    ],
+    "raw_internal_id_rule": "deny_by_default",
+    "policy_flags": {
+      "ID_IS_AUTHORITY": "no",
+      "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+      "RAW_INTERNAL_ID_MODEL_SURFACE": "denied_by_default",
+      "MODEL_INTERNAL_ID_GUESSING": "denied"
+    },
+    "operator_diagnostic_boundary": "Operator diagnostics may expose bounded trace/internal identity separately from normal model input; raw internal IDs and lease IDs are never normal model input, even in diagnostics."
+  },
+  "principal_model": {
+    "definition": "Principal is a typed executor-neutral semantic identity: which actor or role acts, expressed without executor-specific vocabulary. Principal is separate from authority: principal identity alone grants no mutation authority.",
+    "principal_classes": [
+      {
+        "class": "human",
+        "meaning": "operator or human approver acting through a trusted channel",
+        "identity_fields": [
+          "typed principal id (Core/operator-registered, not free-form model input)",
+          "principal_class",
+          "channel binding evidence",
+          "freshness bound",
+          "provenance evidence"
+        ],
+        "trust_evidence": "binding evidence supplied by the trusted injection boundary",
+        "freshness_channel_binding": "time-bounded; bound to the trusted channel it arrived through",
+        "notes": "Human principals may be approvers; approval remains a lease-issuance prerequisite, not authority identity."
+      },
+      {
+        "class": "llm_agent_session",
+        "meaning": "a model-driven session",
+        "identity_fields": [
+          "typed principal id",
+          "principal_class",
+          "session binding evidence",
+          "freshness bound",
+          "channel provenance"
+        ],
+        "trust_evidence": "session binding evidence supplied by the trusted runtime boundary",
+        "freshness_channel_binding": "session-scoped; expires with the session",
+        "notes": "The untrusted model cannot self-assert a privileged principal; session identity is bound by the trusted runtime, not by the model."
+      },
+      {
+        "class": "executor_adapter",
+        "meaning": "an adapter/executor acting as an agent (e.g. the hermes adapter channel)",
+        "identity_fields": [
+          "typed adapter principal id",
+          "principal_class",
+          "adapter identity evidence",
+          "channel binding"
+        ],
+        "trust_evidence": "adapter identity evidence verified at the trusted runtime boundary",
+        "freshness_channel_binding": "bound to the adapter channel",
+        "notes": "Adapters cannot self-assert principal; only the trusted runtime boundary can bind an adapter channel to a principal. Executor identity is not principal by default."
+      },
+      {
+        "class": "system_mechanical",
+        "meaning": "mechanical/system actors (scheduled jobs, system services)",
+        "identity_fields": [
+          "typed principal id",
+          "principal_class",
+          "mechanical provenance evidence",
+          "channel binding"
+        ],
+        "trust_evidence": "mechanical provenance evidence from the trusted runtime boundary",
+        "freshness_channel_binding": "time-bounded",
+        "notes": "Mechanical identity does not imply authority; bounded mutation still requires authority evaluation and lease."
+      },
+      {
+        "class": "operator_debug",
+        "meaning": "operator/debug diagnostic session",
+        "identity_fields": [
+          "typed principal id",
+          "principal_class",
+          "debug session binding evidence",
+          "freshness bound"
+        ],
+        "trust_evidence": "debug session evidence from the trusted injection boundary",
+        "freshness_channel_binding": "session-scoped, time-bounded",
+        "notes": "Diagnostic visibility is bounded; even a debug principal cannot bypass authority evaluation or lease rules."
+      }
+    ],
+    "trusted_injection_boundary": "Principal may enter OperationContext only through the trusted runtime/injection boundary (ingress/trusted adapter channel); it is never accepted from model parameters and never derived from free-form strings. No specific authentication product is chosen by this design; the boundary is defined by mechanism, not vendor.",
+    "self_assertion_rule": "The untrusted model cannot self-assert a privileged principal. Adapters cannot self-assert principal; executor identity is not principal by default; only a trusted runtime boundary can bind an adapter channel to a principal.",
+    "audit_requirement": "The canonical audit record must include the bound principal (design requirement; current audit does not record principal; not implemented in M3-A2).",
+    "no_authority_by_identity": "Principal alone grants no mutation authority; bounded mutation requires authority evaluation and a capability lease."
+  },
+  "principal_binding_rule": {
+    "rule": "A principal is bound to a trusted channel at the trusted adapter/runtime boundary before any trusted resource enters Core. The binding is recorded as evidence (typed principal id + channel + freshness). Unbound execution uses the fail-closed default: no privileged principal, no authority. Operator-debug sessions are bound and time-limited.",
+    "binding_boundary": "trusted adapter/runtime boundary (ingress + trusted adapter channel); never the model-facing input surface",
+    "fail_closed": "no trusted binding means no privileged principal and no authority; PRINCIPAL_UNTRUSTED otherwise",
+    "executor_identity_default": "executor identity is not principal by default; only the trusted runtime boundary may bind an adapter channel to a principal"
+  },
+  "authority_evaluation_model": {
+    "definition": "Deterministic authority evaluation: given a bound principal, an operation contract, a target object reference, an expected revision, a mutation scope, optional approval state, optional semantic decision evidence, the current lifecycle predecessor, and lease validity/current time, the engine computes exactly one stable decision class.",
+    "engine_inputs": [
+      "principal and trusted channel binding",
+      "operation/contract hash (contract_hash, protocol_version)",
+      "target object reference",
+      "expected revision",
+      "mutation scope",
+      "approval state where required",
+      "semantic decision evidence where required",
+      "current lifecycle predecessor",
+      "lease validity and current time"
+    ],
+    "decision_classes": {
+      "ALLOW": "all facts satisfied and no approval prerequisite outstanding; execution proceeds",
+      "DENY": "a hard constraint is violated; terminal; approval cannot repair it",
+      "BLOCKED": "a prerequisite/context fact is absent; retryable once state changes",
+      "NEEDS_APPROVAL": "all mechanical facts satisfied but the approval prerequisite is outstanding"
+    },
+    "engine_role": "The engine validates facts and constraints only. It never performs semantic reasoning, never chooses subjects, never invents scope, and never expands authority. Semantic decision evidence is supplied by an external semantic/approval boundary and is only checked and bound.",
+    "no_semantic_reasoning": "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING=no",
+    "adapter_boundary": "Adapters cannot invent greater authority than Core receives; the authority decision is computed by Core from the frozen inputs; adapters only carry evidence (identity, trusted metadata), never grants.",
+    "lifecycle_predecessor_input": "Bounded mutation on a lifecycle subject requires the current lifecycle predecessor as an input fact so the engine can bind to the exact current state; the engine never guesses another lifecycle subject."
+  },
+  "capability_lease_contract": {
+    "definition": "A capability lease is the bounded, short-lived, machine-verifiable grant for exactly one bounded mutation. It is trusted runtime/private, never model-facing.",
+    "canonical_fields": {
+      "lease_id": "trusted runtime/private identity of the lease; minted at issuance; never model-facing; not authority by possession",
+      "principal": "typed principal bound at the trusted injection boundary",
+      "operation": "exactly one operation (contract identity)",
+      "object_ref": "exact target object reference",
+      "expected_revision": "exact expected revision of the target object at consumption",
+      "mutation_scope": "bounded mutation scope as declared by the operation contract",
+      "issued_at": "issuance timestamp (trusted clock)",
+      "expires_at": "expiry timestamp (trusted clock)",
+      "authority_basis": "grounds for the grant: principal binding + operation contract hash + optional approval evidence digest",
+      "approval_basis": "optional: approval evidence bound to exact operation/object/revision/scope and to a trusted approver/evidence digest",
+      "delegation_policy": "non_delegable by default; delegation only via a newly issued bounded lease"
+    },
+    "optional_fields": [
+      "approval_basis"
+    ],
+    "bound_properties": {
+      "principal_bound": "yes",
+      "operation_bound": "yes",
+      "object_bound": "yes",
+      "revision_bound": "yes",
+      "ttl_policy": "bounded_short_lived",
+      "max_ttl_seconds": 300,
+      "non_semantic": "yes",
+      "non_delegable_by_default": "yes"
+    },
+    "lifecycle": {
+      "issuance": "issuance requires: bound principal, authority evaluation ALLOW (or NEEDS_APPROVAL satisfied by bound approval evidence), exact operation/object/revision/scope; a new lease_id is minted",
+      "validation": "every use validates all canonical fields against the request plus lease validity and current time",
+      "expiry": "now >= expires_at is a hard denial (LEASE_EXPIRED); LEASE_EXPIRY_ENFORCED=yes",
+      "consumption": "atomic one-time consumption; the lease is consumed once for exactly the bound mutation",
+      "replay": "reuse/replay of a consumed lease is denied (LEASE_REPLAY_DENIED)",
+      "revocation": "optional explicit revocation via a revocation record; revoked leases are denied (LEASE_REVOKED)",
+      "renewal": "no implicit renewal; a new bounded lease must be issued through issuance",
+      "expansion": "operation/object/mutation-scope expansion denied (LEASE_OPERATION_SCOPE_EXPANSION=denied, LEASE_OBJECT_SCOPE_EXPANSION=denied)",
+      "substitution": "principal substitution denied (LEASE_PRINCIPAL_SUBSTITUTION=denied)",
+      "delegation": "non-delegable by default; if delegation is ever supported it requires a new bounded lease issued through the same issuance rules"
+    },
+    "semantic_boundary": "A lease never contains semantic planning decisions; no Plan/Work Item/SPEC/Profile Task semantics inside the lease; the lease is mechanical evidence only.",
+    "lease_id_policy": "Lease ID alone is not authority; the bounded grant is validated by the authority engine at use.",
+    "not_implemented": "AUTHORITY_IMPLEMENTATION_STARTED=no, LEASE_IMPLEMENTATION_STARTED=no; CAS transaction implementation (exact revision mechanics) is owned by M3-A3+; nothing here is implemented."
+  },
+  "approval_relationship": {
+    "definition": "Approval is a prerequisite at lease issuance, never an authority identity. A boolean/token alone is never unrestricted authority.",
+    "rules": [
+      "approval may gate issuance: a contract declaring approval_required cannot receive a lease without bound approval evidence",
+      "approval evidence must be bound to the exact operation/object/revision/scope and to a trusted approver/evidence digest before entering the bounded authority basis (approval_basis)",
+      "approval is not authority identity: approval evidence never substitutes for principal binding or authority evaluation",
+      "approval is not implemented in M3-A2; the descriptor approval_required remains a declared M2 placeholder"
+    ],
+    "flags": {
+      "APPROVAL_IS_AUTHORITY_IDENTITY": "no",
+      "APPROVAL_PREREQUISITE_AT_LEASE_ISSUANCE": "yes",
+      "APPROVAL_EVIDENCE_BOUND_TO_OPERATION_OBJECT_REVISION_SCOPE": "yes"
+    }
+  },
+  "trusted_context_model": {
+    "definition": "Trusted context separates four axes: trusted provenance, trusted identity, trusted resource resolution, and authorization. They are independent; none implies mutation authority.",
+    "logical_reference": "A logical resource reference (kind + resource id, e.g. registry_id, pidfile_id, receipt_id) is the model-facing contract input.",
+    "resolved_path_boundary": "The trusted resolver maps the logical reference to a private resolved path; the raw filesystem path is non-model-facing (TRUSTED_ADAPTER_KEYS semantics preserved).",
+    "principal_binding": "A principal is bound at the trusted adapter/runtime boundary before trusted resources enter Core; adapter self-assertion is denied.",
+    "axes": [
+      {
+        "axis": "trusted provenance",
+        "meaning": "evidence of where a value came from; never authority"
+      },
+      {
+        "axis": "trusted identity",
+        "meaning": "typed principal bound at the trusted boundary; identity alone grants nothing"
+      },
+      {
+        "axis": "trusted resource resolution",
+        "meaning": "logical ref to private resolved path; resolution alone grants nothing"
+      },
+      {
+        "axis": "authorization",
+        "meaning": "the only axis that grants bounded mutation, and only through authority evaluation plus a capability lease"
+      }
+    ],
+    "flags": {
+      "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no",
+      "TRUSTED_ADAPTER_IMPLIES_UNBOUNDED_AUTHORITY": "no"
+    }
+  },
+  "trusted_context_authority_rule": {
+    "rule": "TRUSTED_RESOURCE != AUTHORIZED_MUTATION and TRUSTED_ADAPTER != UNBOUNDED_AUTHORITY. Resource resolution alone grants no mutation authority; principal alone grants no mutation authority; bounded mutation requires authority evaluation and a capability lease.",
+    "frozen_flags": {
+      "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no",
+      "TRUSTED_ADAPTER_IMPLIES_UNBOUNDED_AUTHORITY": "no"
+    }
+  },
+  "nf2_resolution_contract": {
+    "NF2_GAP": "principal is a free-form self-asserted string with zero enforcement; any library caller can pass any principal while supplying trusted resolved paths; adapters can self-assert principal.",
+    "RESOLVED_DESIGN_RULES": [
+      "principal becomes a typed executor-neutral identity bound at the trusted runtime boundary (OQ-M3A2-02 resolved)",
+      "the trusted adapter channel is principal-bound before trusted resources enter Core; adapter self-assertion is denied (OQ-M3A2-03 resolved)",
+      "bounded mutation is lease-scoped; contract-declared read-only diagnostic operations need no lease (readonly_authority_boundary)",
+      "the canonical audit record must include the bound principal (design requirement)",
+      "trusted resource roots become lease-scoped resources only for bounded mutation; resolution alone grants nothing"
+    ],
+    "NF2_SOURCE_FIXED": "no",
+    "not_implemented": "The NF2 gap is frozen as a design contract only; no source change repairs the gap in M3-A2."
+  },
+  "readonly_authority_boundary": {
+    "definition": "The read-only diagnostic plane is preserved: contract-declared read-only diagnostic operations (project.resolve, git.inspect, runtime.status, host.status, operations.list) require no mutation lease.",
+    "SAFE_READONLY_LEASE_REQUIRED": "no",
+    "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+    "AUTHORITY_MODEL_BLOCKS_SAFE_READONLY_DIAGNOSIS": "no",
+    "safe_diagnosis_no_lease": "Safe diagnosis must not require Plan/Work Item/SPEC/Profile Task/approval/followup/mutation lease.",
+    "protected_resources": "Protected resources may still require trusted provenance, trusted identity, and trusted resource resolution even for read-only access.",
+    "no_escalation": "Read-only diagnosis never escalates into mutation; any bounded mutation still requires authority evaluation and a capability lease."
+  },
+  "error_semantics": {
+    "registry_modified": "no",
+    "new_codes_not_implemented": "yes",
+    "entries": [
+      {
+        "code": "PRINCIPAL_UNTRUSTED",
+        "origin": "new_design_concept",
+        "meaning": "principal cannot be bound to a trusted channel or the binding failed; fail-closed default",
+        "retryable": "yes",
+        "notes": "design-only; no code added to the error registry in M3-A2"
+      },
+      {
+        "code": "AUTHORITY_DENIED",
+        "origin": "new_design_concept",
+        "meaning": "authority evaluation returned DENY: a hard constraint is violated",
+        "retryable": "no",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_REQUIRED",
+        "origin": "new_design_concept",
+        "meaning": "bounded mutation attempted without a capability lease",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_EXPIRED",
+        "origin": "new_design_concept",
+        "meaning": "now >= expires_at; expiry is a hard denial",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_SCOPE_MISMATCH",
+        "origin": "new_design_concept",
+        "meaning": "requested operation/object/mutation-scope does not match the lease bounds",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "REVISION_MISMATCH",
+        "origin": "new_design_concept",
+        "meaning": "expected_revision does not match the current object revision at consumption",
+        "retryable": "yes",
+        "notes": "design-only; CAS mechanics owned by M3-A3+"
+      },
+      {
+        "code": "LEASE_PRINCIPAL_MISMATCH",
+        "origin": "new_design_concept",
+        "meaning": "requesting principal differs from the lease principal; substitution denied",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_OPERATION_MISMATCH",
+        "origin": "new_design_concept",
+        "meaning": "requested operation differs from the lease operation; operation-scope expansion denied",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_REPLAY_DENIED",
+        "origin": "new_design_concept",
+        "meaning": "a consumed lease is reused; atomic one-time consumption violated",
+        "retryable": "no",
+        "notes": "design-only"
+      },
+      {
+        "code": "LEASE_REVOKED",
+        "origin": "new_design_concept",
+        "meaning": "the lease was explicitly revoked before use",
+        "retryable": "yes",
+        "notes": "design-only; revocation is optional"
+      },
+      {
+        "code": "APPROVAL_MISMATCH",
+        "origin": "new_design_concept",
+        "meaning": "approval evidence does not bind to the exact operation/object/revision/scope or trusted approver/evidence digest",
+        "retryable": "yes",
+        "notes": "design-only"
+      },
+      {
+        "code": "NEEDS_SEMANTIC_CHOICE",
+        "origin": "existing_canonical_error",
+        "meaning": "ambiguity requires exactly one explicit semantic choice (existing registry code, unchanged)",
+        "retryable": "yes",
+        "notes": "already present in aota_forge/core/contracts/errors.py; not modified"
+      },
+      {
+        "code": "HOST_RESOURCE_DENIED",
+        "origin": "existing_canonical_error",
+        "meaning": "trusted host resource resolution failed closed (existing registry code, unchanged)",
+        "retryable": "no",
+        "notes": "already present in aota_forge/core/contracts/errors.py; not modified"
+      },
+      {
+        "code": "CONTEXT_NOT_SUPPORTED",
+        "origin": "existing_canonical_error",
+        "meaning": "context key not satisfiable (existing registry code, unchanged)",
+        "retryable": "no",
+        "notes": "already present in aota_forge/core/contracts/errors.py; not modified"
+      }
+    ]
+  },
+  "regression_design_proofs": [
+    {
+      "failure_class": "BIND-1",
+      "authority_concern": "project decision must never act as binding; binding requires a real canonical validated project",
+      "frozen_design_invariant": "PROJECT_DECISION != PROJECT_BINDING; SUBJECT_BINDING_ZERO_ONE_MANY is 0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE; current pointers remain projections; no A1 subject identity resolution",
+      "future_implementation_requirement": "M3 binding subject plus M4 mechanical binding with revision/CAS enforcement; fake binding before initialization denied",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    },
+    {
+      "failure_class": "B014-F",
+      "authority_concern": "production materialization authority gap: materialization must occur only through the authorized mechanical path",
+      "frozen_design_invariant": "materialization only through the authorized canonical operation; bounded mutation requires authority evaluation plus a capability lease; authoritative success/failure surfaces in the canonical machine result",
+      "future_implementation_requirement": "M4 authorized materialization path with SILENT_MATERIALIZATION_FAILURE=denied and AUTHORITATIVE_FAILURE_SURFACING=PASS",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    },
+    {
+      "failure_class": "RC2-1",
+      "authority_concern": "silent/non-authoritative materialization failure must never present work as usable",
+      "frozen_design_invariant": "canonical machine result reflects the authoritative failure; no worker/handoff/ack appears usable while the authoritative materialization failure is hidden; lease consumption is atomic and one-time",
+      "future_implementation_requirement": "M4 AUTHORITATIVE_FAILURE_SURFACING=PASS with idempotent retry semantics",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    },
+    {
+      "failure_class": "RECOVERY-1",
+      "authority_concern": "post-binding recovery must never guess a lifecycle subject or silently ignore missing prerequisites",
+      "frozen_design_invariant": "deterministic reconciliation or exactly one explicit NEEDS_SEMANTIC_CHOICE; silent not_required, blind replay, and guessing another lifecycle subject are denied; the authority engine never chooses subjects or invents scope",
+      "future_implementation_requirement": "M4 mechanical recovery engine (R_MECHANICAL_RECOVERY); semantic decisions remain outside the engine",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    },
+    {
+      "failure_class": "WCTX-1",
+      "authority_concern": "distinct lifecycle root causes must never collapse into one error semantics",
+      "frozen_design_invariant": "PROJECT_BINDING_MISSING, PLAN_MISSING, PLAN_WORKSPACE_CONTEXT_MISSING, ACTIVE_WORK_ITEM_MISSING remain pairwise distinct; A2 adds new design-concept errors (PRINCIPAL_UNTRUSTED, AUTHORITY_DENIED, LEASE_*) without touching the existing registry",
+      "future_implementation_requirement": "M3/M4 lifecycle producers introduce the distinct errors with their own machinery; taxonomy stays the single declarative error contract",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    },
+    {
+      "failure_class": "ACTIVATE-R-current-binding",
+      "authority_concern": "conflicting current_* pointers must never bind the wrong subject",
+      "frozen_design_invariant": "current projections derive deterministically from durable subject state; ambiguous binding returns NEEDS_SEMANTIC_CHOICE; heuristics denied; decision-as-subject semantics deferred to M3-A1",
+      "future_implementation_requirement": "M3 durable subject graph and subject binding per SUBJECT_BINDING_ZERO_ONE_MANY; legacy pointer state stays migration evidence",
+      "a0_current_disposition": "NOT_YET_IMPLEMENTED",
+      "behavioral_regression_implemented": false
+    }
+  ],
+  "deferred_questions": [
+    {
+      "QUESTION_ID": "OQ-M3A1-01",
+      "QUESTION": "Is Work Item == Subject, or is Work Item a projection/attribute of another subject?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "A2 resolves authority/lease only; subject identity semantics are A1 territory."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-02",
+      "QUESTION": "Are Plan and Milestone one subject aggregate or separate subjects, and where is the aggregate boundary?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "Plan/Milestone aggregate boundary is an A1 subject question."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-03",
+      "QUESTION": "Is review its own Subject (architect/reviewer role artifacts) or an attribute/edge of a task subject?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "Review subject semantics are A1 territory."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-04",
+      "QUESTION": "Do legacy decision records (od_*, project_decision) map to decision Subjects?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "Decision-as-subject semantics feed ACTIVATE-R-current-binding and remain A1."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-05",
+      "QUESTION": "Is followup a Subject with binding edges or a derived projection, and how does SUBJECT_BINDING_ZERO_ONE_MANY apply?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "Followup binding target semantics are A1 territory."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-06",
+      "QUESTION": "Are workspace and project separate subject kinds with a parent/child edge, or is project the top aggregate?",
+      "DEFERRED_TO": "M3-A1",
+      "not_answered_by_a2": true,
+      "note": "Workspace/project subject hierarchy is an A1 question."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A4-01",
+      "QUESTION": "What is the exact transaction scope for authoritative graph writes (operation-level, subject-level, aggregate-level)?",
+      "DEFERRED_TO": "M3-A4",
+      "not_answered_by_a2": true,
+      "note": "A2 freezes LEASE_REVISION_BOUND (exact expected revision) as a contract; M3-A3 may own CAS transaction implementation; transaction scope stays A4."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-01",
+      "QUESTION": "What is the deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources?",
+      "DEFERRED_TO": "M3-A5",
+      "not_answered_by_a2": true,
+      "note": "Bootstrap ordering is out of A2 scope."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-02",
+      "QUESTION": "What is the exact cutover rule replacing current_* authority with derived projections?",
+      "DEFERRED_TO": "M3-A5",
+      "not_answered_by_a2": true,
+      "note": "Cutover rule is out of A2 scope."
+    }
+  ],
+  "implementation_boundary": {
+    "implemented_nothing": [
+      "authority engine",
+      "capability lease runtime",
+      "mutation runtime",
+      "approval runtime",
+      "resource resolver change",
+      "principal binding change",
+      "error registry change"
+    ],
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+      "scripts/m3_a2_authority_lease_guard.py"
+    ],
+    "error_registry_modified": "no",
+    "future_lane_notes": "M3-A3 may own CAS transaction implementation (exact revision mechanics of LEASE_REVISION_BOUND); lease issuance/consumption runtime belongs to M3-B+; nothing here is implemented."
+  },
+  "invariants": {
+    "frozen_authority_flags": {
+      "ID_IS_AUTHORITY": "no",
+      "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+      "RAW_INTERNAL_ID_MODEL_SURFACE": "denied_by_default",
+      "MODEL_INTERNAL_ID_GUESSING": "denied",
+      "CAPABILITY_LEASE_REQUIRED_FOR_BOUNDED_MUTATION": "yes",
+      "UNTRUSTED_MODEL_CAN_SELF_ASSERT_PRIVILEGED_PRINCIPAL": "no",
+      "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "LEASE_PRINCIPAL_BOUND": "yes",
+      "LEASE_OPERATION_BOUND": "yes",
+      "LEASE_OBJECT_BOUND": "yes",
+      "LEASE_REVISION_BOUND": "yes",
+      "LEASE_EXPIRY_ENFORCED": "yes",
+      "LEASE_OBJECT_SCOPE_EXPANSION": "denied",
+      "LEASE_OPERATION_SCOPE_EXPANSION": "denied",
+      "LEASE_PRINCIPAL_SUBSTITUTION": "denied",
+      "TRUSTED_RESOURCE_IMPLIES_MUTATION_AUTHORITY": "no",
+      "TRUSTED_ADAPTER_IMPLIES_UNBOUNDED_AUTHORITY": "no",
+      "SAFE_READONLY_LEASE_REQUIRED": "no",
+      "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+      "NF2_SOURCE_FIXED": "no",
+      "AUTHORITY_IMPLEMENTATION_STARTED": "no",
+      "LEASE_IMPLEMENTATION_STARTED": "no",
+      "SOURCE_CODE_CHANGED": "no",
+      "MUTATION_IMPLEMENTATION_STARTED": "no",
+      "AUTHORITY_MODEL_BLOCKS_SAFE_READONLY_DIAGNOSIS": "no"
+    },
+    "design_truths": {
+      "PRINCIPAL_GRANTS_MUTATION_AUTHORITY": "no",
+      "ADAPTER_CAN_SELF_ASSERT_PRINCIPAL": "no",
+      "EXECUTOR_IDENTITY_IS_PRINCIPAL": "no",
+      "APPROVAL_IS_AUTHORITY_IDENTITY": "no",
+      "APPROVAL_PREREQUISITE_AT_LEASE_ISSUANCE": "yes",
+      "APPROVAL_EVIDENCE_BOUND_TO_OPERATION_OBJECT_REVISION_SCOPE": "yes",
+      "LEASE_ID_IS_AUTHORITY": "no",
+      "LEASE_CONTAINS_SEMANTIC_DECISIONS": "no",
+      "LEASE_IMPLICIT_RENEWAL": "no",
+      "LEASE_IMPLICIT_EXPANSION": "no",
+      "LEASE_IMPLICIT_SUBSTITUTION": "no",
+      "AUTHORITY_ENGINE_CHOOSES_SUBJECTS": "no",
+      "AUTHORITY_ENGINE_INVENTS_SCOPE": "no",
+      "AUDIT_RECORDS_PRINCIPAL": "required_design",
+      "ERROR_REGISTRY_MODIFIED": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "SUBJECT_BINDING_ZERO_ONE_MANY": "0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE",
+      "TRUSTED_RESOURCE_NOT_AUTHORIZED_MUTATION": "TRUSTED_RESOURCE != AUTHORIZED_MUTATION",
+      "TRUSTED_ADAPTER_NOT_UNBOUNDED_AUTHORITY": "TRUSTED_ADAPTER != UNBOUNDED_AUTHORITY"
+    },
+    "m3_a2_constraints": {
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "AUTHORITATIVE_STATE_MUTATION_ALLOWED": "no",
+      "DESIGN_ARTIFACTS_ONLY": "yes"
+    }
+  },
+  "a1_resolution_boundary": {
+    "resolved_by_a2": [
+      "OQ-M3A2-01",
+      "OQ-M3A2-02",
+      "OQ-M3A2-03",
+      "OQ-M3A2-04"
+    ],
+    "deferred_to_m3_a1": [
+      "OQ-M3A1-01",
+      "OQ-M3A1-02",
+      "OQ-M3A1-03",
+      "OQ-M3A1-04",
+      "OQ-M3A1-05",
+      "OQ-M3A1-06"
+    ],
+    "subject_identity_resolution": "none"
+  },
+  "report_metrics": {
+    "resolved_design_question_count": 4,
+    "deferred_question_count": 9,
+    "id_category_count": 6,
+    "principal_class_count": 5,
+    "decision_class_count": 4,
+    "lease_canonical_field_count": 11,
+    "error_semantics_entry_count": 14,
+    "regression_proof_count": 6,
+    "frozen_authority_flag_count": 25
+  }
+}
