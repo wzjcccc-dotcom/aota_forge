@@ -1,8 +1,14 @@
-"""Host process mechanical read-only adapter (M1-F).
+"""Host process mechanical read-only adapter (M1-F, M2-E).
 
-Bounded reads only: process status, start time.  No arbitrary PID traversal
-and no generic terminal.  Requires NO Plan / Milestone / Work Item / SPEC /
-Profile Task / approval / completion / decision / followup.
+Bounded reads only: process status, start time.  No arbitrary PID
+traversal and no generic terminal.  Requires NO Plan / Milestone / Work
+Item / SPEC / Profile Task / approval / completion / decision / followup.
+
+M2-E boundary note: the model-facing entry points for host resources are
+``adapters.host.resources``, which accept logical references resolved
+through the trusted resource boundary only.  The Path-based functions in
+this module are bounded mechanical readers for already-resolved
+resources; their direct model-facing routing is retired by M2-I.
 """
 
 from __future__ import annotations
@@ -19,7 +25,12 @@ MAX_RECEIPT_BYTES = 64 * 1024
 
 
 def read_pidfile(pidfile: Path) -> int:
-    """Read a bounded managed pidfile (strict int only)."""
+    """Read a bounded managed pidfile (strict int only).
+
+    Only to be reached with a path resolved by the trusted resource
+    boundary (``adapters.host.resources``); enforces size and symlink
+    bounds fail-closed regardless.
+    """
     try:
         if pidfile.is_symlink() or not pidfile.is_file() or pidfile.stat().st_size > MAX_PIDFILE_BYTES:
             raise ReceiptInvalidError(f"pidfile invalid: {pidfile}")
@@ -38,7 +49,12 @@ def host_process_status(pidfile: Path) -> dict[str, Any]:
 
 
 def read_receipt(receipt: Path) -> dict[str, Any]:
-    """Bounded managed deployment receipt inspection."""
+    """Bounded managed deployment receipt inspection.
+
+    Only to be reached with a path resolved by the trusted resource
+    boundary (``adapters.host.resources``); enforces size, symlink and
+    JSON shape bounds fail-closed regardless.
+    """
     try:
         if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size > MAX_RECEIPT_BYTES:
             raise ReceiptInvalidError(f"receipt invalid: {receipt}")

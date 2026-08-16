@@ -1,7 +1,12 @@
-"""Managed deployment receipt read-only adapter (M1-F).
+"""Managed deployment receipt read-only adapter (M1-F, M2-E).
 
 Read-only deployment evidence inspection: receipt validation, backup /
 rollback readiness.  No deployment mutation.
+
+M2-E boundary note: the model-facing receipt entry points are
+``adapters.host.resources`` (logical references resolved through the
+trusted resource boundary only).  The Path-based functions in this module
+are bounded mechanical readers for already-resolved resources.
 """
 
 from __future__ import annotations

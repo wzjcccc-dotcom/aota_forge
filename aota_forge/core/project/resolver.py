@@ -22,7 +22,7 @@ from aota_forge.core.contracts.errors import (
     ProjectNotFoundError,
     ProjectRegistryInvalidError,
 )
-from aota_forge.core.project.discovery import fingerprint_registry, scan_projects
+from aota_forge.core.project.discovery import MAX_RESULTS, fingerprint_registry, scan_projects
 
 MAX_REGISTRY_BYTES = 512 * 1024
 
@@ -81,12 +81,18 @@ def resolve_workspace(workspace_id: str, registry_path: Path) -> Path:
 def resolve_project(root: Path, project_id: str) -> dict[str, Any]:
     """Resolve a project_id within a workspace to exactly one manifest record.
 
+    Resolution uses the COMPLETE semantic candidate set
+    (``scan_projects(root, limit=None)``): a bounded display limit can
+    never turn a project that exists beyond the listing boundary into a
+    false PROJECT_NOT_FOUND, and a duplicate target beyond the listing
+    boundary is never hidden from ambiguity detection.
+
     Duplicate project IDs are treated as ambiguity (fail closed, no
     automatic choice).
     """
     if not isinstance(project_id, str) or not project_id or len(project_id) > 96:
         raise ProjectNotFoundError("project_id is required")
-    scanned = scan_projects(root)
+    scanned = scan_projects(root, limit=None)
     matches = [item for item in scanned["projects"] if item["project_id"] == project_id]
     if len(matches) == 0:
         raise ProjectNotFoundError(f"project not found: {project_id}")
@@ -100,13 +106,29 @@ def resolve_project(root: Path, project_id: str) -> dict[str, Any]:
 def resolve_project_with_fingerprint(
     workspace_id: str, registry_path: Path, project_id: str
 ) -> dict[str, Any]:
-    """Resolve workspace then project, returning canonical machine result."""
+    """Resolve workspace then project, returning canonical machine result.
+
+    Fingerprints are explicitly split:
+
+    * ``registry_fingerprint`` — semantic-resolution fingerprint over the
+      COMPLETE project set (resolution/context evidence; complete by
+      construction).
+    * ``listing_fingerprint`` — bounded display fingerprint over the
+      first-50 listing only (never presented as complete evidence;
+      ``listing_truncated`` flags truncation).
+    """
     root = resolve_workspace(workspace_id, registry_path)
-    record = resolve_project(root, project_id)
-    scanned = scan_projects(root)
-    fingerprint = fingerprint_registry(
-        workspace_id, scanned["projects"], scanned["invalid"]
-    )
+    complete = scan_projects(root, limit=None)
+    matches = [item for item in complete["projects"] if item["project_id"] == project_id]
+    if len(matches) == 0:
+        raise ProjectNotFoundError(f"project not found: {project_id}")
+    if len(matches) > 1:
+        raise ProjectAmbiguousError(
+            f"project_id '{project_id}' is ambiguous: {len(matches)} manifest records",
+        )
+    record = matches[0]
+    listed = complete["projects"][:MAX_RESULTS]
+    listing_truncated = len(complete["projects"]) > MAX_RESULTS
     return {
         "workspace_id": workspace_id,
         "workspace_root": str(root),
@@ -116,6 +138,13 @@ def resolve_project_with_fingerprint(
         "name": record["name"],
         "kind": record["kind"],
         "status": record["status"],
-        "registry_fingerprint": fingerprint,
-        "project_count": scanned["project_count"],
+        "registry_fingerprint": fingerprint_registry(
+            workspace_id, complete["projects"], complete["invalid"]
+        ),
+        "listing_fingerprint": fingerprint_registry(
+            workspace_id, listed, complete["invalid"][:MAX_RESULTS]
+        ),
+        "listing_truncated": listing_truncated,
+        "project_count": complete["project_count"],
+        "listed_project_count": len(listed),
     }

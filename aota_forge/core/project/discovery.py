@@ -35,9 +35,17 @@ def is_project_scan_excluded(workspace_root: Path, candidate: Path) -> bool:
     )
 
 
-def scan_projects(root: Path, limit: int = MAX_RESULTS) -> dict[str, Any]:
-    """Scan workspace root for valid .aota/project.yaml manifests (read-only)."""
-    if limit < 1 or limit > MAX_RESULTS:
+def scan_projects(root: Path, limit: int | None = MAX_RESULTS) -> dict[str, Any]:
+    """Scan workspace root for valid .aota/project.yaml manifests (read-only).
+
+    ``limit`` bounds the returned listing (default 50, must stay bounded
+    for display paths).  ``limit=None`` requests the complete semantic
+    candidate set; exact project resolution MUST use the complete set so
+    that a bounded display limit can never fabricate a complete negative
+    or a unique answer.  ``truncated`` reflects the actual truncation of
+    the returned listing.
+    """
+    if limit is not None and (limit < 1 or limit > MAX_RESULTS):
         limit = MAX_RESULTS
     valid: list[dict[str, Any]] = []
     invalid: list[dict[str, str]] = []
@@ -70,16 +78,24 @@ def scan_projects(root: Path, limit: int = MAX_RESULTS) -> dict[str, Any]:
             invalid.append({"manifest_path": relative, "error_code": getattr(exc, "code", "manifest_invalid")})
     valid.sort(key=lambda item: item["project_id"])
     invalid.sort(key=lambda item: (item["manifest_path"], item["error_code"]))
+    bounded = limit is not None
     return {
-        "projects": valid[:limit],
+        "projects": valid if not bounded else valid[:limit],
         "project_count": len(valid),
-        "invalid": invalid[:limit],
-        "truncated": len(valid) > limit,
+        "invalid": invalid if not bounded else invalid[:limit],
+        "truncated": bounded and len(valid) > limit,
     }
 
 
 def fingerprint_registry(workspace_id: str, records: list[dict[str, Any]], invalid: list[dict[str, str]]) -> str:
-    """Deterministic registry fingerprint over bounded manifest identity."""
+    """Deterministic registry fingerprint over manifest identity.
+
+    The fingerprint covers exactly the records passed in.  A fingerprint
+    over a truncated listing is a LISTING fingerprint only and must never
+    be presented as complete semantic evidence; semantic-resolution
+    fingerprints MUST be computed over the complete scan
+    (``scan_projects(root, limit=None)``).
+    """
     source = {
         "workspace_id": workspace_id,
         "manifests": [
