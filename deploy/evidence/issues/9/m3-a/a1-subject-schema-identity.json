@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A1 subject graph canonical schema and identity design proof",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A1",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+  "common_base": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+  "m2_known_good_checkpoint": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "a0_artifact_base_sha": "ccce2e02c40ec92fe1717744e801ddcb5b01095c",
+  "GRAPH_CANONICAL_SCHEMA": "defined",
+  "SUBJECT_IDENTITY_RULE": "defined",
+  "design_proof_only": {
+    "no_graph_storage_engine": "yes",
+    "no_graph_mutation_implementation": "yes",
+    "no_authoritative_graph_writes": "yes",
+    "no_authority_engine": "yes",
+    "no_lease_engine": "yes",
+    "no_runtime_behavior": "yes",
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "subject_definition": {
+    "definition": "A Subject is the durable, executor-neutral identity anchor of exactly one unit of work or lifecycle in the durable subject graph. A Subject exists independently of any executor, Hermes session, Profile Task, filesystem path, current pointer, or legacy record. Subjects carry identity only (SUBJECT_ID_IS_AUTHORITY=no): possessing a Subject ID never grants authority.",
+    "subject_kinds": [
+      {
+        "kind": "WorkspaceSubject",
+        "bootstrap_input": "canonical workspace registry (workspaces.json, trusted resource kind project_registry)",
+        "a0_classification": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "id_derivation": "deterministic: canonical hash of workspace_id + registry namespace",
+        "meaning": "registered workspace root containing projects; parent of ProjectSubject"
+      },
+      {
+        "kind": "ProjectSubject",
+        "bootstrap_input": "canonical project manifest (aota_forge/core/project/manifest.py project.id, schema_version 1)",
+        "a0_classification": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "id_derivation": "deterministic: canonical hash of project.id + owning workspace identity",
+        "meaning": "registered canonical project; parent of PlanSubject; binding target for BIND-1"
+      },
+      {
+        "kind": "PlanSubject",
+        "bootstrap_input": "Portable Plan document (normalized; issue body remains Plan authority until a separately authorized migration)",
+        "a0_classification": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+        "id_derivation": "deterministic: canonical hash of stable plan_id + owning ProjectSubject identity + subject namespace (stable across Plan document revisions; content digest is revision/evidence data, not identity)",
+        "meaning": "single Plan aggregate (B011/B013/B014 future-pass referents); milestone is a Plan-internal structural reference, not a separate subject kind"
+      },
+      {
+        "kind": "WorkSubject",
+        "bootstrap_input": "none authoritative; created only by an explicit, authorized registration/creation operation (bootstrap for Plan/Project/Workspace kinds, explicit creation for work units)",
+        "a0_classification": "successor concept (legacy Work Item is MIGRATION_EVIDENCE_ONLY)",
+        "id_derivation": "minted: issued exactly once by the future ID Broker; non-inferable",
+        "meaning": "successor of the legacy Work Item / Profile Task unit; durable semantic work unit owned by a Project or Plan context; followup children are WorkSubjects"
+      }
+    ],
+    "not_subject_kinds": {
+      "milestone": "Plan-internal structural reference (milestone_id M<digits> scoped to Plan); not a Subject kind",
+      "review": "review outcomes are Decision records (decision_kind=review_result); not a Subject kind",
+      "decision": "durable Decision record owned by exactly one Subject; not a Subject kind",
+      "followup": "new child WorkSubject linked by a durable FollowupEdge; the edge and the child Subject are canonical, followup is not a separate kind",
+      "legacy_work_item": "MIGRATION_EVIDENCE_ONLY read-model projection; not canonical Subject identity",
+      "operation": "mechanical contract concept (A0 MIGRATION_EVIDENCE_ONLY); not a Subject"
+    }
+  },
+  "subject_identity_rule": {
+    "rule": "Every Subject has exactly one identity derivation path: deterministic (canonical hash of authoritative bootstrap input) or minted (ID Broker, issued once, non-inferable). Subject identity never depends on title, timestamps alone, newest matching, executor, Hermes session, Profile Task, filesystem, current pointers, LLM similarity, or Git SHA alone.",
+    "SUBJECT_ID_DETERMINISTIC_OR_MINTED_RULE": "Deterministic kinds (WorkspaceSubject, ProjectSubject, PlanSubject) derive their canonical Subject ID from the authoritative bootstrap input via a stable canonical hash function. Minted kinds (WorkSubject, and any subject created by an authorized creation operation) receive a non-inferable ID issued exactly once by the future ID Broker. A Subject ID is fixed at creation and never changes.",
+    "SUBJECT_ID_IS_AUTHORITY": "no",
+    "SUBJECT_ID_REUSE_RULE": "Subject IDs are never reused. An ID binds once to exactly one Subject. Supersession or retirement never reassigns an ID; superseded subjects keep their IDs as durable historical records. Minted IDs must never be re-issued after any failure; a failed mint is recorded and the ID is retired.",
+    "SUBJECT_ID_COLLISION_RULE": "A collision (same Subject ID derived or claimed for two distinct Subjects) fails closed: no silent merge, no last-write-wins, no heuristic winner. Collision surfaces a distinct canonical error and requires exactly one explicit semantic choice. For deterministic IDs a collision indicates contradictory authoritative inputs. For minted IDs a collision indicates an ID Broker defect.",
+    "SUBJECT_ID_INDEPENDENT_OF": {
+      "title": "yes",
+      "timestamps_alone": "yes",
+      "newest_matching": "yes",
+      "executor": "yes",
+      "hermes_session": "yes",
+      "profile_task": "yes",
+      "filesystem": "yes",
+      "current_pointer": "yes",
+      "llm_similarity": "yes",
+      "git_sha_alone": "yes"
+    },
+    "identity_vs_authority": "IDs identify only and do not grant authority. Identity and authority are separate concerns: authority is an M3-A2 lane (leases, principal, trusted channel); identity alone never authorizes, never selects, never binds.",
+    "PLAN_IDENTITY_REVISION_POLICY": {
+      "PLAN_IDENTITY_STABLE_ACROSS_PLAN_REVISIONS": "yes",
+      "PLAN_CONTENT_DIGEST_NOT_IDENTITY": "yes",
+      "PLAN_REVISIONS_ARE_REVISIONED_RECORDS_OR_DECISIONS": "yes",
+      "PLAN_NEW_SEMANTIC_INTENT_NEW_CHILD_SUBJECT": "yes",
+      "PLAN_IDENTITY_DERIVATION": "canonical hash of stable plan_id + owning ProjectSubject identity + subject namespace",
+      "policy": "Ordinary Plan document revisions keep the same PlanSubject ID and are represented by revisioned records (revisioned PlanSubject state, revisioned Plan-internal milestone references) and/or Plan update Decision records. Only an explicitly materialized new semantic Plan intent creates a new child Subject with explicit decision-backed lineage (FollowupEdge with source Decision). Plan content digests are revision/evidence data, never identity."
+    }
+  },
+  "canonical_records": {
+    "record_note": "Logical, executor-neutral records. No storage engine, no database schema, no graph writes: M3-A1 defines the canonical record contracts only.",
+    "records": [
+      {
+        "record": "Workflow",
+        "semantic_purpose": "durable record of the semantic intent of a work unit: what is intended and why (goal, scope, governing context). New semantic intent is expressed as a new Workflow plus lineage, never as an in-place intent rewrite.",
+        "canonical_fields": ["workflow_id", "semantic_intent", "goal", "scope", "context_references", "creation_context", "scope_annotations", "non_semantic_metadata"],
+        "required_fields": ["workflow_id", "semantic_intent", "creation_context"],
+        "immutable_fields": ["workflow_id", "semantic_intent", "goal", "scope", "context_references", "creation_context"],
+        "mutable_fields": ["scope_annotations", "non_semantic_metadata"],
+        "identifiers": ["workflow_id (deterministic or minted; never title/executor/session derived)"],
+        "relationships": ["Workflow 0..n WorkSubject (WorkSubject references exactly one Workflow)", "Workflow references owning Workspace/Project/Plan subjects (context_references)"],
+        "lifecycle_ownership": "Workflow is owned by its creation context (a Subject); it does not own Subjects and carries no mechanical lifecycle state in M3-A1",
+        "revision_participation": "yes (every mutation is a revision; immutable core fields never mutate in place)",
+        "authority_relevance": "none; semantic_intent is durable meaning, not authority, and any Subject identity derivation is governed by subject_identity_rule rather than workflow ordering",
+        "executor_private_boundary": "no executor identity may appear in required fields; any executor/session references live in creation_context as opaque adapter metadata"
+      },
+      {
+        "record": "Subject",
+        "semantic_purpose": "durable identity anchor and mechanical lifecycle carrier of one unit of work (kind: workspace, project, plan, work). Everything else in the graph hangs off the Subject.",
+        "canonical_fields": ["subject_id", "kind", "workflow_ref", "mechanical_state", "creation_context", "id_derivation"],
+        "required_fields": ["subject_id", "kind", "mechanical_state", "id_derivation"],
+        "immutable_fields": ["subject_id", "kind", "workflow_ref", "id_derivation", "creation_context"],
+        "mutable_fields": ["mechanical_state"],
+        "identifiers": ["subject_id (deterministic or minted per subject_identity_rule; never Profile Task ID / Hermes session ID / current pointer)"],
+        "relationships": ["Subject 1..n Execution", "Subject 0..n Decision", "Subject 0..n FollowupEdge as parent", "Subject 0..n FollowupEdge as child (>=1 parent edge with source decision at creation for work children)", "WorkspaceSubject 1..n ProjectSubject", "ProjectSubject 1..n PlanSubject", "PlanSubject contains milestone references (not subjects)"],
+        "lifecycle_ownership": "Subject owns its Executions and Decisions; the parent edge chain is owned by FollowupEdge records; ownership is never transferred by executor or current pointers",
+        "revision_participation": "yes (mechanical_state transitions are revisioned)",
+        "authority_relevance": "none; SUBJECT_ID_IS_AUTHORITY=no; binding authority semantics are M3-A2",
+        "executor_private_boundary": "Subject records contain no Hermes Profile ID, no Hermes session ID, no Profile Task ID, no filesystem path"
+      },
+      {
+        "record": "Execution",
+        "semantic_purpose": "one executor-neutral attempt to advance or execute a Subject. Retries and re-executions are new Executions under the same Subject; they never create a Subject (RETRY_CREATES_NEW_SUBJECT=no).",
+        "canonical_fields": ["execution_id", "subject_ref", "executor_kind", "executor_execution_ref", "correlation_id", "mechanical_status", "started_at", "requested_principal"],
+        "required_fields": ["execution_id", "subject_ref", "executor_kind", "mechanical_status"],
+        "immutable_fields": ["execution_id", "subject_ref", "executor_kind", "executor_execution_ref", "correlation_id", "started_at", "requested_principal"],
+        "mutable_fields": ["mechanical_status"],
+        "identifiers": ["execution_id (minted, canonical)", "subject_ref (exactly one Subject)", "correlation_id (bounded, per A0 correlation id seam)"],
+        "relationships": ["Execution belongs to exactly one Subject", "Execution 0..1 Completion"],
+        "lifecycle_ownership": "owned by exactly one Subject; executor change on retry is a new Execution under the same Subject (CHANGE_EXECUTOR != CHANGE_SUBJECT)",
+        "revision_participation": "yes (terminal transition is revisioned; records are otherwise append-only)",
+        "authority_relevance": "none; an Execution record grants no authority",
+        "executor_private_boundary": "executor_kind is a canonical enum placeholder; executor_execution_ref is an opaque adapter reference that MAY embed Hermes session ID / Profile Task private ID / receipts, but these remain adapter-private and are never canonical Subject identity and never ontology"
+      },
+      {
+        "record": "Completion",
+        "semantic_purpose": "immutable terminal outcome record of exactly one Execution (success/failure/aborted with evidence). Completion is the canonical result-state successor of legacy completion receipts.",
+        "canonical_fields": ["completion_id", "execution_ref", "outcome", "evidence_refs", "recorded_at"],
+        "required_fields": ["completion_id", "execution_ref", "outcome"],
+        "immutable_fields": ["completion_id", "execution_ref", "outcome", "evidence_refs", "recorded_at"],
+        "mutable_fields": [],
+        "identifiers": ["completion_id (minted)", "execution_ref (exactly one Execution)"],
+        "relationships": ["Completion 1..1 Execution", "Completion reaches its Subject transitively via the Execution (derived projection)"],
+        "lifecycle_ownership": "Completion is owned by its Execution; once recorded it is immutable and append-only: no rewriting, no retraction; a corrective outcome is a new Completion of a new Execution under the same Subject",
+        "revision_participation": "no in-place revision (immutable); it is itself a revisioned event in the record sequence",
+        "authority_relevance": "the Completion record is the canonical surface for authoritative materialization success/failure (B014-F schema-level invariant); the materialization authority engine is M4",
+        "executor_private_boundary": "evidence_refs are opaque executor/adapter-private references (receipts, result artifacts); never canonical identity"
+      },
+      {
+        "record": "Decision",
+        "semantic_purpose": "durable semantic decision record owned by exactly one Subject (decision_kind examples: plan_update, binding, project_binding, review_result, retry_policy, supersede, approach_choice). Decisions record intent and outcome, never grant authority.",
+        "canonical_fields": ["decision_id", "subject_ref", "decision_kind", "statement", "target_refs", "decision_time", "evidence_refs"],
+        "required_fields": ["decision_id", "subject_ref", "decision_kind", "statement"],
+        "immutable_fields": ["decision_id", "subject_ref", "decision_kind", "statement", "target_refs", "decision_time", "evidence_refs"],
+        "mutable_fields": [],
+        "identifiers": ["decision_id (minted)", "subject_ref (exactly one Subject)", "target_refs (optional Execution/Subject references, e.g. review_result -> target Execution)"],
+        "relationships": ["Decision 1..1 owning Subject", "Decision 0..n FollowupEdge sourced by this decision", "decision_kind=project_binding records a binding against a real validated ProjectSubject (BIND-1)"],
+        "lifecycle_ownership": "Decision is owned by its Subject; a superseding decision is a NEW Decision record, never an edit",
+        "revision_participation": "no in-place revision (append-only); each Decision is a revisioned record",
+        "authority_relevance": "none; there is NO authoritative current_decision pointer (OQ-M3A1-04). Current decision projections derive deterministically from the durable Decision sequence per Subject and are rebuildable (CURRENT_POINTERS_ARE_PROJECTIONS=yes)",
+        "executor_private_boundary": "evidence_refs are opaque adapter references; decision semantics never embed Hermes session/Profile Task ontology"
+      },
+      {
+        "record": "FollowupEdge",
+        "aliases": ["ParentChildEdge"],
+        "semantic_purpose": "durable directed lineage edge from a parent Subject to a child Subject created by semantic followup. Parenthood is defined ONLY by these edges, never by current pointers, executors, or heuristic selection.",
+        "canonical_fields": ["edge_id", "parent_subject_ref", "child_subject_ref", "source_decision_ref", "rationale", "created_at"],
+        "required_fields": ["edge_id", "parent_subject_ref", "child_subject_ref", "source_decision_ref"],
+        "immutable_fields": ["edge_id", "parent_subject_ref", "child_subject_ref", "source_decision_ref", "rationale", "created_at"],
+        "mutable_fields": [],
+        "identifiers": ["edge_id (minted)", "parent_subject_ref (>=1 at child creation; multiple parents allowed with one source decision each)", "child_subject_ref (exactly one child)", "source_decision_ref (required: the Decision record motivating the followup)"],
+        "relationships": ["FollowupEdge 1..n parent side: at least one parent edge per work child at creation", "FollowupEdge references exactly one source Decision", "no silent cycles: edge creation must not close a lineage cycle"],
+        "lifecycle_ownership": "owned by the lineage it records; edges are append-only",
+        "revision_participation": "no in-place revision",
+        "authority_relevance": "none; lineage never grants binding or selection authority",
+        "executor_private_boundary": "none; edges are canonical and executor-neutral"
+      }
+    ],
+    "required_record_keys": ["Workflow", "Subject", "Execution", "Completion", "Decision", "FollowupEdge"]
+  },
+  "relationships": {
+    "one_subject_per_execution": "Exactly one Subject per Execution (1..1)",
+    "many_executions_per_subject": "Multiple Executions per Subject (1..n)",
+    "retry_no_new_subject": "Retry/re-execution normally creates a new Execution under the same Subject; RETRY_CREATES_NEW_SUBJECT=no",
+    "executor_change_no_new_subject": "Changing the executor for a retry is a new Execution under the same Subject; CHANGE_EXECUTOR != CHANGE_SUBJECT; CHANGE_EXECUTOR_CREATES_NEW_SUBJECT=no",
+    "new_semantic_intent_new_subject": "A genuinely new semantic intent is a new Workflow and a new child Subject linked by an explicit FollowupEdge with a source Decision",
+    "completion_per_execution": "At most one Completion per Execution; Completion is immutable once recorded",
+    "decision_per_subject": "Decisions are owned by exactly one Subject; supersession is a new Decision record",
+    "followup_child_lineage": "Every followup child Subject requires at least one explicit FollowupEdge with source_decision_ref (semantic lineage); FOLLOWUP_REQUIRES_SEMANTIC_LINEAGE=yes",
+    "no_silent_cycles": "Lineage must not silently close a cycle; cycle detection is an M3-B/M4 enforcement invariant of this schema",
+    "parenthood_not_pointer_defined": "Current pointers, executors, and sessions never define parenthood; only durable FollowupEdge records do",
+    "no_heuristic_parent_selection": "Parent selection is never heuristic: it comes only from explicit edges created with source decisions; HEURISTIC_PARENT_SELECTION_ALLOWED=no",
+    "binding_zero_one_many": "Binding projections follow SUBJECT_BINDING_ZERO_ONE_MANY (0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE); enforcement is an M3-B/M4 concern, the schema records binding as decision_kind=project_binding referencing a real validated ProjectSubject"
+  },
+  "identity_decisions": [
+    {
+      "QUESTION_ID": "OQ-M3A1-01",
+      "DECISION": "Work Item is NOT a canonical Subject kind. The legacy plan.json work item is a MIGRATION_EVIDENCE_ONLY read-model projection (WorkItemSnapshot via LegacyPlanStateReader). The successor semantic equivalent is the WorkSubject with minted identity, created only by an explicit registration/creation operation; the legacy work_item_id never becomes canonical Subject identity.",
+      "RATIONALE": "A0 classified work item as MIGRATION_EVIDENCE_ONLY and flagged identity_kind=mechanical (work_item_id string) with no durable graph backing; making it Subject identity would import legacy-sourced identity into the graph. WorkSubject keeps an executor-neutral successor concept with minted identity.",
+      "INVARIANTS": {
+        "WORK_ITEM_NOT_SUBJECT": "yes",
+        "WORK_ITEM_ID_NOT_SUBJECT_ID": "yes",
+        "WORK_SUBJECT_MINTED_OR_EXPLICIT_REGISTRATION": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "work_item_id as canonical Subject id (legacy-sourced mechanical identity; violates A0 MIGRATION_EVIDENCE_ONLY)",
+        "WorkItem kind coexisting with WorkSubject (duplicate identity surface without authoritative input)"
+      ],
+      "REGRESSION_IMPACT": "WCTX-1 ACTIVE_WORK_ITEM_MISSING keeps its distinct canonical error and now maps semantically to 'no active WorkSubject' at schema level; no legacy work item identity enters the graph; B011/B013/B014 plan-subject references unaffected."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-02",
+      "DECISION": "Plan is a single subject aggregate (PlanSubject). Milestone is a Plan-internal structural reference (milestone_id M<digits> scoped to the Plan), not a separate Subject kind and not independently executable.",
+      "RATIONALE": "A0: milestone_status and milestone_specs are Plan-document data today; B011/B013/B014 future-pass conditions reference 'a plan subject in the durable subject graph' (singular). Milestones own no executions and have no independent authoritative bootstrap input. PlanSubject identity is stable across Plan document revisions (see PLAN_IDENTITY_REVISION_POLICY); only a materialized new semantic Plan intent creates a child Subject.",
+      "INVARIANTS": {
+        "PLAN_IS_SINGLE_AGGREGATE": "yes",
+        "MILESTONE_NOT_SUBJECT_KIND": "yes",
+        "PLAN_IDENTITY_STABLE_ACROSS_REVISIONS": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "MilestoneSubject with its own lifecycle (no authoritative standalone identity; multiplies identity surface)",
+        "Plan subject per milestone (fragments the Plan aggregate B011/B013/B014 reference)"
+      ],
+      "REGRESSION_IMPACT": "B011/B013/B014 future-pass referents ('a plan subject') are satisfied at schema level by PlanSubject identity; B013 stale/current Plan selection becomes Plan-subject selection (superseded PlanSubjects excluded, fail-closed ambiguity)."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-03",
+      "DECISION": "Review is context-dependent and never forces one shape. There is NO special ReviewSubject kind (REVIEW_NOT_SUBJECT_KIND=yes: no review ontology kind). Three cases are canonical: (1) review of an existing Subject outcome is a Decision record (decision_kind=review_result) owned by the reviewed Subject and targeting the relevant Execution/outcome (target_refs); (2) a new semantic review task is a generic WorkSubject with the standard Workflow/Execution/Completion lifecycle, explicitly materialized (normally as a child with decision-backed lineage), with the review result recorded as a Decision; (3) independent review identity exists only when a separately materialized semantic review task has a Subject identity - reviewer role, executor identity, or REVIEW.md-like artifacts alone never create identity. Review artifacts (REVIEW.md, ARCHITECT_REVIEW.md, STEWARD_RESULT.md) remain executor-private evidence. See review_semantics.",
+      "RATIONALE": "A0 classified role result artifacts as executor-specific MIGRATION_EVIDENCE_ONLY and B014-F1 (executor finalizer) as an M5 ExecutorAdapter concern; a review Subject kind would duplicate the canonical result-state concept (Completion + Decision) with no authoritative identity input.",
+      "INVARIANTS": {
+        "REVIEW_NOT_SUBJECT_KIND": "yes",
+        "REVIEW_IS_CONTEXT_SENSITIVE_DECISION": "yes",
+        "REVIEW_ARTIFACTS_EXECUTOR_PRIVATE": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "ReviewSubject kind (over-modeling; B014-F1 stays executor-specific at M5)",
+        "Review as a mutable attribute field on Subject (mixes semantic record into identity record; loses durable revisioned lineage)"
+      ],
+      "REGRESSION_IMPACT": "B014-F1 remains NOT_YET_IMPLEMENTED at M5 with no A1 claim; the canonical result state concept (Completion + Decision review records) is the only M3-adjacent element, per A0."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-04",
+      "DECISION": "Legacy decision records (od_*, project_decision) do NOT map to a DecisionSubject kind. Decision is a canonical durable record owned by exactly one Subject, with NO authoritative current_decision pointer: current decision projections derive deterministically from the durable Decision sequence per Subject (latest record per decision_kind), never from legacy current_decision pointers; missing/ambiguous projection fails closed (NEEDS_SEMANTIC_CHOICE).",
+      "RATIONALE": "A0: legacy decision is MIGRATION_EVIDENCE_ONLY; ACTIVATE-R-current-binding cannot be resolved without decision identity semantics. Deciding 'Decision = durable record owned by Subject, no authoritative current pointer' resolves the conflict locus at schema level while keeping CURRENT_POINTERS_ARE_PROJECTIONS=yes.",
+      "INVARIANTS": {
+        "DECISION_NOT_SUBJECT_KIND": "yes",
+        "DECISION_OWNED_BY_ONE_SUBJECT": "yes",
+        "NO_AUTHORITATIVE_CURRENT_DECISION_POINTER": "yes",
+        "CURRENT_DECISION_IS_PROJECTION": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "DecisionSubject with own lifecycle (legacy decision was never graph authority; duplicates identity surface)",
+        "Authoritative current_decision pointer on Subject (violates CURRENT_POINTERS_ARE_AUTHORITY=no / CURRENT_POINTERS_ARE_PROJECTIONS=yes)"
+      ],
+      "REGRESSION_IMPACT": "ACTIVATE-R-current-binding: conflicting legacy current_decision/current_followup pointers cannot bind the wrong subject because projections derive from durable records; stale pointer state cannot hide or substitute a valid durable Subject (future-pass condition satisfied at schema level)."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-05",
+      "DECISION": "A semantic followup is a NEW child Subject (WorkSubject) created with at least one explicit FollowupEdge from the parent Subject; the edge carries source_decision_ref (required semantic lineage). Followup is therefore neither a derived projection nor a pointer artifact. SUBJECT_BINDING_ZERO_ONE_MANY governs binding projections (0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE), not followup creation; parent selection is never heuristic.",
+      "RATIONALE": "A0: followup binding is the ACTIVATE-R conflict locus and legacy lineage links were never model-supplied (ambiguous). Making followup a durable child Subject with decision-backed edges gives ACTIVATE-R a durable substrate and BIND-1-style explicit binding semantics.",
+      "INVARIANTS": {
+        "FOLLOWUP_IS_CHILD_SUBJECT": "yes",
+        "FOLLOWUP_REQUIRES_SOURCE_DECISION": "yes",
+        "NO_HEURISTIC_PARENT_SELECTION": "yes",
+        "NO_SILENT_LINEAGE_CYCLES": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "Followup as derived projection (no durable lineage; ACTIVATE-R conflict locus needs durable records)",
+        "Followup as Subject attribute (loses multi-parent and decision-backed lineage)",
+        "Current-followup pointer as parentage basis (CURRENT_POINTERS_ARE_AUTHORITY=no)"
+      ],
+      "REGRESSION_IMPACT": "ACTIVATE-R-current-binding current-followup conflict is resolved at schema level (durable edges + projections); binding enforcement (SUBJECT_BINDING_ZERO_ONE_MANY) remains an M3-B/M4 implementation concern, honestly not claimed by A1."
+    },
+    {
+      "QUESTION_ID": "OQ-M3A1-06",
+      "DECISION": "WorkspaceSubject and ProjectSubject are separate subject kinds with a parent/child edge (Workspace -> Project); project is NOT the top aggregate. Workspace bootstrap enumeration comes from the canonical workspace registry (workspaces.json), project subjects from project manifests (project.id).",
+      "RATIONALE": "A0: workspace_id + candidate roots are the enumeration basis for workspace identity bootstrap; workspaces.json is an AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE; BIND-1's binding subject (project) needs a workspace-parented identity home.",
+      "INVARIANTS": {
+        "WORKSPACE_PROJECT_DISTINCT_KINDS": "yes",
+        "PROJECT_PARENT_IS_WORKSPACE": "yes",
+        "WORKSPACE_BOOTSTRAP_DETERMINISTIC": "yes"
+      },
+      "REJECTED_ALTERNATIVES": [
+        "Project as top aggregate with workspace as attribute (contradicts A0 workspace-registry bootstrap enumeration)",
+        "Workspace only as a context string on ProjectSubject (loses durable parent/child and bootstrap basis)"
+      ],
+      "REGRESSION_IMPACT": "BIND-1: PROJECT_DECISION != PROJECT_BINDING is realized as distinct decision kinds on ProjectSubject; binding against a real validated ProjectSubject is schema-supported; SUBJECT_BINDING_ZERO_ONE_MANY enforcement stays M4 (no implementation claimed)."
+    }
+  ],
+  "semantic_decisions": [
+    {
+      "DECISION_ID": "D-M3A1-01",
+      "DECISION": "New semantic intent is a new Workflow and a new child Subject linked by an explicit FollowupEdge with a source Decision. Semantic intent never mutates an existing Subject or Workflow in place.",
+      "RATIONALE": "Identity follows intent: a Subject ID binds once; intent evolution is lineage, not mutation. This keeps identity deterministic per creation and preserves audit.",
+      "INVARIANTS": {
+        "NEW_SEMANTIC_INTENT_NEW_SUBJECT": "yes",
+        "INTENT_NEVER_MUTATES_SUBJECT": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["In-place intent rewrite on the existing Subject (breaks ID binding once, blurs lineage)"],
+      "REGRESSION_IMPACT": "Supports B013/B014 monotonic lifecycle semantics; no implementation claimed."
+    },
+    {
+      "DECISION_ID": "D-M3A1-02",
+      "DECISION": "Retry/re-execution normally creates a new Execution under the same Subject. RETRY_CREATES_NEW_SUBJECT=no. A retry never silently creates a Subject; a new Subject requires an explicit creation operation with lineage or bootstrap input.",
+      "RATIONALE": "A retry repeats an attempt, not a unit of work; creating Subjects per retry would multiply identity and break 'multiple executions per Subject'.",
+      "INVARIANTS": {
+        "RETRY_CREATES_NEW_SUBJECT": "no",
+        "RETRY_IS_NEW_EXECUTION": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["Retry creates a new Subject (identity explosion; breaks execution-per-subject semantics)"],
+      "REGRESSION_IMPACT": "Honest foundation for B011/B014 monotonic transition design; WCTX-1 distinct errors unaffected."
+    },
+    {
+      "DECISION_ID": "D-M3A1-03",
+      "DECISION": "Executor change on a retry is a new Execution under the same Subject. CHANGE_EXECUTOR != CHANGE_SUBJECT; CHANGE_EXECUTOR_CREATES_NEW_SUBJECT=no.",
+      "RATIONALE": "Executors are adapters (M5 ExecutorAdapter concern); the Subject is the durable unit. Executor identity is adapter-private (executor_kind + opaque executor_execution_ref).",
+      "INVARIANTS": {
+        "CHANGE_EXECUTOR_CREATES_NEW_SUBJECT": "no",
+        "CHANGE_EXECUTOR_NOT_CHANGE_SUBJECT": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["Executor change forks a new Subject (ties canonical identity to adapter ontology)"],
+      "REGRESSION_IMPACT": "Prevents executor-session identity from becoming graph identity (A0: Profile Task / task_id must NOT become canonical Subject identity)."
+    },
+    {
+      "DECISION_ID": "D-M3A1-04",
+      "DECISION": "Completion is owned by its Execution, immutable once recorded, and append-only: no rewriting, no retraction; a corrective outcome is a new Completion of a new Execution under the same Subject.",
+      "RATIONALE": "Completion is the canonical result-state successor of legacy receipts; immutability preserves the authoritative materialization failure surface (B014-F) and audit integrity.",
+      "INVARIANTS": {
+        "COMPLETION_IMMUTABLE": "yes",
+        "COMPLETION_ONE_PER_EXECUTION": "yes",
+        "COMPLETION_NO_RETRACT": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["Mutable completion state (loses audit totality; enables silent materialization failure)", "Multiple completions per Execution (ambiguous outcome)"],
+      "REGRESSION_IMPACT": "B014-F schema-level invariant (authoritative success/failure surfacing); the materialization authority engine itself remains M4 (FUTURE_IMPLEMENTATION_REQUIRED=yes)."
+    },
+    {
+      "DECISION_ID": "D-M3A1-05",
+      "DECISION": "Decision is a durable record owned by exactly one Subject without any authoritative current pointer; current decision projections are derived, rebuildable, and fail closed on ambiguity.",
+      "RATIONALE": "CURRENT_POINTERS_ARE_PROJECTIONS=yes and CURRENT_POINTERS_ARE_AUTHORITY=no are frozen Plan facts; an authoritative current pointer in the schema would contradict A0.",
+      "INVARIANTS": {
+        "DECISION_DURABLE_RECORD": "yes",
+        "DECISION_NO_AUTHORITATIVE_CURRENT_POINTER": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["current_decision field on Subject (CURRENT_POINTERS_ARE_AUTHORITY=no)"],
+      "REGRESSION_IMPACT": "ACTIVATE-R-current-binding resolution basis; projection engine is M3-B implementation."
+    },
+    {
+      "DECISION_ID": "D-M3A1-06",
+      "DECISION": "Semantic followup creates a child Subject with explicit, decision-backed lineage: at least one FollowupEdge carrying source_decision_ref. No silent parent, no heuristic parent selection, no cycle closure.",
+      "RATIONALE": "Legacy lineage links were never model-supplied (A0 ambiguity); durable decision-backed edges give lineage a canonical, verifiable form.",
+      "INVARIANTS": {
+        "FOLLOWUP_REQUIRES_SEMANTIC_LINEAGE": "yes",
+        "PARENTHOOD_ONLY_VIA_EDGES": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["Parent by current pointer or executor identity (parenthood must be durable)"],
+      "REGRESSION_IMPACT": "ACTIVATE-R/BIND-1 lineage foundation; enforcement M3-B/M4."
+    },
+    {
+      "DECISION_ID": "D-M3A1-07",
+      "DECISION": "Review distinctions are context-dependent rather than one forced shape: three canonical cases exist (see review_semantics) - (1) review of an existing Subject outcome: Decision record (decision_kind=review_result) owned by the reviewed Subject targeting the relevant Execution/outcome; (2) new semantic review task: generic WorkSubject with standard Workflow/Execution/Completion lifecycle, explicitly materialized (normally child lineage), result recorded as a Decision; (3) independent review identity: only a separately materialized semantic review task may have Subject identity; reviewer role/executor identity/review artifacts alone never create identity. Review distinctions (plan review vs execution review vs approach review) differ by owning Subject and target Execution, never by new kinds.",
+      "RATIONALE": "A0: role artifacts are executor-specific evidence; B014-F1 is M5. One uniform record structure (Decision) with explicit materialized tasks for standalone review keeps the schema minimal while supporting independent review identity where a real review task exists.",
+      "INVARIANTS": {
+        "REVIEW_NOT_SUBJECT_KIND": "yes",
+        "REVIEW_IS_CONTEXT_SENSITIVE": "yes",
+        "REVIEW_CASES_MACHINE_DOCUMENTED": "yes"
+      },
+      "REJECTED_ALTERNATIVES": ["ReviewSubject kind", "Review as mechanical state value (SEMANTIC_DECISIONS_NOT_STATE=yes)"],
+      "REGRESSION_IMPACT": "B014-F1 stays M5 NOT_YET_IMPLEMENTED; canonical result-state concept only."
+    }
+  ],
+  "review_semantics": {
+    "REVIEW_NOT_SUBJECT_KIND": "yes",
+    "policy": "Review never forces one shape and never creates a special ReviewSubject ontology kind. Three context-dependent canonical cases are machine-documented below. Reviewer role, executor identity, and REVIEW.md-like artifacts alone never create identity.",
+    "cases": [
+      {
+        "CASE_ID": "REVIEW-CASE-1",
+        "CASE": "review of an existing Subject outcome",
+        "semantics": "Decision record (decision_kind=review_result) owned by the reviewed Subject, targeting the relevant Execution/outcome via target_refs",
+        "identity": "no new identity; the reviewed Subject remains the owner",
+        "INVARIANTS": {
+          "REVIEW_CASE1_IS_DECISION_ON_EXISTING_SUBJECT": "yes"
+        }
+      },
+      {
+        "CASE_ID": "REVIEW-CASE-2",
+        "CASE": "new semantic review task",
+        "semantics": "generic WorkSubject with the standard Workflow/Execution/Completion lifecycle, explicitly materialized (normally as a child with decision-backed lineage via FollowupEdge + source Decision); the review result is recorded as a Decision record",
+        "identity": "the explicitly materialized review task has standard Subject identity like any WorkSubject",
+        "INVARIANTS": {
+          "REVIEW_CASE2_IS_EXPLICIT_WORKSUBJECT": "yes",
+          "REVIEW_CASE2_RESULT_IS_DECISION": "yes"
+        }
+      },
+      {
+        "CASE_ID": "REVIEW-CASE-3",
+        "CASE": "independent review identity",
+        "semantics": "a Subject identity for review exists only when a separate semantic review task has been explicitly materialized (REVIEW-CASE-2); reviewer role, executor identity, or REVIEW.md-like artifacts alone never create identity",
+        "identity": "REVIEWER_ROLE_OR_ARTIFACT_NEVER_CREATES_IDENTITY=yes",
+        "INVARIANTS": {
+          "REVIEW_CASE3_INDEPENDENT_IDENTITY_REQUIRES_MATERIALIZED_TASK": "yes"
+        }
+      }
+    ],
+    "flags": {
+      "REVIEW_NOT_SUBJECT_KIND": "yes",
+      "REVIEW_CASE1_IS_DECISION_ON_EXISTING_SUBJECT": "yes",
+      "REVIEW_CASE2_IS_EXPLICIT_WORKSUBJECT": "yes",
+      "REVIEW_CASE2_RESULT_IS_DECISION": "yes",
+      "REVIEW_CASE3_INDEPENDENT_IDENTITY_REQUIRES_MATERIALIZED_TASK": "yes",
+      "REVIEWER_ROLE_OR_ARTIFACT_NEVER_CREATES_IDENTITY": "yes"
+    }
+  },
+  "executor_private_boundary": {
+    "boundary": "Hermes Profile ID, Hermes session ID, Profile Task private ID (pt_*), SPEC revisions, receipts (pidfile_id/receipt_id), and private lifecycle IDs (ho_*, od_*) may remain adapter-private. They are never canonical Subject identity, never ontology, and never graph authority.",
+    "flags": {
+      "HERMES_PROFILE_ID_IS_CANONICAL_SUBJECT_IDENTITY": "no",
+      "HERMES_SESSION_ID_IS_CANONICAL_SUBJECT_IDENTITY": "no",
+      "PROFILE_TASK_ID_IS_SUBJECT_ID": "no",
+      "TASK_ID_IS_CANONICAL_SUBJECT_IDENTITY": "no",
+      "HERMES_IDENTITY_IS_ONTOLOGY": "no",
+      "HERMES_PRIVATE_IDENTITY_IN_CORE_ONTOLOGY": "no",
+      "GITHUB_IS_FORGE_CORE_ONTOLOGY": "no",
+      "RECEIPTS_AND_PRIVATE_LIFECYCLE_IDS_ADAPTER_PRIVATE": "yes",
+      "EXECUTOR_REF_OPAQUE_ONLY": "yes"
+    },
+    "canonical_equivalents": [
+      {
+        "legacy": "Profile Task (pt_*: task dir = identity)",
+        "canonical_equivalent": "Execution (executor-private executor_execution_ref) + owning Subject",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "decision store (od_* + current_decision pointer)",
+        "canonical_equivalent": "Decision record owned by a Subject; no authoritative current pointer",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "completion receipts / worker outcomes",
+        "canonical_equivalent": "Completion record (immutable, owned by Execution)",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "followup tasks (lineage links never model-supplied)",
+        "canonical_equivalent": "child Subject + FollowupEdge with source_decision_ref",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "handoffs (ho_*)",
+        "canonical_equivalent": "adapter-private notification evidence; not a canonical record",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "session current_* pointers",
+        "canonical_equivalent": "derived projections from durable records; never stored authority",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      },
+      {
+        "legacy": "role result artifacts (REVIEW.md etc.)",
+        "canonical_equivalent": "executor-private evidence referenced by Decision records",
+        "a0_class": "MIGRATION_EVIDENCE_ONLY"
+      }
+    ]
+  },
+  "lifecycle_invariants": {
+    "subject_mechanical_states": {
+      "states": ["PROPOSED", "ACTIVE", "COMPLETED", "SUPERSEDED"],
+      "transition_table": {
+        "PROPOSED_to_ACTIVE": "first Execution registered for the Subject",
+        "ACTIVE_to_COMPLETED": "a terminal Completion is recorded for an Execution of the Subject",
+        "PROPOSED_to_SUPERSEDED": "explicit supersede Decision + FollowupEdge to a child Subject",
+        "ACTIVE_to_SUPERSEDED": "explicit supersede Decision + FollowupEdge to a child Subject",
+        "COMPLETED": "terminal; no re-entry (monotonic bootstrap semantics, B011/B014 alignment)",
+        "SUPERSEDED": "terminal; no re-activation"
+      },
+      "invariants": [
+        "mechanical state set is minimal and fixed: no semantic values inside mechanical state (SEMANTIC_DECISIONS_NOT_STATE=yes)",
+        "transitions are monotonic; no state can cycle back (PLAN_INIT-style re-entry is impossible at schema level)",
+        "every transition is revisioned; stale revision mutation fails closed (schema invariant; enforcement M3-B/M4)",
+        "the mechanical transition engine is an M3-B/M4 implementation concern; A1 defines states and transition invariants only",
+        "semantic decisions are never encoded as workflow state; a Decision record never transitions mechanical state by itself (COMPLETED additionally requires a Completion record; SUPERSEDED additionally requires a supersede Decision and FollowupEdge)"
+      ]
+    },
+    "relationship_invariants": [
+      "MULTIPLE_EXECUTIONS_PER_SUBJECT=yes",
+      "ONE_SUBJECT_PER_EXECUTION=yes",
+      "RETRY_NO_SILENT_NEW_SUBJECT=yes",
+      "CHILD_REQUIRES_SEMANTIC_LINEAGE=yes",
+      "NO_SILENT_CYCLES=yes",
+      "CURRENT_POINTERS_AND_EXECUTORS_DO_NOT_DEFINE_PARENTHOOD=yes",
+      "DURABLE_DECISION_FOLLOWUP_LINEAGE=yes",
+      "NO_HEURISTIC_PARENT_SELECTION=yes"
+    ],
+    "frozen_plan_facts_preserved": {
+      "DURABLE_SUBJECT_GRAPH_IS_AUTHORITY": "yes",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "ID_IS_AUTHORITY": "no",
+      "LEGACY_GRAPH_INPUT_IS_AUTHORITY": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+      "DUAL_AUTHORITATIVE_WRITE": "no",
+      "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+      "GRAPH_BOOTSTRAP_STRATEGY_REQUIRED": "yes",
+      "GRAPH_CUTOVER_RULE_REQUIRED": "yes",
+      "LOST_UPDATE_ALLOWED": "no",
+      "SILENT_LAST_WRITE_WINS": "no",
+      "SUBJECT_BINDING_ZERO_ONE_MANY": "0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE",
+      "ERROR_SEMANTICS_DISTINCT": "yes",
+      "SILENT_MATERIALIZATION_FAILURE": "denied",
+      "AUTHORITATIVE_FAILURE_SURFACING": "PASS (M4)",
+      "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no",
+      "BODY_CONTROL_COMMENT_CONFLICT_ARBITRATION_REQUIRED": "no"
+    }
+  },
+  "regression_design_proofs": [
+    {
+      "FAILURE_CLASS": "B011",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite none)",
+      "A1_DESIGN_INVARIANT": "PlanSubject identity derives deterministically from the stable Portable Plan identity (canonical hash of plan_id + owning ProjectSubject identity + subject namespace; content digest is never identity); PlanSubject mechanical state is monotonic (PROPOSED/ACTIVE/COMPLETED/SUPERSEDED, no re-entry), so a bootstrap/PLAN_INIT-style transition cannot be re-entered from an already-initialized state at schema level; Plan document revisions keep the same PlanSubject ID as revisioned records/decisions; stale revision mutation fails closed.",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: plan-subject identity, bootstrap adjacency, monotonic mechanical state; the transition engine itself is M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M2 owner, prerequisite M4)",
+      "A1_DESIGN_INVARIANT": "Current Plan selection is a deterministic projection over durable PlanSubject records: Plan document revisions never create a new PlanSubject (same stable ID, revisioned records/decisions per PLAN_IDENTITY_REVISION_POLICY); superseded/retired PlanSubjects are excluded, exactly one current is deterministic, ambiguity fails closed; stale pointer state cannot select a stale Plan because legacy current pointers carry no authority (CURRENT_POINTERS_ARE_AUTHORITY=no).",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: PlanSubject identity and current-projection rule; the bounded retirement lifecycle and projection engine are M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A1_DESIGN_INVARIANT": "Binding is recorded as decision_kind=project_binding on a real validated ProjectSubject (BIND-1 separation); the binding Subject is durable; mechanical state is monotonic so post-binding PLAN_INIT-style re-entry is impossible at schema level; producer/consumer role ping-pong cannot re-enter PROPOSED.",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: durable binding subject aggregate bound by identity/state invariants; mechanical binding and CAS enforcement are M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "B014-F",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite none)",
+      "A1_DESIGN_INVARIANT": "Completion is the canonical immutable terminal outcome record of an Execution: materialization success/failure is surfaced authoritatively through Completion (SILENT_MATERIALIZATION_FAILURE=denied at schema level); no silent success or silent absence of outcome is representable.",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: Completion record immutability and ownership; the authoritative materialization authority engine is M4 (AUTHORITATIVE_FAILURE_SURFACING=PASS at M4 per A0)",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M3, prerequisite none)",
+      "A1_DESIGN_INVARIANT": "Current decision/followup projections derive deterministically from durable Decision records and FollowupEdge records; there is no authoritative current_decision/current_followup pointer; conflicting legacy current_* pointer state cannot bind the wrong subject (stale pointer state cannot hide or substitute a durable Subject); binding follows SUBJECT_BINDING_ZERO_ONE_MANY and ambiguity returns NEEDS_SEMANTIC_CHOICE; heuristics are denied.",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: durable decision/followup records and projection rule; the projection engine and binding enforcement are M3-B/M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "WCTX-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M2 owner, prerequisites M3/M4)",
+      "A1_DESIGN_INVARIANT": "The four distinct error codes map to distinct schema-level absence states: PROJECT_BINDING_MISSING = no project_binding Decision on ProjectSubject; PLAN_MISSING = no PlanSubject for the project; PLAN_WORKSPACE_CONTEXT_MISSING = no reachable WorkspaceSubject ancestry for the PlanSubject via the ProjectSubject parent edge (WorkspaceSubject -> ProjectSubject -> PlanSubject); ACTIVE_WORK_ITEM_MISSING = no active WorkSubject. Root causes stay pairwise distinct (ERROR_SEMANTICS_DISTINCT=yes); lifecycle producers for these codes arrive with the M3/M4 subject lifecycle.",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: distinct absence semantics at schema level; taxonomy and producers stay distinct; no implementation claimed",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A1_DESIGN_INVARIANT": "PROJECT_DECISION != PROJECT_BINDING is realized as distinct decision kinds on ProjectSubject (decision_kind=project_decision vs decision_kind=project_binding); a binding decision must reference a real validated ProjectSubject, so fake binding before initialization is unrepresentable at schema level; SUBJECT_BINDING_ZERO_ONE_MANY applies to binding projections (0/1/many fail-closed or NEEDS_SEMANTIC_CHOICE).",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: decision-kind separation and binding target validation; binding automation rule and 0/1/many enforcement are M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "A0_DISPOSITION": "NOT_YET_IMPLEMENTED (M4, prerequisite M3)",
+      "A1_DESIGN_INVARIANT": "Recovery operates over durable graph records (Subject/Execution/Completion/Decision/FollowupEdge): missing prerequisite evidence is either deterministically reconciled from durable records or yields exactly one explicit NEEDS_SEMANTIC_CHOICE; silent not_required, blind replay, and guessing another lifecycle subject are unrepresentable because every recovery input is an explicit durable reference (subject_ref/target_refs/source_decision_ref).",
+      "A1_PROOF_STATUS": "DESIGN_PROVEN",
+      "A1_PROOF_SCOPE": "schema/identity only: explicit durable references make guessing unrepresentable; the mechanical recovery engine is M4",
+      "FUTURE_IMPLEMENTATION_REQUIRED": "yes"
+    }
+  ],
+  "deferred_questions": [
+    {
+      "QUESTION_ID": "OQ-M3A2-01",
+      "NOTE": "authority lease schema (grant/scope/expiry/renewal/revocation): M3-A2; A1 declares identity != authority only",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-02",
+      "NOTE": "principal typing vs trusted adapter metadata: M3-A2 (NF2)",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-03",
+      "NOTE": "trusted adapter channel principal/lease binding: M3-A2 (NF2)",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A2-04",
+      "NOTE": "approval_required gating authority grants: M3-A2",
+      "OWNER_LANE": "M3-A2"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A4-01",
+      "NOTE": "exact transaction scope for authoritative graph writes and revision/CAS mechanics: M3-A4",
+      "OWNER_LANE": "M3-A4"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-01",
+      "NOTE": "deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources: M3-A5",
+      "OWNER_LANE": "M3-A5"
+    },
+    {
+      "QUESTION_ID": "OQ-M3A5-02",
+      "NOTE": "current_* cutover rule and legacy pointer state during cutover: M3-A5 (DUAL_AUTHORITATIVE_WRITE=no)",
+      "OWNER_LANE": "M3-A5"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-01",
+      "NOTE": "ID Broker minting mechanics, deterministic hash function selection, and collision resolution protocol: graph-write lanes (M3-A4/M3-A5)",
+      "OWNER_LANE": "M3-A4/M3-A5"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-02",
+      "NOTE": "projection engine implementing current decision/plan/binding derivation (fail-closed 0/1/many): M3-B",
+      "OWNER_LANE": "M3-B"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-03",
+      "NOTE": "mechanical state transition engine (revisioned monotonic transitions, cycle detection on lineage): M3-B/M4",
+      "OWNER_LANE": "M3-B/M4"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-04",
+      "NOTE": "concrete executor_kind enum values and executor_execution_ref schema for real executors: M5 ExecutorAdapter",
+      "OWNER_LANE": "M5"
+    },
+    {
+      "QUESTION_ID": "A1-DEFER-05",
+      "NOTE": "storage engine / database schema / graph serialization: explicitly NOT defined by A1 (NO_STORAGE_ENGINE_FROZEN=yes)",
+      "OWNER_LANE": "M3-B"
+    }
+  ],
+  "invariants": {
+    "identity_flags": {
+      "SUBJECT_ID_DETERMINISTIC_OR_MINTED": "yes",
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "PROFILE_TASK_ID_IS_SUBJECT_ID": "no",
+      "INTERNAL_EXECUTION_ID_IS_SUBJECT_ID": "no",
+      "HERMES_SESSION_ID_IS_SUBJECT_ID": "no",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "CURRENT_POINTERS_ARE_SUBJECT_AUTHORITY": "no",
+      "RETRY_CREATES_NEW_SUBJECT": "no",
+      "CHANGE_EXECUTOR_CREATES_NEW_SUBJECT": "no",
+      "CHANGE_EXECUTOR_NOT_CHANGE_SUBJECT": "yes",
+      "HEURISTIC_PARENT_SELECTION_ALLOWED": "no",
+      "HEURISTIC_IDENTITY_SELECTION_ALLOWED": "no",
+      "HEURISTIC_SUBJECT_IDENTITY_ALLOWED": "no",
+      "GIT_HISTORY_IS_SUBJECT_AUTHORITY": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY": "no",
+      "WORK_ITEM_NOT_SUBJECT": "yes",
+      "MILESTONE_NOT_SUBJECT_KIND": "yes",
+      "REVIEW_NOT_SUBJECT_KIND": "yes",
+      "DECISION_NOT_SUBJECT_KIND": "yes",
+      "FOLLOWUP_IS_CHILD_SUBJECT": "yes",
+      "WORKSPACE_PROJECT_DISTINCT_KINDS": "yes"
+    },
+    "record_flags": {
+      "ONE_SUBJECT_PER_EXECUTION": "yes",
+      "MULTIPLE_EXECUTIONS_PER_SUBJECT": "yes",
+      "RETRY_NO_SILENT_NEW_SUBJECT": "yes",
+      "EXECUTOR_CHANGE_NO_NEW_SUBJECT": "yes",
+      "CHILD_REQUIRES_SEMANTIC_LINEAGE": "yes",
+      "FOLLOWUP_REQUIRES_SEMANTIC_LINEAGE": "yes",
+      "NO_SILENT_CYCLES": "yes",
+      "PARENTHOOD_ONLY_VIA_DURABLE_EDGES": "yes",
+      "DURABLE_DECISION_FOLLOWUP_LINEAGE": "yes",
+      "COMPLETION_IMMUTABLE": "yes",
+      "DECISION_NO_AUTHORITATIVE_CURRENT_POINTER": "yes",
+      "MECHANICAL_STATE_MINIMAL": "yes",
+      "SEMANTIC_DECISIONS_NOT_STATE": "yes",
+      "NO_GIANT_STATE_MACHINE": "yes"
+    },
+    "a0_classifications_respected": {
+      "PROFILE_TASK_PRIMARY_CLASS": "MIGRATION_EVIDENCE_ONLY",
+      "PROFILE_TASK_NOT_SUBJECT_IDENTITY": "yes",
+      "DECISION_PRIMARY_CLASS": "MIGRATION_EVIDENCE_ONLY",
+      "FOLLOWUP_PRIMARY_CLASS": "MIGRATION_EVIDENCE_ONLY",
+      "WORK_ITEM_PRIMARY_CLASS": "MIGRATION_EVIDENCE_ONLY",
+      "PLAN_PRIMARY_CLASS": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "PROJECT_PRIMARY_CLASS": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "WORKSPACE_PRIMARY_CLASS": "AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE",
+      "FORBIDDEN_SOURCES_CLASS": "FORBIDDEN_AUTHORITY_SOURCE"
+    },
+    "engine_boundary": {
+      "NO_STORAGE_ENGINE_FROZEN": "yes",
+      "NO_GRAPH_MUTATION_IMPLEMENTATION": "yes",
+      "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+      "AUTHORITATIVE_STATE_MUTATION_ALLOWED": "no",
+      "NO_AUTHORITY_ENGINE": "yes",
+      "NO_LEASE_ENGINE": "yes",
+      "NO_RUNTIME_BEHAVIOR": "yes",
+      "GRAPH_STORAGE_LOCATIONS": [],
+      "SOURCE_CODE_CHANGED": "no"
+    }
+  }
+}
