@@ -1,6 +1,14 @@
-"""Executor-neutral Portable Plan read models (M1-C).
+"""Executor-neutral Portable Plan read models (M1-C / M2-D).
 
-PortablePlanSnapshot / MilestoneSnapshot / WorkItemSnapshot.
+M1-C: PortablePlanSnapshot / MilestoneSnapshot / WorkItemSnapshot.
+
+M2-D: PortablePlanDocument — the canonical normalized representation of the
+authoritative Portable Plan (the governing Issue body).  It distinguishes
+current authoritative state, Milestone definitions/status, known-good
+checkpoint references, governance observations, and structured
+appendix/provenance observations, and carries normalization diagnostics plus
+source revision/digest.  It never carries executor-private IDs as schema
+fields, and it grants no authority.
 
 These read models describe observed Plan state without granting authority.
 The Issue body remains Portable Plan authority.  Legacy plan.json state, when
@@ -80,6 +88,70 @@ def snapshot_sha256(payload: dict[str, Any]) -> str:
     """Deterministic sha256 over canonical snapshot JSON."""
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class PortablePlanDocument:
+    """Canonical normalized Portable Plan document (M2-D).
+
+    Built exclusively from the authoritative issue body by
+    ``aota_forge.core.plan.normalize.normalize_portable_plan``.
+
+    Executor-private IDs are NOT part of this schema; raw body KEY=VALUE
+    observations are kept separately under ``current_fields`` for bounded
+    diagnostics, never as typed schema fields.
+    """
+
+    plan_status: str | None = None
+    current_milestone: str | None = None
+    current_status: str | None = None
+    current_blocker: str | None = None
+    completed_milestones: tuple[str, ...] = ()
+    milestone_status: dict[str, str] = field(default_factory=dict)
+    milestone_specs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    current_next_action: str | None = None
+    handoff_state: str | None = None
+    project_context: dict[str, str] = field(default_factory=dict)
+    known_good_checkpoints: tuple[str, ...] = ()
+    governance: dict[str, str] = field(default_factory=dict)
+    provenance_observations: dict[str, dict[str, str]] = field(default_factory=dict)
+    current_fields: dict[str, str] = field(default_factory=dict)
+    diagnostics: tuple[dict[str, Any], ...] = ()
+    source_revision: str | None = None
+    source_digest: str = ""
+    source_kind: str = "portable_plan_issue_body"
+
+    def canonical_dict(self) -> dict[str, Any]:
+        """Digest payload: everything except the derived digest itself."""
+        return {
+            "source_kind": self.source_kind,
+            "source_revision": self.source_revision,
+            "plan_status": self.plan_status,
+            "current_milestone": self.current_milestone,
+            "current_status": self.current_status,
+            "current_blocker": self.current_blocker,
+            "completed_milestones": list(self.completed_milestones),
+            "milestone_status": self.milestone_status,
+            "milestone_specs": self.milestone_specs,
+            "current_next_action": self.current_next_action,
+            "handoff_state": self.handoff_state,
+            "project_context": self.project_context,
+            "known_good_checkpoints": list(self.known_good_checkpoints),
+            "governance": self.governance,
+            "provenance_observations": self.provenance_observations,
+            "current_fields": self.current_fields,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = self.canonical_dict()
+        payload["source_digest"] = self.source_digest
+        payload["diagnostics"] = list(self.diagnostics)
+        return payload
+
+
+def portable_plan_digest(document: PortablePlanDocument) -> str:
+    """Deterministic digest over the canonical Portable Plan payload."""
+    return snapshot_sha256(document.canonical_dict())
 
 
 class PlanSource:
