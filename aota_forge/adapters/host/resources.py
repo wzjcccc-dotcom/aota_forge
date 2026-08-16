@@ -1,4 +1,4 @@
-"""Model-facing trusted host resource adapter (M2-E).
+"""Model-facing trusted host resource adapter (M2-E / M3-B2).
 
 The model-facing contract is a logical reference (resource kind + id),
 never a filesystem path.  References are resolved through the trusted
@@ -11,7 +11,8 @@ explicit TrustedResourceConfig); the model cannot configure roots and
 cannot supply a path.
 
 Wiring into host.status handlers is M2-I; this module provides the
-primitives only.
+primitives only.  Resolved paths are private handler inputs and never part of
+the public logical-resource projection.
 """
 
 from __future__ import annotations
@@ -57,36 +58,41 @@ def host_resource_config_from_env() -> TrustedResourceConfig:
 
 
 def resolve_host_resource(kind: str, resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:
-    """Resolve a logical host resource reference to its bounded path.
+    """Validate a logical host resource without exposing its resolved path.
 
     Read-only; does not open or read the resource.
     """
-    path = TrustedResourceResolver(config).resolve(kind, resource_id)
-    return {"kind": kind, "resource_id": resource_id, "path": str(path)}
+    TrustedResourceResolver(config).resolve(kind, resource_id)
+    return {"kind": kind, "resource_id": resource_id, "resolved": True}
+
+
+def _resolve_host_resource_path(kind: str, resource_id: str, config: TrustedResourceConfig) -> Path:
+    """Resolve a path for an adapter-private bounded reader."""
+    return TrustedResourceResolver(config).resolve(kind, resource_id)
 
 
 def host_process_status_ref(resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:
     """Bounded host process observation by logical runtime pidfile id."""
-    path = TrustedResourceResolver(config).resolve("runtime_pidfile", resource_id)
+    path = _resolve_host_resource_path("runtime_pidfile", resource_id, config)
     pid = read_pidfile(path)
     return process_status(pid).to_dict()
 
 
 def read_deployment_receipt_ref(resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:
     """Bounded managed deployment receipt inspection by logical receipt id."""
-    path = TrustedResourceResolver(config).resolve("managed_deployment_receipt", resource_id)
+    path = _resolve_host_resource_path("managed_deployment_receipt", resource_id, config)
     return read_receipt(path)
 
 
 def host_runtime_identity_ref(resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:
     """Bounded runtime identity by logical runtime root id."""
-    path = TrustedResourceResolver(config).resolve("runtime_identity", resource_id)
+    path = _resolve_host_resource_path("runtime_identity", resource_id, config)
     return version_identity(path.parent).to_dict()
 
 
 def read_project_registry_ref(resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:
     """Bounded project registry inspection by logical registry id."""
-    path = TrustedResourceResolver(config).resolve("project_registry", resource_id)
+    path = _resolve_host_resource_path("project_registry", resource_id, config)
     return load_workspace_registry(path)
 
 
@@ -94,7 +100,9 @@ def inspect_backup_readiness_ref(
     backup_id: str, receipt_ids: list[str], config: TrustedResourceConfig
 ) -> dict[str, Any]:
     """Bounded managed backup / rollback readiness by logical ids."""
-    resolver = TrustedResourceResolver(config)
-    backup_dir = resolver.resolve("backup_receipt", backup_id).parent
-    receipts = [resolver.resolve("managed_deployment_receipt", rid) for rid in receipt_ids]
+    backup_dir = _resolve_host_resource_path("backup_receipt", backup_id, config).parent
+    receipts = [
+        _resolve_host_resource_path("managed_deployment_receipt", rid, config)
+        for rid in receipt_ids
+    ]
     return backup_rollback_readiness(backup_dir, receipts)

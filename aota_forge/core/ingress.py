@@ -32,7 +32,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from aota_forge.core.context import ContextResolver
+from aota_forge.core.context import ContextResolver, TrustedContext, resolve_principal_binding
 from aota_forge.core.contracts.descriptor import READ_ONLY
 from aota_forge.core.contracts.errors import ForgeError, UnsupportedOperationError
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
@@ -65,6 +65,7 @@ def _audit(
     validation: str,
     context: str,
     handler: str,
+    principal: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "operation": operation,
@@ -74,6 +75,7 @@ def _audit(
         "validation": validation,
         "context": context,
         "handler": handler,
+        "principal": principal,
     }
 
 
@@ -221,8 +223,9 @@ def _normalize_handler_result(
 def execute(
     operation: str,
     params: dict[str, Any] | None = None,
-    principal: str = "library",
+    principal: object = None,
     correlation_id: str | None = None,
+    trusted_context: TrustedContext | None = None,
 ) -> dict[str, Any]:
     """Execute one canonical read-only Core operation.
 
@@ -230,6 +233,8 @@ def execute(
     """
     ensure_handlers_bound()
     cid = resolve_correlation_id(correlation_id)
+    principal_binding = resolve_principal_binding(principal, trusted_context)
+    principal_audit = principal_binding.to_audit()
 
     descriptor = DEFAULT_REGISTRY.get(operation)
     if descriptor is None:
@@ -238,7 +243,7 @@ def execute(
             operation,
             err,
             correlation_id=cid,
-            audit=_audit(operation, None, None, cid, "ok", "ok", "no_descriptor"),
+            audit=_audit(operation, None, None, cid, "ok", "ok", "no_descriptor", principal_audit),
         )
 
     handler = DEFAULT_REGISTRY.handler(operation)
@@ -250,6 +255,7 @@ def execute(
         "pending",
         "pending",
         "pending",
+        principal_audit,
     )
 
     if descriptor.read_write != READ_ONLY:
@@ -269,12 +275,22 @@ def execute(
     audit["validation"] = "ok"
 
     try:
-        context = _RESOLVER.resolve(descriptor, validated, principal, cid)
+        context = _RESOLVER.resolve(
+            descriptor,
+            validated,
+            principal,
+            cid,
+            trusted_context=trusted_context,
+        )
     except ForgeError as exc:
         audit["context"] = exc.code
         audit["handler"] = "not_executed"
         return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
     audit["context"] = "ok"
+    audit["principal"] = {
+        **context.principal.to_audit(),
+        "trust": context.principal_trust,
+    }
 
     if handler is None:
         audit["handler"] = "no_handler"

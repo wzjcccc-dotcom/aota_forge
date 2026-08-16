@@ -37,6 +37,8 @@ from aota_forge.cli.projection import attach_semantic_arguments
 from aota_forge.core import execute as forge_execute
 from aota_forge.core.contracts.errors import ForgeError
 from aota_forge.core.contracts.results import failure_from_error
+from aota_forge.core.context import bind_trusted_context
+from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
 
 ParamBuilder = Callable[[argparse.Namespace, AdapterTrustedConfig], dict[str, Any]]
 
@@ -123,7 +125,22 @@ def _main(argv: list[str] | None = None) -> int:
         )
         _emit(args, payload)
         return classify(payload)
-    payload = forge_execute(operation, params, principal="cli")
+    # The CLI transport does not get to self-assert a principal.  It carries
+    # operator-resolved resources through the typed trusted boundary; a
+    # runtime may add a bound principal at its integration boundary.
+    trusted_metadata = {
+        key: value for key, value in params.items() if key in TRUSTED_ADAPTER_KEYS
+    }
+    trusted_context = (
+        bind_trusted_context(
+            channel="cli_adapter",
+            provenance="operator_config",
+            metadata=trusted_metadata,
+        )
+        if trusted_metadata
+        else None
+    )
+    payload = forge_execute(operation, params, trusted_context=trusted_context)
     _emit(args, payload)
     return classify(payload)
 

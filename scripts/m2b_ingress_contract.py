@@ -445,7 +445,7 @@ def main() -> int:
         audit = cid_success["audit"]
         check(
             "audit_bounded_keys",
-            set(audit) == {"operation", "protocol_version", "contract_hash", "correlation_id", "validation", "context", "handler"},
+            set(audit) == {"operation", "protocol_version", "contract_hash", "correlation_id", "validation", "context", "handler", "principal"},
         )
         check("audit_protocol_version", audit["protocol_version"] == PROTOCOL_VERSION)
         check("audit_protocol_version_value", audit["protocol_version"] == "1.0")

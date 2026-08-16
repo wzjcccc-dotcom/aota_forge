@@ -25,6 +25,7 @@ from typing import Any
 from aota_forge.core.contracts.descriptor import OperationContractDescriptor
 from aota_forge.core.contracts.errors import ForgeError
 from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
+from aota_forge.core.context import TrustedContext
 
 MAX_ARGUMENT_KEYS = 128
 MAX_TRUSTED_KEYS = 16
@@ -53,6 +54,7 @@ class AdapterRequest:
     expected_protocol_version: str | None = None
     expected_contract_hash: str | None = None
     correlation_id: str | None = None
+    trusted_context: TrustedContext | None = field(default=None, repr=False, compare=False)
 
     @property
     def params(self) -> dict[str, Any]:
@@ -82,6 +84,7 @@ def build_request(
     expected_protocol_version: str | None = None,
     expected_contract_hash: str | None = None,
     correlation_id: str | None = None,
+    trusted_context: TrustedContext | None = None,
 ) -> AdapterRequest:
     """Build a bounded adapter request with pure transport syntax checks.
 
@@ -113,6 +116,10 @@ def build_request(
         raise AdapterRequestInvalidError("expected_protocol_version must be a string or null")
     if expected_contract_hash is not None and not isinstance(expected_contract_hash, str):
         raise AdapterRequestInvalidError("expected_contract_hash must be a string or null")
+    if trusted_context is not None and (
+        not isinstance(trusted_context, TrustedContext) or not trusted_context.is_bound
+    ):
+        raise AdapterRequestInvalidError("trusted_context must come from the trusted runtime boundary")
     return AdapterRequest(
         operation=operation,
         arguments=arguments,
@@ -120,4 +127,5 @@ def build_request(
         expected_protocol_version=expected_protocol_version,
         expected_contract_hash=expected_contract_hash,
         correlation_id=correlation_id,
+        trusted_context=trusted_context,
     )

@@ -17,8 +17,6 @@ from aota_forge.core.ingress import execute, resolve_correlation_id
 
 from .schema import AdapterRequest
 
-PRINCIPAL = "hermes"
-
 
 def detect_contract_drift(
     operation: str,
@@ -73,6 +71,6 @@ def execute_request(request: AdapterRequest) -> dict[str, Any]:
     return execute(
         request.operation,
         request.params,
-        principal=PRINCIPAL,
         correlation_id=request.correlation_id,
+        trusted_context=request.trusted_context,
     )

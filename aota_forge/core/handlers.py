@@ -135,10 +135,8 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
             if registry_path_supplied:
                 resolved_registry = Path(registry_path)
             else:
-                resolved_registry = Path(
-                    host_resources.resolve_host_resource(
-                        "project_registry", registry_id, trusted_config
-                    )["path"]
+                resolved_registry = host_resources._resolve_host_resource_path(
+                    "project_registry", registry_id, trusted_config
                 )
             resolved = resolve_project_with_fingerprint(workspace_id, resolved_registry, project_id)
         except ForgeError as exc:
