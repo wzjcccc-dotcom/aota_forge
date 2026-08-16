@@ -96,11 +96,20 @@ def main() -> int:
         check("project_root_is_not_aota_metadata", underscore_result.get("data", {}).get("project_root") != aota_metadata_root)
 
         # 2. CLI calls the same ingress (invoke CLI subprocess, compare envelope).
+        # The CLI consumes the registry through the M2-F operator trusted
+        # configuration channel (logical resource id + trusted root), never
+        # through a model-facing filesystem path flag.
+        adapter_config = workdir / "adapter-config.json"
+        adapter_config.write_text(
+            json.dumps({"registry_id": "canonical", "trusted_roots": {"project_registry": str(workdir)}}),
+            encoding="utf-8",
+        )
+        (workdir / "canonical.json").write_text(registry.read_text(encoding="utf-8"), encoding="utf-8")
         cli_out = subprocess.run(
             [sys.executable, "-m", "aota_forge.cli", "project", "resolve",
-             "--workspace", "fixture-ws", "--project", "fixture-alpha",
-             "--registry", str(registry), "--json"],
+             "--workspace-id", "fixture-ws", "--project-id", "fixture-alpha", "--json"],
             capture_output=True, text=True, cwd=str(AOTA_FORGE_ROOT.parent), timeout=60,
+            env=dict(os.environ, AOTA_FORGE_ADAPTER_CONFIG=str(adapter_config)),
         )
         cli_ok = cli_out.returncode == 0
         try:

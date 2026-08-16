@@ -1,16 +1,30 @@
-"""aota project command family — adapter only, routes via Core ingress."""
+"""aota project / git command families — adapter only, routes via Core ingress (M2-F).
+
+Parameter builders are pure transport projection: CLI flags -> semantic
+input dict -> canonical ingress.  No project resolution, no registry
+loading, no error interpretation happens here.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
+import argparse
 from typing import Any
 
-from aota_forge.core import execute as forge_execute
+from aota_forge.cli.config import AdapterTrustedConfig, resolve_trusted_registry
 
 
-def resolve(workspace_id: str, project_id: str, registry: Path) -> dict[str, Any]:
-    return forge_execute(
-        "project.resolve",
-        {"workspace_id": workspace_id, "project_id": project_id, "registry_path": str(registry)},
-        principal="cli",
-    )
+def _registry_params(args: argparse.Namespace, config: AdapterTrustedConfig) -> dict[str, Any]:
+    registry_path = resolve_trusted_registry(args.registry_id or config.registry_id, config)
+    return {
+        "workspace_id": args.workspace_id,
+        "project_id": args.project_id,
+        "registry_path": str(registry_path),
+    }
+
+
+def resolve_params(args: argparse.Namespace, config: AdapterTrustedConfig) -> dict[str, Any]:
+    return _registry_params(args, config)
+
+
+def inspect_params(args: argparse.Namespace, config: AdapterTrustedConfig) -> dict[str, Any]:
+    return _registry_params(args, config)

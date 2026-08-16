@@ -1,19 +1,21 @@
-"""aota host command family — adapter only, routes via Core ingress."""
+"""aota host command family — adapter only, routes via Core ingress (M2-F).
+
+pidfile / receipt enter only as logical resource ids resolved through the
+M2-E trusted resource boundary; model-facing filesystem paths are denied.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
+import argparse
 from typing import Any
 
-from aota_forge.core import execute as forge_execute
+from aota_forge.cli.config import AdapterTrustedConfig, resolve_trusted_resource
 
 
-def status(pidfile: Path | None = None, receipt: Path | None = None) -> dict[str, Any]:
-    return forge_execute(
-        "host.status",
-        {
-            "pidfile": str(pidfile) if pidfile else None,
-            "receipt": str(receipt) if receipt else None,
-        },
-        principal="cli",
-    )
+def status_params(args: argparse.Namespace, config: AdapterTrustedConfig) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if getattr(args, "pidfile_id", None):
+        params["pidfile"] = str(resolve_trusted_resource("runtime_pidfile", args.pidfile_id, config))
+    if getattr(args, "receipt_id", None):
+        params["receipt"] = str(resolve_trusted_resource("managed_deployment_receipt", args.receipt_id, config))
+    return params
