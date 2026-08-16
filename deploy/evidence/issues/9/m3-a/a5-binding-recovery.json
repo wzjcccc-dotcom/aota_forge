@@ -1,0 +1,602 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M3-A5 subject binding and recovery contract freeze (design-only)",
+  "project_id": "aota_forge",
+  "milestone": "M3",
+  "phase": "M3-A",
+  "lane": "M3-A5",
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "governing_plan_issue": 9,
+  "canonical_source_repository": "wzjcccc-dotcom/aota_forge",
+  "canonical_project_root": "/home/latios/workspace/aota_forge",
+  "base_sha": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "m3_a_common_base": "2485a8d51b6fb5722a0da02e9dc93e5615401277",
+  "inputs": {
+    "a0": "deploy/evidence/issues/9/m3-a/a0-input-map.json",
+    "a1": "deploy/evidence/issues/9/m3-a/a1-subject-schema-identity.json",
+    "a2": "deploy/evidence/issues/9/m3-a/a2-authority-lease.json",
+    "a12": "deploy/evidence/issues/9/m3-a/a12-contract-reconciliation.json",
+    "a3": "deploy/evidence/issues/9/m3-a/a3-revision-cas-transaction.json",
+    "matrix": "deploy/evidence/issues/9/m2-successor-regression-matrix.json"
+  },
+  "input_commits": {
+    "a0": "10b8018ecf618cd7ff4c2b73f962356af044669f",
+    "a1": "7dbc2225e0b66f6bf9e6d0970581d96f428d4362",
+    "a2": "b29fe5f6fa47035cdeb4137cd62aafc585257b40",
+    "a12": "8dad2d3ceeaaf093f35e39daa5c12049c0505527",
+    "a3": "2485a8d51b6fb5722a0da02e9dc93e5615401277"
+  },
+  "design_proof_only": {
+    "no_graph_storage_engine": "yes",
+    "no_graph_mutation_implementation": "yes",
+    "no_authoritative_graph_writes": "yes",
+    "no_binding_engine": "yes",
+    "no_recovery_engine": "yes",
+    "no_projection_engine": "yes",
+    "no_authority_engine": "yes",
+    "no_cas_engine": "yes",
+    "no_runtime_behavior": "yes",
+    "source_mutation_scope": "design_artifacts_only"
+  },
+  "candidate_validity_model": {
+    "candidate": "a candidate is a durable canonical record set (a Subject aggregate or its owned records) that can be enumerated deterministically from authoritative bootstrap input, the durable record set, or deterministic projections; candidates are never invented, ranked, or guessed",
+    "VALIDITY_EVALUATION_BEFORE_COUNT": "yes",
+    "CANDIDATE_COUNT_COMPUTED_AFTER_DETERMINISTIC_VALIDITY_FILTER": "yes",
+    "HEURISTIC_PRE_FILTER_ALLOWED": "no",
+    "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+    "validity_rule": "a candidate is valid iff ALL of the allowed validity filters pass: correct project/workflow scope, canonical record type present, valid lineage, valid predecessor for the intended operation, explicit materialized Decision basis when the operation is decision-backed, authority eligibility under M3-A2 typed authority, and revision compatibility under M3-A3 expected/current revision semantics",
+    "allowed_validity_filters": [
+      "correct project/workflow scope",
+      "canonical record type",
+      "valid lineage",
+      "valid predecessor",
+      "explicit materialized Decision",
+      "authority eligibility",
+      "revision compatibility"
+    ],
+    "forbidden_validity_signals": {
+      "recency_newest": "forbidden",
+      "title_text_similarity": "forbidden",
+      "nearest_timestamp": "forbidden",
+      "path_proximity": "forbidden",
+      "first_match": "forbidden",
+      "llm_similarity": "forbidden"
+    },
+    "NO_HIDDEN_REDUCTION_MANY_TO_ONE": "yes",
+    "many_to_one_rule": "no hidden reduction of a many-candidate set to one: if the deterministic validity filter leaves more than one valid candidate, the result is MANY (NEEDS_SEMANTIC_CHOICE); no recency/newest, similarity, nearest-timestamp, path-proximity, or first-match tie-break is ever applied to reduce many to one",
+    "determinism": "the validity evaluation is a pure deterministic function of durable state: identical durable state always yields the identical candidate set and the identical zero/one/many result"
+  },
+  "zero_one_many_rule": {
+    "SUBJECT_BINDING_ZERO_ONE_MANY_OWNER": "M3-A5",
+    "computation_order": "candidate validity is evaluated deterministically FIRST; the count (zero/one/many) is computed only after the deterministic validity filter (CANDIDATE_COUNT_COMPUTED_AFTER_DETERMINISTIC_VALIDITY_FILTER=yes); no heuristic pre-filter ever runs (HEURISTIC_PRE_FILTER_ALLOWED=no)",
+    "ZERO": {
+      "definition": "no valid candidate remains after the deterministic validity filter",
+      "results": [
+        "SUBJECT_NOT_FOUND: no durable Subject matches the canonical identity/lineage at all",
+        "PROJECTION_STALE_RECONCILABLE: a durable Subject exists but the projection/index is stale or missing; recovery may rebuild the projection from durable records",
+        "missing prerequisite evidence: required authority / revision / predecessor / Decision evidence is absent; bounded explicit error (failure_policy)",
+        "NEEDS_SEMANTIC_CHOICE: no valid candidate but semantically distinct possibilities exist that only an explicit human/LLM choice can disambiguate"
+      ],
+      "never": "a fake Subject is never created to satisfy a zero result: ZERO never fabricates identity, never guesses a parent, and never invents a Subject"
+    },
+    "ONE": {
+      "definition": "exactly one valid candidate remains after the deterministic validity filter",
+      "UNIQUE_CANDIDATE_ALONE_INSUFFICIENT": "yes",
+      "requirements": [
+        "materialized semantic basis: the candidate's semantic Decision is durably materialized (semantic_decision_materialization)",
+        "required authority valid: M3-A2 typed authority eligibility holds",
+        "required revision/predecessor valid: M3-A3 expected/current revision and predecessor-state validation hold"
+      ],
+      "automation": "automatic binding/recovery proceeds iff candidate_count==1 AND the materialized Decision basis exists AND the required authority is valid AND the required revision/predecessor is valid; otherwise NEEDS_SEMANTIC_CHOICE or a bounded deterministic not-found/conflict (SUBJECT_BINDING_AUTOMATION_RULE)"
+    },
+    "MANY": {
+      "definition": "more than one valid candidate remains after the deterministic validity filter",
+      "AUTOMATIC_SELECTION": "no",
+      "result": "NEEDS_SEMANTIC_CHOICE",
+      "no_heuristic_tie_break": "yes"
+    },
+    "SUBJECT_BINDING_AUTOMATION_RULE": "automatic binding/recovery iff candidate_count==1 AND candidate semantic decision durably materialized AND required authority valid AND required revision/predecessor valid. Otherwise NEEDS_SEMANTIC_CHOICE or a bounded deterministic not-found/conflict. HEURISTIC_SUBJECT_SELECTION_ALLOWED=no."
+  },
+  "semantic_decision_materialization": {
+    "requires_canonical_decision": "yes",
+    "decision_requirements": [
+      "a canonical Decision record exists in the durable record set",
+      "the Decision belongs to the correct owning Subject (A1 exactly-one ownership)",
+      "the Decision explicitly authorizes the relevant followup category",
+      "the Decision is not superseded or invalid",
+      "the Decision has deterministic lineage"
+    ],
+    "materialized_basis": "LLM_or_user_materialized_decision",
+    "authority_engine_boundary": {
+      "AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION": "yes",
+      "AUTHORITY_ENGINE_MAY_INFER_MATERIALIZED_DECISION": "no",
+      "AUTHORITY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "rule": "the Authority Engine mechanically verifies that the Decision exists, is owned by the correct Subject, explicitly authorizes the relevant followup category, is not superseded/invalid, and has deterministic lineage; it never infers intent, never selects semantics, and never creates the Decision"
+    },
+    "UNIQUE_CANDIDATE_BYPASSES_MATERIALIZED_DECISION": "no",
+    "rule": "a unique candidate is never sufficient by itself: decision-backed binding/recovery requires a durably materialized Decision that passes every decision_requirement (A3 AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION=yes preserved)"
+  },
+  "binding_kinds": {
+    "rule": "binding kinds are defined separately with per-kind rules; a single generic algorithm without per-kind rules is forbidden",
+    "kinds": [
+      {
+        "BINDING_KIND": "current_subject_projection",
+        "CANDIDATE_SOURCE": "durable Subject aggregates under the correct project/workflow scope, deterministically enumerated from authoritative records",
+        "VALIDITY_RULE": "canonical record type present; valid lineage; valid predecessor for the intended operation; authority eligibility; revision compatibility; no recency/newest, title/text similarity, nearest timestamp, path proximity, first match, or LLM similarity signals",
+        "ZERO_RESULT": "SUBJECT_NOT_FOUND / PROJECTION_STALE_RECONCILABLE / missing prerequisite evidence / NEEDS_SEMANTIC_CHOICE; never a fake Subject",
+        "ONE_RESULT": "unique candidate alone is insufficient; requires materialized Decision basis (when decision-backed), valid required authority, and valid required revision/predecessor; otherwise NEEDS_SEMANTIC_CHOICE or bounded deterministic conflict",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE; no automatic selection and no heuristic tie-break",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
+      },
+      {
+        "BINDING_KIND": "decision_followup_child",
+        "CANDIDATE_SOURCE": "the explicit parent Subject reference carried by the materialized Decision (source_decision_ref); child candidates are existing FollowupEdge + child Subject records under that parent",
+        "VALIDITY_RULE": "canonical Decision exists, is owned by the parent Subject, explicitly authorizes the followup category, is not superseded/invalid, and has deterministic lineage; parent aggregate CAS valid (A3 followup transaction); child creation requires FORBIDDEN_CHILD_WITHOUT_VERIFIED_DECISION=no violation",
+        "ZERO_RESULT": "child absent: materialize exactly once via the A3 followup transaction on the verified Decision basis; never a fake or guessed child",
+        "ONE_RESULT": "exactly one existing child with a verified Decision basis: reconcile/return the existing child (idempotent recovery); never create a second child",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: multiple children claiming the same Decision basis require an explicit choice",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
+      },
+      {
+        "BINDING_KIND": "execution_subject",
+        "CANDIDATE_SOURCE": "the durable Subject aggregate referenced by the Execution record's explicit subject_ref",
+        "VALIDITY_RULE": "canonical Execution record type; subject_ref points to an existing Subject aggregate with valid lineage; authority eligibility; revision compatibility; no heuristic signals",
+        "ZERO_RESULT": "SUBJECT_NOT_FOUND (orphan Execution): bounded explicit error; recovery may resolve only via deterministic index repair, never by guessing a Subject",
+        "ONE_RESULT": "bind to the exactly-one referenced Subject after all requirements hold; unique alone is insufficient",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: multiple Subject aggregates claim the same Execution",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
+      },
+      {
+        "BINDING_KIND": "completion_subject",
+        "CANDIDATE_SOURCE": "the durable Subject aggregate referenced by the Completion record's explicit subject_ref",
+        "VALIDITY_RULE": "canonical Completion record type; explicit subject_ref to an existing Subject aggregate with valid lineage; authority eligibility; revision compatibility; no heuristic signals",
+        "ZERO_RESULT": "SUBJECT_NOT_FOUND / missing prerequisite evidence; never a fake Subject",
+        "ONE_RESULT": "bind/reconcile to the exactly-one referenced Subject after all requirements hold; unique alone is insufficient",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: multiple Subject aggregates claim the same Completion",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
+      },
+      {
+        "BINDING_KIND": "review_result_subject",
+        "CANDIDATE_SOURCE": "durable review/result records with an explicit subject_ref to a Subject aggregate",
+        "VALIDITY_RULE": "canonical review/result record type; explicit subject_ref to an existing Subject aggregate with valid lineage; authority eligibility; revision compatibility; acceptance of the review itself is never automated",
+        "ZERO_RESULT": "SUBJECT_NOT_FOUND / missing prerequisite evidence; never a fake Subject",
+        "ONE_RESULT": "bind/reconcile to the exactly-one referenced Subject after all requirements hold; the review acceptance semantic remains a human/LLM materialized Decision, never auto-accepted",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE: multiple Subject aggregates claim the same review/result",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold; review acceptance itself is never automated"
+      },
+      {
+        "BINDING_KIND": "plan_work_item_contextual_binding",
+        "CANDIDATE_SOURCE": "PlanSubject / WorkSubject records within the correct project/workflow scope",
+        "VALIDITY_RULE": "canonical record type; correct project/workflow scope; valid lineage; valid predecessor; materialized Decision basis when decision-backed; authority eligibility; revision compatibility; no heuristic signals",
+        "ZERO_RESULT": "SUBJECT_NOT_FOUND / PROJECTION_STALE_RECONCILABLE / missing prerequisite evidence / NEEDS_SEMANTIC_CHOICE",
+        "ONE_RESULT": "bind when the automation rule holds (one valid candidate + materialized Decision + valid authority + valid revision/predecessor); unique alone is insufficient",
+        "MANY_RESULT": "NEEDS_SEMANTIC_CHOICE; no automatic selection",
+        "AUTOMATION_ALLOWED": "yes_only_when_one_valid_candidate_and_all_requirements_hold"
+      }
+    ]
+  },
+  "recovery_boundary": {
+    "definition": "recovery is the bounded, deterministic read-then-repair process that re-establishes correct binding/projection state from durable authority; it never performs semantic reasoning",
+    "BINDING_VS_RECOVERY": {
+      "binding": "selecting and binding a Subject from candidates when the SUBJECT_BINDING_AUTOMATION_RULE holds (candidate_count==1 AND materialized Decision AND valid authority AND valid revision/predecessor); otherwise NEEDS_SEMANTIC_CHOICE or bounded deterministic not-found/conflict",
+      "recovery": "repairing deterministic projection/index/pointer state and replaying idempotent projections over durable records; recovery may bind a uniquely determined already-decided followup but never chooses semantics"
+    },
+    "may": [
+      "rebuild a stale projection from the durable record set",
+      "resolve one unique durable Subject",
+      "repair deterministic index/projection drift",
+      "bind a uniquely determined already-decided followup",
+      "replay an idempotent projection"
+    ],
+    "may_not": [
+      "choose a project under ambiguity",
+      "choose a semantic followup",
+      "accept a review",
+      "change requirements/scope/worker role",
+      "close a milestone",
+      "invent a missing Decision"
+    ],
+    "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+    "bounded": "every recovery action is bounded by durable records and explicit references; unbounded search, similarity search, and semantic ranking are forbidden"
+  },
+  "projection_recovery": {
+    "STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT": "yes",
+    "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+    "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+    "stale_subject_rule": "a stale current pointer or stale projection never hides a durable Subject: the Subject remains visible and enumerable from the durable record set; the projection may be rebuilt from durable records",
+    "no_escalation_for_rebuild": "diagnosing or rebuilding a stale projection never requires a SPEC / Profile Task / Plan / Work Item escalation: read-only inspection and projection rebuild are mechanical operations over durable records",
+    "rebuild_source": "projections rebuild deterministically from the committed durable record set only; current pointers, event logs, and git history are never projection sources of authority",
+    "drift_repair": "deterministic index/projection drift is repaired by re-derivation from durable records; the durable record set is never modified by projection repair"
+  },
+  "readonly_diagnostic_exemption": {
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+    "SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE": "no",
+    "capability_lease_exception": "a capability lease is required ONLY when the operation itself requires bounded privileged access unrelated to lifecycle mutation (e.g., a genuinely privileged host/runtime operation); no lifecycle mutation, binding, or projection access is ever part of that requirement",
+    "independent_availability": "safe Host/runtime/git/project inspection is independently available without Subject binding and without lifecycle mutation (A2 READONLY_DIAGNOSTIC_PLANE_PRESERVED=yes preserved)",
+    "no_forced_artifacts": "safe read-only diagnosis creates no forced Plan / Work Item / SPEC / Profile Task / approval / followup"
+  },
+  "conflict_taxonomy": {
+    "ERROR_SEMANTICS_DISTINCT": "yes",
+    "conflicts": [
+      {
+        "CODE": "SUBJECT_NOT_FOUND",
+        "meaning": "zero valid candidates and no durable Subject matches the canonical identity/lineage",
+        "retryable": "yes_after_new_input",
+        "notes": "distinct from PROJECTION_STALE_RECONCILABLE: a missing Subject is not a stale projection"
+      },
+      {
+        "CODE": "SUBJECT_AMBIGUOUS",
+        "meaning": "more than one valid candidate (or otherwise undecidable binding); equivalent to NEEDS_SEMANTIC_CHOICE",
+        "retryable": "no_requires_semantic_choice",
+        "notes": "no heuristic tie-break, no hidden many->one reduction"
+      },
+      {
+        "CODE": "NEEDS_SEMANTIC_CHOICE",
+        "meaning": "many valid candidates, or a unique candidate missing a required semantic basis; exactly one explicit human/LLM choice is required",
+        "retryable": "no_requires_semantic_choice",
+        "notes": "the canonical ambiguous outcome of zero_one_many_rule"
+      },
+      {
+        "CODE": "SUBJECT_BINDING_PREDECESSOR_INVALID",
+        "meaning": "the candidate's predecessor state is invalid for the intended operation",
+        "retryable": "no",
+        "notes": "state legality, distinct from revision timing (M3-A3 PREDECESSOR_STATE_CONFLICT preserved)"
+      },
+      {
+        "CODE": "SUBJECT_BINDING_REVISION_CONFLICT",
+        "meaning": "expected revision != current revision of the target aggregate at the CAS check (M3-A3 REVISION_CONFLICT semantics)",
+        "retryable": "yes_after_fresh_validation",
+        "notes": "stale mutation fails closed; no merge, no last-write-wins"
+      },
+      {
+        "CODE": "SUBJECT_BINDING_AUTHORITY_DENIED",
+        "meaning": "the required M3-A2 typed authority is invalid or missing for the binding/recovery",
+        "retryable": "yes_after_new_lease",
+        "notes": "identity alone never authorizes; a bare Subject ID is never authority"
+      },
+      {
+        "CODE": "MATERIALIZED_DECISION_MISSING",
+        "meaning": "decision-backed binding/recovery attempted without a durably materialized, valid Decision",
+        "retryable": "no_requires_materialized_decision",
+        "notes": "unique candidate alone is insufficient; the Decision is never inferred"
+      },
+      {
+        "CODE": "PROJECTION_STALE_RECONCILABLE",
+        "meaning": "a durable Subject exists but the projection/index is stale or missing; deterministic rebuild from durable records is available",
+        "retryable": "yes_rebuild_projection",
+        "notes": "the durable Subject remains visible; the stale pointer never hides it"
+      }
+    ],
+    "canonical_distinct": "every result code is canonical and distinct and never collapses into another result's error semantics (WCTX-1 pairwise distinct error taxonomy preserved)"
+  },
+  "revision_authority_relation": {
+    "UNIQUE_CANDIDATE_BYPASSES_CAS": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_AUTHORITY": "no",
+    "UNIQUE_CANDIDATE_BYPASSES_PREDECESSOR_VALIDATION": "no",
+    "authoritative_mutation": "authoritative mutation/materialization obeys the M3-A3 expected revision/CAS contract and the M3-A2 typed authority contract; binding/recovery never bypasses either",
+    "read_only_resolution": "read-only binding resolution may be non-mutating (projection reads) but never implies mutation authority: a read-only resolution grants no CAS, no lease, and no authorization to mutate",
+    "authority_and_revision_required": "automatic binding/recovery requires BOTH valid required authority AND valid required revision/predecessor (SUBJECT_BINDING_AUTOMATION_RULE)"
+  },
+  "idempotent_recovery": {
+    "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+    "IDEMPOTENT_REPLAY": "must_not_duplicate_semantic_effects",
+    "repeat_rule": "repeated deterministic recovery of the same state produces the same/reconciled result and never duplicates a semantic effect",
+    "existing_effect": "when the canonical mechanical effect already exists, recovery returns the same/reconciled result and creates no second Subject and no second edge",
+    "no_second_subject_or_edge": "no second Subject and no second edge are ever created by recovery replay",
+    "basis": "A3 idempotency model preserved: durable dedupe metadata plus deterministic semantic fingerprints; recovery replay is request-layer replay over durable records"
+  },
+  "failure_policy": {
+    "unsafe_mutation": "fail closed: a mutation/recovery step whose preconditions cannot be mechanically verified fails closed before any authoritative write",
+    "safe_diagnosis": "safe read-only diagnosis is always available and requires no Subject binding and no capability lease (readonly_diagnostic_exemption)",
+    "ambiguous_semantics": "NEEDS_SEMANTIC_CHOICE: ambiguity is never resolved by heuristics, recency, similarity, or a silent default",
+    "missing_deterministic_prerequisite": "bounded explicit error identifying the missing prerequisite (e.g., MATERIALIZED_DECISION_MISSING, SUBJECT_BINDING_AUTHORITY_DENIED, SUBJECT_BINDING_PREDECESSOR_INVALID, SUBJECT_BINDING_REVISION_CONFLICT)",
+    "no_blind_replay": "blind replay with stale facts is denied; retry requires fresh validation (new authority evaluation, new expected revision) per M3-A3 retry_policy",
+    "never_invents": "binding/recovery never invents data: no fake Subject, no invented Decision, no guessed parent"
+  },
+  "design_scenarios": [
+    {
+      "SCENARIO_ID": "A5-S1",
+      "NAME": "one valid already-decided candidate: deterministic binding",
+      "given": "exactly one valid already-decided candidate after the deterministic validity filter, with a durably materialized Decision, valid required authority, and valid required revision/predecessor",
+      "when": "the binding operation runs",
+      "expected": "SUBJECT_BINDING_AUTOMATION_RULE holds (candidate_count==1 AND materialized Decision AND valid authority AND valid revision/predecessor): deterministic binding proceeds; the binding is durable and revisioned per M3-A3"
+    },
+    {
+      "SCENARIO_ID": "A5-S2",
+      "NAME": "two valid candidates: ambiguity fails closed",
+      "given": "the deterministic validity filter leaves two valid candidates for the same binding",
+      "when": "the binding projection is resolved",
+      "expected": "NEEDS_SEMANTIC_CHOICE (SUBJECT_AMBIGUOUS): no automatic selection, no heuristic tie-break, and no hidden reduction of the many-candidate set to one (NO_HIDDEN_REDUCTION_MANY_TO_ONE=yes)"
+    },
+    {
+      "SCENARIO_ID": "A5-S3",
+      "NAME": "zero candidates: bounded not-found, no fabricated Subject",
+      "given": "a binding request whose deterministic validity filter leaves zero valid candidates",
+      "when": "the binding projection is resolved",
+      "expected": "bounded zero-result: SUBJECT_NOT_FOUND (or the appropriate zero-result code from zero_one_many_rule.ZERO, including PROJECTION_STALE_RECONCILABLE or missing prerequisite evidence); no fabricated Subject and no fake Subject is ever created"
+    },
+    {
+      "SCENARIO_ID": "A5-S4",
+      "NAME": "one candidate without a materialized Decision",
+      "given": "exactly one valid candidate but no durably materialized Decision basis exists",
+      "when": "the decision-backed followup binding operation runs",
+      "expected": "MATERIALIZED_DECISION_MISSING: no automatic followup binding occurs (UNIQUE_CANDIDATE_BYPASSES_MATERIALIZED_DECISION=no); the unique candidate alone is insufficient and the Decision is never inferred"
+    },
+    {
+      "SCENARIO_ID": "A5-S5",
+      "NAME": "one candidate with stale revision: fail closed",
+      "given": "exactly one valid candidate but the expected revision is stale: the expected revision does not equal the current revision of the target aggregate",
+      "when": "the binding mutation runs",
+      "expected": "SUBJECT_BINDING_REVISION_CONFLICT: the stale expected revision does not equal the current revision of the target aggregate, so the binding mutation must fail closed (STALE_REVISION_MUTATION=fail_closed); no mutation and no binding commit occurs; retry requires fresh validation"
+    },
+    {
+      "SCENARIO_ID": "A5-S6",
+      "NAME": "one candidate with invalid authority: denied",
+      "given": "exactly one valid candidate but the required M3-A2 typed authority is invalid or missing",
+      "when": "the binding operation runs",
+      "expected": "SUBJECT_BINDING_AUTHORITY_DENIED: the binding is denied; the unique candidate does not bypass authority (UNIQUE_CANDIDATE_BYPASSES_AUTHORITY=no); identity alone never authorizes"
+    },
+    {
+      "SCENARIO_ID": "A5-S7",
+      "NAME": "stale current pointer over a valid durable Subject",
+      "given": "a valid durable Subject exists but the current pointer / projection is stale or missing",
+      "when": "recovery runs",
+      "expected": "PROJECTION_STALE_RECONCILABLE: the durable Subject remains discoverable from the durable record set and is never hidden by the stale pointer (STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT=yes); the projection may be rebuilt deterministically; no SPEC/Profile Task escalation occurs merely to diagnose or rebuild"
+    },
+    {
+      "SCENARIO_ID": "A5-S8",
+      "NAME": "safe read-only host diagnosis needs no binding",
+      "given": "a safe Host/runtime/git/project inspection request",
+      "when": "the diagnosis operation runs",
+      "expected": "the operation completes with only host/environment evidence; no Subject binding, no capability lease, and no forced Plan / Work Item / SPEC / Profile Task / approval / followup is required (SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING=no; SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE=no)"
+    },
+    {
+      "SCENARIO_ID": "A5-S9",
+      "NAME": "a newer candidate is still ambiguous",
+      "given": "two valid candidates for the same binding, where one candidate is newer (recency differs)",
+      "when": "the binding projection is resolved",
+      "expected": "still NEEDS_SEMANTIC_CHOICE: recency/newest is a forbidden signal (forbidden_validity_signals.recency_newest=forbidden), the newer candidate is never auto-selected, and the many-candidate set is never reduced to one"
+    },
+    {
+      "SCENARIO_ID": "A5-S10",
+      "NAME": "recovery replay does not duplicate the semantic effect",
+      "given": "an already-materialized followup (child Subject + edge + verified Decision basis) and a recovery replay of the same deterministic recovery",
+      "when": "recovery runs again",
+      "expected": "the existing canonical mechanical effect returns the same/reconciled result; no second child Subject and no second edge are created (RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT=no; IDEMPOTENT_REPLAY=must_not_duplicate_semantic_effects)"
+    }
+  ],
+  "regression_design_proofs": [
+    {
+      "FAILURE_CLASS": "B011",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Binding/recovery never performs a bootstrap or PLAN_INIT lifecycle transition: automatic binding requires a valid predecessor state (SUBJECT_BINDING_PREDECESSOR_INVALID otherwise), and a bound aggregate can never re-enter an initial state; recovery only repairs projections and never cycles lifecycle state.",
+      "DESIGN_PROOF": "design proof over candidate_validity_model (valid predecessor is an allowed validity filter and a hard requirement of SUBJECT_BINDING_AUTOMATION_RULE) + conflict_taxonomy (SUBJECT_BINDING_PREDECESSOR_INVALID is a distinct canonical result) + revision_authority_relation (predecessor validation is never bypassed). Mechanical lifecycle transition execution is M4; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "B013",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Current Plan selection is a derived projection over durable records; recovery rebuilds it deterministically and never selects a stale or retired plan; ambiguous plan state fails closed with NEEDS_SEMANTIC_CHOICE (CURRENT_POINTERS_ARE_AUTHORITY=no).",
+      "DESIGN_PROOF": "design proof over projection_recovery (rebuild_source is the committed durable record set only; drift repair re-derives without touching durable records) + zero_one_many_rule (many fails closed) + candidate_validity_model (no recency/similarity signals). The projection engine and read-only normalization stay M3-B/M2 owners per the matrix; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4 (read-only normalization owner M2 per matrix)",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "B014",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Post-binding lifecycle re-entry (producer/consumer ping-pong) is denied: binding is durable, automatic binding requires a valid predecessor state and valid revision, and recovery never mutates lifecycle state, so a bound aggregate cannot cycle back to an initial state.",
+      "DESIGN_PROOF": "design proof over recovery_boundary (recovery may_not change lifecycle state) + revision_authority_relation (UNIQUE_CANDIDATE_BYPASSES_PREDECESSOR_VALIDATION=no) + conflict_taxonomy (SUBJECT_BINDING_PREDECESSOR_INVALID distinct from SUBJECT_BINDING_REVISION_CONFLICT). Mechanical binding and the transition engine are M4; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-current-binding",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Current decision/followup resolution reads only durable committed records: conflicting legacy current_* pointer state never binds the wrong Subject because pointers are projections, not authority; a stale pointer never hides a durable Subject (STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT=yes); ambiguous binding follows SUBJECT_BINDING_ZERO_ONE_MANY and returns NEEDS_SEMANTIC_CHOICE; heuristics are denied.",
+      "DESIGN_PROOF": "design proof over projection_recovery (stale_subject_rule, rebuild_source) + zero_one_many_rule (zero/one/many with deterministic validity first) + candidate_validity_model (forbidden signals) + binding_kinds decision_followup_child (verified Decision basis). The projection and binding enforcement engines are M3-B/M4; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M3-B/M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "ACTIVATE-R-host-inspection-escalation",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Safe Host/runtime/git/project inspection is independently available: it requires no Subject binding, no capability lease, and no Plan / Milestone / Work Item / SPEC / Profile Task / approval / completion / decision / followup (SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING=no; SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE=no).",
+      "DESIGN_PROOF": "design proof over readonly_diagnostic_exemption (independent_availability, no_forced_artifacts) + failure_policy (safe_diagnosis always available) + the M2 corpus host-inspection-no-plan-required fixture semantics (ELIMINATED_BY_CONSTRUCTION preserved). no implementation exists in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M2",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "WCTX-1",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Binding/recovery result codes are canonical and pairwise distinct: SUBJECT_NOT_FOUND, SUBJECT_AMBIGUOUS, NEEDS_SEMANTIC_CHOICE, SUBJECT_BINDING_PREDECESSOR_INVALID, SUBJECT_BINDING_REVISION_CONFLICT, SUBJECT_BINDING_AUTHORITY_DENIED, MATERIALIZED_DECISION_MISSING, and PROJECTION_STALE_RECONCILABLE never collapse into one another's error semantics.",
+      "DESIGN_PROOF": "design proof over conflict_taxonomy (canonical_distinct) + zero_one_many_rule (each zero result maps to exactly one distinct code) + failure_policy (bounded explicit errors identify the missing prerequisite). no implementation exists in this lane; the taxonomy is declarative design only.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M2",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "BIND-1",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "PROJECT_DECISION stays distinct from PROJECT_BINDING (A1 decision kinds on ProjectSubject): automatic binding is denied with a distinct canonical result unless a real validated ProjectSubject exists as the exactly-one valid candidate with a durably materialized Decision; fake binding before validation is unrepresentable; SUBJECT_BINDING_ZERO_ONE_MANY enforcement is frozen (zero bounded, one deterministic with requirements, many NEEDS_SEMANTIC_CHOICE).",
+      "DESIGN_PROOF": "design proof over binding_kinds (per-kind rules incl. current_subject_projection) + semantic_decision_materialization (canonical Decision requirements) + conflict_taxonomy (SUBJECT_NOT_FOUND / SUBJECT_BINDING_AUTHORITY_DENIED / MATERIALIZED_DECISION_MISSING) + zero_one_many_rule. Mechanical binding enforcement is M4; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    },
+    {
+      "FAILURE_CLASS": "RECOVERY-1",
+      "A5_BINDING_OR_RECOVERY_INVARIANT": "Recovery either deterministically reconciles the evidence or returns exactly one explicit NEEDS_SEMANTIC_CHOICE: silent not_required, blind replay, guessing another lifecycle Subject, inventing a missing Decision, and duplicate semantic effects are all forbidden (RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING=no; RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT=no).",
+      "DESIGN_PROOF": "design proof over recovery_boundary (may/may_not lists, bounded) + idempotent_recovery (repeat_rule, existing_effect, no_second_subject_or_edge) + failure_policy (no_blind_replay, never_invents) + zero_one_many_rule.ZERO (NEEDS_SEMANTIC_CHOICE distinct). The mechanical recovery engine is M4; no implementation in this lane.",
+      "IMPLEMENTATION_REQUIRED": "yes",
+      "FUTURE_OWNER": "M4",
+      "corpus_disposition_unchanged": "NOT_YET_IMPLEMENTED (design freeze does not convert the corpus class)"
+    }
+  ],
+  "deferred_questions": {
+    "resolved_by_a5": [
+      {
+        "id": "SUBJECT-BINDING-ZERO-ONE-MANY",
+        "topic": "zero/one/many subject binding",
+        "normalized_owner": "M3-A5",
+        "resolution": "binding projection is computed AFTER a deterministic validity filter; ZERO/ONE/MANY semantics, per-kind binding rules, the automation rule, recovery boundary, read-only exemption, conflict taxonomy, and idempotent recovery are frozen by this artifact (zero_one_many_rule, binding_kinds, recovery_boundary)"
+      },
+      {
+        "id": "BINDING-AUTOMATION-RULE",
+        "topic": "binding automation eligibility",
+        "normalized_owner": "M3-A5",
+        "resolution": "SUBJECT_BINDING_AUTOMATION_RULE: automatic binding/recovery iff candidate_count==1 AND materialized Decision AND valid authority AND valid revision/predecessor; otherwise NEEDS_SEMANTIC_CHOICE or bounded deterministic not-found/conflict; heuristics denied"
+      },
+      {
+        "id": "RECOVERY-BOUNDARY",
+        "topic": "recovery vs binding and allowed recovery actions",
+        "normalized_owner": "M3-A5",
+        "resolution": "recovery is bounded deterministic read-then-repair over durable records; may/may_not lists frozen; RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING=no; RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT=no (recovery_boundary, idempotent_recovery)"
+      },
+      {
+        "id": "READONLY-DIAGNOSTIC-EXEMPTION",
+        "topic": "read-only diagnosis independence",
+        "normalized_owner": "M3-A5",
+        "resolution": "safe Host/runtime/git/project inspection requires no Subject binding and no capability lease except bounded privileged operations unrelated to lifecycle mutation (readonly_diagnostic_exemption)"
+      }
+    ],
+    "deferred_to_a4": [
+      {
+        "QUESTION_ID": "OQ-M3A5-01",
+        "topic": "bootstrap input ordering / selection",
+        "normalized_owner": "M3-A4",
+        "note": "retained from A3: deterministic ordering/selection among AUTHORITATIVE_BOOTSTRAP_INPUT_CANDIDATE sources; A3 defines bootstrap as the sole CAS-bypass class; A5 adds nothing to bootstrap selection"
+      },
+      {
+        "QUESTION_ID": "OQ-M3A5-02",
+        "topic": "current-pointer cutover rule",
+        "normalized_owner": "M3-A4",
+        "note": "retained from A3: exact cutover rule replacing current_* authority with derived projections; A5 freezes that pointers are projections and recovery may rebuild them, while the cutover execution itself stays M3-A4"
+      }
+    ],
+    "deferred_to_implementation": [
+      {
+        "id": "A5-DEFER-01",
+        "topic": "mechanical binding engine",
+        "normalized_owner": "M3-B/M4",
+        "note": "binding contract frozen by this artifact; enforcement (automation rule, zero/one/many projection, per-kind rules) is future implementation; BINDING_IMPLEMENTATION_STARTED=no"
+      },
+      {
+        "id": "A5-DEFER-02",
+        "topic": "mechanical recovery engine",
+        "normalized_owner": "M4",
+        "note": "recovery boundary and idempotent replay frozen by this artifact; no recovery engine exists; RECOVERY_IMPLEMENTATION_STARTED=no"
+      },
+      {
+        "id": "A5-DEFER-03",
+        "topic": "projection rebuild runtime",
+        "normalized_owner": "M3-B",
+        "note": "projection_recovery semantics frozen; deterministic rebuild runtime is future implementation (A1-DEFER-02 retained)"
+      },
+      {
+        "id": "A5-DEFER-04",
+        "topic": "ID Broker minting mechanics / deterministic hash / collision protocol",
+        "normalized_owner": "M3-A4/M3-A5",
+        "note": "retained from A1/A12; A5 binds Subject identity to durable canonical records only"
+      },
+      {
+        "id": "A5-DEFER-05",
+        "topic": "SPEC / Profile Task acceptance",
+        "normalized_owner": "never_automated",
+        "note": "acceptance of SPEC / Profile Task / review semantics is never automated by binding or recovery (recovery_boundary.may_not, readonly_diagnostic_exemption.no_forced_artifacts)"
+      }
+    ]
+  },
+  "invariants": {
+    "preserved_contract_flags": {
+      "SUBJECT_ID_IS_AUTHORITY": "no",
+      "ID_IS_AUTHORITY": "no",
+      "AUTHORITY_TARGET_IS_TYPED": "yes",
+      "EXECUTOR_IDENTITY_EQUALS_PRINCIPAL": "no",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "DUAL_AUTHORITATIVE_WRITE": "no",
+      "EVENT_LOG_IS_SUBJECT_AUTHORITY": "no",
+      "READONLY_DIAGNOSTIC_PLANE_PRESERVED": "yes",
+      "ERROR_SEMANTICS_DISTINCT": "yes",
+      "AUTHORITY_ENGINE_MAY_VERIFY_MATERIALIZED_DECISION": "yes",
+      "AUTHORITY_ENGINE_MAY_INFER_MATERIALIZED_DECISION": "no",
+      "CHILD_SUBJECT_CREATION_SEMANTIC_DECISION_SOURCE": "LLM_or_user_materialized_decision",
+      "BINDING_AMBIGUITY_OWNER": "M3-A5",
+      "SUBJECT_BINDING_ZERO_ONE_MANY_OWNER": "M3-A5"
+    },
+    "binding_flags": {
+      "SUBJECT_BINDING_AUTOMATION_RULE": "automatic iff candidate_count==1 AND materialized Decision AND valid authority AND valid revision/predecessor; otherwise NEEDS_SEMANTIC_CHOICE or bounded deterministic not-found/conflict",
+      "HEURISTIC_SUBJECT_SELECTION_ALLOWED": "no",
+      "HEURISTIC_PRE_FILTER_ALLOWED": "no",
+      "CANDIDATE_COUNT_COMPUTED_AFTER_DETERMINISTIC_VALIDITY_FILTER": "yes",
+      "NO_HIDDEN_REDUCTION_MANY_TO_ONE": "yes",
+      "UNIQUE_CANDIDATE_BYPASSES_MATERIALIZED_DECISION": "no",
+      "UNIQUE_CANDIDATE_BYPASSES_AUTHORITY": "no",
+      "UNIQUE_CANDIDATE_BYPASSES_CAS": "no",
+      "UNIQUE_CANDIDATE_BYPASSES_PREDECESSOR_VALIDATION": "no",
+      "STALE_POINTER_MUST_NOT_HIDE_DURABLE_SUBJECT": "yes",
+      "CURRENT_POINTERS_ARE_AUTHORITY": "no",
+      "CURRENT_POINTERS_ARE_PROJECTIONS": "yes",
+      "RECOVERY_ENGINE_PERFORMS_SEMANTIC_REASONING": "no",
+      "SAFE_READONLY_DIAGNOSIS_REQUIRES_SUBJECT_BINDING": "no",
+      "SAFE_READONLY_DIAGNOSIS_REQUIRES_CAPABILITY_LEASE": "no",
+      "RECOVERY_REPLAY_DUPLICATES_SEMANTIC_EFFECT": "no",
+      "IDEMPOTENT_REPLAY": "must_not_duplicate_semantic_effects"
+    },
+    "engine_boundary": {
+      "NO_STORAGE_ENGINE_FROZEN": "yes",
+      "NO_BINDING_ENGINE": "yes",
+      "NO_RECOVERY_ENGINE": "yes",
+      "NO_PROJECTION_ENGINE": "yes",
+      "NO_AUTHORITY_ENGINE": "yes",
+      "NO_CAS_ENGINE": "yes",
+      "NO_GRAPH_MUTATION_IMPLEMENTATION": "yes",
+      "NO_RUNTIME_BEHAVIOR": "yes",
+      "BINDING_IMPLEMENTATION_STARTED": "no",
+      "RECOVERY_IMPLEMENTATION_STARTED": "no",
+      "SOURCE_CODE_CHANGED": "no",
+      "AUTHORITATIVE_GRAPH_WRITES_PERFORMED": "no",
+      "NO_AUTHORITATIVE_GRAPH_WRITES": "yes",
+      "GRAPH_STORAGE_LOCATIONS": []
+    },
+    "a5_design_only_boundary": {
+      "A5_LANE_TYPE": "design_only",
+      "A5_DESIGN_ONLY_BOUNDARY": "design_only: this artifact freezes the subject binding and recovery contract; it contains no core/adapters implementation, no authoritative graph writes, and no runtime behavior",
+      "AUTHORITATIVE_GRAPH_WRITES_PERFORMED": "no"
+    }
+  },
+  "implementation_boundary": {
+    "implemented_nothing": [
+      "mechanical binding engine",
+      "mechanical recovery engine",
+      "projection rebuild runtime",
+      "authority engine",
+      "CAS runtime",
+      "authoritative graph writes",
+      "cutover"
+    ],
+    "source_mutation_scope": "design_artifacts_only",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m3-a/a5-binding-recovery.json",
+      "scripts/m3_a5_binding_recovery_guard.py"
+    ],
+    "forbidden_paths": ["aota_forge/core/**", "aota_forge/adapters/**"],
+    "prior_artifacts_preserved": {
+      "a0_artifact_preserved": "yes",
+      "a1_artifact_preserved": "yes",
+      "a2_artifact_preserved": "yes",
+      "a12_artifact_preserved": "yes",
+      "a3_artifact_preserved": "yes",
+      "m2_corpus_and_matrix_preserved": "yes"
+    },
+    "future_lane_notes": "M3-B+ implements the binding/recovery/projection mechanics frozen here; M4 owns mechanical recovery and lifecycle transitions; nothing in this lane is implemented."
+  },
+  "report_metrics": {
+    "binding_kind_count": 6,
+    "conflict_code_count": 8,
+    "design_scenario_count": 10,
+    "regression_proof_count": 8,
+    "frozen_binding_flag_count": 17,
+    "a5_resolved_deferred_count": 4,
+    "a5_deferred_to_implementation_count": 5
+  }
+}
