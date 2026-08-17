@@ -278,6 +278,11 @@ class _TransactionBase:
         self._lock = None
         self._active = False
 
+    @property
+    def replayed(self) -> bool:
+        """True when this transaction is an idempotent replay (no new effect)."""
+        return self._replayed
+
     def add_record(self, record) -> None:
         if not self._active:
             raise TransactionNotCommittedError("transaction is not active; cannot stage a record")
@@ -385,6 +390,7 @@ class SubjectTransaction(_TransactionBase):
         fingerprint: str,
         trusted_time,
         new_state: dict,
+        effect_refs: tuple = (),
     ) -> None:
         super().__init__(store, subject_ref=subject_ref)
         self._expected_revision = expected_revision
@@ -398,6 +404,7 @@ class SubjectTransaction(_TransactionBase):
         self._new_state = dict(new_state)
         self._new_revision = None
         self._consumed_lease_id = lease.lease_id
+        self._effect_refs = tuple(effect_refs)
 
     def begin(self) -> "SubjectTransaction":
         self._acquire()
@@ -474,7 +481,7 @@ class SubjectTransaction(_TransactionBase):
             principal=self._trusted_context.principal.id,
             fingerprint=self._fingerprint,
             state=IDEMPOTENCY_STATE_COMMITTED,
-            effect_refs=(),
+            effect_refs=self._effect_refs,
             revision_after=self._new_revision.revision_number,
             revision_token=self._new_revision.revision_token,
         )
@@ -484,7 +491,7 @@ class SubjectTransaction(_TransactionBase):
             subject_ref=self._subject_ref.serialize(),
             revision_after=self._new_revision.revision_number,
             revision_token=self._new_revision.revision_token,
-            effect_refs=(),
+            effect_refs=self._effect_refs,
             replayed=False,
         )
 
