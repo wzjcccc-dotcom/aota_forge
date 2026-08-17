@@ -79,3 +79,49 @@ class DelegatingSemanticResolver:
     def semantic_ref_to_object_ref(self, semantic_ref: str) -> ObjectRef:
         reject_non_semantic_ref(semantic_ref)
         return self._delegate.semantic_ref_to_object_ref(semantic_ref)
+
+
+class GraphBindingSemanticResolver:
+    """Concrete binding-backed resolver (M3-B9, ``B4 SemanticRefResolver``).
+
+    Layers the B9 ``SubjectBindingResolver`` (canonical-graph candidate
+    enumeration + deterministic 0/1/many classification) behind the B4
+    ``SemanticRefResolver`` Protocol.  Structural gates from this module
+    (``classify_ref`` / ``reject_non_semantic_ref``) still reject raw internal
+    IDs and legacy pointers before any binding happens
+    (``MODEL_INTERNAL_IDS_NORMAL_INPUT=no``).
+
+    ``semantic_ref_to_object_ref`` returns the canonical ObjectRef ONLY for a
+    deterministic single-candidate BOUND.  Any other bounded outcome raises
+    ``SemanticRefRejectedError`` with deterministic details; no heuristic
+    selection and no authority decision is ever performed here
+    (``HEURISTIC_SUBJECT_SELECTION_ALLOWED=no``,
+    ``SUBJECT_BINDING_IMPLIES_MUTATION_AUTHORITY=no``,
+    ``B9_PERFORMS_AUTHORITY_DECISION=no``).
+    """
+
+    SEMANTIC_REF_RESOLVER_PERFORMS_AUTHORITY_DECISION = False
+    B9_PERFORMS_AUTHORITY_DECISION = False
+    SUBJECT_BINDING_IMPLIES_MUTATION_AUTHORITY = False
+    HEURISTIC_SUBJECT_SELECTION_ALLOWED = False
+
+    def __init__(self, binder: object, subject_sub_kind: str | None = None) -> None:
+        from aota_forge.core.binding.request import BindingRequest
+
+        self._binder = binder
+        self._subject_sub_kind = subject_sub_kind
+        self._BindingRequest = BindingRequest
+
+    def semantic_ref_to_object_ref(self, semantic_ref: str) -> ObjectRef:
+        reject_non_semantic_ref(semantic_ref)
+        request = self._BindingRequest(
+            semantic_ref=semantic_ref,
+            subject_sub_kind=self._subject_sub_kind,
+        )
+        result = self._binder.bind(request)
+        if result.status.value == "BOUND" and result.subject_ref is not None:
+            return result.subject_ref
+        raise SemanticRefRejectedError(
+            f"semantic reference did not resolve to exactly one subject: {result.status.value}",
+            details={"status": result.status.value},
+        )

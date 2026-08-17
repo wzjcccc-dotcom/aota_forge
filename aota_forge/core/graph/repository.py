@@ -20,6 +20,21 @@ is a fixture-only, isolated, non-authoritative store
 
 ``OBJECT_REF_IS_AUTHORITY=no``: an ObjectRef identifies a record for lookup; it
 never grants authority (``OBJECT_REF_AUTHORITY_SEMANTICS_OWNER=M3-B5``).
+
+Candidate-query extensions (owned by M3-B9):
+
+* ``subjects_by_scope``           — deterministic listing by workflow scope /
+  subject-kind discriminator
+* ``subjects_matching_semantic_ref`` — deterministic index listing over
+  canonical identity values derived from a semantic ref
+* ``followup_children_of``        — canonical Decision-backed child lineage
+
+These are deterministic candidate-query primitives only.  The repository never
+selects one candidate, never ranks candidates, never uses recency or current
+pointers, and never makes a semantic or authority decision
+(``GRAPH_REPOSITORY_PERFORMS_SEMANTIC_CHOICE=no``;
+``GRAPH_REPOSITORY_RETURNS_CANDIDATES_ONLY=yes``).  Ordering uses only canonical
+stable identity fields so candidate lists are reproducible.
 """
 
 from __future__ import annotations
@@ -32,6 +47,12 @@ from aota_forge.core.identity.kinds import IdKind
 from aota_forge.core.identity.refs import ObjectRef, make_object_ref
 from aota_forge.core.identity.errors import ObjectRefError, WrongKindIdError
 from aota_forge.core.graph import records
+
+# B9 candidate-query boundary signals.
+GRAPH_REPOSITORY_PERFORMS_SEMANTIC_CHOICE = False
+GRAPH_REPOSITORY_RETURNS_CANDIDATES_ONLY = True
+CANDIDATE_QUERY_SOURCE_IS_CANONICAL_GRAPH = True
+CANDIDATE_LIST_ORDER_DETERMINISTIC = True
 
 
 class GraphNotFoundError(LookupError):
@@ -131,6 +152,56 @@ class GraphRepository(abc.ABC):
     @abc.abstractmethod
     def subjects(self) -> list[records.Subject]:
         ...
+
+    # -- B9 deterministic candidate-query primitives -------------------------
+    # Owned by M3-B9 (subject binding / recovery).  These return candidate
+    # LISTS only; they never select, rank, or interpret a candidate.
+
+    @abc.abstractmethod
+    def subjects_by_scope(
+        self,
+        *,
+        workflow_ref: InternalId | None = None,
+        sub_kind: str | None = None,
+    ) -> list[records.Subject]:
+        """Deterministic Subject candidates constrained by scope facts.
+
+        ``workflow_ref`` narrows to Subjects whose canonical ``workflow_ref``
+        equals the supplied workflow identity (a canonical lineage/scope
+        fact).  ``sub_kind`` narrows to a stable subject-kind discriminator.
+        Ordering is by canonical stable identity field only.
+        """
+
+    @abc.abstractmethod
+    def subjects_matching_semantic_ref(
+        self,
+        semantic_ref: str,
+        *,
+        sub_kind: str | None = None,
+    ) -> list[records.Subject]:
+        """Deterministic Subject candidates that canonically match a semantic ref.
+
+        The semantic boundary rejects raw/legacy IDs before this primitive is
+        ever consulted; only well-formed semantic public refs reach the graph.
+        Matching uses canonical deterministic identity fields (the stable
+        subject-kind / identity derivation), never title/digest/recency.
+        """
+
+    @abc.abstractmethod
+    def followup_children_of(
+        self,
+        subject_ref: ObjectRef,
+        *,
+        decision_ref: ObjectRef | None = None,
+        candidate_sub_kind: str | None = None,
+    ) -> list[records.FollowupEdge]:
+        """Deterministic Decision-backed followup child edges of one Subject.
+
+        Returns FollowupEdge candidates grounded in canonical Decision-backed
+        lineage (``FOLLOWUP_EDGE_REQUIRES_DECISION_REF=yes``).  Never defaults
+        to guesswork or subtree heuristics; order is deterministic by canonical
+        child Subject identity.
+        """
 
 
 class OwningSubjectResolver:
@@ -395,6 +466,78 @@ class InMemoryGraphRepository(GraphRepository):
 
     def subjects(self) -> list[records.Subject]:
         return sorted(self._subjects.values(), key=lambda s: s.subject_id.value)
+
+    # -- B9 deterministic candidate-query primitives (owned by M3-B9) --------
+
+    def subjects_by_scope(
+        self,
+        *,
+        workflow_ref: InternalId | None = None,
+        sub_kind: str | None = None,
+    ) -> list[records.Subject]:
+        """Deterministic candidate listing constrained by canonical scope facts."""
+        results = []
+        for subject in self._subjects.values():
+            if workflow_ref is not None and subject.workflow_ref != workflow_ref:
+                continue
+            if sub_kind is not None and subject.subject_id.sub_kind != sub_kind:
+                continue
+            results.append(subject)
+        return sorted(results, key=lambda s: s.subject_id.value)
+
+    def subjects_matching_semantic_ref(
+        self,
+        semantic_ref: str,
+        *,
+        sub_kind: str | None = None,
+        identity_values: tuple[str, ...] = (),
+    ) -> list[records.Subject]:
+        """Deterministic candidate listing over canonical stable identity facts.
+
+        ``identity_values`` are canonical stable identity values derived from
+        the semantic public ref by the binding layer (B9).  When provided, only
+        Subjects whose canonical identity exactly equals one of those values
+        are candidates.  If ``identity_values`` is empty, only an exact match
+        between the semantic ref and a canonical identity value is considered;
+        the repository never invents or heuristically interprets an identity
+        for an unknown value.  Ordering is by canonical subject identity.
+        """
+        exact = tuple(identity_values) if identity_values else (semantic_ref,)
+        results = []
+        for subject in self._subjects.values():
+            if sub_kind is not None and subject.subject_id.sub_kind != sub_kind:
+                continue
+            if subject.subject_id.value not in exact:
+                continue
+            results.append(subject)
+        return sorted(results, key=lambda s: s.subject_id.value)
+
+    def followup_children_of(
+        self,
+        subject_ref: ObjectRef,
+        *,
+        decision_ref: ObjectRef | None = None,
+        candidate_sub_kind: str | None = None,
+    ) -> list[records.FollowupEdge]:
+        """Deterministic Decision-backed FollowupEdge candidates of one Subject."""
+        assert_object_ref_kind(subject_ref, IdKind.SUBJECT, "subject")
+        target = subject_ref.internal_id.value
+        decision_value = decision_ref.internal_id.value if decision_ref is not None else None
+        results = []
+        for edge in self._edges.values():
+            if edge.parent_subject_ref.value != target:
+                continue
+            if decision_value is not None and edge.source_decision_ref.value != decision_value:
+                continue
+            if candidate_sub_kind is not None:
+                child = self._subjects.get(edge.child_subject_ref.value)
+                if child is None or child.subject_id.sub_kind != candidate_sub_kind:
+                    continue
+            results.append(edge)
+        return sorted(
+            results,
+            key=lambda e: (e.child_subject_ref.value, e.edge_id.value),
+        )
 
     def __iter__(self) -> Iterator["records._AnyRecord"]:
         yield from sorted(self._workflows.values(), key=lambda r: r.workflow_id.value)
