@@ -12,14 +12,13 @@ authoritative runtime graph write.
 
 Identity model boundary (M3-B3 vs M3-B4):
 
-* M3-B4 owns label ``SUBJECT_ID_PRIMITIVE`` / ``RECORD_ID_PRIMITIVES`` and the
-  concrete durable ID implementation.  M3-B3 must NOT invent a conflicting
-  durable ID implementation.
-* M3-B3 therefore defines records against a minimal, validated, OPAQUE value
-  boundary (strategy B): a ``CanonicalId`` carrying a bounded opaque token and
-  a ``kind``.  It constructs records and enforces structural referential
-  consistency, but performs NO minting, collision, reuse, derivation, or
-  authority semantics, and never infers authority from an ID.
+* M3-B4 owns ``SUBJECT_ID_PRIMITIVE`` / ``RECORD_ID_PRIMITIVES`` and the
+  concrete durable ID implementation.  B3's temporary ``CanonicalId`` has been
+  retired; record ID fields now consume B4 ``InternalId`` directly
+  (``B4_INTERNAL_ID_IS_CANONICAL_ID_PRIMITIVE=yes``).
+* B3 record dataclasses consume ``InternalId`` (B4 primitive).  B3 does NOT
+  redefine minting, collision, no-reuse, deterministic identity derivation, or
+  the ObjectRef wire format.
 * ``SUBJECT_ID_IS_AUTHORITY=no``; IDs identify records only.
 
 Canonical ownership invariants (structurally enforced here and by the
@@ -39,7 +38,8 @@ from dataclasses import dataclass, field
 
 from typing import Union
 
-from aota_forge.core.graph.ids import CanonicalId, IdKind, ref_of
+from aota_forge.core.identity.ids import InternalId, make_id
+from aota_forge.core.identity.kinds import IdKind
 
 # Union of all canonical graph record types, used by the repository/store API.
 # Declared via forward references to the classes defined below.
@@ -55,7 +55,7 @@ _AnyRecord = Union["Workflow", "Subject", "Execution", "Completion", "Decision",
 class Workflow:
     """Durable record of the semantic intent of one unit of work (issue #9)."""
 
-    workflow_id: CanonicalId
+    workflow_id: InternalId
     semantic_intent: str
     creation_context: dict
     goal: str = ""
@@ -66,7 +66,7 @@ class Workflow:
 
     def canonical_fields(self) -> dict:
         return {
-            "workflow_id": self.workflow_id.value,
+            "workflow_id": self.workflow_id.to_canonical(),
             "semantic_intent": self.semantic_intent,
             "goal": self.goal,
             "scope": self.scope,
@@ -91,18 +91,18 @@ class Subject:
     identity never becomes Subject identity.
     """
 
-    subject_id: CanonicalId
+    subject_id: InternalId
     kind: str
     mechanical_state: dict
     id_derivation: str
-    workflow_ref: CanonicalId | None = None
+    workflow_ref: InternalId | None = None
     creation_context: dict = field(default_factory=dict)
 
     def canonical_fields(self) -> dict:
         return {
-            "subject_id": self.subject_id.value,
+            "subject_id": self.subject_id.to_canonical(),
             "kind": self.kind,
-            "workflow_ref": self.workflow_ref.value if self.workflow_ref else None,
+            "workflow_ref": self.workflow_ref.to_canonical() if self.workflow_ref else None,
             "mechanical_state": dict(self.mechanical_state),
             "creation_context": dict(self.creation_context),
             "id_derivation": self.id_derivation,
@@ -122,8 +122,8 @@ class Execution:
     Subject (never a new Subject).  ``EXECUTION_OWNING_SUBJECT_REQUIRED=yes``.
     """
 
-    execution_id: CanonicalId
-    subject_ref: CanonicalId
+    execution_id: InternalId
+    subject_ref: InternalId
     executor_kind: str
     mechanical_status: str
     executor_execution_ref: str | None = None
@@ -133,8 +133,8 @@ class Execution:
 
     def canonical_fields(self) -> dict:
         return {
-            "execution_id": self.execution_id.value,
-            "subject_ref": self.subject_ref.value,
+            "execution_id": self.execution_id.to_canonical(),
+            "subject_ref": self.subject_ref.to_canonical(),
             "executor_kind": self.executor_kind,
             "executor_execution_ref": self.executor_execution_ref,
             "correlation_id": self.correlation_id,
@@ -158,16 +158,16 @@ class Completion:
     transitively via ``execution_ref`` -> Execution -> owning Subject.
     """
 
-    completion_id: CanonicalId
-    execution_ref: CanonicalId
+    completion_id: InternalId
+    execution_ref: InternalId
     outcome: str
     evidence_refs: list = field(default_factory=list)
     recorded_at: str | None = None
 
     def canonical_fields(self) -> dict:
         return {
-            "completion_id": self.completion_id.value,
-            "execution_ref": self.execution_ref.value,
+            "completion_id": self.completion_id.to_canonical(),
+            "execution_ref": self.execution_ref.to_canonical(),
             "outcome": self.outcome,
             "evidence_refs": self.evidence_refs,
             "recorded_at": self.recorded_at,
@@ -188,8 +188,8 @@ class Decision:
     edge creation (evaluated by the M3-B5 Authority Engine, not here).
     """
 
-    decision_id: CanonicalId
-    subject_ref: CanonicalId
+    decision_id: InternalId
+    subject_ref: InternalId
     decision_kind: str
     statement: str
     target_refs: list = field(default_factory=list)
@@ -198,8 +198,8 @@ class Decision:
 
     def canonical_fields(self) -> dict:
         return {
-            "decision_id": self.decision_id.value,
-            "subject_ref": self.subject_ref.value,
+            "decision_id": self.decision_id.to_canonical(),
+            "subject_ref": self.subject_ref.to_canonical(),
             "decision_kind": self.decision_kind,
             "statement": self.statement,
             "target_refs": self.target_refs,
@@ -223,72 +223,76 @@ class FollowupEdge:
     referential consistency only.
     """
 
-    edge_id: CanonicalId
-    parent_subject_ref: CanonicalId
-    child_subject_ref: CanonicalId
-    source_decision_ref: CanonicalId
+    edge_id: InternalId
+    parent_subject_ref: InternalId
+    child_subject_ref: InternalId
+    source_decision_ref: InternalId
     rationale: str | None = None
     created_at: str | None = None
 
     def canonical_fields(self) -> dict:
         return {
-            "edge_id": self.edge_id.value,
-            "parent_subject_ref": self.parent_subject_ref.value,
-            "child_subject_ref": self.child_subject_ref.value,
-            "source_decision_ref": self.source_decision_ref.value,
+            "edge_id": self.edge_id.to_canonical(),
+            "parent_subject_ref": self.parent_subject_ref.to_canonical(),
+            "child_subject_ref": self.child_subject_ref.to_canonical(),
+            "source_decision_ref": self.source_decision_ref.to_canonical(),
             "rationale": self.rationale,
             "created_at": self.created_at,
         }
 
 
-def workflow(workflow_id: str, **kwargs) -> Workflow:
-    return Workflow(workflow_id=ref_of(IdKind.WORKFLOW, workflow_id), **kwargs)
+def workflow(workflow_id: InternalId, **kwargs) -> Workflow:
+    return Workflow(workflow_id=workflow_id, **kwargs)
 
 
-def subject(subject_id: str, kind: str, *, workflow_ref=None, **kwargs) -> Subject:
-    if workflow_ref is not None and not isinstance(workflow_ref, CanonicalId):
-        workflow_ref = ref_of(IdKind.WORKFLOW, workflow_ref)
+def subject(subject_id: InternalId, kind: str, *, workflow_ref: InternalId | None = None, **kwargs) -> Subject:
     return Subject(
-        subject_id=ref_of(IdKind.SUBJECT, subject_id),
+        subject_id=subject_id,
         kind=kind,
         workflow_ref=workflow_ref,
         **kwargs,
     )
 
 
-def execution(execution_id: str, subject_ref, executor_kind: str, **kwargs) -> Execution:
+def execution(execution_id: InternalId, subject_ref: InternalId, executor_kind: str, **kwargs) -> Execution:
     return Execution(
-        execution_id=ref_of(IdKind.EXECUTION, execution_id),
-        subject_ref=ref_of(IdKind.SUBJECT, subject_ref),
+        execution_id=execution_id,
+        subject_ref=subject_ref,
         executor_kind=executor_kind,
         **kwargs,
     )
 
 
-def completion(completion_id: str, execution_ref, outcome: str, **kwargs) -> Completion:
+def completion(completion_id: InternalId, execution_ref: InternalId, outcome: str, **kwargs) -> Completion:
     return Completion(
-        completion_id=ref_of(IdKind.COMPLETION, completion_id),
-        execution_ref=ref_of(IdKind.EXECUTION, execution_ref),
+        completion_id=completion_id,
+        execution_ref=execution_ref,
         outcome=outcome,
         **kwargs,
     )
 
 
-def decision(decision_id: str, subject_ref, decision_kind: str, statement: str, **kwargs) -> Decision:
+def decision(decision_id: InternalId, subject_ref: InternalId, decision_kind: str, statement: str, **kwargs) -> Decision:
     return Decision(
-        decision_id=ref_of(IdKind.DECISION, decision_id),
-        subject_ref=ref_of(IdKind.SUBJECT, subject_ref),
+        decision_id=decision_id,
+        subject_ref=subject_ref,
         decision_kind=decision_kind,
         statement=statement,
         **kwargs,
     )
 
 
-def followup_edge(edge_id: str, parent_subject_ref, child_subject_ref, source_decision_ref, **kwargs) -> FollowupEdge:
+def followup_edge(
+    edge_id: InternalId,
+    parent_subject_ref: InternalId,
+    child_subject_ref: InternalId,
+    source_decision_ref: InternalId,
+    **kwargs,
+) -> FollowupEdge:
     return FollowupEdge(
-        edge_id=ref_of(IdKind.EDGE, edge_id),
-        parent_subject_ref=ref_of(IdKind.SUBJECT, parent_subject_ref),
-        child_subject_ref=ref_of(IdKind.SUBJECT, child_subject_ref),
-        source_decision_ref=ref_of(IdKind.DECISION, source_decision_ref),
+        edge_id=edge_id,
+        parent_subject_ref=parent_subject_ref,
+        child_subject_ref=child_subject_ref,
+        source_decision_ref=source_decision_ref,
         **kwargs,
     )

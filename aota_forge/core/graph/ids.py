@@ -1,80 +1,57 @@
-"""M3-B3 opaque validated ID value boundary (B4-safe strategy B).
+"""Graph record ID boundary — B4 canonical identity primitives.
 
-M3-B4 owns ``SUBJECT_ID_PRIMITIVE`` / ``RECORD_ID_PRIMITIVES`` / the ID broker,
-mint/collision/reuse/derivation rules and the ObjectRef parser.  M3-B3 MUST NOT
-duplicate or redefine any of that.
+The temporary B3 ``CanonicalId`` value object has been RETIRED.  Graph records
+now consume B4's ``InternalId`` as the canonical ID primitive
+(``B4_INTERNAL_ID_IS_CANONICAL_ID_PRIMITIVE=yes``,
+``B3_TEMPORARY_CANONICAL_ID_RETIRED=yes``, ``DUPLICATE_CANONICAL_ID_MODELS=no``).
 
-B3 therefore defines only a minimal, validated, OPAQUE value object that is
-sufficient to construct durable graph records.  Semantic properties of this
-boundary:
+This module re-exports the B4 identity primitives consumed by the graph layer so
+graph-side imports remain stable.  B3 does NOT redefine minting, collision,
+no-reuse, deterministic identity derivation, or the ObjectRef wire format — all
+of those are owned by M3-B4 (``RECORD_ID_PRIMITIVES_OWNER=M3-B4``).
 
-* it validates that a value is a bounded plain token for its kind
-* it carries NO minting, collision, reuse, derivation, or authority semantics
-* an ID never confers authority (``SUBJECT_ID_IS_AUTHORITY=no``); IDs identify
-  records only and must not be used to infer authority
-
-Concrete M3-B4 integration is deferred; see the B4 interface boundary report in
-the validator fixtures.
+``ID_IS_AUTHORITY=no``: an ``InternalId`` identifies and validates shape only;
+it never grants authority (``SUBJECT_ID_IS_AUTHORITY=no``).
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
+from aota_forge.core.identity.ids import (
+    InternalId,
+    canonical_id_str,
+    is_raw_canonical_id_string,
+    make_id,
+    parse_internal_id,
+    subject_id_from_value,
+)
+from aota_forge.core.identity.kinds import (
+    DETERMINISTIC_SUBJECT_KINDS,
+    GRAPH_OBJECT_KINDS,
+    IdKind,
+    MINTED_SUBJECT_KINDS,
+    SUBJECT_KINDS,
+    SubjectKind,
+    is_known_graph_kind,
+    is_known_subject_kind,
+    require_graph_kind,
+    require_subject_kind,
+)
 
-ID_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-
-
-class IdKind:
-    """Bounded opaque ID kinds (namespace only; no authority semantics)."""
-
-    WORKFLOW = "workflow"
-    SUBJECT = "subject"
-    EXECUTION = "execution"
-    COMPLETION = "completion"
-    DECISION = "decision"
-    EDGE = "edge"
-
-
-ALL_KINDS = frozenset({
-    IdKind.WORKFLOW,
-    IdKind.SUBJECT,
-    IdKind.EXECUTION,
-    IdKind.COMPLETION,
-    IdKind.DECISION,
-    IdKind.EDGE,
-})
-
-
-@dataclass(frozen=True)
-class CanonicalId:
-    """An opaque, validated canonical identity value.
-
-    Immutable and hashable.  Validation is bounded and format-only; no minting
-    or authority semantics are implemented here (M3-B4 owns the durable ID
-    implementation).  B3 must not mint Subject IDs (``B3_MAY_MINT_SUBJECT_IDS=no``);
-    fixtures supply opaque values.
-    """
-
-    kind: str
-    value: str
-
-    def __post_init__(self) -> None:
-        if self.kind not in ALL_KINDS:
-            raise ValueError(f"unknown id kind: {self.kind!r}")
-        if not isinstance(self.value, str):
-            raise TypeError(f"{self.kind} id value must be a string")
-        if not ID_TOKEN_RE.fullmatch(self.value):
-            raise ValueError(f"{self.kind} id value is not a bounded plain token: {self.value!r}")
-
-    def __repr__(self) -> str:
-        return f"CanonicalId({self.kind}:{self.value!r})"
-
-
-def ref_of(kind: str, value: str) -> CanonicalId:
-    """Construct an opaque validated ID from a bounded plain token."""
-    return CanonicalId(kind=kind, value=value)
-
-
-def subject_id(value: str) -> CanonicalId:
-    return ref_of(IdKind.SUBJECT, value)
+__all__ = [
+    "DETERMINISTIC_SUBJECT_KINDS",
+    "GRAPH_OBJECT_KINDS",
+    "IdKind",
+    "MINTED_SUBJECT_KINDS",
+    "InternalId",
+    "SUBJECT_KINDS",
+    "SubjectKind",
+    "canonical_id_str",
+    "is_known_graph_kind",
+    "is_known_subject_kind",
+    "is_raw_canonical_id_string",
+    "make_id",
+    "parse_internal_id",
+    "require_graph_kind",
+    "require_subject_kind",
+    "subject_id_from_value",
+]

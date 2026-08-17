@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """M3-B3 durable subject graph foundation validator (issue #9, lane M3-B3).
 
-Validates the accepted canonical graph record foundation on the exact common
-base 7e9d556.  It exercises the isolated, non-authoritative in-memory repository
-and the mechanical owning-Subject resolver defined under aota_forge/core/graph/.
+Validates the accepted canonical graph record foundation.  It exercises the
+isolated, non-authoritative in-memory repository and the mechanical
+owning-Subject resolver defined under aota_forge/core/graph/.
+
+Record ID fields consume B4 ``InternalId`` (``B4_INTERNAL_ID_IS_CANONICAL_ID_PRIMITIVE=yes``).
+The temporary B3 ``CanonicalId`` has been retired; this fixture was minimally
+reconciled to construct records via B4 identity primitives.
 
 Covers B3-N1..B3-N11 plus the M3-B3 negative reversion proofs.  Every check is
 source-only and deterministic; it never creates authoritative graph state,
@@ -45,39 +49,59 @@ def _materialize_foundation():
     """Isolated deterministic fixture + owning-Subject resolver.
 
     Returns a tuple (repo, resolver, refs) where refs carries the canonical
-    references used by the structural checks.
+    ObjectRefs used by the structural checks.
     """
+    from aota_forge.core.identity.ids import make_id
+    from aota_forge.core.identity.kinds import IdKind, SubjectKind
+    from aota_forge.core.identity.refs import make_object_ref
     from aota_forge.core.graph import records
     from aota_forge.core.graph.repository import InMemoryGraphRepository, OwningSubjectResolver
 
-    wf = records.workflow("wf-1", semantic_intent="rebuild auth", creation_context={"source": "plan"})
+    wf_id = make_id(IdKind.WORKFLOW, "wf-1")
+    sub_a_id = make_id(IdKind.SUBJECT, "sub-a", sub_kind=SubjectKind.WORK)
+    sub_b_id = make_id(IdKind.SUBJECT, "sub-b", sub_kind=SubjectKind.WORK)
+    exec_id = make_id(IdKind.EXECUTION, "exec-1")
+    cmp_id = make_id(IdKind.COMPLETION, "cmp-1")
+    dec_id = make_id(IdKind.DECISION, "dec-1")
+    edge_id = make_id(IdKind.EDGE, "edge-1")
+
+    wf = records.workflow(wf_id, semantic_intent="rebuild auth", creation_context={"source": "plan"})
     sub_a = records.subject(
-        "sub-a", kind="WorkSubject", workflow_ref="wf-1",
+        sub_a_id, kind="WorkSubject", workflow_ref=wf_id,
         mechanical_state={"state": "open"}, id_derivation="minted",
     )
     sub_b = records.subject(
-        "sub-b", kind="WorkSubject", workflow_ref="wf-1",
+        sub_b_id, kind="WorkSubject", workflow_ref=wf_id,
         mechanical_state={"state": "open"}, id_derivation="minted",
     )
     ex1 = records.execution(
-        "exec-1", "sub-a", "hermes", executor_execution_ref="t-1", mechanical_status="completed",
+        exec_id, sub_a_id, "hermes", executor_execution_ref="t-1", mechanical_status="completed",
     )
-    cp1 = records.completion("cmp-1", "exec-1", "success", evidence_refs=["ev-1"])
-    dec1 = records.decision("dec-1", "sub-a", "project_binding", "bind sub-a to P1")
-    edge1 = records.followup_edge("edge-1", "sub-a", "sub-b", "dec-1")
+    cp1 = records.completion(cmp_id, exec_id, "success", evidence_refs=["ev-1"])
+    dec1 = records.decision(dec_id, sub_a_id, "project_binding", "bind sub-a to P1")
+    edge1 = records.followup_edge(edge_id, sub_a_id, sub_b_id, dec_id)
 
     repo = InMemoryGraphRepository()
     for record in (wf, sub_a, sub_b, ex1, cp1, dec1, edge1):
         repo.store(record)
     resolver = OwningSubjectResolver(repo)
     refs = {
-        "workflow": wf.workflow_id,
-        "subject_a": sub_a.subject_id,
-        "subject_b": sub_b.subject_id,
-        "execution": ex1.execution_id,
-        "completion": cp1.completion_id,
-        "decision": dec1.decision_id,
-        "edge": edge1.edge_id,
+        "workflow": make_object_ref(IdKind.WORKFLOW, wf_id),
+        "subject_a": make_object_ref(IdKind.SUBJECT, sub_a_id),
+        "subject_b": make_object_ref(IdKind.SUBJECT, sub_b_id),
+        "execution": make_object_ref(IdKind.EXECUTION, exec_id),
+        "completion": make_object_ref(IdKind.COMPLETION, cmp_id),
+        "decision": make_object_ref(IdKind.DECISION, dec_id),
+        "edge": make_object_ref(IdKind.EDGE, edge_id),
+        "_ids": {
+            "workflow": wf_id,
+            "subject_a": sub_a_id,
+            "subject_b": sub_b_id,
+            "execution": exec_id,
+            "completion": cmp_id,
+            "decision": dec_id,
+            "edge": edge_id,
+        },
         "_records": (wf, sub_a, sub_b, ex1, cp1, dec1, edge1),
     }
     return repo, resolver, refs
@@ -117,14 +141,14 @@ def _n1_n2(repo, refs):
 
 
 def _n3_n9(repo, resolver, refs):
-    from aota_forge.core.graph.ids import IdKind, ref_of
+    from aota_forge.core.identity.kinds import IdKind
     from aota_forge.core.graph.repository import GraphNotFoundError, GraphReferentialError
 
     exec_ref = refs["execution"]
     cp_ref = refs["completion"]
     dec_ref = refs["decision"]
-    sub_a = refs["subject_a"]
-    sub_b = refs["subject_b"]
+    sub_a = refs["_ids"]["subject_a"]
+    sub_b = refs["_ids"]["subject_b"]
 
     # B3-N3: Execution -> Subject ownership resolution.
     owner = resolver.owning_subject_of_execution(exec_ref)
@@ -154,7 +178,7 @@ def _n3_n9(repo, resolver, refs):
     # B3-N7: Decision-backed FollowupEdge; parent/child/decision present.
     edge = repo.edges()[0]
     check("B3-N7_edge_requires_source_decision",
-          edge.source_decision_ref.value == dec_ref.value,
+          edge.source_decision_ref.value == dec_ref.internal_id.value,
           edge.source_decision_ref.value)
     check("B3-N7_edge_parent_child_referenced",
           edge.parent_subject_ref.value == sub_a.value
@@ -185,31 +209,43 @@ def _n3_n9(repo, resolver, refs):
 
 
 def _try_orphan_completion():
+    from aota_forge.core.identity.ids import make_id
+    from aota_forge.core.identity.kinds import IdKind
     from aota_forge.core.graph import records
     from aota_forge.core.graph.repository import InMemoryGraphRepository
 
+    wf_id = make_id(IdKind.WORKFLOW, "wf-x")
+    exec_missing = make_id(IdKind.EXECUTION, "exec-missing")
+    cmp_id = make_id(IdKind.COMPLETION, "cmp-orphan")
     repo = InMemoryGraphRepository(enforce_referential=True)
-    repo.store(records.workflow("wf-x", semantic_intent="x", creation_context={}))
-    repo.store(records.completion("cmp-orphan", "exec-missing", "success"))
+    repo.store(records.workflow(wf_id, semantic_intent="x", creation_context={}))
+    repo.store(records.completion(cmp_id, exec_missing, "success"))
     return "unreachable"
 
 
 def _try_edge_missing_decision():
+    from aota_forge.core.identity.ids import make_id
+    from aota_forge.core.identity.kinds import IdKind, SubjectKind
     from aota_forge.core.graph import records
     from aota_forge.core.graph.repository import InMemoryGraphRepository
     repo = InMemoryGraphRepository(enforce_referential=True)
-    repo.store(records.workflow("wf-y", semantic_intent="y", creation_context={}))
-    repo.store(records.subject("sub-p", kind="WorkSubject", workflow_ref="wf-y",
+    wf_id = make_id(IdKind.WORKFLOW, "wf-y")
+    sub_p = make_id(IdKind.SUBJECT, "sub-p", sub_kind=SubjectKind.WORK)
+    sub_c = make_id(IdKind.SUBJECT, "sub-c", sub_kind=SubjectKind.WORK)
+    dec_none = make_id(IdKind.DECISION, "dec-none")
+    edge_bad = make_id(IdKind.EDGE, "edge-bad")
+    repo.store(records.workflow(wf_id, semantic_intent="y", creation_context={}))
+    repo.store(records.subject(sub_p, kind="WorkSubject", workflow_ref=wf_id,
                                mechanical_state={"s": "open"}, id_derivation="minted"))
-    repo.store(records.subject("sub-c", kind="WorkSubject", workflow_ref="wf-y",
+    repo.store(records.subject(sub_c, kind="WorkSubject", workflow_ref=wf_id,
                                mechanical_state={"s": "open"}, id_derivation="minted"))
-    repo.store(records.followup_edge("edge-bad", "sub-p", "sub-c", "dec-none"))
+    repo.store(records.followup_edge(edge_bad, sub_p, sub_c, dec_none))
     return "unreachable"
 
 
 def _n10(repo, refs):
-    from aota_forge.core.graph import records
-    from aota_forge.core.graph.ids import ref_of, IdKind
+    from aota_forge.core.identity.ids import make_id
+    from aota_forge.core.identity.kinds import IdKind
     from aota_forge.core.graph.repository import InMemoryGraphRepository, GraphReferentialError
 
     # B3-N10: Git / current pointer / executor-private IDs must NOT be graph
@@ -219,13 +255,13 @@ def _n10(repo, refs):
     ok_plan = not hasattr(repo, "plan") and not hasattr(repo, "_legacy_plan")
     # executor-private id is never a Subject id (id_derivation stays opaque).
     exec_only = "t-1"
-    ok_private_id = exec_only != refs["subject_a"].value
+    ok_private_id = exec_only != refs["_ids"]["subject_a"].value
     check("B3-N10_current_pointer_not_authority", ok_pointer and ok_git and ok_plan, "")
     check("B3-N10_executor_private_id_not_subject_id", ok_private_id, exec_only)
 
     # The isolated store refuses to mint/derive authority; ids are opaque input.
     try:
-        ref_of("subject", "sub-a").value
+        make_id(IdKind.SUBJECT, "sub-a", sub_kind="work").value
         opaque_ok = True
     except Exception:
         opaque_ok = False
@@ -239,8 +275,16 @@ def _negative_reversion_proofs():
     when the canonical invariant would be violated, so any reversal of the
     invariant would break these checks.
     """
+    from aota_forge.core.identity.ids import make_id
+    from aota_forge.core.identity.kinds import IdKind, SubjectKind
+    from aota_forge.core.identity.refs import make_object_ref
     from aota_forge.core.graph import records
-    from aota_forge.core.graph.repository import InMemoryGraphRepository, GraphReferentialError
+    from aota_forge.core.graph.repository import (
+        InMemoryGraphRepository,
+        GraphReferentialError,
+        GraphNotFoundError,
+        OwningSubjectResolver,
+    )
 
     # Revert 1: Completion requiring a direct subject_ref.  B3 Completion has no
     # such field; a forged Completion with subject_ref is rejected by the store
@@ -252,9 +296,12 @@ def _negative_reversion_proofs():
     # Revert 2: Execution must keep its owning subject.  The store rejects an
     # Execution with no owning Subject.
     repo = InMemoryGraphRepository(enforce_referential=True)
-    repo.store(records.workflow("wf-r", semantic_intent="r", creation_context={}))
+    wf_id = make_id(IdKind.WORKFLOW, "wf-r")
+    repo.store(records.workflow(wf_id, semantic_intent="r", creation_context={}))
+    sub_no = make_id(IdKind.SUBJECT, "sub-no", sub_kind=SubjectKind.WORK)
+    exec_orphan = make_id(IdKind.EXECUTION, "exec-orphan")
     try:
-        repo.store(records.execution("exec-orphan", "sub-no", "hermes", mechanical_status="running"))
+        repo.store(records.execution(exec_orphan, sub_no, "hermes", mechanical_status="running"))
         orphan_rejected = False
     except (GraphReferentialError, ValueError):
         orphan_rejected = True
@@ -264,9 +311,12 @@ def _negative_reversion_proofs():
     # Revert 3: Decision must NOT become an independent aggregate root; it needs
     # an owning Subject.
     repo3 = InMemoryGraphRepository(enforce_referential=True)
-    repo3.store(records.workflow("wf-d", semantic_intent="d", creation_context={}))
+    wf_id3 = make_id(IdKind.WORKFLOW, "wf-d")
+    repo3.store(records.workflow(wf_id3, semantic_intent="d", creation_context={}))
+    sub_none = make_id(IdKind.SUBJECT, "sub-none", sub_kind=SubjectKind.WORK)
+    dec_orphan = make_id(IdKind.DECISION, "dec-orphan")
     try:
-        repo3.store(records.decision("dec-orphan", "sub-none", "project_binding", "x"))
+        repo3.store(records.decision(dec_orphan, sub_none, "project_binding", "x"))
         dec_orphan_rejected = False
     except (GraphReferentialError, ValueError):
         dec_orphan_rejected = True
@@ -275,13 +325,18 @@ def _negative_reversion_proofs():
 
     # Revert 4: FollowupEdge must require a source Decision.
     repo4 = InMemoryGraphRepository(enforce_referential=True)
-    repo4.store(records.workflow("wf-e", semantic_intent="e", creation_context={}))
-    repo4.store(records.subject("sub-p2", kind="WorkSubject", workflow_ref="wf-e",
+    wf_id4 = make_id(IdKind.WORKFLOW, "wf-e")
+    repo4.store(records.workflow(wf_id4, semantic_intent="e", creation_context={}))
+    sub_p2 = make_id(IdKind.SUBJECT, "sub-p2", sub_kind=SubjectKind.WORK)
+    sub_c2 = make_id(IdKind.SUBJECT, "sub-c2", sub_kind=SubjectKind.WORK)
+    repo4.store(records.subject(sub_p2, kind="WorkSubject", workflow_ref=wf_id4,
                                 mechanical_state={"s": "open"}, id_derivation="minted"))
-    repo4.store(records.subject("sub-c2", kind="WorkSubject", workflow_ref="wf-e",
+    repo4.store(records.subject(sub_c2, kind="WorkSubject", workflow_ref=wf_id4,
                                 mechanical_state={"s": "open"}, id_derivation="minted"))
+    dec_ghost = make_id(IdKind.DECISION, "dec-ghost")
+    edge_no_dec = make_id(IdKind.EDGE, "edge-no-dec")
     try:
-        repo4.store(records.followup_edge("edge-no-dec", "sub-p2", "sub-c2", "dec-ghost"))
+        repo4.store(records.followup_edge(edge_no_dec, sub_p2, sub_c2, dec_ghost))
         edge_no_dec_rejected = False
     except (GraphReferentialError, ValueError):
         edge_no_dec_rejected = True
@@ -298,11 +353,11 @@ def _negative_reversion_proofs():
 
     # Revert 6: heuristic owner selection must not be present.  Resolver fails
     # closed on unknown/ambiguous rather than heuristically selecting.
-    from aota_forge.core.graph.repository import OwningSubjectResolver, GraphNotFoundError
-    from aota_forge.core.graph.ids import ref_of
     resolver = OwningSubjectResolver(repo4)
+    unknown_iid = make_id(IdKind.SUBJECT, "does-not-exist", sub_kind=SubjectKind.WORK)
+    unknown_ref = make_object_ref(IdKind.SUBJECT, unknown_iid)
     try:
-        resolver.resolve_subject(ref_of("subject", "does-not-exist"))
+        resolver.resolve_subject(unknown_ref)
         heuristic = False
     except (GraphNotFoundError, LookupError):
         heuristic = True
