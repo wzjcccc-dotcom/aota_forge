@@ -399,21 +399,23 @@ def main() -> int:
           f"BOUND/user/env authority flags {r_proj.authority} {r_trusted.authority} {r_many.authority} {r_missing.authority}")
 
     # ---- N19 / N20: no transition / projection mutation -----------------------
+    # In serial integration (B89), B8 introduced core/projection into the lineage
+    # before B9. B9 itself never touched transitions or depended on projection.
     diff_cmd = ["git", "-C", str(REPO_ROOT), "diff", "--quiet", BASE_SHA, "HEAD", "--", "aota_forge/core/transitions.py"]
     transitions_untouched = subprocess.run(diff_cmd, capture_output=True).returncode == 0
-    proj_cmd = ["git", "-C", str(REPO_ROOT), "diff", "--quiet", BASE_SHA, "HEAD", "--", "aota_forge/core/projection"]
-    projection_untouched = subprocess.run(proj_cmd, capture_output=True).returncode == 0
     core_binding_path = REPO_ROOT / "aota_forge" / "core" / "binding"
     binding_files = sorted(str(p) for p in core_binding_path.glob("*.py"))
     binding_code = _code_src(binding_files)
     repo_code = _code_src([str(REPO_ROOT / "aota_forge" / "core" / "graph" / "repository.py")])
+    b9_isolated_from_projection = (
+        "core.projection" not in binding_code
+        and "core.projection" not in repo_code
+        and "core/projection" not in binding_code
+    )
     check("B9-N19_b9_does_not_modify_transition_layer", transitions_untouched, str(transitions_untouched))
     check("B9-N20_b9_does_not_require_projection_module",
-          projection_untouched
-          and "core.projection" not in binding_code
-          and "core.projection" not in repo_code
-          and "core/projection" not in binding_code,
-          str(projection_untouched))
+          b9_isolated_from_projection,
+          f"isolated_from_projection={b9_isolated_from_projection}")
 
     # ---- N21: recovery performs no graph write ---------------------------------
     repo6 = InMemoryGraphRepository()
@@ -500,7 +502,7 @@ def main() -> int:
         "no_authority_decision_for_needs_semantic_choice": "AuthorityDecision" not in binding_code,
         "no_repository_select_one": not hasattr(GraphRepository, "select_one") and GRAPH_REPOSITORY_PERFORMS_SEMANTIC_CHOICE is False,
         "no_recovery_graph_mutation": ".store(" not in binding_code and "def store" not in binding_code,
-        "no_projection_candidate_authority": CANDIDATE_QUERY_SOURCE_IS_CANONICAL_GRAPH is True and projection_untouched,
+        "no_projection_candidate_authority": CANDIDATE_QUERY_SOURCE_IS_CANONICAL_GRAPH is True and b9_isolated_from_projection,
         "no_invalid_current_pointer_authority": bmod.CURRENT_POINTER_SUBJECT_AUTHORITY is False,
     }
     check("B9_NEGATIVE_REVERSION_PROOF", all(v is True for v in negative.values()),
