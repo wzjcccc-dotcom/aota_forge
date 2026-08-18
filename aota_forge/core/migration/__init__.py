@@ -1,0 +1,134 @@
+"""M3-B11 migration mechanics module (Issue #9, Lane M3-B11).
+
+Provides:
+- Bounded MigrationInput and MigrationInputManifest with explicit classification
+- Deterministic provenance tracking with ProvenanceRecord and ProvenanceManifest
+- Deterministic MigrationTransformer reusing B3 canonical records and B4 identity
+- MigrationReceipt audit evidence model
+- ComparisonEvidence model for legacy vs shadow comparison
+- ShadowBootstrapService and B11ToB12Handoff bundle
+"""
+
+from __future__ import annotations
+
+from aota_forge.core.migration.bootstrap import (
+    B11_SHADOW_IDEMPOTENCY_IMPLEMENTED,
+    B11_TO_B12_HANDOFF_IMPLEMENTED,
+    B11_TO_B12_HANDOFF_REBUILDABLE,
+    SAME_REBUILD_DUPLICATE_SEMANTIC_EFFECT,
+    B11ToB12Handoff,
+    ShadowBootstrapResult,
+    ShadowBootstrapService,
+    compute_rebuild_fingerprint,
+)
+from aota_forge.core.migration.comparison import (
+    LEGACY_COMPARISON_IMPLEMENTED,
+    SHADOW_DRIFT_AUTO_REWRITES_CANONICAL_GRAPH,
+    ComparisonEvidence,
+    ComparisonItem,
+    ComparisonStatus,
+    compare_legacy_and_shadow,
+)
+from aota_forge.core.migration.input import (
+    ARBITRARY_HOST_PATH_IS_MIGRATION_AUTHORITY,
+    CATEGORY_CLASSIFICATION_MAP,
+    CONTROL_COMMENT_IS_SUBJECT_AUTHORITY,
+    CURRENT_POINTER_SUBJECT_AUTHORITY,
+    INPUT_ORDERING_AFFECTS_SEMANTIC_OUTPUT,
+    LEGACY_CURRENT_POINTER_IS_AUTHORITY,
+    LEGACY_GRAPH_INPUT_IS_AUTHORITY,
+    LEGACY_POINTER_CAN_DETERMINE_SHADOW_CANONICAL_IDENTITY,
+    SAME_SEMANTIC_INPUT_NORMALIZES_IDENTICALLY,
+    SOURCE_FINGERPRINT_DETERMINISTIC,
+    SOURCE_FINGERPRINT_INCLUDES_HOST_ABSOLUTE_PATH,
+    UNBOUNDED_FILESYSTEM_SCAN_ALLOWED,
+    MigrationInput,
+    MigrationInputManifest,
+    SemanticClassification,
+    SourceCategory,
+    normalize_source_payload,
+)
+from aota_forge.core.migration.provenance import (
+    B11_HIDDEN_AMBIENT_SOURCE_ALLOWED,
+    B11_PROVENANCE_MODEL_IMPLEMENTED,
+    PROVENANCE_MANIFEST_IMPLEMENTED,
+    ProvenanceManifest,
+    ProvenanceRecord,
+)
+from aota_forge.core.migration.receipt import (
+    MIGRATION_RECEIPT_IMPLEMENTED,
+    MIGRATION_RECEIPT_IS_CUTOVER_AUTHORITY,
+    MIGRATION_RECEIPT_IS_SUBJECT_AUTHORITY,
+    MigrationReceipt,
+)
+from aota_forge.core.migration.transform import (
+    B11_HEURISTIC_SUBJECT_SELECTION_ALLOWED,
+    B11_NEW_GRAPH_SCHEMA_CREATED,
+    B11_REUSES_CANONICAL_GRAPH_RECORD_SEMANTICS,
+    B11_SHADOW_IDENTITY_REBUILD_STABLE,
+    DEFAULT_TRANSFORMATION_VERSION,
+    SHADOW_COMPLETION_SUBJECT_SHORTCUT_ALLOWED,
+    SHADOW_FOLLOWUP_EDGE_REQUIRES_SOURCE_DECISION,
+    SHADOW_MIGRATION_MAY_INVENT_DECISION_LINEAGE,
+    SHADOW_REBUILD_DUPLICATE_MINTED_SUBJECTS,
+    SUBJECT_IDENTITY_STABLE_ACROSS_REBUILD,
+    TRANSFORMATION_VERSION_EXPLICIT,
+    MigrationTransformer,
+    TransformationResult,
+)
+
+__all__ = [
+    "LEGACY_GRAPH_INPUT_IS_AUTHORITY",
+    "LEGACY_CURRENT_POINTER_IS_AUTHORITY",
+    "CONTROL_COMMENT_IS_SUBJECT_AUTHORITY",
+    "CURRENT_POINTER_SUBJECT_AUTHORITY",
+    "LEGACY_POINTER_CAN_DETERMINE_SHADOW_CANONICAL_IDENTITY",
+    "ARBITRARY_HOST_PATH_IS_MIGRATION_AUTHORITY",
+    "UNBOUNDED_FILESYSTEM_SCAN_ALLOWED",
+    "SOURCE_FINGERPRINT_INCLUDES_HOST_ABSOLUTE_PATH",
+    "INPUT_ORDERING_AFFECTS_SEMANTIC_OUTPUT",
+    "SAME_SEMANTIC_INPUT_NORMALIZES_IDENTICALLY",
+    "SOURCE_FINGERPRINT_DETERMINISTIC",
+    "SourceCategory",
+    "SemanticClassification",
+    "CATEGORY_CLASSIFICATION_MAP",
+    "normalize_source_payload",
+    "MigrationInput",
+    "MigrationInputManifest",
+    "B11_PROVENANCE_MODEL_IMPLEMENTED",
+    "PROVENANCE_MANIFEST_IMPLEMENTED",
+    "B11_HIDDEN_AMBIENT_SOURCE_ALLOWED",
+    "ProvenanceRecord",
+    "ProvenanceManifest",
+    "DEFAULT_TRANSFORMATION_VERSION",
+    "B11_NEW_GRAPH_SCHEMA_CREATED",
+    "B11_REUSES_CANONICAL_GRAPH_RECORD_SEMANTICS",
+    "TRANSFORMATION_VERSION_EXPLICIT",
+    "SUBJECT_IDENTITY_STABLE_ACROSS_REBUILD",
+    "B11_SHADOW_IDENTITY_REBUILD_STABLE",
+    "SHADOW_REBUILD_DUPLICATE_MINTED_SUBJECTS",
+    "SHADOW_FOLLOWUP_EDGE_REQUIRES_SOURCE_DECISION",
+    "SHADOW_MIGRATION_MAY_INVENT_DECISION_LINEAGE",
+    "SHADOW_COMPLETION_SUBJECT_SHORTCUT_ALLOWED",
+    "B11_HEURISTIC_SUBJECT_SELECTION_ALLOWED",
+    "TransformationResult",
+    "MigrationTransformer",
+    "MIGRATION_RECEIPT_IMPLEMENTED",
+    "MIGRATION_RECEIPT_IS_SUBJECT_AUTHORITY",
+    "MIGRATION_RECEIPT_IS_CUTOVER_AUTHORITY",
+    "MigrationReceipt",
+    "LEGACY_COMPARISON_IMPLEMENTED",
+    "SHADOW_DRIFT_AUTO_REWRITES_CANONICAL_GRAPH",
+    "ComparisonStatus",
+    "ComparisonItem",
+    "ComparisonEvidence",
+    "compare_legacy_and_shadow",
+    "B11_TO_B12_HANDOFF_IMPLEMENTED",
+    "B11_TO_B12_HANDOFF_REBUILDABLE",
+    "B11_SHADOW_IDEMPOTENCY_IMPLEMENTED",
+    "SAME_REBUILD_DUPLICATE_SEMANTIC_EFFECT",
+    "compute_rebuild_fingerprint",
+    "B11ToB12Handoff",
+    "ShadowBootstrapResult",
+    "ShadowBootstrapService",
+]
