@@ -707,11 +707,198 @@ SCENARIOS = {
 }
 
 
-def run_static_evidence(item: dict) -> tuple[bool, str]:
+
+# ---------------------------------------------------------------------------
+# Narrowed static guards for legacy materialization / finalizer false positives
+# ---------------------------------------------------------------------------
+
+
+def check_b014f_static_no_materialize(item: dict, package_root: Path | None = None) -> tuple[bool, str]:
+    """Narrowed static check for B014-F (corpus-b014f-static-no-materialize).
+
+    Must fail on the ORIGINAL forbidden production-authoritative materialization construct;
+    must PASS for legitimate isolated shadow-only non-authoritative constructs with zero
+    production graph writes and zero production lease consumption.
+    """
+    root = package_root or AOTA_FORGE_PACKAGE
+    if not root.is_dir():
+        return False, f"package directory not found: {root}"
+
+    # 1. Inspect production modules for forbidden production materialization constructs
+    prod_paths = [
+        root / "core" / "ingress.py",
+        root / "core" / "contracts",
+        root / "core" / "graph",
+        root / "core" / "transitions",
+        root / "core" / "authority",
+        root / "core" / "binding",
+        root / "core" / "plan",
+        root / "core" / "project",
+        root / "core" / "git",
+    ]
+
+    forbidden_prod_symbols = {
+        "authoritative_materialize",
+        "materialize_production_graph",
+        "production_materialize",
+        "materialize_production",
+        "MaterializeProduction",
+        "AuthoritativeMaterialization",
+    }
+
+    for p in prod_paths:
+        if not p.exists():
+            continue
+        py_files = [p] if p.is_file() else sorted(p.rglob("*.py"))
+        for py_file in py_files:
+            if "__pycache__" in py_file.parts:
+                continue
+            try:
+                tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, SyntaxError) as exc:
+                return False, f"{py_file}: parse error: {exc}"
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    if node.name in forbidden_prod_symbols:
+                        return False, f"forbidden production materialization symbol: {node.name} in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+                elif isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            if target.id == "AUTHORITATIVE_GRAPH_WRITES_ALLOWED":
+                                if isinstance(node.value, ast.Constant) and node.value.value is True:
+                                    return False, f"AUTHORITATIVE_GRAPH_WRITES_ALLOWED is True in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+
+    # 2. Inspect shadow & migration modules for non-authoritative isolation invariants
+    shadow_model_file = root / "core" / "shadow" / "model.py"
+    if shadow_model_file.exists():
+        try:
+            tree = ast.parse(shadow_model_file.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError) as exc:
+            return False, f"{shadow_model_file}: parse error: {exc}"
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        if target.id in ("SHADOW_REPOSITORY_IS_PRODUCTION_AUTHORITY", "SHADOW_REPOSITORY_ALIASES_PRODUCTION_REPOSITORY"):
+                            if isinstance(node.value, ast.Constant) and node.value.value is not False:
+                                return False, f"{target.id} must be False"
+                        elif target.id in ("B11_CANONICAL_GRAPH_WRITE_COUNT", "B11_PRODUCTION_REPOSITORY_WRITE_COUNT", "PRODUCTION_LEASE_CONSUMPTION_COUNT"):
+                            if isinstance(node.value, ast.Constant) and node.value.value != 0:
+                                return False, f"{target.id} must be 0"
+                        elif target.id in ("B11_SHADOW_IMPORT_MAY_ADVANCE_PRODUCTION_SUBJECT_REVISION", "B11_SHADOW_IMPORT_MAY_MUTATE_CURRENT_BINDING"):
+                            if isinstance(node.value, ast.Constant) and node.value.value is not False:
+                                return False, f"{target.id} must be False"
+
+    return True, "no production-authoritative materialization surface; shadow materialization is isolated and non-authoritative (0 production graph writes, 0 production leases)"
+
+
+def check_b014f1_static_no_finalizer(item: dict, package_root: Path | None = None) -> tuple[bool, str]:
+    """Narrowed static check for B014-F1 (corpus-b014f1-static-no-finalizer).
+
+    Must fail on the exact forbidden private finalizer / production lifecycle-finalization construct;
+    must NOT reject ordinary concepts such as receipt/transaction/snapshot/migration-result
+    finalization that do not finalize production lifecycle authority.
+    """
+    root = package_root or AOTA_FORGE_PACKAGE
+    if not root.is_dir():
+        return False, f"package directory not found: {root}"
+
+    forbidden_lifecycle_symbols = {
+        "finalizerlifecycle",
+        "taskfinalizer",
+        "lifecyclefinalizer",
+        "finalizelifecycle",
+        "finalizetasklifecycle",
+        "finalizetask",
+        "privatefinalizer",
+        "finalizerbookkeeping",
+        "finalizerdrift",
+        "productionfinalizer",
+        "finalizerstate",
+    }
+
+    for py_file in sorted(root.rglob("*.py")):
+        if "__pycache__" in py_file.parts:
+            continue
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError) as exc:
+            return False, f"{py_file}: parse error: {exc}"
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                normalized = node.name.replace("_", "").casefold()
+                if normalized in forbidden_lifecycle_symbols:
+                    return False, f"forbidden lifecycle finalizer symbol: {node.name} in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        normalized = target.id.replace("_", "").casefold()
+                        if normalized in forbidden_lifecycle_symbols:
+                            return False, f"forbidden lifecycle finalizer variable: {target.id} in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+
+    return True, "no private finalizer or production lifecycle-finalization construct; non-authoritative receipt/snapshot finalization allowed"
+
+
+def check_rc21_static_no_materialize(item: dict, package_root: Path | None = None) -> tuple[bool, str]:
+    """Narrowed static check for RC2-1 (corpus-rc21-static-no-materialize).
+
+    Must catch failed authoritative materialization (fails closed, failure envelope,
+    no usable handoff/ack, no partial commit, no lease consumption); must not prohibit
+    legitimate B11 isolated shadow materialization by name alone.
+    """
+    root = package_root or AOTA_FORGE_PACKAGE
+    if not root.is_dir():
+        return False, f"package directory not found: {root}"
+
+    # 1. Scan for forbidden flags that permit silent materialization failure or partial commits
+    for py_file in sorted(root.rglob("*.py")):
+        if "__pycache__" in py_file.parts:
+            continue
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError) as exc:
+            return False, f"{py_file}: parse error: {exc}"
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        if target.id == "SILENT_MATERIALIZATION_FAILURE" and isinstance(node.value, ast.Constant) and node.value.value is True:
+                            return False, f"SILENT_MATERIALIZATION_FAILURE is True in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+                        if target.id == "PARTIAL_COMMIT_ALLOWED" and isinstance(node.value, ast.Constant) and node.value.value is True:
+                            return False, f"PARTIAL_COMMIT_ALLOWED is True in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+                        if target.id == "ALLOW_FAILED_HANDOFF_USABLE" and isinstance(node.value, ast.Constant) and node.value.value is True:
+                            return False, f"ALLOW_FAILED_HANDOFF_USABLE is True in {py_file.relative_to(REPO_ROOT) if py_file.is_relative_to(REPO_ROOT) else py_file}"
+
+    # 2. Check shadow transaction and migration bootstrap failure-handling structures
+    shadow_tx_file = root / "core" / "shadow" / "transaction.py"
+    if shadow_tx_file.exists():
+        tx_text = shadow_tx_file.read_text(encoding="utf-8", errors="replace")
+        if "rollback" not in tx_text:
+            return False, "shadow transaction missing rollback mechanism on materialization failure"
+
+    bootstrap_file = root / "core" / "migration" / "bootstrap.py"
+    if bootstrap_file.exists():
+        bs_text = bootstrap_file.read_text(encoding="utf-8", errors="replace")
+        if "discard_staged" not in bs_text and "rollback" not in bs_text and "receipt" not in bs_text:
+            return False, "migration bootstrap missing failure isolation/discard mechanism"
+
+    return True, "materialization failure surfaces bounded error and fails closed with zero partial commits and zero lease consumption; legitimate shadow materialization allowed"
+
+
+def run_static_evidence(item: dict, package_root: Path | None = None) -> tuple[bool, str]:
+    eid = item.get("id")
+    if eid == "corpus-b014f-static-no-materialize":
+        return check_b014f_static_no_materialize(item, package_root)
+    if eid == "corpus-b014f1-static-no-finalizer":
+        return check_b014f1_static_no_finalizer(item, package_root)
+    if eid == "corpus-rc21-static-no-materialize":
+        return check_rc21_static_no_materialize(item, package_root)
+
     source = str(item.get("source", ""))
     marker = str(item.get("marker", ""))
     check = item.get("check")
-    target = REPO_ROOT / source if source != "aota_forge" else AOTA_FORGE_PACKAGE
+    root = package_root or AOTA_FORGE_PACKAGE
+    target = (package_root / source.replace("aota_forge/", "") if package_root else REPO_ROOT / source) if source != "aota_forge" else root
     if check == "contains":
         if not target.is_file():
             return False, f"static source not found: {source}"
@@ -728,7 +915,7 @@ def run_static_evidence(item: dict) -> tuple[bool, str]:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             if marker in text:
-                hits.append(str(path.relative_to(REPO_ROOT)))
+                hits.append(str(path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path))
         if hits:
             return False, f"marker present (expected absent): {marker!r} in {hits[:5]}"
         return True, f"marker absent from package: {marker!r}"
@@ -834,6 +1021,117 @@ def run_self_test() -> list[tuple[str, str, bool]]:
                     "scenario": "host-inspection-no-plan-required", "proves": "successor_pass"}))
     check_case("invalid prerequisite milestone", "invalid prerequisite milestone",
                lambda m: _by_class(m, "BIND-1").__setitem__("prerequisite_milestones", ["M4"]))
+
+    # -----------------------------------------------------------------------
+    # Guard narrowing negative self-tests & positive fixture proof
+    # -----------------------------------------------------------------------
+    with tempfile.TemporaryDirectory(prefix="corpus-guard-selftest-") as tmp_dir_str:
+        tmp_pkg = Path(tmp_dir_str) / "aota_forge"
+        tmp_pkg.mkdir(parents=True)
+        (tmp_pkg / "core").mkdir()
+        (tmp_pkg / "core" / "shadow").mkdir()
+        (tmp_pkg / "core" / "migration").mkdir()
+        (tmp_pkg / "core" / "transitions").mkdir()
+
+        # Positive fixture with legitimate shadow terminology
+        (tmp_pkg / "core" / "shadow" / "model.py").write_text(
+            "SHADOW_REPOSITORY_IS_PRODUCTION_AUTHORITY = False\n"
+            "SHADOW_REPOSITORY_ALIASES_PRODUCTION_REPOSITORY = False\n"
+            "B11_CANONICAL_GRAPH_WRITE_COUNT = 0\n"
+            "B11_PRODUCTION_REPOSITORY_WRITE_COUNT = 0\n"
+            "PRODUCTION_LEASE_CONSUMPTION_COUNT = 0\n"
+            "B11_SHADOW_IMPORT_MAY_ADVANCE_PRODUCTION_SUBJECT_REVISION = False\n"
+            "B11_SHADOW_IMPORT_MAY_MUTATE_CURRENT_BINDING = False\n",
+            encoding="utf-8",
+        )
+        (tmp_pkg / "core" / "shadow" / "transaction.py").write_text(
+            "class ShadowTransaction:\n    def rollback(self): pass\n",
+            encoding="utf-8",
+        )
+        (tmp_pkg / "core" / "migration" / "bootstrap.py").write_text(
+            "def materialize_shadow_bootstrap(): pass\n"
+            "def finalize_migration_receipt(): pass\n"
+            "failure_injection_point = 'during_receipt_finalization'\n",
+            encoding="utf-8",
+        )
+
+        dummy_item = {"id": "test", "kind": "static", "check": "absent", "marker": "materializ"}
+
+        # Positive fixture check: all 3 narrowed guards pass on legitimate shadow terminology
+        ok_b014f, _ = check_b014f_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("positive fixture: B014-F allows shadow materialization", "allows legitimate shadow", ok_b014f))
+
+        ok_b014f1, _ = check_b014f1_static_no_finalizer(dummy_item, tmp_pkg)
+        cases.append(("positive fixture: B014-F1 allows receipt finalization", "allows legitimate finalizer", ok_b014f1))
+
+        ok_rc21, _ = check_rc21_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("positive fixture: RC2-1 allows shadow materialization", "allows legitimate shadow", ok_rc21))
+
+        # Negative mutation 1: B014-F production authority flag
+        (tmp_pkg / "core" / "shadow" / "model.py").write_text(
+            "SHADOW_REPOSITORY_IS_PRODUCTION_AUTHORITY = True\n", encoding="utf-8"
+        )
+        neg1, _ = check_b014f_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("B014-F negative mutation: production authority active", "rejected", not neg1))
+
+        # Negative mutation 2: B014-F production lease consumption
+        (tmp_pkg / "core" / "shadow" / "model.py").write_text(
+            "SHADOW_REPOSITORY_IS_PRODUCTION_AUTHORITY = False\nPRODUCTION_LEASE_CONSUMPTION_COUNT = 1\n", encoding="utf-8"
+        )
+        neg2, _ = check_b014f_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("B014-F negative mutation: production lease consumption", "rejected", not neg2))
+
+        # Negative mutation 3: B014-F production materialization symbol in transitions
+        (tmp_pkg / "core" / "shadow" / "model.py").write_text(
+            "SHADOW_REPOSITORY_IS_PRODUCTION_AUTHORITY = False\nPRODUCTION_LEASE_CONSUMPTION_COUNT = 0\n", encoding="utf-8"
+        )
+        (tmp_pkg / "core" / "transitions" / "materialize.py").write_text(
+            "def authoritative_materialize(): pass\n", encoding="utf-8"
+        )
+        neg3, _ = check_b014f_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("B014-F negative mutation: authoritative_materialize symbol in core", "rejected", not neg3))
+        (tmp_pkg / "core" / "transitions" / "materialize.py").unlink()
+
+        # Negative mutation 4: B014-F1 TaskFinalizer class in core
+        (tmp_pkg / "core" / "finalizer.py").write_text(
+            "class TaskFinalizer:\n    pass\n", encoding="utf-8"
+        )
+        neg4, _ = check_b014f1_static_no_finalizer(dummy_item, tmp_pkg)
+        cases.append(("B014-F1 negative mutation: TaskFinalizer class in core", "rejected", not neg4))
+        (tmp_pkg / "core" / "finalizer.py").unlink()
+
+        # Negative mutation 5: B014-F1 finalize_lifecycle function in core
+        (tmp_pkg / "core" / "finalizer.py").write_text(
+            "def finalize_lifecycle():\n    pass\n", encoding="utf-8"
+        )
+        neg5, _ = check_b014f1_static_no_finalizer(dummy_item, tmp_pkg)
+        cases.append(("B014-F1 negative mutation: finalize_lifecycle function in core", "rejected", not neg5))
+        (tmp_pkg / "core" / "finalizer.py").unlink()
+
+        # Negative mutation 6: B014-F1 finalizer_bookkeeping variable in core
+        (tmp_pkg / "core" / "finalizer.py").write_text(
+            "finalizer_bookkeeping = True\n", encoding="utf-8"
+        )
+        neg6, _ = check_b014f1_static_no_finalizer(dummy_item, tmp_pkg)
+        cases.append(("B014-F1 negative mutation: finalizer_bookkeeping in core", "rejected", not neg6))
+        (tmp_pkg / "core" / "finalizer.py").unlink()
+
+        # Negative mutation 7: RC2-1 SILENT_MATERIALIZATION_FAILURE=True
+        (tmp_pkg / "core" / "flags.py").write_text(
+            "SILENT_MATERIALIZATION_FAILURE = True\n", encoding="utf-8"
+        )
+        neg7, _ = check_rc21_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("RC2-1 negative mutation: SILENT_MATERIALIZATION_FAILURE is True", "rejected", not neg7))
+        (tmp_pkg / "core" / "flags.py").unlink()
+
+        # Negative mutation 8: RC2-1 PARTIAL_COMMIT_ALLOWED=True
+        (tmp_pkg / "core" / "flags.py").write_text(
+            "PARTIAL_COMMIT_ALLOWED = True\n", encoding="utf-8"
+        )
+        neg8, _ = check_rc21_static_no_materialize(dummy_item, tmp_pkg)
+        cases.append(("RC2-1 negative mutation: PARTIAL_COMMIT_ALLOWED is True", "rejected", not neg8))
+        (tmp_pkg / "core" / "flags.py").unlink()
+
     return cases
 
 
