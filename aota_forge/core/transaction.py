@@ -179,6 +179,70 @@ class TransactionStore(InMemoryGraphRepository):
     def idempotency_lookup(self, key: str) -> IdempotencyRecord | None:
         return self._idempotency.get(key)
 
+    def lifecycle_idempotency_lookup(
+        self,
+        *,
+        key: str,
+        operation: str,
+        target: ObjectRef,
+        principal: str,
+        fingerprint: str,
+    ) -> IdempotencyRecord | str | None:
+        """Resolve a lifecycle request without widening the M3 idempotency API.
+
+        Lifecycle denials that represent an already-applied intent are recorded
+        as committed no-effect results.  The complete identity tuple is checked
+        here so a key cannot silently cross operation, target, or principal
+        boundaries.
+        """
+        existing = self.idempotency_lookup(key)
+        if existing is None:
+            return None
+        if existing.state != IDEMPOTENCY_STATE_COMMITTED:
+            return None
+        if (
+            existing.operation == operation
+            and existing.target == target.serialize()
+            and existing.principal == principal
+            and existing.fingerprint == fingerprint
+        ):
+            return existing
+        return "conflict"
+
+    def record_lifecycle_no_effect(
+        self,
+        *,
+        key: str,
+        operation: str,
+        target: ObjectRef,
+        principal: str,
+        fingerprint: str,
+        result_code: str,
+    ) -> IdempotencyRecord:
+        """Record one bounded, already-applied lifecycle denial.
+
+        This does not consume a lease, advance a revision, or mutate a graph
+        record.  It only makes a denied re-entry replayable by its exact intent.
+        """
+        with self._registry_guard:
+            existing = self._idempotency.get(key)
+            if existing is not None:
+                return existing
+            current = self.current_revision(target)
+            record = IdempotencyRecord(
+                idempotency_key=key,
+                operation=operation,
+                target=target.serialize(),
+                principal=principal,
+                fingerprint=fingerprint,
+                state=IDEMPOTENCY_STATE_COMMITTED,
+                effect_refs=(result_code,),
+                revision_after=current.revision_number,
+                revision_token=current.revision_token,
+            )
+            self._idempotency.put(record)
+            return record
+
     # -- broker integration --------------------------------------------------
 
     def _retire_staged_candidate(self, iid: InternalId) -> None:
@@ -390,6 +454,7 @@ class SubjectTransaction(_TransactionBase):
         fingerprint: str,
         trusted_time,
         new_state: dict,
+        state_patch: dict | None = None,
         effect_refs: tuple = (),
     ) -> None:
         super().__init__(store, subject_ref=subject_ref)
@@ -402,6 +467,7 @@ class SubjectTransaction(_TransactionBase):
         self._fingerprint = fingerprint
         self._trusted_time = trusted_time
         self._new_state = dict(new_state)
+        self._state_patch = dict(state_patch) if state_patch is not None else None
         self._new_revision = None
         self._consumed_lease_id = lease.lease_id
         self._effect_refs = tuple(effect_refs)
@@ -452,7 +518,22 @@ class SubjectTransaction(_TransactionBase):
         current = self._store.current_revision(self._subject_ref)
         next_number = current.revision_number + 1
         subject = self._store._subjects[self._subject_ref.internal_id.value]
-        next_subject = set_revision_number(subject, next_number)
+        if self._state_patch is None:
+            next_subject = set_revision_number(subject, next_number)
+        else:
+            state = dict(subject.mechanical_state)
+            state.update(self._state_patch)
+            next_subject = set_revision_number(
+                records.Subject(
+                    subject_id=subject.subject_id,
+                    kind=subject.kind,
+                    mechanical_state=state,
+                    id_derivation=subject.id_derivation,
+                    workflow_ref=subject.workflow_ref,
+                    creation_context=dict(subject.creation_context),
+                ),
+                next_number,
+            )
         self._store._put_staged(next_subject)
         new_rev = advance_revision(
             current,

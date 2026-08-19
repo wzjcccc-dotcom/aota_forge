@@ -273,3 +273,88 @@ class OperationContractDescriptor:
             protocol_version=raw.get("protocol_version", _UNSET),
         )
         return descriptor
+
+
+PLAN_INIT_OPERATION = "plan_init"
+PLAN_RETIREMENT_OPERATION = "plan_retirement"
+
+PLAN_INIT_DESCRIPTOR = OperationContractDescriptor(
+    name=PLAN_INIT_OPERATION,
+    description="Mechanically initialize one exact Plan Subject after semantic choice.",
+    inputs=(
+        InputSpec("plan_ref", "str"),
+        InputSpec("project_binding", "dict"),
+        InputSpec("semantic_inputs", "dict"),
+        InputSpec("subject_expected_revision", "int"),
+        InputSpec("authority_source_revision", "str"),
+        InputSpec("authority_observed_raw_digest", "str"),
+    ),
+    required_context=("principal",),
+    optional_context=("project_binding",),
+    internal_ids_required=("subject",),
+    internal_ids_created=(),
+    read_write=WRITE_ONLY,
+    mutation_scope="plan_subject",
+    required_authority="semantic_authorization_and_operation_lease",
+    approval_required=True,
+    valid_predecessor_state="uninitialized",
+    valid_successor_state="initialized",
+    idempotency="same intent replays; changed intent conflicts",
+    errors=(
+        "PROJECT_NOT_FOUND",
+        "NEEDS_SEMANTIC_CHOICE",
+        "PROJECT_BINDING_REQUIRED",
+        "PLAN_INIT_INVALID_PREDECESSOR",
+        "PLAN_INIT_ALREADY_INITIALIZED",
+        "PLAN_INIT_STALE_SUBJECT_REVISION",
+        "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+    decision_required=True,
+    subject_revision_precondition=True,
+    external_authority_precondition=True,
+    result_contract="canonical_mutation_result.v1",
+)
+
+PLAN_RETIREMENT_DESCRIPTOR = OperationContractDescriptor(
+    name=PLAN_RETIREMENT_OPERATION,
+    description="Mechanically retire one exact Plan selected from a bounded snapshot.",
+    inputs=(
+        InputSpec("plan_ref", "str"),
+        InputSpec("retirement_kind", "str"),
+        InputSpec("snapshot_identity", "str"),
+        InputSpec("subject_expected_revision", "int"),
+        InputSpec("authority_source_revision", "str"),
+        InputSpec("authority_observed_raw_digest", "str"),
+        InputSpec("successor_ref", "str?"),
+    ),
+    required_context=("principal",),
+    optional_context=("project_binding",),
+    internal_ids_required=("subject",),
+    internal_ids_created=(),
+    read_write=WRITE_ONLY,
+    mutation_scope="plan_subject",
+    required_authority="semantic_authorization_and_operation_lease",
+    approval_required=True,
+    valid_predecessor_state="initialized",
+    valid_successor_state="cancelled|superseded",
+    idempotency="same intent replays; changed intent conflicts",
+    errors=(
+        "RETIREMENT_NO_CANDIDATE",
+        "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+        "RETIREMENT_STALE_SNAPSHOT",
+        "RETIREMENT_TARGET_PROTECTED",
+        "RETIREMENT_RUNNING_TASK_PROTECTED",
+        "RETIREMENT_SUCCESSOR_REQUIRED",
+        "RETIREMENT_SUCCESSOR_INVALID",
+        "RETIREMENT_SELF_SUCCESSOR",
+        "RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+    decision_required=True,
+    subject_revision_precondition=True,
+    external_authority_precondition=True,
+    result_contract="canonical_mutation_result.v1",
+)
+
+LIFECYCLE_DESCRIPTORS = (PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR)

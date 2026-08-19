@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source regression results",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "focused_guard": {
+    "command": "python3 scripts/m4_4_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 27,
+    "B011": "PASS",
+    "B013": "PASS",
+    "B014": "PASS"
+  },
+  "compileall": {
+    "command": "python3 -m compileall aota_forge",
+    "result": "PASS"
+  },
+  "m4_1_contract_regression": {
+    "command": "python3 scripts/m4_1_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 30,
+    "negative_test_count": 7
+  },
+  "m2_relevant_regressions": {
+    "m2a_contract_foundation": "PASS 28/28",
+    "m2b_ingress_context_error_contract": "PASS 63/63",
+    "m2_successor_regression_corpus": "PASS 30/30",
+    "result": "PASS"
+  },
+  "m3_relevant_regressions": {
+    "m3_b6_revision_cas_transaction": "PASS 36/36",
+    "m3_b7_canonical_transitions": "PASS 56/56",
+    "m3_b8_projection_reconstruction": "PASS 54/54",
+    "m3_b9_subject_binding_recovery": "PASS 52/52",
+    "m3_b10_behavioral_regression_foundation": "PASS 16/16",
+    "result": "PASS"
+  },
+  "historical_or_serial_guard_observations": [
+    {
+      "command": "python3 scripts/m3_b2_principal_trusted_context.py",
+      "result": "FAIL",
+      "classification": "historical_descendant_guard",
+      "reason": "The guard still rejects the already-accepted M3 AuthorityEngine and CapabilityLease classes at the M4-1 descendant base; no forbidden source path was changed by M4-4."
+    },
+    {
+      "command": "python3 scripts/m3_b5_authority_capability_lease.py",
+      "result": "FAIL",
+      "classification": "historical_exact_base_guard",
+      "reason": "The guard's exact-base assertion is stale for d74953be; all authority behavior cases pass and the remaining failure is provenance-only."
+    },
+    {
+      "command": "python3 scripts/m3_b89_projection_binding_integration.py",
+      "result": "FAIL",
+      "classification": "serial_shared_seam_guard",
+      "reason": "The B89 integration guard detects pre-existing M4-1 shared-contract changes and the authorized M4-4 results contract change; serial integration remains downstream and was not modified."
+    }
+  ],
+  "ownership_safe_validation": {
+    "git_diff_check": "PASS",
+    "focused_behavioral_source_proof": "PASS",
+    "m4_4_behavioral_closure_false_claim_count": 0,
+    "production_end_to_end_claimed": false
+  }
+}

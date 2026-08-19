@@ -14,6 +14,8 @@ registry path is injected (no hard-coded host path in Core).
 from __future__ import annotations
 
 import json
+import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,119 @@ from aota_forge.core.contracts.errors import (
 from aota_forge.core.project.discovery import MAX_RESULTS, fingerprint_registry, scan_projects
 
 MAX_REGISTRY_BYTES = 512 * 1024
+
+
+def _candidate_fingerprint(record: dict[str, Any]) -> str:
+    payload = {
+        "project_id": record["project_id"],
+        "name": record["name"],
+        "kind": record["kind"],
+        "status": record["status"],
+        "root": record["root"],
+        "manifest_path": record["manifest_path"],
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class ProjectCandidateEvidence:
+    """One deterministic relationship candidate, never a semantic binding."""
+
+    workspace_id: str
+    workspace_root: str
+    project_id: str
+    project_root: str
+    manifest_path: str
+    name: str
+    kind: str
+    status: str
+    registry_fingerprint: str
+    candidate_fingerprint: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "workspace_id": self.workspace_id,
+            "workspace_root": self.workspace_root,
+            "project_id": self.project_id,
+            "project_root": self.project_root,
+            "manifest_path": self.manifest_path,
+            "name": self.name,
+            "kind": self.kind,
+            "status": self.status,
+            "registry_fingerprint": self.registry_fingerprint,
+            "candidate_fingerprint": self.candidate_fingerprint,
+        }
+
+
+@dataclass(frozen=True)
+class ProjectResolutionEvidence:
+    """Complete deterministic candidate evidence for Project Binding choice."""
+
+    status: str
+    workspace_id: str
+    workspace_root: str
+    registry_fingerprint: str
+    listing_fingerprint: str
+    candidates: tuple[ProjectCandidateEvidence, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "workspace_id": self.workspace_id,
+            "workspace_root": self.workspace_root,
+            "registry_fingerprint": self.registry_fingerprint,
+            "listing_fingerprint": self.listing_fingerprint,
+            "candidates": [candidate.to_dict() for candidate in self.candidates],
+        }
+
+
+def resolve_project_candidates(
+    workspace_id: str,
+    registry_path: Path,
+    project_id: str,
+) -> ProjectResolutionEvidence:
+    """Return complete relationship evidence without selecting a project."""
+    root = resolve_workspace(workspace_id, registry_path)
+    complete = scan_projects(root, limit=None)
+    registry_fingerprint = fingerprint_registry(workspace_id, complete["projects"], complete["invalid"])
+    listed = complete["projects"][:MAX_RESULTS]
+    listing_fingerprint = fingerprint_registry(
+        workspace_id,
+        listed,
+        complete["invalid"][:MAX_RESULTS],
+    )
+    matches = [item for item in complete["projects"] if item["project_id"] == project_id]
+    candidates = tuple(
+        ProjectCandidateEvidence(
+            workspace_id=workspace_id,
+            workspace_root=str(root),
+            project_id=record["project_id"],
+            project_root=str(root / record["root"]) if record["root"] != "." else str(root),
+            manifest_path=record["manifest_path"],
+            name=record["name"],
+            kind=record["kind"],
+            status=record["status"],
+            registry_fingerprint=registry_fingerprint,
+            candidate_fingerprint=_candidate_fingerprint(record),
+        )
+        for record in matches
+    )
+    status = (
+        "PROJECT_NOT_FOUND"
+        if not candidates
+        else "RESOLVED"
+        if len(candidates) == 1
+        else "NEEDS_SEMANTIC_CHOICE"
+    )
+    return ProjectResolutionEvidence(
+        status=status,
+        workspace_id=workspace_id,
+        workspace_root=str(root),
+        registry_fingerprint=registry_fingerprint,
+        listing_fingerprint=listing_fingerprint,
+        candidates=candidates,
+    )
 
 
 def load_workspace_registry(registry_path: Path) -> dict[str, Any]:
