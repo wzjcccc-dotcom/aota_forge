@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 functional source independent review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-1-SOURCE-R1",
+  "work_item_name": "M4-1 Functional Source Independent Review",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "review_target_sha": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+  "accepted_contract_plan_base": "ddfaee840f42710e3ce61c20522dba3674a96526",
+  "accepted_m4_0_base": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "contract_plan_review_evidence": "947de7ff93c44588174bb90d62acd649ffc292b5",
+  "governance_preflight": {
+    "github_identity": "wzjcccc-dotcom",
+    "issue_read": "PASS",
+    "M4_1_CONTRACT_PLAN_STATUS": "accepted",
+    "M4_1_CONTRACT_PLAN_KNOWN_GOOD_CHECKPOINT": "ddfaee840f42710e3ce61c20522dba3674a96526",
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "yes",
+    "M4_1_SOURCE_MUTATION_ALLOWED": "yes",
+    "M4_1_COMPLETED": "no",
+    "M4_2_EXECUTION_AUTHORIZED": "no",
+    "M4_4_EXECUTION_AUTHORIZED": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "newer_governance_supersedes_target": "no"
+  },
+  "lineage_verification": {
+    "target_commit_exists": "yes",
+    "target_remote_ref": "refs/heads/aota/m4/m4-1-source",
+    "target_remote_sha": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+    "target_remote_ref_verified": "yes",
+    "ancestry_includes_contract_plan_base": "yes",
+    "ancestry_includes_accepted_m4_0_base": "yes",
+    "review_worktree_base_exact": "yes"
+  },
+  "diff_scope_review": {
+    "status": "PASS",
+    "candidate_changed_path_count": 10,
+    "candidate_changed_paths_verified": "yes",
+    "unexpected_changed_path_count": 0,
+    "source_paths": [
+      "aota_forge/core/contracts/__init__.py",
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/results.py"
+    ],
+    "evidence_paths": [
+      "deploy/evidence/issues/9/m4-1-source/m4-1-source-implementation.json",
+      "deploy/evidence/issues/9/m4-1-source/m4-1-source-regression-results.json",
+      "deploy/evidence/issues/9/m4-1-source/m4-1-source-scope-proof.json"
+    ],
+    "guard_path": "scripts/m4_1_source_guard.py",
+    "ingress_files_touched": "no",
+    "catalog_files_touched": "no",
+    "production_operation_registration_touched": "no"
+  },
+  "source_ownership_review": {
+    "status": "PASS",
+    "SOURCE_FILE_COUNT_RECONCILED": "yes",
+    "source_file_count": 6,
+    "target_file_count": 5,
+    "shared_hot_file_count": 1,
+    "target_file_count_reconciled": 5,
+    "shared_hot_file_count_reconciled": 1,
+    "ownership_observation": "Five contract implementation targets plus the shared contracts export file account for all six changed Core source paths."
+  },
+  "mutation_intent_review": {
+    "status": "PASS",
+    "MUTATION_INTENT_IS_AUTHORITY": "no",
+    "MUTATION_INTENT_IS_SEMANTIC_DECISION_MAKER": "no",
+    "MUTATION_INTENT_IS_EXTERNAL_PLATFORM_PAYLOAD": "no",
+    "MODEL_MAY_SELF_ASSERT_TRUSTED_PRINCIPAL": "no",
+    "MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE": "no",
+    "MODEL_MAY_SELF_ASSERT_INTERNAL_AUTHORITY": "no",
+    "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+    "MODEL_RAW_AUTHORITY_REVISION_NORMAL_INPUT": "no",
+    "trusted_resolution_is_separate": "yes",
+    "ordinary_constructor_accepts_principal_or_lease_as_fields": "no",
+    "ordinary_semantic_input_accepts_principal_or_lease": "no",
+    "logical_target_selection_or_project_selection": "no",
+    "mechanical_preconditions_are_authoritative_runtime_resolution": "no"
+  },
+  "intent_fingerprint_review": {
+    "status": "PASS",
+    "INTENT_FINGERPRINT_DETERMINISTIC": "yes",
+    "canonical_serialization_review": "PASS",
+    "INTENT_FINGERPRINT_TEST_COUNT": 10,
+    "INTENT_FINGERPRINT_TEST_PASS_COUNT": 10,
+    "INTENT_FINGERPRINT_CASES": [
+      "same exact semantic intent",
+      "different correlation_id",
+      "different Subject expected revision",
+      "different external authority revision",
+      "different lease/reservation reference represented as mechanical metadata",
+      "different logical target",
+      "different semantic payload",
+      "different mutation scope",
+      "different runtime callable/object identity",
+      "round-trip serialization"
+    ],
+    "INTENT_FINGERPRINT_PRECONDITION_SEPARATION": "PASS",
+    "idempotency_key_and_semantic_fingerprint_are_separate_conflict_inputs": "yes",
+    "mapping_insertion_order_stability": "PASS",
+    "nested_mapping_order_stability": "PASS",
+    "list_order_preserved": "PASS"
+  },
+  "descriptor_review": {
+    "status": "FAIL",
+    "DESCRIPTOR_SOURCE_REVIEW": "FAIL",
+    "SINGLE_OPERATION_CONTRACT_DESCRIPTOR_MODEL": "yes",
+    "READ_AND_WRITE_OPERATIONS_SHARE_REGISTRY": "yes",
+    "READ_ONLY_DESCRIPTOR_BACKWARD_COMPATIBILITY": "PASS",
+    "DESCRIPTOR_IS_AUTHORITY": "no",
+    "descriptor_can_represent_required_semantic_dimensions": "yes",
+    "write_required_field_validation": "FAIL",
+    "write_required_field_validation_observation": "OperationContractDescriptor.validate() accepts and hashes a read_write=write descriptor with mutation_scope, authority, predecessor, successor, idempotency, result_contract and precondition requirements all absent.",
+    "runtime_callable_in_descriptor": "no",
+    "second_write_registry_or_model": "no"
+  },
+  "contract_hash_review": {
+    "status": "PASS",
+    "CONTRACT_HASH_REVIEW": "PASS",
+    "CONTRACT_HASH_SEMANTIC_SENSITIVITY": "PASS",
+    "CONTRACT_HASH_RUNTIME_EXCLUSION": "PASS",
+    "CONTRACT_HASH_SEMANTIC_CASE_COUNT": 14,
+    "CONTRACT_HASH_SEMANTIC_CASE_PASS_COUNT": 14,
+    "CONTRACT_HASH_RUNTIME_EXCLUSION_CASE_COUNT": 6,
+    "CONTRACT_HASH_RUNTIME_EXCLUSION_PASS_COUNT": 6,
+    "semantic_cases": [
+      "read/write classification",
+      "mutation scope",
+      "required authority",
+      "approval requirement",
+      "Decision requirement",
+      "predecessor",
+      "successor",
+      "Subject precondition requirement",
+      "external authority precondition requirement",
+      "idempotency semantics",
+      "result semantics",
+      "error semantics",
+      "protocol version",
+      "input schema"
+    ],
+    "runtime_exclusion_cases": [
+      "handler callable identity",
+      "current revision value",
+      "lease token/reference",
+      "correlation ID",
+      "timestamp",
+      "authority source ETag/raw current digest"
+    ]
+  },
+  "mutation_result_review": {
+    "status": "FAIL",
+    "CANONICAL_MUTATION_RESULT_SOURCE_REVIEW": "FAIL",
+    "NO_EFFECT_DISTINCT": "yes",
+    "APPLIED_VERIFIED_DISTINCT": "yes",
+    "REPLAYED_VERIFIED_DISTINCT": "yes",
+    "BLOCKED_DISTINCT": "yes",
+    "CONFLICT_DISTINCT": "yes",
+    "NEEDS_SEMANTIC_CHOICE_DISTINCT": "yes",
+    "OUTCOME_UNKNOWN_DISTINCT": "yes",
+    "FAILED_NO_EFFECT_DISTINCT": "yes",
+    "enum_value_count": 8,
+    "enum_values_unique": "yes",
+    "invalid_combinations_fail_closed": "yes",
+    "mutation_envelope_unknown_is_non_success": "yes",
+    "choice_error_separation": "FAIL",
+    "choice_error_separation_observation": "mutation_envelope() projects NEEDS_SEMANTIC_CHOICE through failure(), emitting a generic error with code NEEDS_SEMANTIC_CHOICE instead of keeping the choice state separate; NO_EFFECT is likewise emitted as a generic failure error."
+  },
+  "authoritative_effect_review": {
+    "status": "FAIL",
+    "AUTHORITATIVE_EFFECT_REVIEW": "FAIL",
+    "mapping_cases": {
+      "APPLIED_VERIFIED": "yes",
+      "REPLAYED_VERIFIED": "yes",
+      "NO_EFFECT": "no",
+      "FAILED_NO_EFFECT": "no",
+      "OUTCOME_UNKNOWN": "unknown",
+      "CONFLICT": "no new requested effect confirmed",
+      "BLOCKED": "no",
+      "NEEDS_SEMANTIC_CHOICE": "no"
+    },
+    "INVALID_EFFECT_COMBINATION_CASE_COUNT": 8,
+    "INVALID_EFFECT_COMBINATION_REJECT_COUNT": 8,
+    "local_handler_success_can_be_unknown": "yes",
+    "local_handler_success_equals_authoritative_effect_success": "no",
+    "AUTHORITATIVE_EFFECT_UNKNOWN_MAY_REPORT_VERIFIED_SUCCESS": "no",
+    "SILENT_MATERIALIZATION_FAILURE_ALLOWED": "no",
+    "failure_reason": "The effect enum and constructor mapping are safe, but the canonical envelope projection violates the accepted choice/error separation."
+  },
+  "write_ingress_boundary_review": {
+    "status": "PASS",
+    "WRITE_DESCRIPTOR_REPRESENTABLE": "yes",
+    "WRITE_DESCRIPTOR_EXECUTABLE_THROUGH_CANONICAL_INGRESS": "no",
+    "PRODUCTION_WRITE_OPERATION_REGISTERED": "no",
+    "INGRESS_WRITE_BEHAVIOR_CHANGED": "no",
+    "isolated_ingress_test": "A registered write descriptor returned UNSUPPORTED_OPERATION and its handler was not called.",
+    "read_only_operations_regression": "PASS"
+  },
+  "scope_boundary_review": {
+    "status": "PASS",
+    "M4_SCOPE_BOUNDARY_REVIEW": "PASS",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_1_WRITE_CAPABLE_INGRESS_IMPLEMENTED": "no",
+    "M4_1_PLAN_INIT_IMPLEMENTED": "no",
+    "M4_1_RETIREMENT_IMPLEMENTED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_1_HERMES_MUTATION_ACTIVATION": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no"
+  },
+  "platform_neutrality_review": {
+    "status": "FAIL",
+    "PLATFORM_NEUTRALITY_REVIEW": "FAIL",
+    "GITHUB_IS_CORE_ONTOLOGY": "unexpected",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "unexpected",
+    "changed_core_source_platform_reference": "aota_forge/core/contracts/mutation.py:43",
+    "platform_reference_observation": "Production Core validation contains gh_, *_issue_number, *_comment_id and *_etag naming rules. This is platform-specific contract behavior, not an exclusion-only comment/test. The same implementation accepts equivalent fields in logical_target and mutation_scope."
+  },
+  "test_provenance_review": {
+    "TEST_PROVENANCE": "MIXED",
+    "TEST_PROVENANCE_REVIEW": "FAIL",
+    "test_location": "scripts/m4_1_source_guard.py",
+    "repository_test_file_added": "no",
+    "focused_test_count_reported": 19,
+    "negative_test_count_reported": 10,
+    "directly_imports_real_source": "yes",
+    "assertions_independent_of_evidence_claims": "no",
+    "negative_cases_mutate_actual_source_inputs": "partially",
+    "nonzero_on_failure": "yes",
+    "committed_and_repeatable": "yes",
+    "special_cases_test_names": "no",
+    "FOCUSED_TESTS_INDEPENDENTLY_REPRODUCED": "no",
+    "NEGATIVE_REVERSION_TESTS_INDEPENDENTLY_REPRODUCED": "no",
+    "provenance_observation": "The 19 focused and 10 negative counts exist only in the tracked source guard. N7, N8 and N10 call helpers that raise ValueError on both the bad and good branch, so their apparent rejection does not prove source behavior."
+  },
+  "source_guard_review": {
+    "SOURCE_GUARD": "FAIL",
+    "SOURCE_GUARD_SELF_CONSISTENCY": "FAIL",
+    "py_compile": "PASS",
+    "execution": "PASS",
+    "TAUTOLOGICAL_VALIDATION_DETECTED": "yes",
+    "TEST_CASE_NAME_SPECIAL_CASING_DETECTED": "no",
+    "network_dependence": "no",
+    "tracked_source_mutation": "no",
+    "tautological_helpers": [
+      "_reject_verified_unknown always raises ValueError",
+      "_reject_collapsed_effects always raises ValueError",
+      "_reject_write_success always raises ValueError"
+    ]
+  },
+  "independent_negative_tests": {
+    "INDEPENDENT_NEGATIVE_CASE_COUNT": 12,
+    "INDEPENDENT_NEGATIVE_CASE_REJECT_COUNT": 12,
+    "INDEPENDENT_NEGATIVE_CASE_UNEXPECTED_ACCEPT_COUNT": 0,
+    "cases": [
+      {"id": "NEG-SRC-01", "result": "reject", "assertion": "correlation_id does not alter semantic fingerprint"},
+      {"id": "NEG-SRC-02", "result": "reject", "assertion": "fresh Subject revision does not alter semantic fingerprint"},
+      {"id": "NEG-SRC-03", "result": "reject", "assertion": "same idempotency key plus changed target is not replay-compatible"},
+      {"id": "NEG-SRC-04", "result": "reject", "assertion": "mutation scope changes contract hash"},
+      {"id": "NEG-SRC-05", "result": "reject", "assertion": "authority requirement changes contract hash"},
+      {"id": "NEG-SRC-06", "result": "reject", "assertion": "predecessor/successor changes contract hash"},
+      {"id": "NEG-SRC-07", "result": "reject", "assertion": "OUTCOME_UNKNOWN plus YES cannot construct"},
+      {"id": "NEG-SRC-08", "result": "reject", "assertion": "CONFLICT and NEEDS_SEMANTIC_CHOICE remain distinct"},
+      {"id": "NEG-SRC-09", "result": "reject", "assertion": "descriptor authority declaration grants no authority"},
+      {"id": "NEG-SRC-10", "result": "reject", "assertion": "write descriptor remains denied by canonical ingress"},
+      {"id": "NEG-SRC-11", "result": "reject", "assertion": "GitHub comment ID is rejected as semantic input"},
+      {"id": "NEG-SRC-12", "result": "reject", "assertion": "existing read-only descriptor still instantiates and hashes"}
+    ]
+  },
+  "regression_review": {
+    "EXISTING_DESCRIPTOR_REGRESSION": "PASS",
+    "EXISTING_INGRESS_REGRESSION": "PASS",
+    "M2_RELEVANT_REGRESSION": "PASS",
+    "M3_RELEVANT_REGRESSION": "PASS",
+    "commands": {
+      "descriptor": "python3 scripts/m2a_contract_foundation.py: 28/28",
+      "ingress": "python3 scripts/m2b_ingress_contract.py: 63/63",
+      "m2_corpus": "python3 scripts/m2_regression_corpus.py --json: PASS",
+      "m3_authority": "semantic checks 28/28; historical exact-base assertion failed",
+      "m3_cas_idempotency": "python3 scripts/m3_b6_revision_cas_transaction.py: 36/36",
+      "compileall": "PASS",
+      "diff_check": "PASS"
+    },
+    "current_semantic_regression_detected": "no"
+  },
+  "historical_guard_review": {
+    "HISTORICAL_PHASE_GUARD_STALE": "yes",
+    "HISTORICAL_PHASE_GUARD_FINDING": "VALID_NON_BLOCKING",
+    "guards": [
+      {
+        "GUARD_NAME": "m4_0_architecture_freeze_guard.py",
+        "ORIGINAL_PHASE": "M4-0",
+        "FAILED_ASSERTION": "allowed path guard; functional Core unchanged",
+        "WHY_STALE": "Its purpose is to prove the exact M4-0 frozen source remained unchanged; authorized M4-1 contract source changes necessarily violate that descendant-incompatible assertion.",
+        "CURRENT_REPLACEMENT_PROOF": "Exact diff scope review, independent contract tests, current M2 regressions, current ingress write gate, and independent negative suite."
+      },
+      {
+        "GUARD_NAME": "m4_1_contract_plan_guard.py",
+        "ORIGINAL_PHASE": "M4-1 contract planning",
+        "FAILED_ASSERTION": "functional Core source and source evidence are disallowed descendants",
+        "WHY_STALE": "It validates the planning checkpoint before authorized M4-1 source construction and is not descendant-aware.",
+        "CURRENT_REPLACEMENT_PROOF": "This review's exact lineage/diff review and independent source semantics tests."
+      },
+      {
+        "GUARD_NAME": "m3_b5_authority_capability_lease.py",
+        "ORIGINAL_PHASE": "M3-B5",
+        "FAILED_ASSERTION": "EXACT_BASE_VERIFIED for dd76e296b74f159f22690ec2d66e8473fe3c938d",
+        "WHY_STALE": "The guard's historical exact-base assertion cannot match an authorized M4-1 descendant; all 28 authority semantic checks pass.",
+        "CURRENT_REPLACEMENT_PROOF": "M3-B5 semantic output plus current M2/M3 regression and scope review; no current authority activation was introduced by the candidate."
+      }
+    ],
+    "DESCENDANT_AWARE_INVARIANT_PROOF": "PASS",
+    "future_maintenance_action": "Replace exact-base-only phase assertions with descendant-aware safety guards without modifying them in this review."
+  },
+  "code_quality_review": {
+    "status": "PASS_WITH_FINDINGS",
+    "immutability": "FAIL_FOR_HARDENING",
+    "deterministic_serialization": "PASS",
+    "explicit_validation": "FAIL_FOR_WRITE_COMPLETENESS",
+    "stable_public_exports": "PASS",
+    "circular_imports": "not observed",
+    "duplicate_enums": "not observed",
+    "machine_readable_errors": "PASS_WITH_RESULT_PROJECTION_FINDING",
+    "non_blocking_quality_findings": [
+      "frozen MutationIntent retains mutable nested dict/list values, so a caller can alter semantic identity after construction",
+      "MutationIntent correlation_id is not bounded at this value-object boundary",
+      "non-string semantic input keys can reach AttributeError before canonical JSON validation"
+    ]
+  },
+  "blocking_findings": [
+    {
+      "id": "M4-1-SOURCE-001",
+      "severity": "blocking",
+      "area": "platform neutrality",
+      "finding": "Production Core mutation validation embeds gh_/GitHub issue/comment/ETag naming rules at aota_forge/core/contracts/mutation.py:43. This violates the accepted platform-neutral Core contract and is inconsistently scoped because equivalent platform fields in logical_target and mutation_scope are accepted."
+    },
+    {
+      "id": "M4-1-SOURCE-002",
+      "severity": "blocking",
+      "area": "descriptor semantics",
+      "finding": "OperationContractDescriptor.validate() does not enforce fields marked required_for_write by the accepted descriptor contract. A minimal write descriptor with no mutation scope, authority, predecessor, successor, idempotency, result contract, or precondition requirements is accepted and hashable."
+    },
+    {
+      "id": "M4-1-SOURCE-003",
+      "severity": "blocking",
+      "area": "canonical mutation result",
+      "finding": "mutation_envelope() emits NEEDS_SEMANTIC_CHOICE as a generic failure/error even when semantic_choices are present, and emits NO_EFFECT as a generic error. This breaks the accepted choice/error separation in the canonical result projection."
+    },
+    {
+      "id": "M4-1-SOURCE-004",
+      "severity": "blocking",
+      "area": "test provenance/source guard",
+      "finding": "The reported 10 negative source-guard tests are not all behavioral tests. _reject_verified_unknown, _reject_collapsed_effects and _reject_write_success raise ValueError on both branches, making N7/N8/N10 tautological and invalidating source-guard self-consistency and test provenance acceptance."
+    }
+  ],
+  "non_blocking_findings": [
+    {
+      "id": "M4-1-SOURCE-NB-001",
+      "finding": "Historical exact-base guards are stale for this authorized descendant and require future descendant-aware governance maintenance; no inherited semantic safety regression was found."
+    },
+    {
+      "id": "M4-1-SOURCE-NB-002",
+      "finding": "MutationIntent is frozen only at the dataclass attribute level; nested semantic values remain mutable after construction."
+    }
+  ],
+  "M4_1_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0,
+  "GITHUB_ISSUE_BODY_MUTATED": "no",
+  "GITHUB_CONTROL_COMMENT_MUTATED": "no",
+  "GITHUB_EVENT_LOG_APPENDED": "no",
+  "PRODUCTION_GRAPH_MUTATED": "no",
+  "PRODUCTION_AUTHORITY_MUTATED": "no",
+  "DEPLOY_PERFORMED": "no",
+  "RUNTIME_ACTIVATION_PERFORMED": "no",
+  "HERMES_DISPATCH_PERFORMED": "no",
+  "review_worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-1-source-independent-review",
+  "review_branch": "aota/m4/m4-1-source-independent-review",
+  "blocking_finding_count": 4,
+  "non_blocking_finding_count": 2,
+  "verdict": "FAIL",
+  "M4_1_COMPLETED": "no",
+  "M4_1_IS_KNOWN_GOOD_CHECKPOINT": "no",
+  "M4_2_EXECUTION_AUTHORIZED": "no",
+  "M4_4_EXECUTION_AUTHORIZED": "no",
+  "M4_3_EXECUTION_AUTHORIZED": "no",
+  "next_ready_set": "bounded_m4_1_source_repair",
+  "next_action": "Project Steward must route the four blocking findings to a bounded M4-1 source repair; do not authorize M4-2, M4-4 or M4-3 from this review."
+}
