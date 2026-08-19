@@ -89,6 +89,7 @@ def check_d7(d7: dict) -> None:
     rows = d7.get("transition_table", [])
     names = {row.get("transition") for row in rows}
     check("D7 transitions", {"PLAN_INIT", "PLAN_INIT pre-binding re-entry", "PLAN_INIT post-binding re-entry"} <= names)
+    check("D7 PLAN_INIT re-entry must remain denied", d7.get("reentry_denied") == "yes")
     owner_fields = {"semantic_decision_owner", "project_truth_reconciliation_owner", "mechanical_transition_owner", "authority_store_mutation_owner"}
     contract_fields = {"TRANSITION", "PREDECESSOR_STATE", "SUCCESSOR_STATE"}
     required = owner_fields | {"semantic_authorization_required", "project_binding_requirement", "subject_expected_revision", "raw_authority_precondition", "idempotency_identity", "idempotency_replay_result", "idempotency_conflict_result", "stale_subject_result", "stale_authority_result", "invalid_predecessor_result", "no_effect_on_failure", "no_effect_on_semantic_choice", "no_effect_on_stale_precondition"}
