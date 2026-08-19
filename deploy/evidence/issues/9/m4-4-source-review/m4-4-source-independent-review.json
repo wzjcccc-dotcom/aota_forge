@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 functional source independent review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE-R1",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "read_before_write": "PASS",
+  "review_target_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+  "source_branch": "refs/heads/aota/m4/m4-4-source",
+  "review_branch": "aota/m4/m4-4-source-independent-review",
+  "lineage": {
+    "target_sha_verified": true,
+    "target_remote_ref_verified": true,
+    "target_ancestry_verified": true,
+    "remote_repository": "wzjcccc-dotcom/aota_forge",
+    "remote_verification_command": "git ls-remote origin refs/heads/aota/m4/m4-4-source",
+    "remote_verification_result": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+    "ancestry_command": "git merge-base --is-ancestor d74953be16b103fbd09b0ee18b203881244c4f95 9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+    "ancestry_result": "PASS"
+  },
+  "authoritative_partition": {
+    "source_of_authority": "current Issue #9 body, M4-2/M4-4 dual reconciliation",
+    "M4_2_EXCLUSIVE_WRITE_PATHS": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "M4_4_EXCLUSIVE_WRITE_PATHS": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "SHARED_READ_ONLY_PATHS": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "INTEGRATION_ONLY_PATHS": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "FORBIDDEN_CROSS_LANE_WRITE_PATH_RULES": [
+      "every path in the other lane exclusive list",
+      "every integration-only path",
+      "every shared read-only path",
+      "aota_forge/core/ingress.py remains M4-3-owned",
+      "any unlisted aota_forge/** functional source path"
+    ],
+    "counts": {
+      "M4_2_EXCLUSIVE_WRITE_PATH_COUNT": 3,
+      "M4_4_EXCLUSIVE_WRITE_PATH_COUNT": 7,
+      "SHARED_READ_ONLY_PATH_COUNT": 8,
+      "INTEGRATION_ONLY_PATH_COUNT": 4,
+      "FORBIDDEN_CROSS_LANE_WRITE_PATH_RULE_COUNT": 5
+    }
+  },
+  "forbidden_path_count_discrepancy": {
+    "construction_reported_count": 15,
+    "authoritative_explicit_rule_count": 5,
+    "independent_expanded_non_m4_4_path_count": 15,
+    "review": "PASS",
+    "classification": "REPORT_ONLY_COUNTING_EXPANSION",
+    "disposition": "NON_BLOCKING_REPORT_ONLY",
+    "explanation": "The source scope artifact expands the three M4-2 paths, eight shared read-only paths, and four integration-only path entries into a summed non-M4-4 path count of 15. The Issue authority counts five explicit forbidden rules. The partition was not weakened, no forbidden path was mutated, and no source decision relied on a wrong authority snapshot."
+  },
+  "source_diff_scope": {
+    "review": "PASS",
+    "functional_source_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/project/resolver.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py"
+    ],
+    "all_source_writes_within_m4_4_exclusive_paths": true,
+    "M4_2_EXCLUSIVE_WRITE_PATH_MUTATION_COUNT": 0,
+    "SHARED_READ_ONLY_PATH_MUTATION_COUNT": 0,
+    "INTEGRATION_ONLY_PATH_MUTATION_COUNT": 0,
+    "FORBIDDEN_CROSS_LANE_WRITE_COUNT": 0,
+    "additional_guard_and_evidence_paths_only": true,
+    "candidate_source_changes": "git diff --name-status d74953be16b103fbd09b0ee18b203881244c4f95 9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98"
+  },
+  "behavioral_review": {
+    "PLAN_INIT_SOURCE_REVIEW": "PASS",
+    "PLAN_INIT_REENTRY_DENIED": true,
+    "P1_valid_uninitialized_to_initialized": "PASS",
+    "P2_already_initialized_reentry_denied": "PASS",
+    "P3_invalid_predecessor_no_effect": "PASS",
+    "P4_stale_subject_revision_no_effect": "PASS",
+    "P5_stale_authority_precondition_no_effect": "PASS",
+    "P6_missing_project_binding_no_effect": "PASS",
+    "P7_semantic_ambiguity_needs_choice": "PASS",
+    "P8_same_intent_replay_no_duplicate_effect": "PASS",
+    "P9_same_key_changed_intent_conflict": "PASS",
+    "PROJECT_BINDING_BOUNDARY_REVIEW": "PASS",
+    "CORE_SELECTS_PROJECT_UNDER_AMBIGUITY": false,
+    "PROJECT_STEWARD_SELECTS_SEMANTIC_PROJECT": false,
+    "RELATIONSHIP_RESOLVE_RESULT_IS_PROJECT_BINDING": false,
+    "zero_one_many": {
+      "zero": "PROJECT_NOT_FOUND",
+      "one": "unique evidence only until exact binding",
+      "many": "NEEDS_SEMANTIC_CHOICE",
+      "heuristic_selection": false
+    },
+    "RETIREMENT_PROTOCOL_REVIEW": "FAIL",
+    "RETIREMENT_TWO_STAGE_SNAPSHOT_REVIEW": "PASS",
+    "ABANDONED_TO_CANCELLED": true,
+    "ABANDONED_HISTORY_PRESERVED": true,
+    "SUPERSEDED_EXACT_SUCCESSOR_REQUIRED": true,
+    "missing_successor_field": "PASS",
+    "self_successor": "PASS",
+    "existing_invalid_successor": "PASS",
+    "successor_invalidated_after_snapshot": "PASS_RETURNS_STALE_SNAPSHOT",
+    "missing_successor_object": "FAIL_RAISES_SUBJECT_NOT_FOUND",
+    "successor_revision_changed_after_snapshot": "FAIL_APPLIES_RETIREMENT",
+    "PROTECTION_MATRIX_REVIEW": "PASS",
+    "NO_RESURRECTION_REVIEW": "PASS",
+    "PROJECT_STEWARD_BOUNDARY_REVIEW": "PASS",
+    "LIFECYCLE_ERROR_REVIEW": "FAIL",
+    "NEEDS_SEMANTIC_CHOICE_DISTINCT": true,
+    "PLAN_INIT_ALREADY_INITIALIZED_DISTINCT_FROM_INVALID_PREDECESSOR": true,
+    "B011_SOURCE_BEHAVIOR_REVIEW": "PASS",
+    "B013_SOURCE_BEHAVIOR_REVIEW": "FAIL",
+    "B014_SOURCE_BEHAVIOR_REVIEW": "PASS",
+    "B89_SERIAL_INTEGRATION_DEPENDENCY_IDENTIFIED": true,
+    "B89_dependency_is_not_a_candidate_source_blocker": true,
+    "M4_4_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0
+  },
+  "blocking_findings": [
+    {
+      "id": "BLOCK-M44-SRC-01",
+      "severity": "blocking",
+      "title": "Missing successor object escapes the lifecycle error contract",
+      "location": "aota_forge/core/transitions.py:1409-1417",
+      "evidence": "retire_plan calls store.read_subject(successor_ref), while TransactionStore.read_subject raises SubjectNotFoundError; the handler catches LookupError only. Independent execution raised SubjectNotFoundError instead of returning RETIREMENT_SUCCESSOR_INVALID and a bounded no-effect result.",
+      "required_behavior": "Missing successor must fail closed with a machine-distinguishable RETIREMENT_SUCCESSOR_INVALID result and no mutation."
+    },
+    {
+      "id": "BLOCK-M44-SRC-02",
+      "severity": "blocking",
+      "title": "Successor revision drift is not included in the retirement snapshot",
+      "location": "aota_forge/core/transitions.py:638-647, 671-685, 688-692, 1425-1430",
+      "evidence": "RetirementCandidateSnapshot stores successor reference strings only. After capturing a target snapshot, independently changing the exact successor Subject revision from 1 to 2 still returned RETIREMENT_APPLIED and changed the target to superseded.",
+      "required_behavior": "A successor that becomes stale after stage one must fail closed with RETIREMENT_STALE_SNAPSHOT and no target mutation."
+    }
+  ],
+  "independent_negative_cases": {
+    "count": 14,
+    "rejected": 14,
+    "unexpected_accept": 0,
+    "cases": [
+      "NEG-M44-SRC-01 PLAN_INIT reentry",
+      "NEG-M44-SRC-02 invalid predecessor",
+      "NEG-M44-SRC-03 ambiguous Project auto-selection",
+      "NEG-M44-SRC-04 relationship evidence promoted to binding",
+      "NEG-M44-SRC-05 stale Subject revision",
+      "NEG-M44-SRC-06 retirement newest/latest selection",
+      "NEG-M44-SRC-07 abandoned deletion of history",
+      "NEG-M44-SRC-08 superseded without successor",
+      "NEG-M44-SRC-09 self successor",
+      "NEG-M44-SRC-10 active/current target retirement",
+      "NEG-M44-SRC-11 running-task target retirement",
+      "NEG-M44-SRC-12 stale snapshot refresh",
+      "NEG-M44-SRC-13 retired Plan resurrection",
+      "NEG-M44-SRC-14 M4-4 write ingress enablement"
+    ]
+  },
+  "regressions": {
+    "M4_1_CONTRACT_REGRESSION": "PASS",
+    "M2_RELEVANT_REGRESSION": "PASS",
+    "M3_RELEVANT_REGRESSION": "PASS",
+    "transition_idempotency_regression": "PASS",
+    "project_resolver_context_regression": "PASS",
+    "M3_semantic_behavior_note": "B6, B7, B8, B10 and all B9 semantic cases pass. B2/B5/B9/B89 legacy guards fail only on historical exact-base or superseded source-scope assertions; those failures are not semantic invariant regressions."
+  },
+  "historical_guard_finding": {
+    "classification": "VALID_NON_BLOCKING",
+    "details": "B2 rejects already-authorized M3 AuthorityEngine/CapabilityLease classes; B5 asserts an obsolete exact base; B9/B89 reject current M4-4-owned transitions/context/results as historical M3 shared-scope changes. These are provenance or serial-scope assumptions, not lifecycle semantic regressions."
+  },
+  "capability_boundary": {
+    "M4_4_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": false,
+    "M4_4_WRITE_CAPABLE_INGRESS_IMPLEMENTED": false,
+    "M4_4_EXTERNAL_AUTHORITY_WRITE_IMPLEMENTED": false,
+    "M4_4_DURABLE_JOURNAL_IMPLEMENTED": false,
+    "M4_3_EXECUTION_AUTHORIZED": false,
+    "portable_plan_external_write": false,
+    "github_write": false,
+    "durable_mutation_journal": false,
+    "external_recovery_engine": false
+  },
+  "source_guard": {
+    "command": "python3 scripts/m4_4_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 27,
+    "B011": "PASS",
+    "B013_guard_claim": "PASS",
+    "B014": "PASS",
+    "real_source_imports": true,
+    "self_validation_detected": false,
+    "tautological_validation_detected": false,
+    "test_case_name_special_casing_detected": false
+  },
+  "verdict": {
+    "status": "FAIL",
+    "blocking_finding_count": 2,
+    "non_blocking_finding_count": 2,
+    "next_ready_set": "bounded_m4_4_source_repair",
+    "M4_4_COMPLETED": false,
+    "M4_4_IS_KNOWN_GOOD_CHECKPOINT": false,
+    "M4_3_EXECUTION_AUTHORIZED": false,
+    "candidate_source_modified_by_reviewer": false
+  }
+}
