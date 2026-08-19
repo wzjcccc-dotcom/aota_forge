@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "review_target_sha": "7a3b9aeb797004ded7a714cbe9f607001ac89921",
+  "review_base_sha": "573be8c2d01eedaf98edf589ab11c8a3bebcf55b",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "reviewer_role": "Codex independent architecture reviewer; not the design candidate author",
+  "scope_integrity": {
+    "target_commit_exists": true,
+    "target_remote_ref_matches": true,
+    "target_parent_or_ancestry_matches_base": true,
+    "candidate_changed_paths_exact": true,
+    "functional_core_changed_by_candidate": false,
+    "candidate_artifacts_mutated_during_review": false,
+    "m2_matrix_mutated": false,
+    "m3_accepted_evidence_mutated": false,
+    "github_or_production_mutation_performed": false
+  },
+  "capability_audit_review": {
+    "status": "PASS",
+    "entry_count": 25,
+    "misclassification_count": 0,
+    "source_and_evidence_rechecked": true,
+    "finding": "The audit keeps invariant, source primitive, isolated proof, historical runtime proof, and M4 integration separate. It explicitly denies production-service reuse, durable projection publication, production ingress wiring, durable lease issuance, and GitHub mutation capability."
+  },
+  "cross_authority_review": {
+    "status": "PASS",
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+    "subject_transaction_separate_from_authority_store": true,
+    "durable_journal_and_readback_required": true
+  },
+  "journal_recovery_review": {
+    "status": "FAIL",
+    "crash_window_case_count": 10,
+    "crash_window_cases_pass": 6,
+    "OUTCOME_UNKNOWN_IS_FAILURE": "no",
+    "OUTCOME_UNKNOWN_BLIND_RETRY_ALLOWED": "no",
+    "SILENT_REBASE_ALLOWED": "no",
+    "SILENT_ROLLBACK_ALLOWED": "no",
+    "failed_cases": ["J3 state re-entry after crash is not frozen", "J5 retryable state lacks explicit authorization/precondition re-establishment", "J8 exact raw-vs-normalized comparison is not frozen", "J9 journal persistence failure ordering is not frozen", "J10 terminal journal persistence failure recovery is not frozen"],
+    "finding": "D3 lists states and nominal transitions but does not define the required crash-window durability ordering or all recovery transitions. In particular, an APPLYING record left by a crash has no explicit path to RECONCILING, and exact raw candidate comparison is not distinguished from normalized semantic equality."
+  },
+  "lease_authorization_review": {
+    "status": "PASS",
+    "durable_semantic_authorization_distinct_from_lease": true,
+    "exact_binding_fields_present": true,
+    "LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER": "no",
+    "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+    "approval_evidence_distinct_from_materialized_decision": true
+  },
+  "revision_digest_review": {
+    "status": "PASS",
+    "SUBJECT_REVISION_SEPARATE": true,
+    "RAW_AUTHORITY_PRECONDITION_SEPARATE": true,
+    "NORMALIZED_PLAN_DIGEST_SEPARATE": true,
+    "CANDIDATE_RAW_DIGEST_EXACT_INTENT": true,
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no"
+  },
+  "plan_init_review": {
+    "status": "FAIL",
+    "B011_DESIGN_CLOSURE_READY": "no",
+    "B014_DESIGN_CLOSURE_READY": "no",
+    "PLAN_INIT_REENTRY_DENIED": "yes",
+    "finding": "D7 names re-entry denial but does not define an explicit no-effect/unchanged-external-state result, ownership boundary, or complete executable predecessor contract for B011/B014."
+  },
+  "retirement_review": {
+    "status": "FAIL",
+    "B013_M4_PREREQUISITE_DESIGN_READY": "no",
+    "ABANDONED_SEMANTICS_VALID": "no",
+    "SUPERSEDED_SEMANTICS_VALID": "no",
+    "IMPLICIT_RESURRECTION_ALLOWED": "no",
+    "finding": "D8 has outcome labels and protections but no executable predecessor, target/successor identity binding, CAS/precondition, missing-successor, or bounded protection-error transitions."
+  },
+  "control_comment_review": {
+    "status": "FAIL",
+    "ISSUE_BODY_PLAN_AUTHORITY": true,
+    "CONTROL_COMMENTS_PLAN_AUTHORITY": "no",
+    "EVENT_LOG_PLAN_AUTHORITY": "no",
+    "required_roles": ["milestone_progress_index", "development_notes", "defect_register"],
+    "finding": "D9 requires exactly-one resolution and rejects duplicates, but does not freeze deterministic zero-match behavior, role-marker/schema matching, or all duplicate-role shapes."
+  },
+  "m4_m5_boundary_review": {
+    "status": "PASS",
+    "M4_HERMES_RUNTIME_MUTATION_ACTIVATION_REQUIRED": "no",
+    "M4_HERMES_EXECUTOR_E2E_REQUIRED": "no",
+    "M5_runtime_items_remain_outside_M4": true
+  },
+  "project_steward_git_review": {
+    "status": "FAIL",
+    "project_steward_remains_truth_authority": true,
+    "PROJECT_SELECTION_UNDER_AMBIGUITY_CORE_ALLOWED": "no",
+    "PROJECT_GIT_HELPER_SCOPE_REVIEW": "PASS",
+    "GENERIC_GIT_WRITE_API_ALLOWED": "no",
+    "finding": "D11 preserves Steward authority and bounded Git helpers, but does not explicitly freeze that Core cannot auto-accept milestones, auto-close Plans, or invent a Project Binding."
+  },
+  "regression_review": {
+    "status": "FAIL",
+    "M4_relevant_class_count": 10,
+    "M4_0_behavioral_closure_false_claim_count": 1,
+    "M4_0_REGRESSION_BEHAVIORAL_CLOSURE_CLAIMED": "no",
+    "required_classes_present": ["B011", "B013", "B014", "B014-F", "RC2-1", "RECOVERY-1", "WCTX-1", "BIND-1", "DRIFT-1", "ACTIVATE-R-current-binding"],
+    "future_pass_conditions_concrete": true,
+    "finding": "The ten M4-relevant rows are concrete and honest, but the artifact does not explicitly enumerate delegated M2/M5 matrix classes as out-of-scope ownership, leaving the complete frozen-matrix ownership boundary non-traceable from this artifact alone."
+  },
+  "dag_review": {
+    "status": "PASS",
+    "M4_DAG_ACYCLIC": "yes",
+    "dependency_inversion_count": 0,
+    "M4_6_M4_7_PARALLEL_SAFETY": "pending_source_ownership_reconnaissance",
+    "implementation_parallel_authorization": "not_frozen"
+  },
+  "negative_guard_review": {
+    "status": "FAIL",
+    "case_count": 12,
+    "reject_count": 10,
+    "unexpected_accept_count": 2,
+    "cases": [
+      {"id": "NEG-01", "exit_code": 1, "result": "rejected", "evidence": "FAIL no cross-authority transaction"},
+      {"id": "NEG-02", "exit_code": 1, "result": "rejected", "evidence": "FAIL unknown outcome controls"},
+      {"id": "NEG-03", "exit_code": 0, "result": "unexpected_accept", "evidence": "PASS M4-0 architecture freeze guard after deleting candidate raw digest binding"},
+      {"id": "NEG-04", "exit_code": 1, "result": "rejected", "evidence": "FAIL revision digest domains"},
+      {"id": "NEG-05", "exit_code": 1, "result": "rejected", "evidence": "FAIL authorization lease distinction"},
+      {"id": "NEG-06", "exit_code": 1, "result": "rejected", "evidence": "FAIL authorization lease distinction"},
+      {"id": "NEG-07", "exit_code": 1, "result": "rejected", "evidence": "FAIL PLAN_INIT lifecycle"},
+      {"id": "NEG-08", "exit_code": 1, "result": "rejected", "evidence": "FAIL retirement lifecycle"},
+      {"id": "NEG-09", "exit_code": 0, "result": "unexpected_accept", "evidence": "PASS M4-0 architecture freeze guard after setting CONTROL_COMMENTS_PLAN_AUTHORITY=yes"},
+      {"id": "NEG-10", "exit_code": 1, "result": "rejected", "evidence": "FAIL M4/M5 boundary"},
+      {"id": "NEG-11", "exit_code": 1, "result": "rejected", "evidence": "FAIL Project/Git scope"},
+      {"id": "NEG-12", "exit_code": 1, "result": "rejected", "evidence": "FAIL M4-1 not automatically authorized"}
+    ]
+  },
+  "blocking_findings": [
+    {"id": "BF-01", "severity": "blocking", "area": "journal_recovery", "summary": "D3 cannot deterministically classify all J1-J10 crash windows; APPLYING-after-crash recovery, J5 precondition re-establishment, J8 raw equality, J9 pre-write journal failure, and J10 terminal persistence failure are not frozen.", "evidence": "m4-0-architecture-freeze.json D3/D4; required cases J3/J5/J8/J9/J10"},
+    {"id": "BF-02", "severity": "blocking", "area": "plan_init", "summary": "D7 re-entry rows do not define the required no-effect result and omit the required transition ownership boundary.", "evidence": "m4-0-architecture-freeze.json D7; m2-successor-regression-matrix.json B011/B014"},
+    {"id": "BF-03", "severity": "blocking", "area": "plan_retirement", "summary": "D8 is not an executable retirement transition contract for B013 because predecessor, exact target/successor binding, CAS, missing successor, and protection errors are unspecified.", "evidence": "m4-0-architecture-freeze.json D8; m2-successor-regression-matrix.json B013"},
+    {"id": "BF-04", "severity": "blocking", "area": "control_comments", "summary": "D9 does not define deterministic zero-match and complete duplicate-role resolution, so a future adapter cannot safely select the intended control comment.", "evidence": "m4-0-architecture-freeze.json D9"},
+    {"id": "BF-05", "severity": "blocking", "area": "project_steward", "summary": "D11 omits explicit prohibitions on Core auto-accepting milestones, auto-closing Plans, and inventing Project Binding.", "evidence": "m4-0-architecture-freeze.json D11; governing Issue #9 Project Steward boundary"},
+    {"id": "BF-06", "severity": "blocking", "area": "negative_guard", "summary": "The candidate guard accepts NEG-03 after removing candidate raw digest binding and NEG-09 after making control comments Plan authority.", "evidence": "candidate guard exit 0 for NEG-03 and NEG-09; expected rejection was not observed"},
+    {"id": "BF-07", "severity": "blocking", "area": "regression_ownership", "summary": "The ownership artifact does not explicitly trace non-M4 frozen matrix classes to their M2/M5 owners and out-of-scope dispositions.", "evidence": "m4-0-regression-ownership.json has 10 rows while the frozen matrix has 16 classes"}
+  ],
+  "non_blocking_findings": [],
+  "verdict": "FAIL"
+}
