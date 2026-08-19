@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 downstream handoff",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "M4_1_PASS_AUTOMATICALLY_AUTHORIZES_M4_3": "no",
+  "supplied_contracts": [
+    "canonical Mutation Intent semantic/mechanical boundary",
+    "single read/write OperationContractDescriptor semantics",
+    "deterministic intent_fingerprint and contract_hash rules",
+    "canonical mutation result and authoritative effect confirmation",
+    "distinct choice/conflict/blocked/unknown/no-effect states",
+    "platform-neutral opaque authority precondition vocabulary"
+  ],
+  "M4_2": {
+    "depends_on": ["Mutation Intent contract", "descriptor authority/approval/Decision requirements", "intent_fingerprint", "trusted/mechanical binding requirements", "authorization basis schema requirements"],
+    "owns": ["Trusted Mutation Authorization", "Capability Lease issuance protocol", "trusted runtime authorization materialization"],
+    "M4_1_does_not_implement": ["Capability Lease issuer", "semantic authorization engine", "runtime lease validation as a new implementation"]
+  },
+  "M4_4": {
+    "depends_on": ["Mutation Intent contract", "descriptor predecessor/successor requirements", "canonical result/error contract"],
+    "owns": ["PLAN_INIT mechanical lifecycle", "retirement lifecycle", "Project Steward mechanical invocation boundary"],
+    "M4_1_does_not_implement": ["PLAN_INIT", "retirement", "Project Steward invocation"]
+  },
+  "M4_3": {
+    "start_gate": ["M4-2 accepted", "M4-4 accepted"],
+    "consumes": ["M4-1 contracts", "M4-2 authorization and lease issuance", "M4-4 lifecycle operation definitions"],
+    "owns": ["write-capable Unified Ingress"],
+    "M4_1_does_not_implement": ["write ingress", "runtime activation"],
+    "automatic_authorization": "no"
+  },
+  "dependency_dag_preserved": {
+    "edges": [["M4-0", "M4-1"], ["M4-1", "M4-2"], ["M4-1", "M4-4"], ["M4-2", "M4-3"], ["M4-4", "M4-3"]],
+    "unchanged": "yes"
+  },
+  "implementation_boundary": {
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_1_SOURCE_MUTATION_ALLOWED": "no",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_4_TRANSITION_IMPLEMENTATION": "no",
+    "M4_3_WRITE_INGRESS_IMPLEMENTED": "no"
+  },
+  "production_behavior_claimed": false
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 current contract gap map",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "work_item_name": "M4-1 Mutation Intent / Operation Descriptor / Canonical Mutation Result Contract Freeze",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "entries": [
+    {
+      "component": "OperationContractDescriptor",
+      "source_evidence": ["aota_forge/core/contracts/descriptor.py", "aota_forge/core/contracts/version.py"],
+      "current_capability": "Serializable descriptor with deterministic canonical JSON and SHA-256 contract_hash; declarative read/write, mutation scope, authority, approval, predecessor/successor, idempotency and error fields already exist.",
+      "current_limitation": "Mutation fields are declarations only; no write operation is exposed or enforced by the current ingress.",
+      "classification": "EXTEND_IN_M4_1",
+      "m4_1_required_semantics": ["freeze semantic input and trusted context namespaces", "freeze result/error contract reference", "freeze hash inclusion and exclusion rules"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "HandlerRegistry",
+      "source_evidence": ["aota_forge/core/contracts/registry.py", "aota_forge/core/bootstrap.py"],
+      "current_capability": "One process-local registry stores descriptors separately from optional callable bindings, rejects duplicate names, and lists descriptors deterministically.",
+      "current_limitation": "A binding is not durable dispatch, authority, lease issuance, or production mutation activation.",
+      "classification": "REUSE_AS_IS",
+      "m4_1_required_semantics": ["retain one registry for read and write descriptors", "keep callable identity outside contract semantics"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Unified Ingress",
+      "source_evidence": ["aota_forge/core/ingress.py", "aota_forge/core/contracts/results.py"],
+      "current_capability": "Canonical operation lookup, input validation, trusted-context resolution, handler normalization, correlation and machine result envelope exist for read-only operations.",
+      "current_limitation": "The integrated path rejects every descriptor whose classification is not read-only; it is not write-capable at this checkpoint.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["define the result contract consumed by future write ingress", "do not change ingress in M4-1"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "OperationContext",
+      "source_evidence": ["aota_forge/core/context.py", "aota_forge/core/ingress.py"],
+      "current_capability": "OperationContext carries operation identity, correlation, typed principal, semantic inputs, trusted metadata and contract_hash; TrustedContext is a private-boundary carrier.",
+      "current_limitation": "Reserved subject, revision, authority and capability_lease fields are None placeholders; ContextResolver cannot select subjects, mint authority or leases, or make lifecycle decisions.",
+      "classification": "EXTEND_IN_M4_1",
+      "m4_1_required_semantics": ["separate model-facing intent from trusted mechanical binding", "preserve trusted adapter boundary", "bind typed target and preconditions only after intent"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "canonical result envelope",
+      "source_evidence": ["aota_forge/core/contracts/results.py", "aota_forge/core/ingress.py"],
+      "current_capability": "General envelope emits status, result, errors, blockers, semantic_choices, next_action and correlation_id alongside stable ok/data/evidence/warnings fields.",
+      "current_limitation": "There is no canonical mutation_effect or authoritative_effect_confirmed field, so external materialization outcome cannot yet be represented.",
+      "classification": "EXTEND_IN_M4_1",
+      "m4_1_required_semantics": ["separate operation status from mutation effect", "make unknown authoritative outcome non-success", "preserve distinct choice, conflict, blocked and no-effect meanings"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "canonical errors",
+      "source_evidence": ["aota_forge/core/contracts/errors.py", "aota_forge/core/contracts/results.py"],
+      "current_capability": "Bounded machine-readable ForgeError codes serialize and round-trip; distinct semantic errors such as NEEDS_SEMANTIC_CHOICE are available.",
+      "current_limitation": "Mutation-specific effect and external materialization error mapping is not frozen as one descriptor/result contract.",
+      "classification": "EXTEND_IN_M4_1",
+      "m4_1_required_semantics": ["machine-readable mutation error codes", "choice/error separation", "mapping of effect state to envelope without generic error collapse"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "idempotency metadata",
+      "source_evidence": ["aota_forge/core/idempotency.py", "aota_forge/core/transaction.py"],
+      "current_capability": "Deterministic canonical_fingerprint supports same-key replay and same-key/different-fingerprint conflict in the isolated transaction foundation.",
+      "current_limitation": "IdempotencyStore is isolated and test-scoped; mutation intent fingerprint semantics are not yet a standalone Core contract.",
+      "classification": "EXTEND_IN_M4_1",
+      "m4_1_required_semantics": ["bind idempotency identity to exact semantic intent", "exclude runtime and credential values", "define replay-compatible versus conflict"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "authority metadata",
+      "source_evidence": ["aota_forge/core/authority.py", "aota_forge/core/context.py"],
+      "current_capability": "AuthorityEngine evaluates trusted principal, typed target, scope, revision, approval and Decision evidence without semantic selection or graph writes.",
+      "current_limitation": "It evaluates supplied facts only; M4-1 does not issue authorization or decide whether a request is permitted.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["descriptor declares required authority and approval/Decision requirements", "intent carries authorization evidence only after trusted resolution"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Capability Lease",
+      "source_evidence": ["aota_forge/core/capability_lease.py", "aota_forge/core/authority.py"],
+      "current_capability": "Bounded executor-neutral lease schema validates operation, typed target, scope, expiry, expected revision and contract_hash; authority evaluation checks bindings.",
+      "current_limitation": "Fixture revoke/consume copies are not durable or atomic, and no issuer protocol exists in this work item.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["allow a lease or reservation reference as trusted evidence", "never make a model-provided lease authoritative", "defer issuance to M4-2"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Subject revision/CAS",
+      "source_evidence": ["aota_forge/core/revision.py", "aota_forge/core/transaction.py"],
+      "current_capability": "Subject expected revision and isolated transaction CAS reject stale updates; idempotent committed replay reuses the prior result.",
+      "current_limitation": "The source primitive is isolated/non-authoritative, and external authority raw revision/digest is a separate domain not represented by ingress.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["name subject_expected_revision separately from authority_source_revision", "permit trusted binding of both domains without conflation"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Portable Plan read model",
+      "source_evidence": ["aota_forge/core/plan/read_model.py", "aota_forge/core/plan/normalize.py"],
+      "current_capability": "PortablePlanDocument and normalized digest are read-side, platform-neutral observations; Issue body remains Plan authority and historical sections remain provenance.",
+      "current_limitation": "No write port, lifecycle mutation, raw precondition or authoritative materialization exists.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["use normalized_plan_digest as semantic identity only", "do not use it as external CAS", "keep write adapter out of M4-1"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Portable Plan Authority Adapter",
+      "source_evidence": ["aota_forge/adapters/plan_authority/__init__.py"],
+      "current_capability": "PlanAuthorityReadAdapter returns body, opaque source revision/digest and control projections without exposing platform identifiers to Core.",
+      "current_limitation": "It is read-only; no mutation port, raw precondition, journal or write verification exists.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["define opaque authority precondition fields for later M4-5/M4-6 consumption", "remain platform-neutral"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "CLI schema projection",
+      "source_evidence": ["aota_forge/cli/projection.py", "aota_forge/cli/render.py"],
+      "current_capability": "CLI argument schema is derived from the canonical descriptor and includes protocol_version and contract_hash.",
+      "current_limitation": "Only read operations are wired; no mutation command or numeric projection for mutation effects exists.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["project the frozen descriptor/result without adding CLI semantics", "defer mutation CLI wiring to M4-8"],
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Hermes schema projection",
+      "source_evidence": ["aota_forge/adapters/hermes/schema.py", "aota_forge/adapters/hermes/invoke.py"],
+      "current_capability": "Hermes request schema is derived from the descriptor, separates arguments from trusted metadata, and checks expected protocol/hash identity.",
+      "current_limitation": "Schema compatibility is the only relevant capability; Hermes runtime mutation activation and executor lifecycle are M5 concerns.",
+      "classification": "CONSUME_LATER",
+      "m4_1_required_semantics": ["project semantic inputs only in arguments", "carry trusted metadata only through trusted boundary", "defer runtime dispatch"],
+      "production_behavior_claimed": false
+    }
+  ],
+  "boundary": {
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_1_SOURCE_MUTATION_ALLOWED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_3_WRITE_INGRESS_IMPLEMENTED": "no",
+    "M4_4_TRANSITIONS_IMPLEMENTED": "no",
+    "M4_3_AUTOMATICALLY_AUTHORIZED": "no",
+    "GITHUB_IS_CORE_ONTOLOGY": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no"
+  }
+}

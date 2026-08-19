@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 regression and handoff map",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "current_behavioral_closure_claimed": "no",
+  "M4_1_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0,
+  "entries": [
+    {
+      "failure_class": "DRIFT-1",
+      "m4_1_relationship": "CONTRACT_OWNER",
+      "contract_requirement": "One descriptor model for read/write operations, deterministic protocol_version/contract_hash, and adapter projections derived from it; mismatched schemas fail closed.",
+      "future_behavioral_owner": "M4-8 for successor regression closure; M4-6/M4-8 for adapter compatibility",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "RC2-1",
+      "m4_1_relationship": "CONTRACT_OWNER",
+      "contract_requirement": "Canonical mutation result exposes authoritative effect state and prevents local success from hiding external materialization failure or unknown outcome.",
+      "future_behavioral_owner": "M4-3, M4-5 and M4-7, integrated by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "B014-F",
+      "m4_1_relationship": "CONTRACT_OWNER",
+      "contract_requirement": "Result must explicitly represent authoritative failure/unknown and cannot project verified success without authoritative confirmation.",
+      "future_behavioral_owner": "M4-3/M4-5/M4-7, integrated by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "B011",
+      "m4_1_relationship": "CONTRACT_PREREQUISITE",
+      "contract_requirement": "Descriptor freezes valid predecessor/successor semantics, exact Subject precondition, no-effect invalid predecessor and distinct re-entry error surface for later PLAN_INIT.",
+      "future_behavioral_owner": "M4-4, integrated behavioral closure by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "B013",
+      "m4_1_relationship": "CONTRACT_PREREQUISITE",
+      "contract_requirement": "Mutation intent/result preserve explicit candidate choice and distinguish NEEDS_SEMANTIC_CHOICE from conflict/no-effect; no heuristic retirement target is encoded.",
+      "future_behavioral_owner": "M4-4/M4-5, integrated behavioral closure by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "B014",
+      "m4_1_relationship": "CONTRACT_PREREQUISITE",
+      "contract_requirement": "Descriptor predecessor/successor contract can express post-binding PLAN_INIT re-entry denial without making the descriptor a transition authority.",
+      "future_behavioral_owner": "M4-4, integrated behavioral closure by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "RECOVERY-1",
+      "m4_1_relationship": "DOWNSTREAM_CONSUMER_ONLY",
+      "contract_requirement": "OUTCOME_UNKNOWN, FAILED_NO_EFFECT, CONFLICT and explicit semantic choice remain distinct for future recovery/reconciliation results.",
+      "future_behavioral_owner": "M4-7 with M4-4 lifecycle consumers, integrated by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "BIND-1",
+      "m4_1_relationship": "CONTRACT_PREREQUISITE",
+      "contract_requirement": "Intent permits a logical target and trusted typed target binding without allowing Core to select a project or resolve ambiguity heuristically.",
+      "future_behavioral_owner": "M4-2/M4-4, integrated behavioral closure by M4-8",
+      "current_behavioral_closure_claimed": "no"
+    },
+    {
+      "failure_class": "WCTX-1",
+      "m4_1_relationship": "CONTRACT_PREREQUISITE",
+      "contract_requirement": "Descriptor and canonical errors retain distinct missing-context meanings; mutation result does not collapse blocked lifecycle prerequisites into generic error.",
+      "future_behavioral_owner": "M4-3/M4-4 and M4-8; M2 taxonomy remains inherited",
+      "current_behavioral_closure_claimed": "no"
+    }
+  ],
+  "boundary": {
+    "M4_1_FREEZES_INTERFACES_ONLY": "yes",
+    "M4_1_CLAIMS_FUTURE_WRITE_PASS": "no",
+    "M4_1_CLAIMS_M4_BEHAVIORAL_CLOSURE": "no",
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "no"
+  },
+  "production_behavior_claimed": false
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 canonical mutation result contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "general_envelope": ["status", "result", "errors", "blockers", "semantic_choices", "next_action", "correlation_id"],
+  "canonical_mutation_envelope": {
+    "operation": "canonical operation name",
+    "status": "operation-level processing status; not the effect state",
+    "result": "bounded operation result classification; not a claim of external effect",
+    "errors": "machine-readable errors, distinct from semantic choices and effect state",
+    "blockers": "bounded unmet mechanical/governance prerequisites",
+    "semantic_choices": "explicit choices required from an external semantic decision maker",
+    "next_action": "bounded adapter/user guidance",
+    "correlation_id": "bounded request identity",
+    "mutation_effect": "one enum value from the platform-neutral effect state set",
+    "authoritative_effect_confirmed": "yes | no | unknown",
+    "effect_evidence": "bounded authoritative readback/evidence references; no credentials or platform payload required"
+  },
+  "mutation_effect_states": {
+    "NO_EFFECT": {"meaning": "no requested mutation took effect; includes bounded successful no-op where no new effect was requested", "authoritative_effect_confirmed": "no"},
+    "APPLIED_VERIFIED": {"meaning": "the requested authoritative mutation was applied and verified", "authoritative_effect_confirmed": "yes"},
+    "REPLAYED_VERIFIED": {"meaning": "an exact prior authoritative effect was replayed from committed identity and verified/reused", "authoritative_effect_confirmed": "yes"},
+    "BLOCKED": {"meaning": "required mechanical or governance prerequisite prevented an attempt", "authoritative_effect_confirmed": "no"},
+    "CONFLICT": {"meaning": "the requested intent or precondition conflicts with an existing identity/state; no new requested effect is confirmed", "authoritative_effect_confirmed": "no"},
+    "NEEDS_SEMANTIC_CHOICE": {"meaning": "an external semantic decision is required before a bounded mutation can be selected", "authoritative_effect_confirmed": "no"},
+    "OUTCOME_UNKNOWN": {"meaning": "an external attempt may have happened but authoritative effect cannot yet be determined", "authoritative_effect_confirmed": "unknown"},
+    "FAILED_NO_EFFECT": {"meaning": "failure is proven before or during the attempt with no requested authoritative effect", "authoritative_effect_confirmed": "no"}
+  },
+  "effect_status_separation": {
+    "operation_status_differs_from_mutation_effect": "yes",
+    "authoritative_effect_confirmed_is_explicit": "yes",
+    "rules": [
+      "APPLIED_VERIFIED -> authoritative_effect_confirmed=yes",
+      "REPLAYED_VERIFIED -> authoritative_effect_confirmed=yes",
+      "FAILED_NO_EFFECT -> authoritative_effect_confirmed=no",
+      "NO_EFFECT -> authoritative_effect_confirmed=no",
+      "OUTCOME_UNKNOWN -> authoritative_effect_confirmed=unknown",
+      "CONFLICT -> no new requested effect confirmed",
+      "BLOCKED -> authoritative_effect_confirmed=no",
+      "NEEDS_SEMANTIC_CHOICE -> authoritative_effect_confirmed=no"
+    ]
+  },
+  "error_choice_separation": {
+    "NEEDS_SEMANTIC_CHOICE": "choice required; not a generic error",
+    "CONFLICT": "identity/precondition conflict; not a semantic choice result",
+    "BLOCKED": "prerequisite not satisfied; not an external unknown outcome",
+    "OUTCOME_UNKNOWN": "authoritative readback is required; not verified success and not proof of no effect",
+    "FAILED_NO_EFFECT": "failure with proven no requested effect; not unknown and not a choice",
+    "distinct": "yes"
+  },
+  "B014_F_RC2_1_safety": {
+    "SILENT_MATERIALIZATION_FAILURE_ALLOWED": "no",
+    "AUTHORITATIVE_EFFECT_UNKNOWN_MAY_REPORT_VERIFIED_SUCCESS": "no",
+    "LOCAL_HANDLER_SUCCESS_EQUALS_AUTHORITATIVE_EFFECT_SUCCESS": "no",
+    "RC2_1_RESULT_CONTRACT_READY": "yes",
+    "B014_F_RESULT_CONTRACT_READY": "yes",
+    "usable_success_rule": "A result is usable as authoritative success only when mutation_effect is APPLIED_VERIFIED or REPLAYED_VERIFIED and authoritative_effect_confirmed=yes.",
+    "unknown_rule": "OUTCOME_UNKNOWN must not expose verified success, worker/handoff/ack success, or an equivalent usable success projection.",
+    "failure_rule": "If authoritative materialization fails or remains unknown, the canonical result must expose that state and cannot hide it behind local handler success."
+  },
+  "canonical_error_codes": ["NEEDS_SEMANTIC_CHOICE", "CONFLICT", "BLOCKED", "OUTCOME_UNKNOWN", "FAILED_NO_EFFECT", "STALE_SUBJECT", "STALE_AUTHORITY", "INVALID_PREDECESSOR", "MATERIALIZATION_FAILED"],
+  "platform_neutrality": {
+    "GITHUB_IS_CORE_ONTOLOGY": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no"
+  },
+  "examples": {
+    "EXAMPLE_A": {"name": "pure Subject lifecycle mutation", "status": "completed", "mutation_effect": "APPLIED_VERIFIED", "authoritative_effect_confirmed": "yes", "result": "usable success"},
+    "EXAMPLE_B": {"name": "Portable Plan authority-store mutation", "status": "completed", "mutation_effect": "APPLIED_VERIFIED", "authoritative_effect_confirmed": "yes", "effect_evidence": ["exact candidate raw digest readback"]},
+    "EXAMPLE_C": {"name": "mutation requiring semantic choice", "status": "needs_input", "mutation_effect": "NEEDS_SEMANTIC_CHOICE", "authoritative_effect_confirmed": "no", "semantic_choices": ["select exact target"]},
+    "EXAMPLE_D": {"name": "same idempotency key / same intent replay", "status": "completed", "mutation_effect": "REPLAYED_VERIFIED", "authoritative_effect_confirmed": "yes", "new_effect": false},
+    "EXAMPLE_E": {"name": "same idempotency key / different intent conflict", "status": "rejected", "mutation_effect": "CONFLICT", "authoritative_effect_confirmed": "no", "errors": [{"code": "IDEMPOTENCY_CONFLICT"}]},
+    "EXAMPLE_F": {"name": "authoritative outcome unknown", "status": "reconciliation_required", "mutation_effect": "OUTCOME_UNKNOWN", "authoritative_effect_confirmed": "unknown", "usable_success": false, "next_action": "reconcile before retry"}
+  },
+  "implementation_boundary": {
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_1_BEHAVIORAL_CLOSURE_CLAIMED": "no"
+  },
+  "production_behavior_claimed": false
+}

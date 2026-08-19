@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 write operation descriptor contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "SINGLE_OPERATION_CONTRACT_DESCRIPTOR_MODEL": "yes",
+  "READ_AND_WRITE_OPERATIONS_SHARE_REGISTRY": "yes",
+  "authority_boundary": {
+    "DESCRIPTOR_IS_AUTHORITY": "no",
+    "DESCRIPTOR_MINTS_CAPABILITY_LEASE": "no",
+    "DESCRIPTOR_SELECTS_SUBJECT": "no",
+    "DESCRIPTOR_SELECTS_PROJECT": "no",
+    "DESCRIPTOR_ACCEPTS_MILESTONE": "no",
+    "meaning": "The descriptor declares requirements and compatibility semantics. Trusted authorization and semantic decisions are supplied and checked by later stages."
+  },
+  "base_model": {
+    "source": "aota_forge/core/contracts/descriptor.py:OperationContractDescriptor",
+    "handler_binding": "aota_forge/core/contracts/registry.py:HandlerRegistry",
+    "rule": "Do not create a second read/write registry or put a runtime callable in descriptor semantics."
+  },
+  "required_descriptor_semantics": {
+    "semantic_operation_name": "canonical bounded operation name",
+    "protocol_version": "protocol identity for adapter/Core compatibility",
+    "declared_semantic_inputs": "named, typed, bounded model-facing inputs; trusted metadata is a separate namespace",
+    "required_context": "trusted/mechanical context keys that must be resolved before execution",
+    "optional_context": "trusted/mechanical context keys that may be absent",
+    "read_write_classification": ["read", "write", "read-write"],
+    "mutation_scope": "platform-neutral semantic scope, required for mutation operations",
+    "required_authority_class": "declared authority class/evidence requirement; not a grant",
+    "approval_requirement": "whether ApprovalEvidence is required",
+    "materialized_decision_requirement": "whether an exact Materialized Decision is required",
+    "valid_predecessor_semantics": "allowed lifecycle predecessor state(s) and no-effect invalid-state behavior",
+    "valid_successor_semantics": "mechanically produced successor state and effect classification",
+    "subject_revision_precondition_requirement": "whether exact Subject CAS is required",
+    "external_authority_precondition_requirement": "whether raw source revision/digest is required",
+    "idempotency_semantics": "identity/fingerprint replay and conflict rules",
+    "result_contract": "reference to canonical mutation result envelope and effect states",
+    "machine_readable_errors": "closed or explicitly versioned canonical error codes"
+  },
+  "descriptor_field_contract": {
+    "name": {"required": true, "semantic": true},
+    "description": {"required": true, "semantic": true},
+    "inputs": {"required": true, "semantic": true, "source_shape": "InputSpec(name,type)"},
+    "required_context": {"required": true, "semantic": true},
+    "optional_context": {"required": true, "semantic": true},
+    "internal_ids_required": {"required": false, "semantic": true, "rule": "declared for trusted mechanical binding only; never model-facing normal input"},
+    "internal_ids_created": {"required": false, "semantic": true},
+    "read_write": {"required": true, "semantic": true},
+    "mutation_scope": {"required_for_write": true, "semantic": true},
+    "required_authority": {"required_for_write": true, "semantic": true},
+    "approval_required": {"required": true, "semantic": true},
+    "decision_required": {"required_when_applicable": true, "semantic": true},
+    "valid_predecessor_state": {"required_for_write": true, "semantic": true},
+    "valid_successor_state": {"required_for_write": true, "semantic": true},
+    "subject_revision_precondition": {"required_for_write": true, "semantic": true},
+    "external_authority_precondition": {"required_when_applicable": true, "semantic": true},
+    "idempotency": {"required_for_write": true, "semantic": true},
+    "result_contract": {"required_for_write": true, "semantic": true},
+    "errors": {"required": true, "semantic": true},
+    "protocol_version": {"required": true, "semantic": true}
+  },
+  "contract_hash": {
+    "CONTRACT_HASH_DETERMINISTIC": "yes",
+    "CONTRACT_HASH_INCLUDES_MUTATION_SEMANTICS": "yes",
+    "CONTRACT_HASH_EXCLUDES_RUNTIME_AUTHORITY_VALUES": "yes",
+    "canonicalization": "SHA-256 of canonical JSON with sorted object keys, deterministic input ordering, compact separators and no runtime registry state",
+    "includes": ["operation name", "protocol version", "declared semantic input schema", "required/optional context schema", "read/write classification", "mutation scope", "required authority class", "approval and Decision requirement", "valid predecessor/successor contract", "Subject revision requirement", "external authority precondition requirement", "idempotency semantics", "canonical result contract", "machine-readable error set"],
+    "excludes": ["handler callable identity", "memory address", "current revision value", "Capability Lease token", "correlation ID", "current timestamp", "GitHub ETag", "current raw digest", "candidate-specific values", "principal instance or runtime authorization values"]
+  },
+  "operation_examples": {
+    "EXAMPLE_A": {"operation": "record_completion", "read_write": "write", "mutation_scope": "owning Subject aggregate", "required_authority": "Subject mutation authority", "approval_required": false, "decision_required": false, "valid_predecessor": "subject exists at exact revision", "valid_successor": "completion recorded and Subject revision advances", "idempotency": "same intent replay; different intent conflict", "result_contract": "canonical mutation result"},
+    "EXAMPLE_B": {"operation": "plan_init", "read_write": "write", "mutation_scope": "Portable Plan authority store", "required_authority": "trusted semantic authorization", "approval_required": true, "decision_required": false, "valid_predecessor": "uninitialized", "valid_successor": "initialized", "subject_revision_precondition": "required", "external_authority_precondition": "required", "result_contract": "canonical mutation result"},
+    "EXAMPLE_C": {"operation": "retire_plan", "read_write": "write", "mutation_scope": "Portable Plan authority store", "required_authority": "trusted semantic authorization", "approval_required": true, "decision_required": true, "valid_predecessor": "eligible exact snapshot candidate", "valid_successor": "cancelled or superseded", "ambiguous_candidate": "NEEDS_SEMANTIC_CHOICE with no effect"}
+  },
+  "platform_neutrality": {
+    "GITHUB_IS_CORE_ONTOLOGY": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no",
+    "allowed_opaque_fields": ["authority_source_revision", "authority_observed_raw_digest", "typed_target", "opaque authority token"],
+    "adapter_private_materialization": "Platform identifiers and API payloads may exist only inside a concrete adapter and may not alter Core descriptor semantics unless represented by a platform-neutral semantic target."
+  },
+  "implementation_boundary": {
+    "M4_1_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_3_WRITE_INGRESS_IMPLEMENTED": "no",
+    "M4_4_TRANSITION_IMPLEMENTATION": "no"
+  },
+  "production_behavior_claimed": false
+}

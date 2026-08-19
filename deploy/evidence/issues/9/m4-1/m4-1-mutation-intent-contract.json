@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 Mutation Intent contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-P0",
+  "expected_base_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_only": true,
+  "MUTATION_INTENT_IS_AUTHORITY": "no",
+  "MUTATION_INTENT_IS_SEMANTIC_DECISION_MAKER": "no",
+  "MUTATION_INTENT_IS_EXTERNAL_PLATFORM_PAYLOAD": "no",
+  "purpose": "An already-decided semantic mutation request crossing the Core contract boundary; it is not permission, a lease, a platform payload, a journal record, or semantic reasoning.",
+  "input_domains": {
+    "semantic_model_facing_declared_inputs": {
+      "description": "Values that describe the requested semantic change and are bounded/validated by the operation descriptor.",
+      "fields": ["operation", "semantic_inputs", "logical_target", "mutation_scope", "idempotency_key"],
+      "examples": ["requested lifecycle change", "bounded semantic choice", "logical target reference supplied as a semantic choice"]
+    },
+    "trusted_mechanical_resolved_context": {
+      "description": "Runtime-bound facts resolved after the intent crosses a trusted adapter boundary; ordinary model arguments cannot assert them.",
+      "fields": ["principal", "typed_target", "subject_ref", "subject_expected_revision", "authority_source_revision", "authority_observed_raw_digest", "normalized_plan_digest", "candidate_raw_digest", "contract_hash", "authorization_basis", "capability_lease_or_reservation_reference", "correlation_id"],
+      "source": "trusted adapter/runtime boundary and later mechanical resolution"
+    }
+  },
+  "model_boundary": {
+    "MODEL_MAY_SELF_ASSERT_TRUSTED_PRINCIPAL": "no",
+    "MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE": "no",
+    "MODEL_MAY_SELF_ASSERT_INTERNAL_AUTHORITY": "no",
+    "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+    "MODEL_RAW_AUTHORITY_REVISION_NORMAL_INPUT": "no",
+    "trusted_metadata_transport": "Adapters may carry trusted runtime metadata only through the trusted adapter boundary, not as ordinary model arguments.",
+    "typed_target_rule": "A model-facing logical target is not trusted target identity until mechanically resolved to a typed ObjectRef and checked against the operation and authority evidence."
+  },
+  "canonical_semantic_fields": {
+    "operation": {"required": true, "kind": "canonical operation name", "model_facing": true},
+    "semantic_inputs": {"required": true, "kind": "bounded JSON semantic arguments", "model_facing": true},
+    "logical_target": {"required": true, "kind": "platform-neutral logical target", "model_facing": true},
+    "mutation_scope": {"required": true, "kind": "bounded declared semantic scope", "model_facing": true},
+    "idempotency_key": {"required": true, "kind": "bounded caller identity for one semantic attempt", "model_facing": true},
+    "intent_fingerprint": {"required": true, "kind": "deterministic SHA-256 over canonical semantic intent", "model_facing": false},
+    "correlation_id": {"required": true, "kind": "bounded request correlation identity", "model_facing": false, "resolution": "trusted runtime may honor a bounded supplied value; otherwise Core generates one"}
+  },
+  "trusted_resolution_binding": {
+    "principal": "typed trusted Principal from TrustedContext; never from a plain model value",
+    "typed_target": "canonical ObjectRef resolved by the trusted/mechanical boundary",
+    "subject_ref": "owning Subject ObjectRef when the operation has Subject authority",
+    "subject_expected_revision": "exact Subject CAS precondition",
+    "authority_source_revision": "opaque external authority-store revision, distinct from Subject revision",
+    "authority_observed_raw_digest": "raw authority state observed before candidate construction",
+    "normalized_plan_digest": "semantic Portable Plan digest where applicable; never an external CAS token",
+    "candidate_raw_digest": "exact intended external document identity where applicable",
+    "contract_hash": "descriptor-derived semantic contract identity",
+    "authorization_basis": "trusted evidence reference resolved by M4-2; not created by intent",
+    "capability_lease_or_reservation_reference": "opaque trusted reference resolved by M4-2; token bytes are excluded from the semantic fingerprint"
+  },
+  "intent_fingerprint": {
+    "INTENT_FINGERPRINT_DETERMINISTIC": "yes",
+    "INTENT_FINGERPRINT_EXCLUDES_RUNTIME_CALLABLE_IDENTITY": "yes",
+    "algorithm": "SHA-256 of UTF-8 canonical JSON with sorted object keys, deterministic list order as declared by semantic schema, compact separators, and no derived fingerprint field",
+    "includes": ["operation", "protocol_version", "semantic_inputs", "logical_target", "mutation_scope", "idempotency identity semantics", "semantic successor/predecessor choice when it is part of the request"],
+    "excludes": ["runtime Python callable identity", "memory address", "wall-clock timestamp", "Capability Lease token bytes", "correlation ID", "handler registry state", "platform comment identifier unless adapter-private target identity is genuinely semantic"],
+    "idempotency_rule": "same idempotency identity plus same semantic intent fingerprint is replay-compatible; same identity plus different fingerprint is CONFLICT with no new requested effect"
+  },
+  "authority_and_materialization_boundary": {
+    "intent_does_not": ["grant permission", "mint a lease", "validate runtime authorization", "select a project", "select a Subject", "accept a Milestone", "write an external authority store", "record a durable journal entry"],
+    "later_consumers": ["M4-2 trusted authorization and lease issuance", "M4-3 write ingress", "M4-4 mechanical lifecycle", "M4-5 mutation port and journal contract"]
+  },
+  "examples": {
+    "EXAMPLE_A": {"name": "pure Subject lifecycle mutation", "intent": {"operation": "record_completion", "semantic_inputs": {"outcome": "succeeded"}, "logical_target": "execution chosen by semantic request", "mutation_scope": {"aggregate": "owning_subject"}, "idempotency_key": "idem-a"}, "trusted_resolution": ["typed execution ObjectRef", "owning Subject ObjectRef", "subject_expected_revision", "trusted principal"], "authority": "not granted by intent"},
+    "EXAMPLE_B": {"name": "Portable Plan authority-store mutation", "intent": {"operation": "plan_init", "semantic_inputs": {"requested_state": "initialized"}, "logical_target": "portable_plan:plan_example", "mutation_scope": {"authority": "portable_plan"}, "idempotency_key": "idem-b"}, "trusted_resolution": ["typed Plan target", "subject_expected_revision", "authority_source_revision", "authority_observed_raw_digest", "normalized_plan_digest", "candidate_raw_digest"], "platform": "opaque authority adapter"},
+    "EXAMPLE_C": {"name": "mutation requiring semantic choice", "intent": {"operation": "retire_plan", "semantic_inputs": {"retirement_kind": "superseded", "candidate_choice": null}, "logical_target": "portable_plan:candidate-set", "mutation_scope": {"authority": "portable_plan"}, "idempotency_key": "idem-c"}, "result": {"mutation_effect": "NEEDS_SEMANTIC_CHOICE", "authoritative_effect_confirmed": "no", "semantic_choices": ["select one exact candidate and successor"]}},
+    "EXAMPLE_D": {"name": "same idempotency key / same intent replay", "idempotency_key": "idem-d", "intent_fingerprint": "sha256(intent-d)", "first_result": "APPLIED_VERIFIED", "replay_result": "REPLAYED_VERIFIED", "new_effect": false},
+    "EXAMPLE_E": {"name": "same idempotency key / different intent conflict", "idempotency_key": "idem-e", "prior_intent_fingerprint": "sha256(intent-e1)", "new_intent_fingerprint": "sha256(intent-e2)", "result": "CONFLICT", "new_effect": false},
+    "EXAMPLE_F": {"name": "authoritative outcome unknown", "idempotency_key": "idem-f", "local_observation": "transport ended after APPLYING", "result": {"mutation_effect": "OUTCOME_UNKNOWN", "authoritative_effect_confirmed": "unknown", "usable_success": false}}
+  },
+  "production_behavior_claimed": false
+}
