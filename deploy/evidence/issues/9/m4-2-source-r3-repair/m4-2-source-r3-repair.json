@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R3 bounded repair",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R3-REPAIR",
+  "read_before_write": "PASS",
+  "repair_base_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "failed_r3_review_evidence_sha": "a6123526bd3264d6a5ddbc665d58f424b32d499b",
+  "failed_r3_source_candidate": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+  "source_branch": "aota/m4/m4-2-source",
+  "blocking_finding_input_count": 3,
+  "blocking_findings": {
+    "BF-M42-SRC-R3-01": "closed",
+    "BF-M42-SRC-R3-02": "closed",
+    "BF-M42-SRC-R3-03": "closed"
+  },
+  "pre_repair_reproduction": {
+    "failed_r3_bf01_reproduced": "yes",
+    "failed_r3_bf02_reproduced": "yes",
+    "failed_r3_bf03_reproduced": "yes",
+    "exact_independent_cases": {
+      "A12_wrong_nonempty_decision_kind": {
+        "review_target_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+        "resolver_record_materialized": "yes",
+        "digest_recomputed": "yes",
+        "old_result": "accept:lease issued"
+      },
+      "A13_wrong_nested_target_reference": {
+        "review_target_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+        "resolver_record_materialized": "yes",
+        "digest_recomputed": "yes",
+        "old_result": "accept:lease issued"
+      },
+      "source_guard_resolver_materialization": {
+        "old_source_guard_result": "35/35",
+        "old_recomputed_helper_materialized_record": "no",
+        "old_guard_self_consistency": "FAIL"
+      }
+    }
+  },
+  "repair": {
+    "production_paths": [
+      "aota_forge/core/authority.py"
+    ],
+    "guard_path": "scripts/m4_2_source_guard.py",
+    "decision_kind_exact_binding": "yes",
+    "m4_2_expected_decision_kind": "authorization",
+    "existing_followup_operation_kinds_preserved": [
+      "followup",
+      "branch_followup"
+    ],
+    "unsupported_nonempty_kind_rejected": "yes",
+    "nested_target_exact_binding": "yes",
+    "nested_target_comparison": "canonical ObjectRef equality across the complete typed identity",
+    "subject_rooted_empty_nested_target_legacy_compatibility": "preserved",
+    "guard_mutated_resolver_record_materialized": "yes",
+    "source_guard_real_resolver_path_executed": "yes",
+    "resolver_record_isolated_and_restored_per_case": "yes",
+    "authority_engine_required": "yes"
+  },
+  "post_repair_semantics": {
+    "structurally_valid_decision_is_semantically_valid": "no",
+    "digest_valid_decision_is_semantically_valid": "no",
+    "incompatible_nonempty_decision_kind_accepted": "no",
+    "digest_valid_incompatible_nested_target_accepted": "no",
+    "operation_binding": "PASS",
+    "scope_binding": "PASS",
+    "project_binding": "PASS",
+    "milestone_binding": "PASS",
+    "subject_binding": "PASS",
+    "incompatible_kind_error_projection": "PASS:MATERIALIZED_DECISION_REQUIRED",
+    "incompatible_target_error_projection": "PASS:MATERIALIZED_DECISION_REQUIRED"
+  },
+  "trust_chain": {
+    "materialized_decision_semantic_validation": "PASS",
+    "materialized_decision_trust_chain": "PASS",
+    "chain": [
+      "resolver",
+      "structural validation",
+      "integrity validation",
+      "semantic validation",
+      "exact binding validation",
+      "trusted authorization",
+      "lease"
+    ],
+    "resolver_returned_object_equals_valid_decision": "no",
+    "resolver_is_semantic_decision_maker": "no",
+    "materialized_decision_validation_bypass_allowed": "no",
+    "no_authority_engine_required_decision_fails_closed": "yes"
+  },
+  "recomputed_digest_matrix": {
+    "case_count": 14,
+    "valid_baseline_accept_count": 1,
+    "invalid_semantic_case_count": 12,
+    "invalid_semantic_case_reject_count": 12,
+    "invalid_digest_case_reject_count": 1,
+    "cases": {
+      "A1_exact_valid_baseline": "accept",
+      "A2_missing_statement_recomputed_digest": "reject",
+      "A3_empty_kind_and_statement_recomputed_digest": "reject",
+      "A4_wrong_valid_decision_kind_recomputed_digest": "reject",
+      "A5_unsupported_decision_kind_recomputed_digest": "reject",
+      "A6_wrong_operation_recomputed_digest": "reject",
+      "A7_wrong_exact_target_recomputed_digest": "reject",
+      "A8_wrong_nested_target_id_recomputed_digest": "reject",
+      "A9_wrong_project_recomputed_digest": "reject",
+      "A10_wrong_milestone_recomputed_digest": "reject",
+      "A11_wrong_subject_recomputed_digest": "reject",
+      "A12_wrong_scope_recomputed_digest": "reject",
+      "A13_nested_target_kind_mismatch_recomputed_digest": "reject",
+      "A14_valid_semantic_content_invalid_digest": "reject"
+    }
+  },
+  "guard": {
+    "result": "PASS",
+    "real_case_count": 37,
+    "real_case_pass_count": 37,
+    "recomputed_digest_adversarial_case_count": 13,
+    "recomputed_digest_invalid_case_reject_count": 12,
+    "real_malformed_decision_recomputed_digest_case": "yes",
+    "real_incompatible_kind_recomputed_digest_case": "yes",
+    "real_nested_target_recomputed_digest_case": "yes",
+    "descendant_aware": "yes",
+    "head_equals_common_base_required": "no",
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "evidence_self_validation_as_test": "no",
+    "real_path_uses_capability_lease_issuer": "yes",
+    "real_mutated_record_ids_observed": [
+      "m4-2-decision-a",
+      "m4-2-decision-b",
+      "m4-2-project-decision-a",
+      "m4-2-milestone-decision-a"
+    ]
+  },
+  "preserved_m4_2_semantics": {
+    "arbitrary_authorization_identifier_is_semantic_authority": "no",
+    "arbitrary_reservation_identifier_is_semantic_authority": "no",
+    "approval_evidence_equals_materialized_decision_evidence": "no",
+    "lease_issuer_is_semantic_decision_maker": "no",
+    "lease_exact_binding": "PASS",
+    "lease_lifecycle": "PASS",
+    "unknown_outcome_review": "PASS",
+    "revision_domain_separation": "PASS",
+    "idempotency_authorization_binding": "PASS",
+    "authorization_error_contract": "PASS"
+  },
+  "scope_boundary": {
+    "m4_2_write_ingress_implemented": "no",
+    "m4_2_external_authority_write_implemented": "no",
+    "m4_2_durable_journal_implemented": "no",
+    "m4_3_execution_authorized": "no",
+    "m4_4_modified": "no",
+    "runtime_activation_performed": "no",
+    "github_issue_body_mutated": "no",
+    "github_control_comment_mutated": "no",
+    "github_event_log_appended": "no"
+  },
+  "next_ready_set": "independent_rereview_of_m4_2_r3_repaired_source",
+  "m4_2_completed": "no",
+  "m4_4_completed": "no"
+}

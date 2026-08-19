@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R3 ownership and scope proof",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R3-REPAIR",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "repair_base_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+  "failed_r3_review_evidence_sha": "a6123526bd3264d6a5ddbc665d58f424b32d499b",
+  "source_branch": "refs/heads/aota/m4/m4-2-source",
+  "base_sha_verified": "yes",
+  "remote_ref_at_repair_start_verified": "yes",
+  "source_ownership_partition_read": "PASS",
+  "ownership_counts": {
+    "m4_2_exclusive_write_path_count": 3,
+    "m4_4_exclusive_write_path_count": 7,
+    "shared_read_only_path_count": 8,
+    "integration_only_path_count": 4,
+    "forbidden_cross_lane_write_path_count": 5
+  },
+  "authoritative_ownership_lists": {
+    "m4_2_exclusive_write_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "m4_4_exclusive_write_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "shared_read_only_paths": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "integration_only_paths": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "forbidden_cross_lane_write_paths": [
+      "every path in the other lane's exclusive write list",
+      "every path in INTEGRATION_ONLY_PATHS",
+      "every path in SHARED_READ_ONLY_PATHS",
+      "aota_forge/core/ingress.py remains M4-3-owned and cannot be widened",
+      "any unlisted aota_forge/** functional source path"
+    ]
+  },
+  "changed_files": [
+    "aota_forge/core/authority.py",
+    "scripts/m4_2_source_guard.py",
+    "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-repair.json",
+    "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-regression-results.json",
+    "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-scope-proof.json"
+  ],
+  "write_scope_result": {
+    "all_source_writes_within_m4_2_exclusive_paths": "yes",
+    "guard_path_is_explicitly_allowed": "yes",
+    "evidence_path_is_explicitly_allowed": "yes",
+    "m4_4_exclusive_write_path_mutation_count": 0,
+    "shared_read_only_path_mutation_count": 0,
+    "integration_only_path_mutation_count": 0,
+    "forbidden_cross_lane_write_count": 0,
+    "unlisted_functional_source_path_count": 0
+  },
+  "deferred_and_forbidden_boundaries": {
+    "m4_4_source_touched": "no",
+    "m4_4_candidate_touched": "no",
+    "m4_4_candidate_sha": "10a7e9809d2e1cb3c324ad65a13e6611662957e6",
+    "m4_4_review_evidence_sha": "841b020996b8572073aa2e190f4415380124739a",
+    "shared_contracts_touched": "no",
+    "integration_paths_touched": "no",
+    "tests_directory_touched": "no",
+    "ingress_touched": "no",
+    "write_ingress_implemented": "no",
+    "external_authority_write_implemented": "no",
+    "durable_journal_implemented": "no",
+    "m4_3_execution_authorized": "no",
+    "github_issue_body_mutated": "no",
+    "github_control_comment_mutated": "no",
+    "github_event_log_appended": "no"
+  },
+  "guard_provenance": {
+    "descendant_aware": "yes",
+    "head_equals_common_base_required": "no",
+    "repair_sha_hardcoded": "no",
+    "branch_hardcoded_as_authority": "no",
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "evidence_self_validation_as_test": "no"
+  },
+  "next_ready_set": "independent_rereview_of_m4_2_r3_repaired_source"
+}

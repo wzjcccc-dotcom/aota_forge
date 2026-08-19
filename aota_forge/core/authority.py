@@ -74,6 +74,14 @@ MATERIALIZED_DECISION_VALIDATION_BYPASS_ALLOWED = False
 _MAX_DECISION_TEXT_LENGTH = 4096
 _MAX_DECISION_REFERENCE_LENGTH = 4096
 
+# The descriptor schema does not carry a Decision-kind field.  Existing source
+# semantics bind followup creation to ``followup``; M4-2 authorization evidence
+# uses the distinct ``authorization`` kind.
+_EXPECTED_DECISION_KINDS_BY_OPERATION = {
+    "create_followup_subject": frozenset({"followup", "branch_followup"}),
+}
+_M4_2_AUTHORIZATION_DECISION_KIND = "authorization"
+
 
 class AuthorityDecision(str, Enum):
     ALLOW = "ALLOW"
@@ -506,6 +514,28 @@ def _decision_record_is_structurally_valid(decision: object) -> bool:
     )
 
 
+def _decision_kind_matches_operation(decision_kind: str, operation: str) -> bool:
+    expected_kinds = _EXPECTED_DECISION_KINDS_BY_OPERATION.get(
+        operation,
+        frozenset({_M4_2_AUTHORIZATION_DECISION_KIND}),
+    )
+    return decision_kind in expected_kinds
+
+
+def _decision_target_matches(decision: records.Decision, target: ObjectRef) -> bool:
+    """Match the optional nested target against the exact typed request target."""
+    if not decision.target_refs:
+        # Existing Subject-rooted authorization records use their owning
+        # Subject as the target binding and omit the redundant nested ref.
+        return target.object_kind == IdKind.SUBJECT
+    if len(decision.target_refs) != 1:
+        return False
+    try:
+        return parse_object_ref(decision.target_refs[0]) == target
+    except (IdentityError, TypeError, ValueError):
+        return False
+
+
 @dataclass(frozen=True)
 class AuthorityRequest:
     principal: object = None
@@ -635,9 +665,13 @@ class AuthorityEngine:
                 or decision.subject_ref != resolved.owning_subject_ref.internal_id
             ):
                 return False
-            # This is an integrity check only; structural and binding checks above
-            # establish what the digest is allowed to cover.
-            return evidence.evidence_digest == evidence.computed_digest(decision)
+            # Integrity is checked before semantic Decision bindings.  A valid
+            # digest covers content; it does not certify that content's meaning.
+            if evidence.evidence_digest != evidence.computed_digest(decision):
+                return False
+            if not _decision_kind_matches_operation(decision.decision_kind, operation):
+                return False
+            return _decision_target_matches(decision, target)
         except (TypeError, ValueError, KeyError, AttributeError, OverflowError):
             return False
 

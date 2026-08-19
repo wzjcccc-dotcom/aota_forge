@@ -30,6 +30,7 @@ EVIDENCE_PREFIXES = (
     "deploy/evidence/issues/9/m4-2-source/",
     "deploy/evidence/issues/9/m4-2-source-repair/",
     "deploy/evidence/issues/9/m4-2-source-r2-repair/",
+    "deploy/evidence/issues/9/m4-2-source-r3-repair/",
 )
 RESULTS: list[tuple[str, bool, str]] = []
 RECOMPUTED_DIGEST_RESULTS: list[tuple[str, bool, bool]] = []
@@ -220,6 +221,10 @@ def main() -> int:
     _partition_check()
 
     context, target_a, target_b = _fixture()
+    same_value_different_kind = make_object_ref(
+        IdKind.SUBJECT,
+        make_id(IdKind.SUBJECT, "m4-2-subject-a", sub_kind=SubjectKind.PROJECT),
+    )
     descriptor = _descriptor()
     authorization = _authorization(context, target_a, descriptor)
     intent = _intent(target_a)
@@ -289,36 +294,42 @@ def main() -> int:
         target_a.internal_id,
         "authorization",
         "authorize exact mutation",
+        target_refs=[target_a.serialize()],
     )
     decision_b = records.decision(
         make_id(IdKind.DECISION, "m4-2-decision-b"),
         target_b.internal_id,
         "authorization",
         "authorize another target",
+        target_refs=[target_b.serialize()],
     )
     project_decision_a = records.decision(
         make_id(IdKind.DECISION, "m4-2-project-decision-a"),
         project_a.internal_id,
         "authorization",
         "authorize project A",
+        target_refs=[project_a.serialize()],
     )
     project_decision_b = records.decision(
         make_id(IdKind.DECISION, "m4-2-project-decision-b"),
         project_b.internal_id,
         "authorization",
         "authorize project B",
+        target_refs=[project_b.serialize()],
     )
     milestone_decision_a = records.decision(
         make_id(IdKind.DECISION, "m4-2-milestone-decision-a"),
         milestone_a.internal_id,
         "authorization",
         "authorize milestone A",
+        target_refs=[milestone_a.serialize()],
     )
     milestone_decision_b = records.decision(
         make_id(IdKind.DECISION, "m4-2-milestone-decision-b"),
         milestone_b.internal_id,
         "authorization",
         "authorize milestone B",
+        target_refs=[milestone_b.serialize()],
     )
     for decision_record in (
         decision_a,
@@ -329,7 +340,8 @@ def main() -> int:
         milestone_decision_b,
     ):
         decision_repo.store(decision_record)
-    decision_engine = AuthorityEngine(OwningSubjectResolver(decision_repo))
+    decision_resolver = OwningSubjectResolver(decision_repo)
+    decision_engine = AuthorityEngine(decision_resolver)
 
     def decision_evidence(decision_record, target, *, operation=decision_descriptor.name, scope=None):
         return MaterializedDecisionEvidence.from_decision(
@@ -387,18 +399,34 @@ def main() -> int:
         approval=approval,
     )
 
-    def expect_recomputed_rejection(name, auth, contract) -> None:
+    def expect_recomputed_rejection(
+        name,
+        auth,
+        contract,
+        *,
+        resolved_decision,
+        original_decision,
+    ) -> None:
+        resolved_id = resolved_decision.decision_id.value
         try:
+            # Materialize the exact record referenced by the evidence.  Without
+            # this replacement the resolver would return the baseline record and
+            # a recomputed digest case would test only digest mismatch.
+            decision_repo.store(resolved_decision)
+            if decision_resolver.resolve_decision(auth.decision_basis.decision_ref) != resolved_decision:
+                raise AssertionError(f"resolver returned a different record: {resolved_id}")
             _issue(CapabilityLeaseIssuer(decision_engine), auth, contract, context, auth.target)
         except AuthorizationFailure as exc:
             passed = exc.code == AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value
-            detail = exc.code
+            detail = f"{exc.code};resolved={resolved_id}"
         except Exception as exc:
             passed = False
-            detail = type(exc).__name__
+            detail = f"{type(exc).__name__};resolved={resolved_id}"
         else:
             passed = False
-            detail = "lease issued"
+            detail = f"lease issued;resolved={resolved_id}"
+        finally:
+            decision_repo.store(original_decision)
         RECOMPUTED_DIGEST_RESULTS.append((name, passed, True))
         check(name, passed, detail)
 
@@ -410,6 +438,8 @@ def main() -> int:
             decision_basis=decision_evidence(replace(decision_a, statement=""), target_a),
         ),
         decision_descriptor,
+        resolved_decision=replace(decision_a, statement=""),
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
         "R2_EXACT_MALFORMED_DECISION_RECOMPUTED_DIGEST_REJECTED",
@@ -418,6 +448,8 @@ def main() -> int:
             decision_basis=decision_evidence(replace(decision_a, decision_kind="", statement=""), target_a),
         ),
         decision_descriptor,
+        resolved_decision=replace(decision_a, decision_kind="", statement=""),
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
         "D2_RECOMPUTED_WRONG_OPERATION_REJECTED",
@@ -426,6 +458,8 @@ def main() -> int:
             decision_basis=decision_evidence(decision_a, target_a, operation="other_operation"),
         ),
         decision_descriptor,
+        resolved_decision=decision_a,
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
         "D3_RECOMPUTED_WRONG_TARGET_REJECTED",
@@ -434,6 +468,8 @@ def main() -> int:
             decision_basis=decision_evidence(decision_a, target_b),
         ),
         decision_descriptor,
+        resolved_decision=decision_a,
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
         "D4_RECOMPUTED_WRONG_SCOPE_REJECTED",
@@ -442,6 +478,8 @@ def main() -> int:
             decision_basis=decision_evidence(decision_a, target_a, scope={"mode": "other"}),
         ),
         decision_descriptor,
+        resolved_decision=decision_a,
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
         "D5_RECOMPUTED_WRONG_PROJECT_REJECTED",
@@ -454,6 +492,8 @@ def main() -> int:
             ),
         ),
         project_descriptor,
+        resolved_decision=project_decision_a,
+        original_decision=project_decision_a,
     )
     expect_recomputed_rejection(
         "D6_RECOMPUTED_WRONG_MILESTONE_REJECTED",
@@ -466,6 +506,8 @@ def main() -> int:
             ),
         ),
         project_descriptor,
+        resolved_decision=milestone_decision_a,
+        original_decision=milestone_decision_a,
     )
     expect_recomputed_rejection(
         "D7_RECOMPUTED_WRONG_SUBJECT_REJECTED",
@@ -474,25 +516,54 @@ def main() -> int:
             decision_basis=decision_evidence(decision_b, target_a),
         ),
         decision_descriptor,
+        resolved_decision=decision_b,
+        original_decision=decision_b,
     )
     expect_recomputed_rejection(
-        "D8_RECOMPUTED_INVALID_DECISION_KIND_REJECTED",
+        "D8_RECOMPUTED_INCOMPATIBLE_DECISION_KIND_REJECTED",
         replace(
             valid_decision_auth,
-            decision_basis=decision_evidence(replace(decision_a, decision_kind=""), target_a),
+            decision_basis=decision_evidence(replace(decision_a, decision_kind="review_result"), target_a),
         ),
         decision_descriptor,
+        resolved_decision=replace(decision_a, decision_kind="review_result"),
+        original_decision=decision_a,
     )
     expect_recomputed_rejection(
-        "D9_RECOMPUTED_MALFORMED_NESTED_CONTENT_REJECTED",
+        "D9_RECOMPUTED_INCOMPATIBLE_NESTED_TARGET_REJECTED",
         replace(
             valid_decision_auth,
             decision_basis=decision_evidence(
-                replace(decision_a, target_refs=[{"malformed": True}]),
+                replace(decision_a, target_refs=[target_b.serialize()]),
                 target_a,
             ),
         ),
         decision_descriptor,
+        resolved_decision=replace(decision_a, target_refs=[target_b.serialize()]),
+        original_decision=decision_a,
+    )
+    expect_recomputed_rejection(
+        "D10_RECOMPUTED_UNSUPPORTED_DECISION_KIND_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(replace(decision_a, decision_kind="unsupported_kind"), target_a),
+        ),
+        decision_descriptor,
+        resolved_decision=replace(decision_a, decision_kind="unsupported_kind"),
+        original_decision=decision_a,
+    )
+    expect_recomputed_rejection(
+        "D11_RECOMPUTED_NESTED_TARGET_KIND_MISMATCH_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(
+                replace(decision_a, target_refs=[same_value_different_kind.serialize()]),
+                target_a,
+            ),
+        ),
+        decision_descriptor,
+        resolved_decision=replace(decision_a, target_refs=[same_value_different_kind.serialize()]),
+        original_decision=decision_a,
     )
     try:
         _issue(CapabilityLeaseIssuer(decision_engine), valid_decision_auth, decision_descriptor, context, target_a)
@@ -501,24 +572,26 @@ def main() -> int:
         valid_recomputed_detail = type(exc).__name__
     else:
         valid_recomputed = True
-        valid_recomputed_detail = "accepted"
-    RECOMPUTED_DIGEST_RESULTS.append(("D10_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, False))
-    check("D10_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, valid_recomputed_detail)
+        valid_recomputed_detail = f"accepted;resolved={decision_a.decision_id.value}"
+    RECOMPUTED_DIGEST_RESULTS.append(("D12_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, False))
+    check("D12_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, valid_recomputed_detail)
+    invalid_digest_rejected = _expect_failure(
+        lambda: _issue(
+            CapabilityLeaseIssuer(decision_engine),
+            replace(
+                valid_decision_auth,
+                decision_basis=replace(valid_decision, evidence_digest="0" * 64),
+            ),
+            decision_descriptor,
+            context,
+            target_a,
+        ),
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
     check(
         "INTEGRITY_INVALID_DIGEST_REJECTED",
-        _expect_failure(
-            lambda: _issue(
-                CapabilityLeaseIssuer(decision_engine),
-                replace(
-                    valid_decision_auth,
-                    decision_basis=replace(valid_decision, evidence_digest="0" * 64),
-                ),
-                decision_descriptor,
-                context,
-                target_a,
-            ),
-            AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
-        ),
+        invalid_digest_rejected,
+        f"MATERIALIZED_DECISION_REQUIRED;resolved={decision_a.decision_id.value}",
     )
 
     decision_cases: list[tuple[str, bool]] = []
