@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R3 focused independent rereview",
+  "status": "FAIL",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R3",
+  "read_before_write": "PASS",
+  "review_target_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+  "repair_base_sha": "299a146a1d04086d6d7770a4ce55e7569c760922",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "failed_r2_review_evidence_sha": "012ec0e811c2b746e2e72a43a803b9e860c872d4",
+  "r2_repair_evidence": "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-repair.json",
+  "source_branch": "refs/heads/aota/m4/m4-2-source",
+  "governance_preflight": {
+    "github_identity": "wzjcccc-dotcom",
+    "issue_read": "PASS",
+    "m4_2_source_implementation_authorized": "yes",
+    "m4_4_source_implementation_authorized": "yes",
+    "m4_2_completed": "no",
+    "m4_4_completed": "no",
+    "m4_3_execution_authorized": "no",
+    "m4_2_m4_4_source_parallel_safety": "conditional",
+    "ownership_partition_read": "PASS",
+    "control_comment_mutated": "no",
+    "issue_body_mutated": "no",
+    "m4_4_re_reviewed": "no"
+  },
+  "lineage": {
+    "target_sha_verified": "yes",
+    "target_remote_ref_verified": "yes",
+    "target_remote_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+    "target_ancestry_verified": "yes",
+    "ancestry": [
+      "d74953be16b103fbd09b0ee18b203881244c4f95",
+      "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+      "299a146a1d04086d6d7770a4ce55e7569c760922",
+      "cf456734b0490c8be1d0341bc58f0915b18f9619"
+    ],
+    "accepted_plan_sha_verified": "yes",
+    "failed_r2_review_evidence_sha_verified": "yes"
+  },
+  "repair_diff": {
+    "expected_production_repair_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "expected_guard_path": "scripts/m4_2_source_guard.py",
+    "actual_source_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/authorization.py",
+      "aota_forge/core/capability_lease.py",
+      "scripts/m4_2_source_guard.py"
+    ],
+    "actual_repair_evidence_prefix": "deploy/evidence/issues/9/m4-2-source-r2-repair/",
+    "source_repair_diff_scope_review": "PASS",
+    "unexpected_source_path_count": 0
+  },
+  "source_ownership": {
+    "m4_2_exclusive_write_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "m4_4_exclusive_write_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "shared_read_only_paths": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "integration_only_paths": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "forbidden_cross_lane_write_path_count": 5,
+    "all_source_writes_within_m4_2_exclusive_paths": "yes",
+    "m4_4_exclusive_write_path_mutation_count": 0,
+    "shared_read_only_path_mutation_count": 0,
+    "integration_only_path_mutation_count": 0,
+    "forbidden_cross_lane_write_count": 0,
+    "deferred_integration_seams_review": "PASS"
+  },
+  "prior_blocker_review": {
+    "input_count": 1,
+    "closed_count": 1,
+    "BF-M42-SRC-R2-01": "PASS",
+    "exact_case": {
+      "malformed_decision_kind": "",
+      "malformed_statement": "",
+      "digest_recomputed_over_malformed_content": "yes",
+      "old_sha_result": "lease issued",
+      "repaired_sha_result": "MATERIALIZED_DECISION_REQUIRED"
+    }
+  },
+  "validation_pipeline_review": {
+    "reference_input": "PASS",
+    "resolver_lookup": "PASS",
+    "resolved_evidence_content": "PASS",
+    "structural_schema_validation": "PASS",
+    "integrity_digest_validation": "PASS",
+    "semantic_decision_validation": "FAIL",
+    "exact_authorization_binding": "PASS",
+    "trusted_authorization": "PASS",
+    "capability_lease_issuance": "PASS_FOR_VALID_CASE_ONLY",
+    "materialized_decision_trust_chain_review": "PASS",
+    "digest_only_authorization_equivalent": "no"
+  },
+  "decision_validation": {
+    "decision_digest_validity_equals_semantic_validity": "no",
+    "resolved_decision_structural_validation_review": "PASS",
+    "materialized_decision_semantic_validation_review": "FAIL",
+    "malformed_decision_with_valid_digest_accepted": "no",
+    "semantically_incompatible_decision_with_valid_digest_accepted": "unexpected",
+    "resolver_returned_object_equals_valid_decision": "no",
+    "resolver_is_semantic_decision_maker": "no",
+    "no_authority_engine_required_decision_fails_closed": "yes",
+    "materialized_decision_validation_bypass_allowed": "no"
+  },
+  "recomputed_digest_adversarial_matrix": {
+    "case_count": 14,
+    "valid_baseline_case_count": 1,
+    "invalid_semantic_case_count": 12,
+    "invalid_semantic_case_reject_count": 10,
+    "invalid_digest_case_reject_count": 1,
+    "cases": [
+      {"id": "A1", "kind": "valid", "resolver_content_materialized": "yes", "result": "accept"},
+      {"id": "A2", "kind": "missing required statement", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A3", "kind": "wrong statement field type", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A4", "kind": "wrong operation", "resolver_content_materialized": "no mutation needed", "result": "reject"},
+      {"id": "A5", "kind": "wrong target", "resolver_content_materialized": "no mutation needed", "result": "reject"},
+      {"id": "A6", "kind": "wrong mutation scope", "resolver_content_materialized": "no mutation needed", "result": "reject"},
+      {"id": "A7", "kind": "wrong Project binding", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A8", "kind": "wrong Milestone binding", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A9", "kind": "wrong Subject binding", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A10", "kind": "invalid empty Decision kind", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A11", "kind": "malformed nested target type", "resolver_content_materialized": "yes", "result": "reject"},
+      {"id": "A12", "kind": "wrong non-empty Decision kind review_result", "resolver_content_materialized": "yes", "result": "unexpected_accept"},
+      {"id": "A13", "kind": "wrong valid nested target reference", "resolver_content_materialized": "yes", "result": "unexpected_accept"},
+      {"id": "A14", "kind": "altered integrity digest", "resolver_content_materialized": "no mutation needed", "result": "reject"}
+    ]
+  },
+  "semantic_findings": [
+    {
+      "id": "BF-M42-SRC-R3-01",
+      "severity": "blocking",
+      "source": [
+        "aota_forge/core/authority.py:472-476",
+        "aota_forge/core/authority.py:625-640"
+      ],
+      "finding": "A resolver-backed Decision with a valid non-empty but incompatible decision_kind=review_result is accepted after its digest is recomputed.",
+      "independent_observation": "The mutated Decision was stored under the referenced Decision ID before issuance; CapabilityLeaseIssuer(AuthorityEngine(...)).issue returned a lease.",
+      "required_behavior": "The required Decision/evidence kind must be semantically bound to the requested authorization and reject incompatible kinds."
+    },
+    {
+      "id": "BF-M42-SRC-R3-02",
+      "severity": "blocking",
+      "source": [
+        "aota_forge/core/authority.py:482-492",
+        "aota_forge/core/authority.py:625-640"
+      ],
+      "finding": "A well-formed resolver-backed Decision whose target_refs contains a different valid Subject is accepted after digest recomputation for the requested target.",
+      "independent_observation": "The mutated Decision was stored under the referenced Decision ID before issuance; the issuer returned a lease despite the nested target referring to work_b while the exact authorization target was work_a.",
+      "required_behavior": "Nested Decision semantic target content must be bound to the requested exact target or reject; digest validity must not certify incompatible target semantics."
+    },
+    {
+      "id": "BF-M42-SRC-R3-03",
+      "severity": "blocking",
+      "source": [
+        "scripts/m4_2_source_guard.py:390-403",
+        "scripts/m4_2_source_guard.py:405-496"
+      ],
+      "finding": "The shipped recomputed-digest guard creates Decision evidence from cloned mutations but does not store each mutated Decision under the resolver ID before issuance, so its named malformed cases can be rejected by resolver-content digest mismatch rather than by structural or semantic validation.",
+      "independent_observation": "The independent guard stored each mutation and found the two well-formed incompatible cases accepted; source guard still reports 35/35 because its recomputed helper does not materialize the cloned records.",
+      "required_behavior": "The real guard case must execute issuance against the mutated resolver-backed Decision content and independently prove rejection."
+    }
+  ],
+  "resolver_boundary": {
+    "malformed_object": "reject",
+    "missing_object": "reject",
+    "valid_object_wrong_binding": "reject",
+    "resolver_existence_is_authority": "no",
+    "resolver_is_semantic_decision_maker": "no"
+  },
+  "authority_and_issuer_boundary": {
+    "lease_issuer_is_semantic_decision_maker": "no",
+    "issuer_repairs_or_invents_decision": "no",
+    "issuer_reinterprets_target_scope_operation": "no",
+    "arbitrary_authorization_identifier_is_semantic_authority": "no",
+    "arbitrary_reservation_identifier_is_semantic_authority": "no",
+    "approval_evidence_equals_materialized_decision_evidence": "no"
+  },
+  "independent_negative_cases": {
+    "count": 14,
+    "reject_count": 14,
+    "unexpected_accept_count": 0,
+    "cases": [
+      {"id": "NEG-R3-01", "result": "reject", "assertion": "malformed content with recomputed digest"},
+      {"id": "NEG-R3-02", "result": "reject", "assertion": "wrong operation with valid digest"},
+      {"id": "NEG-R3-03", "result": "reject", "assertion": "wrong target with valid digest"},
+      {"id": "NEG-R3-04", "result": "reject", "assertion": "wrong scope with valid digest"},
+      {"id": "NEG-R3-05", "result": "reject", "assertion": "wrong Project with valid digest"},
+      {"id": "NEG-R3-06", "result": "reject", "assertion": "wrong Milestone with valid digest"},
+      {"id": "NEG-R3-07", "result": "reject", "assertion": "wrong Subject with valid digest"},
+      {"id": "NEG-R3-08", "result": "reject", "assertion": "invalid Decision kind with valid digest"},
+      {"id": "NEG-R3-09", "result": "reject", "assertion": "resolver object existence without Decision evidence"},
+      {"id": "NEG-R3-10", "result": "reject", "assertion": "required Decision without trusted AuthorityEngine"},
+      {"id": "NEG-R3-11", "result": "reject", "assertion": "arbitrary authorization ID only"},
+      {"id": "NEG-R3-12", "result": "reject", "assertion": "arbitrary reservation ID only"},
+      {"id": "NEG-R3-13", "result": "reject", "assertion": "issuer cannot repair wrong field type"},
+      {"id": "NEG-R3-14", "result": "reject", "assertion": "source does not enable write ingress"}
+    ]
+  },
+  "source_guard": {
+    "command": "python3 scripts/m4_2_source_guard.py in clean detached target worktree",
+    "result": "PASS",
+    "real_case_count": 35,
+    "real_case_pass_count": 35,
+    "recomputed_digest_adversarial_case_count": 11,
+    "recomputed_digest_invalid_case_reject_count": 10,
+    "real_malformed_decision_recomputed_digest_case": "no",
+    "self_consistency": "FAIL",
+    "guard_descendant_aware": "yes",
+    "guard_head_equals_common_base_required": "no",
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "evidence_self_validation_as_test": "no",
+    "real_path_uses_capability_lease_issuer": "yes"
+  },
+  "error_boundary": {
+    "malformed_decision_error_boundary_review": "PASS",
+    "wrong_field_type_result": "AuthorizationFailure:MATERIALIZED_DECISION_REQUIRED",
+    "missing_resolver_object_result": "AuthorizationFailure:MATERIALIZED_DECISION_REQUIRED",
+    "unexpected_infrastructure_failures_broadly_swallowed": "no"
+  },
+  "preserved_m4_2_semantics": {
+    "lease_exact_binding_review": "PASS",
+    "lease_lifecycle_review": "PASS",
+    "unknown_outcome_review": "PASS",
+    "unknown_outcome_blind_lease_reuse": "no",
+    "lease_may_cross_unknown_outcome_retry": "no",
+    "revision_domain_review": "PASS",
+    "normalized_plan_digest_is_external_cas_token": "no",
+    "idempotency_authorization_binding_review": "PASS",
+    "error_contract_review": "PASS",
+    "lease_issuer_is_semantic_decision_maker": "no"
+  },
+  "regressions": {
+    "m4_1_contract_regression": "PASS",
+    "m4_1_source_guard": "PASS",
+    "m4_1_contract_plan_guard": "VALID_NON_BLOCKING_STALE_DESCENDANT_GUARD",
+    "m3_authority_regression": "PASS_BEHAVIORAL_28_OF_28",
+    "m3_authority_historical_exact_base_assertion": "VALID_NON_BLOCKING_STALE_DESCENDANT_BASE",
+    "m3_idempotency_regression": "PASS_36_OF_36",
+    "m3_behavioral_regression_foundation": "PASS_16_OF_16",
+    "ingress_regression": "PASS",
+    "compileall": "PASS"
+  },
+  "scope_boundary": {
+    "m4_2_write_ingress_implemented": "no",
+    "m4_2_external_authority_write_implemented": "no",
+    "m4_2_durable_journal_implemented": "no",
+    "m4_3_execution_authorized": "no",
+    "runtime_activation_performed": "no",
+    "github_issue_body_mutated": "no",
+    "github_control_comment_mutated": "no",
+    "github_event_log_appended": "no"
+  },
+  "blocking_finding_count": 3,
+  "non_blocking_finding_count": 1,
+  "blocking_findings": [
+    "BF-M42-SRC-R3-01: digest-valid incompatible non-empty Decision kind is accepted",
+    "BF-M42-SRC-R3-02: digest-valid incompatible nested Decision target is accepted",
+    "BF-M42-SRC-R3-03: shipped recomputed-digest guard does not materialize cloned resolver records"
+  ],
+  "non_blocking_findings": [
+    "Historical M3-B5 exact-base-only assertion is stale on the authorized M4-2 descendant; independent behavioral invariants pass."
+  ],
+  "next_ready_set": "bounded_m4_2_source_r3_repair",
+  "next_action": "Repair Decision semantic kind and nested target binding, make the source guard materialize each mutated resolver record, then rerun this independent R3 review.",
+  "m4_2_completed": "no",
+  "m4_4_completed": "no",
+  "m4_2_is_known_good_checkpoint": "no",
+  "m4_4_is_known_good_checkpoint": "no",
+  "m4_4_review_state": "pass_with_non_blocking_findings_waiting_for_m4_2",
+  "m4_3_execution_authorized": "no",
+  "review_branch": "aota/m4/m4-2-source-r3-independent-review",
+  "review_commit_created": "yes",
+  "review_push_performed": "yes",
+  "review_remote_ref": "refs/heads/aota/m4/m4-2-source-r3-independent-review"
+}
