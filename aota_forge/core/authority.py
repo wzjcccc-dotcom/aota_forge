@@ -516,6 +516,39 @@ class AuthorityEngine:
     def __init__(self, resolver: OwningSubjectResolver) -> None:
         self._resolver = resolver
 
+    def validate_materialized_decision_evidence(
+        self,
+        evidence: MaterializedDecisionEvidence,
+        *,
+        operation: str,
+        target: ObjectRef,
+        expected_revision: int,
+        scope: Mapping[str, str],
+    ) -> bool:
+        """Validate exact Decision evidence through the trusted graph resolver."""
+        if not isinstance(evidence, MaterializedDecisionEvidence):
+            return False
+        try:
+            normalized_scope = _canonical_scope(scope)
+            resolved = resolve_authority_target(target, self._resolver)
+            decision = self._resolver.resolve_decision(evidence.decision_ref)
+        except (LookupError, ObjectRefError, TypeError, ValueError):
+            return False
+        if not isinstance(decision, records.Decision):
+            return False
+        try:
+            return (
+                evidence.operation == operation
+                and evidence.target == target
+                and evidence.expected_revision == expected_revision
+                and dict(evidence.scope) == normalized_scope
+                and evidence.decision_ref.internal_id == decision.decision_id
+                and decision.subject_ref == resolved.owning_subject_ref.internal_id
+                and evidence.evidence_digest == evidence.computed_digest(decision)
+            )
+        except (TypeError, ValueError):
+            return False
+
     @staticmethod
     def _result(
         decision: AuthorityDecision,

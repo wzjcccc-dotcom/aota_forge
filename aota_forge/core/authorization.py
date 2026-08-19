@@ -19,7 +19,6 @@ from aota_forge.core.authority import (
     AuthorityEngine,
     MaterializedDecisionEvidence,
     TrustedMutationAuthorization,
-    resolve_authority_target,
 )
 from aota_forge.core.capability_lease import (
     CapabilityLease,
@@ -203,25 +202,14 @@ def _decision_is_exact(
     authorization: TrustedMutationAuthorization,
     authority_engine: AuthorityEngine | None,
 ) -> bool:
-    if authorization.subject_expected_revision is None:
+    if not isinstance(authority_engine, AuthorityEngine) or authorization.subject_expected_revision is None:
         return False
-    if (
-        evidence.operation != authorization.operation
-        or evidence.target != authorization.target
-        or evidence.expected_revision != authorization.subject_expected_revision
-        or not _scope_equal(evidence.scope, authorization.mutation_scope)
-    ):
-        return False
-    if authority_engine is None:
-        return True
-    try:
-        resolved = resolve_authority_target(authorization.target, authority_engine._resolver)
-        decision = authority_engine._resolver.resolve_decision(evidence.decision_ref)
-    except Exception:
-        return False
-    return (
-        decision.subject_ref == resolved.owning_subject_ref.internal_id
-        and evidence.evidence_digest == evidence.computed_digest(decision)
+    return authority_engine.validate_materialized_decision_evidence(
+        evidence,
+        operation=authorization.operation,
+        target=authorization.target,
+        expected_revision=authorization.subject_expected_revision,
+        scope=authorization.mutation_scope,
     )
 
 
@@ -347,7 +335,12 @@ class CapabilityLeaseIssuer:
                     AuthorizationErrorCode.APPROVAL_REQUIRED,
                     "exact ApprovalEvidence is required",
                 )
-        if authorization.authorization_basis == "materialized_decision_evidence" or descriptor.decision_required:
+        decision_required = (
+            authorization.authorization_basis
+            in {"materialized_decision_evidence", "project_milestone_semantic_decision"}
+            or descriptor.decision_required
+        )
+        if decision_required:
             if authorization.decision_basis is None or not _decision_is_exact(
                 authorization.decision_basis, authorization, self._authority_engine
             ):
@@ -355,13 +348,6 @@ class CapabilityLeaseIssuer:
                     AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED,
                     "exact MaterializedDecisionEvidence is required",
                 )
-        if authorization.authorization_basis == "project_milestone_semantic_decision" and not (
-            authorization.authorization_id or authorization.reservation_ref
-        ):
-            raise AuthorizationFailure(
-                AuthorizationErrorCode.NEEDS_SEMANTIC_CHOICE,
-                "project or milestone semantic decision basis is missing",
-            )
         if authorization.issued_at is not None and now < authorization.issued_at:
             raise AuthorizationFailure(AuthorizationErrorCode.AUTHORIZATION_MISSING, "authorization is not yet valid")
         if authorization.expires_at is not None and now >= authorization.expires_at:

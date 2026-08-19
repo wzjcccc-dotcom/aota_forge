@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R1 bounded repair",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R1-REPAIR",
+  "status": "PASS",
+  "read_before_write": "PASS",
+  "repair_base_sha": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "failed_review_evidence_sha": "237794ced0a8677c57eb9b902503ca6f36502cdb",
+  "source_branch": "aota/m4/m4-2-source",
+  "blocking_finding_input_count": 3,
+  "blocking_findings": {
+    "BLOCK-M42-SRC-01": "closed",
+    "BLOCK-M42-SRC-02": "closed",
+    "BLOCK-M42-SRC-03": "closed"
+  },
+  "source_guard_repair": {
+    "common_base_exists_required": "yes",
+    "common_base_ancestor_required": "yes",
+    "descendant_head_allowed": "yes",
+    "head_equals_common_base_required": "no",
+    "candidate_diff_ownership_enforced": "yes",
+    "guard_descendant_aware": "yes",
+    "focused_test_count": 23,
+    "focused_test_pass_count": 23,
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "evidence_self_validation_as_test": "no"
+  },
+  "materialized_decision_validation_repair": {
+    "required_validator": "AuthorityEngine",
+    "trusted_resolution_and_digest_validation": "yes",
+    "missing_authority_engine": "fail_closed",
+    "invalid_or_unresolved_evidence": "fail_closed",
+    "wrong_target_operation_scope_binding": "fail_closed",
+    "bypass_allowed": "no",
+    "canonical_failure": "MATERIALIZED_DECISION_REQUIRED"
+  },
+  "project_milestone_semantic_evidence_repair": {
+    "required_evidence_kind": "MaterializedDecisionEvidence",
+    "exact_target_binding": "yes",
+    "exact_operation_binding": "yes",
+    "exact_scope_and_revision_binding": "yes",
+    "wrong_project_or_milestone_binding": "fail_closed",
+    "arbitrary_authorization_identifier_is_semantic_authority": "no",
+    "arbitrary_reservation_identifier_is_semantic_authority": "no",
+    "approval_evidence_substitution": "rejected"
+  },
+  "lease_issuer_is_semantic_decision_maker": "no",
+  "m4_2_write_ingress_implemented": "no",
+  "m4_2_external_authority_write_implemented": "no",
+  "m4_2_durable_journal_implemented": "no",
+  "behavioral_closure_claimed": "no",
+  "next_ready_set": "independent_rereview_of_m4_2_repaired_source"
+}

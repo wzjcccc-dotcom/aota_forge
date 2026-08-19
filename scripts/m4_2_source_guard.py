@@ -16,7 +16,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-BASE_SHA = "d74953be16b103fbd09b0ee18b203881244c4f95"
+COMMON_SOURCE_BASE = "d74953be16b103fbd09b0ee18b203881244c4f95"
 NOW = datetime(2030, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 M4_2_EXCLUSIVE_WRITE_PATHS = {
     "aota_forge/core/authority.py",
@@ -26,7 +26,10 @@ M4_2_EXCLUSIVE_WRITE_PATHS = {
 ALLOWED_NON_SOURCE_PATHS = {
     "scripts/m4_2_source_guard.py",
 }
-EVIDENCE_PREFIX = "deploy/evidence/issues/9/m4-2-source/"
+EVIDENCE_PREFIXES = (
+    "deploy/evidence/issues/9/m4-2-source/",
+    "deploy/evidence/issues/9/m4-2-source-repair/",
+)
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -144,23 +147,30 @@ def _expect_failure(call, code: str) -> bool:
 
 
 def _partition_check() -> bool:
-    status = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+    committed = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", f"{COMMON_SOURCE_BASE}..HEAD"],
         check=False,
         capture_output=True,
         text=True,
-    ).stdout.splitlines()
-    changed = {
+    )
+    status = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=all"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    changed = set(committed.stdout.splitlines())
+    changed.update(
         line[3:] if len(line) >= 4 else line
-        for line in status
+        for line in status.stdout.splitlines()
         if line
-    }
+    )
     forbidden = {
         path
         for path in changed
         if path not in M4_2_EXCLUSIVE_WRITE_PATHS
         and path not in ALLOWED_NON_SOURCE_PATHS
-        and not path.startswith(EVIDENCE_PREFIX)
+        and not any(path.startswith(prefix) for prefix in EVIDENCE_PREFIXES)
     }
     return check("SOURCE_PARTITION_EXACT", not forbidden, ", ".join(sorted(forbidden)))
 
@@ -168,6 +178,7 @@ def _partition_check() -> bool:
 def main() -> int:
     from aota_forge.core.authorization import (
         AuthorizationErrorCode,
+        AuthorizationFailure,
         CapabilityLeaseIssuer,
     )
     from aota_forge.core.authority import (
@@ -175,6 +186,7 @@ def main() -> int:
         AuthorityDecision,
         AuthorityEngine,
         AuthorityRequest,
+        MaterializedDecisionEvidence,
         TrustedMutationAuthorization,
     )
     from aota_forge.core.capability_lease import CapabilityLease
@@ -190,7 +202,19 @@ def main() -> int:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    check("EXACT_BASE_VERIFIED", head == BASE_SHA, head)
+    base_exists = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "cat-file", "-e", f"{COMMON_SOURCE_BASE}^{{commit}}"],
+        check=False,
+    ).returncode == 0
+    is_descendant = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "merge-base", "--is-ancestor", COMMON_SOURCE_BASE, "HEAD"],
+        check=False,
+    ).returncode == 0
+    check(
+        "COMMON_BASE_ANCESTRY_VERIFIED",
+        bool(head) and base_exists and is_descendant,
+        f"base={COMMON_SOURCE_BASE} head={head}",
+    )
     _partition_check()
 
     context, target_a, target_b = _fixture()
@@ -222,6 +246,123 @@ def main() -> int:
     )
     approval = replace(approval, evidence_digest=approval.computed_digest(context.principal))
     decision_descriptor = _descriptor(decision_required=True, external=False)
+    decision_repo = InMemoryGraphRepository()
+    decision_workflow_id = make_id(IdKind.WORKFLOW, "m4-2-decision-workflow")
+    decision_repo.store(records.workflow(decision_workflow_id, semantic_intent="M4-2 decision fixture", creation_context={}))
+    project_a = make_object_ref(
+        IdKind.SUBJECT,
+        make_id(IdKind.SUBJECT, "m4-2-project-a", sub_kind=SubjectKind.PROJECT),
+    )
+    project_b = make_object_ref(
+        IdKind.SUBJECT,
+        make_id(IdKind.SUBJECT, "m4-2-project-b", sub_kind=SubjectKind.PROJECT),
+    )
+    milestone_a = make_object_ref(
+        IdKind.SUBJECT,
+        make_id(IdKind.SUBJECT, "m4-2-milestone-a", sub_kind=SubjectKind.PLAN),
+    )
+    milestone_b = make_object_ref(
+        IdKind.SUBJECT,
+        make_id(IdKind.SUBJECT, "m4-2-milestone-b", sub_kind=SubjectKind.PLAN),
+    )
+    for ref, kind in (
+        (target_a, "WorkSubject"),
+        (target_b, "WorkSubject"),
+        (project_a, "ProjectSubject"),
+        (project_b, "ProjectSubject"),
+        (milestone_a, "PlanSubject"),
+        (milestone_b, "PlanSubject"),
+    ):
+        decision_repo.store(
+            records.subject(
+                ref.internal_id,
+                kind=kind,
+                workflow_ref=decision_workflow_id,
+                mechanical_state={"revision": 3, "state": "open"},
+                id_derivation="fixture",
+            )
+        )
+    decision_a = records.decision(
+        make_id(IdKind.DECISION, "m4-2-decision-a"),
+        target_a.internal_id,
+        "authorization",
+        "authorize exact mutation",
+    )
+    decision_b = records.decision(
+        make_id(IdKind.DECISION, "m4-2-decision-b"),
+        target_b.internal_id,
+        "authorization",
+        "authorize another target",
+    )
+    project_decision_a = records.decision(
+        make_id(IdKind.DECISION, "m4-2-project-decision-a"),
+        project_a.internal_id,
+        "authorization",
+        "authorize project A",
+    )
+    project_decision_b = records.decision(
+        make_id(IdKind.DECISION, "m4-2-project-decision-b"),
+        project_b.internal_id,
+        "authorization",
+        "authorize project B",
+    )
+    milestone_decision_a = records.decision(
+        make_id(IdKind.DECISION, "m4-2-milestone-decision-a"),
+        milestone_a.internal_id,
+        "authorization",
+        "authorize milestone A",
+    )
+    milestone_decision_b = records.decision(
+        make_id(IdKind.DECISION, "m4-2-milestone-decision-b"),
+        milestone_b.internal_id,
+        "authorization",
+        "authorize milestone B",
+    )
+    for decision_record in (
+        decision_a,
+        decision_b,
+        project_decision_a,
+        project_decision_b,
+        milestone_decision_a,
+        milestone_decision_b,
+    ):
+        decision_repo.store(decision_record)
+    decision_engine = AuthorityEngine(OwningSubjectResolver(decision_repo))
+
+    def decision_evidence(decision_record, target, *, operation=decision_descriptor.name, scope=None):
+        return MaterializedDecisionEvidence.from_decision(
+            decision_record,
+            operation=operation,
+            target=target,
+            expected_revision=3,
+            scope=scope or {"mode": "write"},
+        )
+
+    valid_decision = decision_evidence(decision_a, target_a)
+    valid_decision_auth = _authorization(
+        context,
+        target_a,
+        decision_descriptor,
+        external=False,
+        basis="materialized_decision_evidence",
+        decision=valid_decision,
+    )
+    project_descriptor = _descriptor(external=False)
+    valid_project_decision = decision_evidence(project_decision_a, project_a, operation=project_descriptor.name)
+    valid_project_auth = _authorization(
+        context,
+        project_a,
+        project_descriptor,
+        external=False,
+        basis="project_milestone_semantic_decision",
+        decision=valid_project_decision,
+    )
+    project_only_auth = replace(valid_project_auth, decision_basis=None)
+    reservation_only_auth = replace(
+        project_only_auth,
+        authorization_id=None,
+        reservation_ref="m4-2-reservation-only",
+    )
     approval_auth = _authorization(
         context,
         target_a,
@@ -230,7 +371,145 @@ def main() -> int:
         basis="approval_evidence",
         approval=approval,
     )
-    check("T8_APPROVAL_DOES_NOT_SUBSTITUTE_DECISION", _expect_failure(lambda: _issue(issuer, approval_auth, decision_descriptor, context, target_a), AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value))
+
+    decision_cases: list[tuple[str, bool]] = []
+
+    def expect_decision_failure(name, auth, contract, expected_code, *, decision_issuer=None):
+        try:
+            _issue(decision_issuer or CapabilityLeaseIssuer(decision_engine), auth, contract, context, auth.target)
+        except AuthorizationFailure as exc:
+            decision_cases.append((name, exc.code == expected_code))
+        except Exception:
+            decision_cases.append((name, False))
+        else:
+            decision_cases.append((name, False))
+
+    expect_decision_failure(
+        "invalid_decision",
+        replace(valid_decision_auth, decision_basis=replace(valid_decision, evidence_digest="0" * 64)),
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    unresolved = replace(
+        valid_decision,
+        decision_ref=make_object_ref(
+            IdKind.DECISION,
+            make_id(IdKind.DECISION, "m4-2-unresolved-decision"),
+        ),
+    )
+    expect_decision_failure(
+        "unresolved_decision",
+        replace(valid_decision_auth, decision_basis=unresolved),
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "missing_authority_engine",
+        valid_decision_auth,
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+        decision_issuer=CapabilityLeaseIssuer(),
+    )
+    expect_decision_failure(
+        "wrong_target_decision",
+        _authorization(
+            context,
+            target_b,
+            decision_descriptor,
+            external=False,
+            basis="materialized_decision_evidence",
+            decision=valid_decision,
+        ),
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "wrong_operation_decision",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_a, target_a, operation="other_operation"),
+        ),
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "wrong_scope_decision",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_a, target_a, scope={"mode": "other"}),
+        ),
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "arbitrary_authorization_id",
+        project_only_auth,
+        project_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "arbitrary_reservation_id",
+        reservation_only_auth,
+        project_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "wrong_project_decision",
+        replace(
+            valid_project_auth,
+            decision_basis=decision_evidence(project_decision_b, project_b, operation=project_descriptor.name),
+        ),
+        project_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    valid_milestone_decision = decision_evidence(milestone_decision_a, milestone_a, operation=project_descriptor.name)
+    expect_decision_failure(
+        "wrong_milestone_decision",
+        _authorization(
+            context,
+            milestone_a,
+            project_descriptor,
+            external=False,
+            basis="project_milestone_semantic_decision",
+            decision=decision_evidence(milestone_decision_b, milestone_b, operation=project_descriptor.name),
+        ),
+        project_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    expect_decision_failure(
+        "approval_substitutes_decision",
+        approval_auth,
+        decision_descriptor,
+        AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+    )
+    try:
+        CapabilityLeaseIssuer(decision_engine).issue(
+            valid_decision_auth,
+            decision_descriptor,
+            intent=_intent(target_a),
+            trusted_context=context,
+            now=NOW,
+        )
+        decision_cases.append(("valid_decision", True))
+    except Exception:
+        decision_cases.append(("valid_decision", False))
+    try:
+        CapabilityLeaseIssuer(decision_engine).issue(
+            valid_project_auth,
+            project_descriptor,
+            intent=_intent(project_a),
+            trusted_context=context,
+            now=NOW,
+        )
+        decision_cases.append(("valid_project_decision", True))
+    except Exception:
+        decision_cases.append(("valid_project_decision", False))
+    decision_failures = [name for name, passed in decision_cases if not passed]
+    check(
+        "T8_SEMANTIC_DECISION_EVIDENCE_MATRIX",
+        len(decision_cases) == 13 and not decision_failures and valid_milestone_decision.target == milestone_a,
+        ",".join(decision_failures),
+    )
     check("T9_EXPIRED_LEASE_REJECTED", _expect_failure(lambda: issuer.validate_lease(lease, trusted_context=context, operation=descriptor.name, target=target_a, mutation_scope={"mode": "write"}, contract_hash=descriptor.contract_hash(), intent_fingerprint=intent.intent_fingerprint(), subject_expected_revision=3, external_authority_precondition="raw-revision-3", now=NOW + timedelta(seconds=60)), AuthorizationErrorCode.LEASE_EXPIRED.value))
     check("T10_CONSUMED_LEASE_REJECTED", _expect_failure(lambda: issuer.validate_lease(lease.consume_for_fixture(), trusted_context=context, operation=descriptor.name, target=target_a, mutation_scope={"mode": "write"}, contract_hash=descriptor.contract_hash(), intent_fingerprint=intent.intent_fingerprint(), subject_expected_revision=3, external_authority_precondition="raw-revision-3", now=NOW), AuthorizationErrorCode.LEASE_CONSUMED.value))
     check("T11_REVOKED_LEASE_REJECTED", _expect_failure(lambda: issuer.validate_lease(lease.revoke(), trusted_context=context, operation=descriptor.name, target=target_a, mutation_scope={"mode": "write"}, contract_hash=descriptor.contract_hash(), intent_fingerprint=intent.intent_fingerprint(), subject_expected_revision=3, external_authority_precondition="raw-revision-3", now=NOW), AuthorizationErrorCode.LEASE_REVOKED.value))
