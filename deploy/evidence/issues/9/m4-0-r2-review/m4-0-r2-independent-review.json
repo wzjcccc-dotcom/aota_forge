@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-0 R2 independent architecture re-review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-0-R2",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "reviewer_role": "Codex independent architecture reviewer; not repair executor",
+  "review_target_sha": "0e6011db30c264406706b9b1590eb62a5aa4d10f",
+  "original_candidate_sha": "7a3b9aeb797004ded7a714cbe9f607001ac89921",
+  "first_review_sha": "6c8a5add1fadc6ff22b7117e53bee68b02a1716d",
+  "read_before_write": "PASS",
+  "lineage_verification": {
+    "target_commit_exists": "yes",
+    "target_remote_ref_matches": "yes",
+    "target_remote_ref": "aota/m4/m4-0-architecture-freeze",
+    "target_ancestry_contains_original_candidate": "yes",
+    "target_ancestry_contains_m3_accepted_base": "yes",
+    "m3_accepted_base_sha": "573be8c2d01eedaf98edf589ab11c8a3bebcf55b"
+  },
+  "repair_scope_verification": {
+    "expected_changed_paths": [
+      "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json",
+      "deploy/evidence/issues/9/m4-0/m4-0-regression-ownership.json",
+      "scripts/m4_0_architecture_freeze_guard.py"
+    ],
+    "actual_changed_paths": [
+      "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json",
+      "deploy/evidence/issues/9/m4-0/m4-0-regression-ownership.json",
+      "scripts/m4_0_architecture_freeze_guard.py"
+    ],
+    "repair_changed_path_count": 3,
+    "repair_unexpected_changed_path_count": 0,
+    "repair_scope_verified": "yes",
+    "functional_core_source_changed": "no",
+    "capability_audit_changed": "no",
+    "m2_regression_matrix_changed": "no",
+    "m3_accepted_evidence_changed": "no",
+    "first_review_evidence_changed": "no"
+  },
+  "previous_blocker_reviews": {
+    "R2_01_mutation_journal": {
+      "status": "PASS",
+      "crash_window_case_count": 10,
+      "crash_window_cases_pass": 10,
+      "stranded_applying_reconciles_before_retry": "yes",
+      "normalized_equality_proves_exact_external_effect": "no",
+      "journal_failure_before_external_write_fails_closed": "yes",
+      "terminal_persistence_failure_recovery": "PASS",
+      "finding": "D3 independently defines J1-J10, exact raw candidate/original/third-state precedence, fresh preconditions for retry, and no duplicate write after recovery."
+    },
+    "R2_02_plan_init": {
+      "status": "PASS",
+      "ownership_boundary": "PASS",
+      "no_effect_contract": "PASS",
+      "B011_design_closure_ready": "yes",
+      "B014_design_closure_ready": "yes",
+      "plan_init_reentry_denied": "yes",
+      "finding": "D7 separates semantic decision, Project Steward reconciliation, Core mechanical transition, and authority adapter mechanics; invalid, stale, ambiguous, and idempotency-conflict paths are no-effect."
+    },
+    "R2_03_retirement": {
+      "status": "PASS",
+      "two_stage_protocol": "PASS",
+      "abandoned_to_cancelled": "yes",
+      "superseded_exact_successor": "yes",
+      "active_current_protection": "yes",
+      "running_task_protection": "yes",
+      "stale_snapshot_fails_closed": "yes",
+      "implicit_resurrection_allowed": "no",
+      "B013_m4_prerequisite_design_ready": "yes",
+      "finding": "D8 binds a bounded snapshot to exact target and successor eligibility, preserves history for abandoned plans, and rejects heuristic selection, stale state, and resurrection."
+    },
+    "R2_04_control_comments": {
+      "status": "PASS",
+      "required_role_zero_one_many": "PASS",
+      "duplicate_role_fails_closed": "yes",
+      "missing_role_generic_autocreate_allowed": "no",
+      "issue_body_plan_authority": "yes",
+      "control_comments_plan_authority": "no",
+      "event_log_plan_authority": "no",
+      "finding": "D9 defines deterministic missing, exact-one, and duplicate-role outcomes for required roles and does not create the optional runtime role absent explicit authorization."
+    },
+    "R2_05_project_steward": {
+      "status": "PASS",
+      "core_auto_accepts_milestone": "no",
+      "project_steward_auto_accepts_milestone": "no",
+      "core_auto_closes_plan": "no",
+      "project_steward_auto_closes_plan": "no",
+      "core_invents_project_binding": "no",
+      "project_steward_invents_project_binding": "no",
+      "relationship_resolve_result_is_project_binding": "no",
+      "finding": "D11 keeps semantic project selection external, limits Project Steward to truth reconciliation, and limits context preparation to mechanical continuation."
+    },
+    "R2_06_negative_guard": {
+      "status": "FAIL",
+      "negative_case_count": 12,
+      "negative_case_reject_count": 11,
+      "negative_case_unexpected_accept_count": 1,
+      "negative_case_malformed_count": 0,
+      "NEG_03_rejected": "yes",
+      "NEG_09_rejected": "yes",
+      "NEG_07_rejected": "no",
+      "cases": [
+        {"id": "NEG-01", "result": "rejected", "reason": "FAIL no cross-authority transaction"},
+        {"id": "NEG-02", "result": "rejected", "reason": "FAIL D3 unknown outcome controls"},
+        {"id": "NEG-03", "result": "rejected", "reason": "FAIL D6 digest separation"},
+        {"id": "NEG-04", "result": "rejected", "reason": "FAIL D6 digest separation"},
+        {"id": "NEG-05", "result": "rejected", "reason": "FAIL D5 lease boundary"},
+        {"id": "NEG-06", "result": "rejected", "reason": "FAIL D5 lease boundary"},
+        {"id": "NEG-07", "result": "unexpected_accept", "reason": "D7 reentry_denied changed to no; guard returned PASS"},
+        {"id": "NEG-08", "result": "rejected", "reason": "FAIL D8 no resurrection"},
+        {"id": "NEG-09", "result": "rejected", "reason": "FAIL D9 authority"},
+        {"id": "NEG-10", "result": "rejected", "reason": "FAIL M4/M5 boundary"},
+        {"id": "NEG-11", "result": "rejected", "reason": "FAIL D11 Git scope"},
+        {"id": "NEG-12", "result": "rejected", "reason": "FAIL M4 DAG and authorization"}
+      ],
+      "finding": "The repaired guard no longer asserts D7 reentry_denied, so a structurally valid PLAN_INIT re-entry-enabled mutation is accepted. This is a blocking negative-guard failure and a regression from the original guard."
+    },
+    "R2_07_regression_trace": {
+      "status": "PASS",
+      "frozen_regression_class_count": 16,
+      "regression_class_trace_count": 16,
+      "all_frozen_classes_traceable": "yes",
+      "frozen_owner_drift_count": 0,
+      "m4_0_behavioral_closure_false_claim_count": 0,
+      "finding": "Every frozen matrix class is enumerated with its frozen owner and disposition; delegated M2/M5 and inherited M3 rows are retained without an M4-0 behavioral PASS claim."
+    }
+  },
+  "previously_passed_area_regression_review": {
+    "cross_authority": {"status": "PASS", "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no"},
+    "authorization_lease": {"status": "PASS", "LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER": "no", "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no"},
+    "multi_domain_revision": {"status": "PASS", "subject_revision_separate": "yes", "raw_authority_revision_separate": "yes", "normalized_plan_digest_separate": "yes", "candidate_raw_digest_exact_intent": "yes"},
+    "m4_m5_boundary": {"status": "PASS", "M4_HERMES_RUNTIME_MUTATION_ACTIVATION_REQUIRED": "no", "HERMES_EXECUTOR_E2E_REQUIRED": "no"},
+    "project_git_boundary": {"status": "PASS", "GENERIC_GIT_WRITE_API_ALLOWED": "no", "GENERIC_TERMINAL_ALLOWED": "no"},
+    "dag": {"status": "PASS", "acyclic": "yes", "M4_6_M4_7_PARALLEL_SAFETY": "pending_source_ownership_reconnaissance", "edges_semantically_unchanged": "yes"}
+  },
+  "guard_self_consistency_review": {
+    "status": "FAIL",
+    "py_compile": "PASS",
+    "canonical_guard": "PASS",
+    "hidden_network_dependency": "no",
+    "artifact_mutation": "no",
+    "structural_semantic_checks_present": "yes",
+    "tautological_validation_found": "no",
+    "negative_suite": "FAIL",
+    "finding": "The default guard is deterministic and passes the repaired candidate, but its negative suite contract is incomplete because D7 top-level reentry_denied is not checked."
+  },
+  "blocking_findings": [
+    {
+      "id": "R2-BF-01",
+      "severity": "blocking",
+      "area": "negative_guard",
+      "summary": "NEG-07 unexpectedly accepted after changing D7 reentry_denied from yes to no.",
+      "evidence": "python3 scripts/m4_0_architecture_freeze_guard.py --artifact-root /tmp/opencode/m4-r2-negative-suite-exact/NEG-07 returned exit 0; the mutated JSON remained structurally valid.",
+      "repair_may_be_performed": "no"
+    }
+  ],
+  "non_blocking_findings": [],
+  "governance_runtime_mutation": {
+    "github_issue_body_mutated": "no",
+    "github_control_comment_mutated": "no",
+    "github_event_log_appended": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no",
+    "deploy_performed": "no",
+    "runtime_activation_performed": "no",
+    "hermes_dispatch_performed": "no"
+  },
+  "verdict": "FAIL",
+  "next_ready_set": "bounded_m4_0_r2_repair",
+  "next_action": "Repair only the M4-0 architecture-freeze guard so the structurally valid NEG-07 PLAN_INIT re-entry mutation fails closed, then request a fresh bounded R2 re-review; do not modify architecture artifacts in this review."
+}
