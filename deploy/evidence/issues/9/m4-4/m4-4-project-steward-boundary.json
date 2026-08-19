@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 Project Steward mechanical boundary",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "may": ["reconcile project truth", "resolve deterministic relationship evidence", "verify lifecycle preconditions", "prepare trusted mechanical context after semantic decision"],
+  "may_not": ["choose ambiguous Project", "invent Project Binding", "auto-accept Milestone", "auto-close Plan", "auto-close M4", "invent retirement kind", "invent successor", "invent rollback", "expand authority"],
+  "ownership": {
+    "semantic_project_selection": "LLM/user/governance",
+    "project_truth_and_relationship_evidence": "Project Steward",
+    "mechanical_transition": "AOTA Forge Core M4-4",
+    "external_authority_materialization": "Portable Plan Authority Adapter later",
+    "platform_mechanics": "GitHub adapter only"
+  },
+  "flags": {
+    "CORE_AUTO_ACCEPTS_MILESTONE": "no",
+    "PROJECT_STEWARD_AUTO_ACCEPTS_MILESTONE": "no",
+    "CORE_AUTO_CLOSES_PLAN": "no",
+    "PROJECT_STEWARD_AUTO_CLOSES_PLAN": "no",
+    "CORE_INVENTS_PROJECT_BINDING": "no",
+    "PROJECT_STEWARD_INVENTS_PROJECT_BINDING": "no",
+    "CORE_SELECTS_PROJECT_UNDER_AMBIGUITY": "no",
+    "PROJECT_STEWARD_SELECTS_SEMANTIC_PROJECT": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_PROJECT_BINDING": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_SEMANTIC_PROJECT_DECISION": "no",
+    "CONTEXT_PREPARE_MAY_INVENT_PROJECT_BINDING": "no",
+    "PROJECT_BINDING_REQUIRES_TRUSTED_SEMANTIC_DECISION_BASIS": "yes"
+  },
+  "invocation": [
+    "relationship_resolve returns deterministic candidates and evidence only",
+    "zero candidates returns PROJECT_NOT_FOUND or bounded reconciliation result",
+    "one candidate is not a semantic decision; governance must permit its use",
+    "more than one candidate returns NEEDS_SEMANTIC_CHOICE with no effect",
+    "external semantic decision supplies exact Project Binding",
+    "context_prepare verifies and carries the exact binding; it does not invent one",
+    "Core performs only the exact mechanical lifecycle transition"
+  ]
+}

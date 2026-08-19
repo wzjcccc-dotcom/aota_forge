@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source ownership forecast",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "M4_2_M4_4_SOURCE_PARALLEL_SAFETY": "pending",
+  "source_parallelism_authorized": "no",
+  "paths": [
+    {"path": "aota_forge/core/transitions.py", "ownership_reason": "add lifecycle transition boundary without changing M3 record transitions", "shared_hot_file": "yes", "possible_m4_2_overlap": "authority and lease request inputs", "possible_m4_3_overlap": "ingress dispatch and result projection"},
+    {"path": "aota_forge/core/context.py", "ownership_reason": "prepare exact trusted project binding after semantic choice", "shared_hot_file": "yes", "possible_m4_2_overlap": "trusted context and principal boundary", "possible_m4_3_overlap": "context assembly at ingress"},
+    {"path": "aota_forge/core/project/resolver.py", "ownership_reason": "relationship evidence and deterministic project resolution contract", "shared_hot_file": "yes", "possible_m4_2_overlap": "target binding facts", "possible_m4_3_overlap": "ingress project context"},
+    {"path": "aota_forge/core/contracts/*", "ownership_reason": "lifecycle descriptors, errors, and result mappings", "shared_hot_file": "yes", "possible_m4_2_overlap": "authorization contract identity", "possible_m4_3_overlap": "canonical ingress contract registry"},
+    {"path": "aota_forge/core/transaction.py", "ownership_reason": "reuse/extend Subject CAS transaction for lifecycle state", "shared_hot_file": "yes", "possible_m4_2_overlap": "lease consumption and authority preconditions", "possible_m4_3_overlap": "transaction invocation"},
+    {"path": "aota_forge/core/idempotency.py", "ownership_reason": "reuse exact intent replay/conflict semantics", "shared_hot_file": "yes", "possible_m4_2_overlap": "authorization identity binding", "possible_m4_3_overlap": "ingress idempotency transport"},
+    {"path": "tests/**", "ownership_reason": "future behavioral proofs for B011/B013/B014 and lifecycle errors", "shared_hot_file": "conditional", "possible_m4_2_overlap": "authorization negative cases", "possible_m4_3_overlap": "end-to-end ingress cases"},
+    {"path": "aota_forge/core/__init__.py and exports", "ownership_reason": "expose lifecycle contracts only after implementation authorization", "shared_hot_file": "yes", "possible_m4_2_overlap": "shared public contract exports", "possible_m4_3_overlap": "ingress operation exports"}
+  ],
+  "ownership_decision": "No source lane is authorized by this forecast; exact overlap requires serial integration or explicit ownership review.",
+  "M4_2_EXECUTION_AUTHORIZED": "no",
+  "M4_4_EXECUTION_AUTHORIZED": "no",
+  "M4_3_EXECUTION_AUTHORIZED": "no"
+}

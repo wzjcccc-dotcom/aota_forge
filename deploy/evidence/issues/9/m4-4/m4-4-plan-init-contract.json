@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 PLAN_INIT executable mechanical contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "PLAN_INIT_REENTRY_DENIED": "yes",
+  "transitions": [
+    {
+      "TRANSITION": "PLAN_INIT",
+      "PREDECESSOR": "uninitialized",
+      "SUCCESSOR": "initialized",
+      "SEMANTIC_DECISION_OWNER": "LLM/user/governance",
+      "PROJECT_TRUTH_RECONCILIATION_OWNER": "Project Steward",
+      "MECHANICAL_TRANSITION_OWNER": "AOTA Forge Core M4-4",
+      "AUTHORITY_STORE_MUTATION_OWNER": "Portable Plan Authority Adapter (later bounded lane)",
+      "SEMANTIC_AUTHORIZATION_REQUIRED": "yes",
+      "PROJECT_BINDING_REQUIRED": "yes: trusted exact canonical validated Project Binding",
+      "SUBJECT_EXPECTED_REVISION_REQUIRED": "yes",
+      "AUTHORITY_PRECONDITION_REQUIRED": "yes: exact raw authority revision and observed raw digest",
+      "IDEMPOTENCY_RULE": "same key plus same intent fingerprint is one semantic attempt; same key plus changed intent is conflict",
+      "REPLAY_RESULT": "REPLAYED_VERIFIED; no duplicate effect, no second revision",
+      "STALE_SUBJECT_RESULT": "PLAN_INIT_STALE_SUBJECT_REVISION; no effect",
+      "STALE_AUTHORITY_RESULT": "PLAN_INIT_STALE_AUTHORITY_PRECONDITION; no effect",
+      "INVALID_PREDECESSOR_RESULT": "PLAN_INIT_INVALID_PREDECESSOR; no effect",
+      "NO_EFFECT_RULE": "any failed precondition, missing binding, or unresolved semantic choice has no effect"
+    },
+    {
+      "TRANSITION": "PLAN_INIT_PRE_BINDING_REENTRY",
+      "PREDECESSOR": "initialized_unbound",
+      "SUCCESSOR": "initialized_unbound",
+      "SEMANTIC_DECISION_OWNER": "LLM/user/governance (not invoked for re-entry)",
+      "PROJECT_TRUTH_RECONCILIATION_OWNER": "Project Steward",
+      "MECHANICAL_TRANSITION_OWNER": "AOTA Forge Core M4-4",
+      "AUTHORITY_STORE_MUTATION_OWNER": "none: no mutation is permitted",
+      "SEMANTIC_AUTHORIZATION_REQUIRED": "no",
+      "PROJECT_BINDING_REQUIRED": "no new binding; existing unbound state is observed",
+      "SUBJECT_EXPECTED_REVISION_REQUIRED": "yes: validation only; no advance",
+      "AUTHORITY_PRECONDITION_REQUIRED": "yes if an authority path was requested; never bypassed",
+      "IDEMPOTENCY_RULE": "same key plus same already-applied intent replays the bounded denial; changed intent conflicts",
+      "REPLAY_RESULT": "PLAN_INIT_ALREADY_INITIALIZED_PRE_BINDING; no new semantic effect",
+      "STALE_SUBJECT_RESULT": "PLAN_INIT_STALE_SUBJECT_REVISION; no effect",
+      "STALE_AUTHORITY_RESULT": "PLAN_INIT_STALE_AUTHORITY_PRECONDITION; no effect",
+      "INVALID_PREDECESSOR_RESULT": "PLAN_INIT_ALREADY_INITIALIZED_PRE_BINDING; no effect",
+      "NO_EFFECT_RULE": "re-entry is always a denied no-effect result and cannot cycle"
+    },
+    {
+      "TRANSITION": "PLAN_INIT_POST_BINDING_REENTRY",
+      "PREDECESSOR": "initialized_bound",
+      "SUCCESSOR": "initialized_bound",
+      "SEMANTIC_DECISION_OWNER": "LLM/user/governance (not invoked for re-entry)",
+      "PROJECT_TRUTH_RECONCILIATION_OWNER": "Project Steward",
+      "MECHANICAL_TRANSITION_OWNER": "AOTA Forge Core M4-4",
+      "AUTHORITY_STORE_MUTATION_OWNER": "none: no mutation is permitted",
+      "SEMANTIC_AUTHORIZATION_REQUIRED": "no",
+      "PROJECT_BINDING_REQUIRED": "yes: exact existing trusted canonical binding must be present",
+      "SUBJECT_EXPECTED_REVISION_REQUIRED": "yes: validation only; no advance",
+      "AUTHORITY_PRECONDITION_REQUIRED": "yes if an authority path was requested; never bypassed",
+      "IDEMPOTENCY_RULE": "same key plus same already-applied intent replays the bounded denial; changed intent conflicts",
+      "REPLAY_RESULT": "PLAN_INIT_ALREADY_INITIALIZED_POST_BINDING; no new semantic effect",
+      "STALE_SUBJECT_RESULT": "PLAN_INIT_STALE_SUBJECT_REVISION; no effect",
+      "STALE_AUTHORITY_RESULT": "PLAN_INIT_STALE_AUTHORITY_PRECONDITION; no effect",
+      "INVALID_PREDECESSOR_RESULT": "PLAN_INIT_ALREADY_INITIALIZED_POST_BINDING; no effect",
+      "NO_EFFECT_RULE": "re-entry is always a denied no-effect result and cannot ping-pong"
+    }
+  ],
+  "sequence": {
+    "steps": [
+      "relationship_resolve -> deterministic candidate/evidence",
+      "zero candidates -> bounded PROJECT_NOT_FOUND/reconciliation result",
+      "one candidate -> mechanically identified, usable as binding only when semantic governance permits",
+      "more than one candidate -> NEEDS_SEMANTIC_CHOICE with no effect",
+      "semantic decision -> trusted exact Project Binding",
+      "context_prepare -> mechanical continuation",
+      "PLAN_INIT -> exact predecessor to successor transition"
+    ],
+    "heuristic_project_selection": "forbidden",
+    "CORE_SELECTS_PROJECT_UNDER_AMBIGUITY": "no",
+    "PROJECT_STEWARD_SELECTS_SEMANTIC_PROJECT": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_PROJECT_BINDING": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_SEMANTIC_PROJECT_DECISION": "no"
+  },
+  "no_effect_rules": [
+    "invalid predecessor -> no effect",
+    "stale Subject revision -> no effect",
+    "stale authority precondition -> no effect",
+    "missing valid Project Binding -> no effect",
+    "NEEDS_SEMANTIC_CHOICE -> no effect",
+    "same idempotency key plus same already-applied intent -> replay only",
+    "same idempotency key plus changed intent -> CONFLICT and no effect"
+  ],
+  "B011": {"design_closure_ready": "yes", "behavioral_pass": "no", "pre_binding_cycle": "denied", "machine_result": "PLAN_INIT_ALREADY_INITIALIZED_PRE_BINDING"},
+  "B014": {"design_closure_ready": "yes", "behavioral_pass": "no", "post_binding_cycle": "denied", "machine_result": "PLAN_INIT_ALREADY_INITIALIZED_POST_BINDING"},
+  "ownership_flags": {
+    "CORE_IS_SEMANTIC_ORCHESTRATOR": "no",
+    "PROJECT_STEWARD_INVENTS_PROJECT_BINDING": "no",
+    "PORTABLE_PLAN_ADAPTER_IMPLEMENTED": "no",
+    "GITHUB_ADAPTER_IMPLEMENTED": "no"
+  }
+}

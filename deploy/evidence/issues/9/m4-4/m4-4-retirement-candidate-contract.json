@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 retirement candidate and exact mutation contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "two_stage_protocol": [
+    {"stage": 1, "name": "bounded retirement candidate snapshot", "mutation": "no", "output": "candidate snapshot bound to current state"},
+    {"stage": 2, "name": "semantic selection plus exact retirement mutation", "mutation": "later bounded authorized write", "input": "one exact candidate, explicit retirement_kind, and fresh preconditions"}
+  ],
+  "snapshot_required_fields": [
+    "snapshot_identity", "source_revision", "source_digest", "plan_identity", "plan_state",
+    "active_current_protection", "running_task_protection", "eligible_retirement_kinds",
+    "successor_eligibility", "candidate_identity"
+  ],
+  "resolution": {
+    "zero": "RETIREMENT_NO_CANDIDATE; bounded result; no mutation",
+    "one": "unique candidate may be returned, but explicit retirement_kind remains required",
+    "many": "RETIREMENT_NEEDS_SEMANTIC_CHOICE; no mutation",
+    "selection_forbidden": ["newest", "latest", "first", "similarity", "timestamp proximity", "path proximity", "stale current pointer heuristic"]
+  },
+  "retirement_kinds": {
+    "abandoned": {
+      "resulting_plan_state": "cancelled",
+      "successor_required": "no",
+      "destructive_deletion": "no",
+      "preserves": ["Milestones", "Work Items", "historical evidence", "Event Log history"]
+    },
+    "superseded": {
+      "resulting_plan_state": "superseded",
+      "successor_required": "yes: exact successor_ref",
+      "successor_must_not_equal_target": "yes",
+      "successor_must_resolve_to_valid_canonical_successor": "yes",
+      "missing_successor": "fail closed",
+      "changed_successor_validity_after_snapshot": "RETIREMENT_STALE_SNAPSHOT; no effect",
+      "heuristic_successor": "forbidden"
+    }
+  },
+  "fresh_mutation_checks": [
+    "selected exact target",
+    "fresh candidate snapshot",
+    "fresh raw authority revision and digest precondition",
+    "Subject/lifecycle predecessor and expected revision where applicable",
+    "bounded authorization and operation-scoped lease from later M4-2",
+    "read-before-write",
+    "one bounded write",
+    "verify-after-write",
+    "append Event Log evidence"
+  ],
+  "protections": {
+    "active_current_plan": "fail closed / no effect",
+    "running_task_plan": "fail closed / no effect",
+    "stale_snapshot": "fail closed / no effect",
+    "changed_authority_revision": "fail closed / no effect",
+    "changed_raw_digest": "fail closed / no effect",
+    "target_no_longer_eligible": "fail closed / no effect",
+    "silent_refresh_and_reuse_prior_choice": "forbidden"
+  },
+  "NO_RESURRECTION": {
+    "RETIRED_PLAN_IMPLICIT_RESURRECTION_ALLOWED": "no",
+    "forbidden_basis": ["stale current pointer", "projection repair", "latest/newest ordering", "retry", "resolver ordering", "similarity"],
+    "legitimate_resurrection": "requires a separate explicit semantic governance operation"
+  },
+  "idempotency": {
+    "same_key_same_intent": "REPLAYED_VERIFIED; reuse prior result; no duplicate effect",
+    "same_key_changed_intent": "CONFLICT; no effect"
+  },
+  "B013": {
+    "DESIGN_CLOSURE_READY": "yes",
+    "BEHAVIORAL_PASS": "no",
+    "given_when_then": [
+      {"id": "B013-01", "given": "bounded candidate snapshot with zero eligible candidates", "when": "retirement candidate discovery runs", "then": "RETIREMENT_NO_CANDIDATE and no mutation"},
+      {"id": "B013-02", "given": "bounded candidate snapshot with one eligible candidate", "when": "snapshot is returned", "then": "unique candidate is presented but retirement_kind is still explicit"},
+      {"id": "B013-03", "given": "more than one eligible candidate", "when": "discovery runs", "then": "RETIREMENT_NEEDS_SEMANTIC_CHOICE and no mutation"},
+      {"id": "B013-04", "given": "selected candidate snapshot is stale", "when": "mutation is attempted", "then": "RETIREMENT_STALE_SNAPSHOT and no effect"},
+      {"id": "B013-05", "given": "exact candidate is selected with retirement_kind abandoned", "when": "fresh checks pass", "then": "Plan state becomes cancelled and evidence is preserved"},
+      {"id": "B013-06", "given": "exact candidate is selected with superseded and exact non-self successor", "when": "fresh checks pass", "then": "Plan state becomes superseded"},
+      {"id": "B013-07", "given": "active/current Plan is selected", "when": "retirement is attempted", "then": "RETIREMENT_TARGET_PROTECTED and no effect"},
+      {"id": "B013-08", "given": "Plan has a running task", "when": "retirement is attempted", "then": "RETIREMENT_RUNNING_TASK_PROTECTED and no effect"},
+      {"id": "B013-09", "given": "candidate selection can only be made by newest/latest/first or similar heuristic", "when": "selection is evaluated", "then": "it is rejected and semantic choice remains required"},
+      {"id": "B013-10", "given": "retired Plan is visible through stale pointer or projection repair", "when": "retry or resolution runs", "then": "no implicit resurrection occurs"},
+      {"id": "B013-11", "given": "Event Log evidence is missing", "when": "write protocol is prepared", "then": "write is not authorized and no effect occurs"},
+      {"id": "B013-12", "given": "same exact successful intent is retried", "when": "idempotency lookup runs", "then": "REPLAYED_VERIFIED with no duplicate effect"},
+      {"id": "B013-13", "given": "Subject or raw authority revision is stale", "when": "read-before-write checks run", "then": "stale result is returned and no effect occurs"}
+    ]
+  }
+}

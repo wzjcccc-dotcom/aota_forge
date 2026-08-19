@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 regression handoff map",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "M4_4_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0,
+  "regressions": [
+    {"id": "B011", "ownership": "M4-4 lifecycle implementation", "design_stage": "M4-4 planning", "behavioral_proof_stage": "post-implementation M4 regression"},
+    {"id": "B013", "ownership": "M4-4 retirement implementation with M4-5+ authority integration", "design_stage": "M4-4 planning", "behavioral_proof_stage": "post-implementation M4 regression"},
+    {"id": "B014", "ownership": "M4-4 lifecycle implementation", "design_stage": "M4-4 planning", "behavioral_proof_stage": "post-implementation M4 regression"},
+    {"id": "BIND-1", "ownership": "M3 binding primitive consumed by M4-4", "design_stage": "M4-4 boundary", "behavioral_proof_stage": "M4 integration regression"},
+    {"id": "WCTX-1", "ownership": "M4-4 error/context handoff", "design_stage": "M4-4 error contract", "behavioral_proof_stage": "M4 integration regression"},
+    {"id": "DRIFT-1", "ownership": "M4-1 descriptor identity consumed by M4-4", "design_stage": "M4-4 contract identity", "behavioral_proof_stage": "M4 integration regression"},
+    {"id": "RECOVERY-1", "ownership": "later M4 recovery lane; M4-4 supplies lifecycle preconditions", "design_stage": "M4-4 handoff", "behavioral_proof_stage": "M4-7/M4-8 behavioral proof"}
+  ],
+  "B011_DESIGN_CLOSURE_READY": "yes",
+  "B013_DESIGN_CLOSURE_READY": "yes",
+  "B014_DESIGN_CLOSURE_READY": "yes",
+  "behavioral_pass_claimed": "no",
+  "downstream_rule": "Design closure is not behavioral closure and does not authorize functional source implementation."
+}

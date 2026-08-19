@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 lifecycle machine error and result contract",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "semantic_choice_is_generic_failure": "no",
+  "errors": {
+    "PROJECT_NOT_FOUND": {"class": "bounded_resolution", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "NEEDS_SEMANTIC_CHOICE": {"class": "semantic_choice", "effect": "NEEDS_SEMANTIC_CHOICE", "semantic_choice": "yes"},
+    "PROJECT_BINDING_REQUIRED": {"class": "missing_prerequisite", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "PLAN_INIT_INVALID_PREDECESSOR": {"class": "lifecycle_state", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "PLAN_INIT_ALREADY_INITIALIZED": {"class": "bounded_no_effect", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "PLAN_INIT_STALE_SUBJECT_REVISION": {"class": "stale_precondition", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "PLAN_INIT_STALE_AUTHORITY_PRECONDITION": {"class": "stale_precondition", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_NO_CANDIDATE": {"class": "bounded_resolution", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_NEEDS_SEMANTIC_CHOICE": {"class": "semantic_choice", "effect": "NEEDS_SEMANTIC_CHOICE", "semantic_choice": "yes"},
+    "RETIREMENT_STALE_SNAPSHOT": {"class": "stale_precondition", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_TARGET_PROTECTED": {"class": "protection", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_RUNNING_TASK_PROTECTED": {"class": "protection", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_SUCCESSOR_REQUIRED": {"class": "missing_prerequisite", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_SUCCESSOR_INVALID": {"class": "successor_validation", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_SELF_SUCCESSOR": {"class": "successor_validation", "effect": "NO_EFFECT", "semantic_choice": "no"},
+    "RETIREMENT_STALE_AUTHORITY_PRECONDITION": {"class": "stale_precondition", "effect": "NO_EFFECT", "semantic_choice": "no"}
+  },
+  "result_mapping": {
+    "same_idempotency_key_same_intent": "REPLAYED_VERIFIED",
+    "same_idempotency_key_changed_intent": "CONFLICT",
+    "invalid_predecessor": "NO_EFFECT",
+    "stale_subject_or_authority": "NO_EFFECT",
+    "semantic_choice": "NEEDS_SEMANTIC_CHOICE",
+    "authoritative_unknown": "OUTCOME_UNKNOWN; reconcile before retry"
+  },
+  "distinctness": [
+    ["NEEDS_SEMANTIC_CHOICE", "PROJECT_BINDING_REQUIRED"],
+    ["RETIREMENT_NO_CANDIDATE", "RETIREMENT_NEEDS_SEMANTIC_CHOICE"],
+    ["RETIREMENT_SUCCESSOR_REQUIRED", "RETIREMENT_SUCCESSOR_INVALID"],
+    ["RETIREMENT_TARGET_PROTECTED", "RETIREMENT_RUNNING_TASK_PROTECTED"],
+    ["PLAN_INIT_STALE_SUBJECT_REVISION", "PLAN_INIT_STALE_AUTHORITY_PRECONDITION"]
+  ]
+}

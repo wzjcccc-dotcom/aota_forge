@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 to M4-3 planning handoff",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "M4_4_ACCEPTANCE_INPUTS_FOR_M4_3": [
+    "defined lifecycle operation contracts",
+    "exact predecessor/successor rules",
+    "semantic choice boundaries",
+    "Project Steward mechanical boundary",
+    "canonical lifecycle error/result mapping"
+  ],
+  "additional_m4_3_prerequisite": "accepted M4-2 Trusted Mutation Authorization and Capability Lease issuance protocol",
+  "M4_4_PASS_AUTOMATICALLY_AUTHORIZES_M4_3": "no",
+  "M4_4_EXECUTION_AUTHORIZED": "no",
+  "M4_3_EXECUTION_AUTHORIZED": "no",
+  "handoff_state": "planning_contracts_consumable_after_independent_review_and_acceptance",
+  "not_included": ["write-capable ingress", "authorization issuer", "lease issuer", "Portable Plan writer", "GitHub write adapter", "durable journal runtime"]
+}

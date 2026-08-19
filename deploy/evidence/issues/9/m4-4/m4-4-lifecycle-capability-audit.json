@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 lifecycle capability audit",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "functional_source_mutation_allowed": "no",
+  "source_reconnaissance": {
+    "accepted_m4_1_contract_evidence": [
+      "deploy/evidence/issues/9/m4-1/m4-1-mutation-intent-contract.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-write-operation-descriptor-contract.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-canonical-mutation-result-contract.json"
+    ],
+    "m4_0_evidence": "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json",
+    "m2_regression_matrix": "aota_forge/core/regression/matrix.py and deploy/evidence/issues/9/m2-successor-regression-matrix.json",
+    "portable_plan_read_model": "aota_forge/core/plan/read_model.py",
+    "relationship_resolution": "aota_forge/core/project/resolver.py and aota_forge/core/project/discovery.py",
+    "retirement_governance_evidence": "M4-0 D8 plus Issue #9 M1 migration inventory; legacy retirement data remains shadow evidence",
+    "mutation_contract_source_note": "No aota_forge/core/contracts/mutation.py exists at the accepted base; M4-1 mutation intent/result evidence is the accepted contract source.",
+    "m3_boundary": "transitions.py, transaction.py, idempotency.py, context.py, and authority.py are M3 mechanical primitives, not a complete M4 lifecycle service"
+  },
+  "capability_audit_entry_count": 22,
+  "capabilities": [
+    {"capability": "create_execution", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/transitions.py:create_execution; M3-B7"},
+    {"capability": "record_completion", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/transitions.py:record_completion; M3-B7"},
+    {"capability": "record_decision", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/transitions.py:record_decision; M3-B7"},
+    {"capability": "create_followup_subject", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/transitions.py:create_followup_subject; exact Decision-backed parent-child primitive"},
+    {"capability": "relationship_resolve", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/project/resolver.py and discovery.py; deterministic complete candidate set"},
+    {"capability": "context_prepare", "classification": "EXTEND_IN_M4_4", "evidence": "aota_forge/core/context.py; future project binding is deliberately not fabricated"},
+    {"capability": "project binding", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D11; trusted exact binding follows semantic choice"},
+    {"capability": "PLAN_INIT semantics", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D7; uninitialized to initialized only"},
+    {"capability": "retirement candidate discovery", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D8; bounded snapshot and zero/one/many"},
+    {"capability": "retirement mutation", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D8; exact selected target, later authorized write"},
+    {"capability": "Subject revision/CAS", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/transaction.py and revision.py; stale mutation fails closed"},
+    {"capability": "idempotency", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/idempotency.py; same intent replay, changed intent conflict"},
+    {"capability": "Event Log requirement", "classification": "CONSUME_LATER", "evidence": "M4-0 D9/D8; append-only evidence is required by later authority adapter"},
+    {"capability": "active/current protections", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D8; active/current target is protected"},
+    {"capability": "running task protections", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D8; running-task target is protected"},
+    {"capability": "successor resolution", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D8; exact canonical successor only"},
+    {"capability": "Project Steward boundary", "classification": "EXTEND_IN_M4_4", "evidence": "M4-0 D11; mechanical reconciliation only"},
+    {"capability": "Portable Plan read model", "classification": "REUSE_AS_IS", "evidence": "aota_forge/core/plan/read_model.py; read-only authority observation"},
+    {"capability": "Portable Plan authority write", "classification": "CONSUME_LATER", "evidence": "M4-0 D2/D10; later bounded adapter, not M4-4"},
+    {"capability": "authority-store precondition", "classification": "CONSUME_LATER", "evidence": "M4-0 D6/D8; raw revision and digest checked by later writer"},
+    {"capability": "durable mutation journal", "classification": "OUT_OF_SCOPE_M4_4", "evidence": "M4-0 D3/D10; M4-5/M4-7"},
+    {"capability": "semantic retirement choice", "classification": "OUT_OF_SCOPE_M4_4", "evidence": "M4-0 D8/D12; external LLM/user/governance"}
+  ],
+  "boundary": {
+    "m3_transitions_are_complete_m4_service": "no",
+    "m4_4_is_semantic_orchestrator": "no",
+    "m4_4_execution_authorized": "no",
+    "m4_3_execution_authorized": "no"
+  }
+}
