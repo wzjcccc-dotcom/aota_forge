@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 functional source implementation",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "actual_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "exact_base_verified": "yes",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "plan_review_evidence": "b5ed20ae0c10cc0a6ac2c78237983053d65c250f",
+  "branch": "aota/m4/m4-2-source",
+  "worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-2-source",
+  "source_ownership_reconnaissance": {
+    "status": "PASS",
+    "read_from": "Issue #9 current authoritative appendix",
+    "exclusive_source_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "ingress_files_touched": "no",
+    "shared_paths_touched": "no",
+    "integration_only_paths_touched": "no",
+    "forbidden_cross_lane_paths_touched": "no"
+  },
+  "implemented_contracts": {
+    "trusted_mutation_authorization": {
+      "implemented": "yes",
+      "semantic_decision_maker": "no",
+      "durable_authorization_evidence_allowed": "yes",
+      "trusted_context_required_at_issuance": "yes",
+      "exact_binding_representation": "yes",
+      "principal_operation_typed_target_scope_contract_intent_bound": "yes",
+      "subject_and_external_preconditions_bound_separately": "yes",
+      "normalized_plan_digest_external_cas": "no"
+    },
+    "capability_lease_issuance": {
+      "implemented": "yes",
+      "issuer_is_semantic_decision_maker": "no",
+      "short_lived_bounded": "yes",
+      "exact_intent_target_scope_contract_binding": "yes",
+      "semantic_mutation_identity_separate_from_attempt_identity": "yes",
+      "write_execution": "no",
+      "external_authority_write": "no",
+      "durable_journal": "no"
+    },
+    "approval_and_decision": {
+      "approval_evidence_equals_materialized_decision_evidence": "no",
+      "approval_cannot_substitute_materialized_decision": "yes",
+      "issuer_invents_missing_decision": "no"
+    },
+    "lease_lifecycle": {
+      "states": ["issued", "valid", "consumed", "expired", "revoked"],
+      "consumed_reuse_allowed": "no",
+      "expired_reuse_allowed": "no",
+      "revoked_reuse_allowed": "no",
+      "unknown_outcome_blind_reuse": "no",
+      "unknown_outcome_retry_crossing": "no"
+    }
+  },
+  "canonical_authorization_errors": [
+    "AUTHORIZATION_MISSING",
+    "AUTHORIZATION_SCOPE_MISMATCH",
+    "AUTHORIZATION_TARGET_MISMATCH",
+    "AUTHORIZATION_OPERATION_MISMATCH",
+    "AUTHORIZATION_CONTRACT_DRIFT",
+    "APPROVAL_REQUIRED",
+    "MATERIALIZED_DECISION_REQUIRED",
+    "SUBJECT_REVISION_STALE",
+    "AUTHORITY_PRECONDITION_STALE",
+    "LEASE_EXPIRED",
+    "LEASE_REVOKED",
+    "LEASE_CONSUMED",
+    "LEASE_INTENT_MISMATCH",
+    "LEASE_TARGET_MISMATCH",
+    "LEASE_SCOPE_MISMATCH",
+    "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION",
+    "NEEDS_SEMANTIC_CHOICE"
+  ],
+  "scope_proof": {
+    "write_ingress_enabled": "no",
+    "production_operation_registered": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no",
+    "runtime_activation_performed": "no",
+    "deployment_performed": "no"
+  },
+  "behavioral_closure_claimed": "no",
+  "behavioral_closure_false_claim_count": 0,
+  "next_ready_set": "independent_review_of_m4_2_source"
+}

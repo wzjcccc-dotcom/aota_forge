@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source ownership and scope proof",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE",
+  "partition_source": "Issue #9 current authoritative M4-2 / M4-4 source ownership appendix",
+  "source_ownership_partition_read": "PASS",
+  "m4_2_exclusive_write_paths": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py"
+  ],
+  "m4_4_exclusive_write_paths": [
+    "aota_forge/core/context.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/validation.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/project/resolver.py"
+  ],
+  "shared_read_only_paths": [
+    "aota_forge/core/contracts/canonical.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/operations.py",
+    "aota_forge/core/contracts/registry.py",
+    "aota_forge/core/contracts/version.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/graph/repository.py"
+  ],
+  "integration_only_paths": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "tests/**",
+    "aota_forge/core/__init__.py and exports"
+  ],
+  "forbidden_cross_lane_write_paths": [
+    "every path in the other lane exclusive write list",
+    "every path in integration-only paths",
+    "every path in shared read-only paths",
+    "aota_forge/core/ingress.py",
+    "any unlisted aota_forge/** functional source path"
+  ],
+  "actual_changed_files": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py",
+    "scripts/m4_2_source_guard.py",
+    "deploy/evidence/issues/9/m4-2-source/m4-2-source-implementation.json",
+    "deploy/evidence/issues/9/m4-2-source/m4-2-source-regression-results.json",
+    "deploy/evidence/issues/9/m4-2-source/m4-2-source-scope-proof.json"
+  ],
+  "m4_2_exclusive_write_path_count": 3,
+  "m4_4_exclusive_write_path_count": 7,
+  "shared_read_only_path_count": 8,
+  "integration_only_path_count": 4,
+  "forbidden_cross_lane_write_path_count": 5,
+  "all_source_writes_within_m4_2_exclusive_paths": "yes",
+  "m4_4_exclusive_path_mutation_count": 0,
+  "shared_read_only_path_mutation_count": 0,
+  "integration_only_path_mutation_count": 0,
+  "forbidden_cross_lane_write_count": 0,
+  "deferred_to_serial_integration": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "tests/**",
+    "aota_forge/core/__init__.py and exports"
+  ]
+}
