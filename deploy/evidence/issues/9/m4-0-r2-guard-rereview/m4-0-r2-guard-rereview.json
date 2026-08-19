@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-0 R2 guard-only independent re-review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-0-R2-GUARD-REREVIEW",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "reviewer_role": "Codex independent reviewer; guard-only re-review, not repair executor",
+  "read_before_write": "PASS",
+  "governance_materialization_check": {
+    "issue_status": "open",
+    "issue_current_milestone": "M3",
+    "m4_0_known_good_checkpoint": "no",
+    "m4_1_execution_authorized": "no",
+    "later_governance_materialization_superseded_review": "no"
+  },
+  "review_target_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "repair_base_sha": "0e6011db30c264406706b9b1590eb62a5aa4d10f",
+  "r2_review_evidence_sha": "2d45ff1bb3f27ce746a3aeee3530b63640732bd8",
+  "lineage_verification": {
+    "target_commit_exists": "yes",
+    "target_remote_ref": "aota/m4/m4-0-architecture-freeze",
+    "target_remote_ref_sha": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+    "target_remote_ref_matches": "yes",
+    "target_ancestry_contains_repair_base": "yes",
+    "target_ancestry_contains_original_candidate": "yes",
+    "target_ancestry_contains_m3_accepted_base": "yes",
+    "m3_accepted_base_sha": "573be8c2d01eedaf98edf589ab11c8a3bebcf55b"
+  },
+  "repair_scope_verification": {
+    "expected_latest_diff": "0e6011db30c264406706b9b1590eb62a5aa4d10f..5a665cee791692b3ccad0ded331cb2d771fc7362",
+    "actual_changed_paths": [
+      "scripts/m4_0_architecture_freeze_guard.py"
+    ],
+    "repair_changed_path_count": 1,
+    "repair_unexpected_changed_path_count": 0,
+    "unexpected_changed_paths": [],
+    "guard_only_repair_verified": "yes",
+    "functional_core_source_changed": "no"
+  },
+  "guard_diff_review": {
+    "status": "PASS",
+    "changed_lines": 1,
+    "canonical_field": "architecture_decisions[id=D7].freeze.reentry_denied",
+    "required_value": "yes",
+    "validation_expression": "d7.get(\"reentry_denied\") == \"yes\"",
+    "real_canonical_structural_location": "yes",
+    "duplicate_unrelated_field_check": "no",
+    "plain_string_presence_search": "no",
+    "self_referential_expected_value": "no",
+    "malformed_json_dependent_rejection": "no",
+    "negative_test_special_casing": "no"
+  },
+  "guard_self_consistency": {
+    "status": "PASS",
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "environment_name_special_casing_detected": "no",
+    "harness_independent_rejection": "yes",
+    "guard_reads_artifact_root_only": "yes",
+    "py_compile": "PASS"
+  },
+  "canonical_positive_validation": {
+    "status": "PASS",
+    "canonical_valid_artifact_pass": "yes",
+    "guard_exit_status": 0,
+    "reported": "PASS M4-0 architecture freeze guard"
+  },
+  "negative_validation": {
+    "negative_case_count": 12,
+    "negative_case_reject_count": 12,
+    "negative_case_unexpected_accept_count": 0,
+    "NEG_01": {"mutation": "D2.freeze.CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL no cross-authority transaction"},
+    "NEG_02": {"mutation": "D3.freeze.OUTCOME_UNKNOWN_BLIND_RETRY_ALLOWED=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D3 unknown outcome controls"},
+    "NEG_03": {"mutation": "D6.freeze.CANDIDATE_RAW_DIGEST_BINDS_EXACT_INTENT=yes -> no", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D6 digest separation"},
+    "NEG_04": {"mutation": "D6.freeze.NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D6 digest separation"},
+    "NEG_05": {"mutation": "D5.freeze.LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D5 lease boundary"},
+    "NEG_06": {"mutation": "D5.freeze.UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D5 lease boundary"},
+    "NEG_07": {"mutation": "D7.freeze.reentry_denied=yes -> no", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D7 PLAN_INIT re-entry must remain denied"},
+    "NEG_08": {"mutation": "D8.freeze.RETIRED_PLAN_IMPLICIT_RESURRECTION_ALLOWED=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D8 no resurrection"},
+    "NEG_09": {"mutation": "D9.freeze.CONTROL_COMMENTS_PLAN_AUTHORITY=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D9 authority"},
+    "NEG_10": {"mutation": "D10.freeze.M4_HERMES_RUNTIME_MUTATION_ACTIVATION_REQUIRED=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL M4/M5 boundary"},
+    "NEG_11": {"mutation": "D11.freeze.GENERIC_GIT_WRITE_API_ALLOWED=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL D11 Git scope"},
+    "NEG_12": {"mutation": "authorization_boundary.M4_1_EXECUTION_AUTHORIZED=no -> yes", "guard_exit_status": 1, "rejected": "yes", "reason": "FAIL M4 DAG and authorization"}
+  },
+  "neg07_isolation_proof": {
+    "canonical_path": "architecture_decisions[id=D7].freeze.reentry_denied",
+    "mutation": "true -> false",
+    "negative_case_input_remained_structurally_valid": "yes",
+    "single_field_mutation_count": 1,
+    "changed_json_value_lines": 2,
+    "guard_rejected": "yes",
+    "guard_exit_status": 1,
+    "rejection_reason": "FAIL D7 PLAN_INIT re-entry must remain denied",
+    "rejection_reason_matches_d7": "yes",
+    "other_fields_changed": "no"
+  },
+  "non_regression": {
+    "architecture_artifact_changed": "no",
+    "regression_ownership_artifact_changed": "no",
+    "capability_audit_changed": "no",
+    "functional_core_source_changed": "no",
+    "m2_regression_matrix_changed": "no",
+    "m3_accepted_evidence_changed": "no",
+    "r2_review_evidence_changed": "no",
+    "previous_r2_architecture_pass_reopened": "no"
+  },
+  "governance_runtime_mutation": {
+    "github_issue_body_mutated": "no",
+    "github_control_comment_mutated": "no",
+    "github_event_log_appended": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no",
+    "deploy_performed": "no",
+    "runtime_activation_performed": "no",
+    "hermes_dispatch_performed": "no"
+  },
+  "blocking_findings": [],
+  "non_blocking_findings": [],
+  "verdict": "PASS",
+  "next_ready_set": "m4_0_project_steward_governance_reconciliation",
+  "next_action": "Project Steward governance reconciliation only; establish the exact accepted M4-0 checkpoint before any M4-1 authorization.",
+  "m4_0_known_good_checkpoint": "no",
+  "m4_1_execution_authorized": "no"
+}
