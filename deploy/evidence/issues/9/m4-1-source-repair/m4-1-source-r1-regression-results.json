@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 source R1 regression results",
+  "project_id": "aota_forge",
+  "work_item": "M4-1-SOURCE-R1-REPAIR",
+  "base_sha": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+  "commands": [
+    {"command": "python3 -m compileall aota_forge", "result": "PASS"},
+    {"command": "python3 -m py_compile scripts/m4_1_source_guard.py", "result": "PASS"},
+    {"command": "python3 scripts/m4_1_source_guard.py", "result": "PASS", "focused": 30, "negative": 7, "effect_projection_cases": 8, "invalid_effect_combinations": 8},
+    {"command": "python3 scripts/m2a_contract_foundation.py", "result": "PASS", "checks": "28/28"},
+    {"command": "python3 scripts/m2b_ingress_contract.py", "result": "PASS", "checks": "63/63"},
+    {"command": "python3 scripts/m2_regression_corpus.py --json", "result": "PASS", "evidence_executed": 30, "fixtures_passed": 30},
+    {"command": "python3 scripts/m3_b5_authority_capability_lease.py", "result": "PASS_WITH_STALE_HISTORICAL_EXACT_BASE", "semantic_checks": "28/28", "historical_exact_base": "non-blocking stale assertion"},
+    {"command": "python3 scripts/m3_b6_revision_cas_transaction.py", "result": "PASS", "checks": "36/36"},
+    {"command": "git diff --check", "result": "PASS"}
+  ],
+  "source_proof_matrix": {
+    "intent_fingerprint": {"cases": 10, "passed": 10},
+    "contract_hash_semantic_sensitivity": {"cases": 14, "passed": 14},
+    "contract_hash_runtime_exclusion": {"cases": 6, "passed": 6},
+    "write_required_field_adversarial": {"cases": 15, "rejected": 15},
+    "result_projection": {"cases": 8, "passed": 8},
+    "authoritative_effect_invalid_combinations": {"cases": 8, "rejected": 8}
+  },
+  "regressions": {
+    "EXISTING_DESCRIPTOR_REGRESSION": "PASS",
+    "EXISTING_INGRESS_REGRESSION": "PASS",
+    "M2_RELEVANT_REGRESSION": "PASS",
+    "M3_RELEVANT_REGRESSION": "PASS"
+  },
+  "verdict": "PASS"
+}

@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 source R1 bounded repair",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-SOURCE-R1-REPAIR",
+  "repair_base_sha": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+  "failed_review_evidence_sha": "90914e39be580e8b16fd92cfcf8aa2ded5ab0ae9",
+  "accepted_contract_plan_sha": "ddfaee840f42710e3ce61c20522dba3674a96526",
+  "branch": "aota/m4/m4-1-source",
+  "worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-1-source",
+  "governance_preflight": {
+    "github_identity": "wzjcccc-dotcom",
+    "read_before_write": "PASS",
+    "source_repair_authorized": "yes",
+    "M4_1_COMPLETED": "no",
+    "M4_1_IS_KNOWN_GOOD_CHECKPOINT": "no",
+    "M4_2_EXECUTION_AUTHORIZED": "no",
+    "M4_4_EXECUTION_AUTHORIZED": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no"
+  },
+  "lineage": {
+    "base_commit_verified": "yes",
+    "remote_ref": "refs/heads/aota/m4/m4-1-source",
+    "remote_sha_before_repair": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+    "branch_drift_detected": "no",
+    "review_evidence_verified": "yes"
+  },
+  "blocking_findings": {
+    "BF_01_PLATFORM_NEUTRALITY": "closed",
+    "BF_02_WRITE_DESCRIPTOR_VALIDATION": "closed",
+    "BF_03_RESULT_PROJECTION": "closed",
+    "BF_04_SOURCE_GUARD_TAUTOLOGY": "closed"
+  },
+  "platform_neutrality": {
+    "PLATFORM_NEUTRALITY_REPAIR": "PASS",
+    "PLATFORM_SPECIFIC_RUNTIME_VALIDATION_OCCURRENCE_COUNT": 0,
+    "GITHUB_IS_CORE_ONTOLOGY": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no",
+    "proof": "Core semantic-input validation retains only generic trusted/mechanical keys; production contract source search found no platform-specific validation terms."
+  },
+  "write_descriptor_validation": {
+    "WRITE_DESCRIPTOR_VALIDATION_REPAIR": "PASS",
+    "WRITE_REQUIRED_FIELD_CASE_COUNT": 15,
+    "WRITE_REQUIRED_FIELD_REJECT_COUNT": 15,
+    "INVALID_WRITE_DESCRIPTOR_HASHABLE": "no",
+    "WRITE_DESCRIPTOR_VALIDATION_BEFORE_HASH": "yes",
+    "READ_ONLY_DESCRIPTOR_BACKWARD_COMPATIBILITY": "PASS",
+    "explicit_false_not_required_cases": "PASS",
+    "required_fields": [
+      "inputs",
+      "required_context",
+      "optional_context",
+      "mutation_scope",
+      "required_authority",
+      "approval_required",
+      "decision_required",
+      "valid_predecessor_state",
+      "valid_successor_state",
+      "subject_revision_precondition",
+      "external_authority_precondition",
+      "idempotency",
+      "result_contract",
+      "errors",
+      "protocol_version"
+    ]
+  },
+  "result_projection": {
+    "RESULT_PROJECTION_REPAIR": "PASS",
+    "NO_EFFECT_PROJECTS_AS_GENERIC_ERROR": "no",
+    "NEEDS_SEMANTIC_CHOICE_PROJECTS_AS_GENERIC_ERROR": "no",
+    "CONFLICT_NEEDS_SEMANTIC_CHOICE_COLLAPSED": "no",
+    "RESULT_PROJECTION_CASE_COUNT": 8,
+    "RESULT_PROJECTION_CASE_PASS_COUNT": 8,
+    "AUTHORITATIVE_EFFECT_INVALID_CASE_COUNT": 8,
+    "AUTHORITATIVE_EFFECT_INVALID_CASE_REJECT_COUNT": 8,
+    "NO_EFFECT": {
+      "mutation_effect": "NO_EFFECT",
+      "authoritative_effect_confirmed": "no",
+      "errors_present": false
+    },
+    "NEEDS_SEMANTIC_CHOICE": {
+      "mutation_effect": "NEEDS_SEMANTIC_CHOICE",
+      "authoritative_effect_confirmed": "no",
+      "semantic_choices_present": true,
+      "errors_present": false
+    },
+    "OUTCOME_UNKNOWN": {
+      "mutation_effect": "OUTCOME_UNKNOWN",
+      "authoritative_effect_confirmed": "unknown",
+      "usable_success": false
+    }
+  },
+  "source_guard": {
+    "SOURCE_GUARD_REPAIR": "PASS",
+    "N7_EXECUTABLE": "yes",
+    "N8_EXECUTABLE": "yes",
+    "N10_EXECUTABLE": "yes",
+    "REAL_SOURCE_IMPORTS_EXECUTED": "yes",
+    "REAL_INGRESS_EXECUTED_FOR_N10": "yes",
+    "TAUTOLOGICAL_VALIDATION_DETECTED": "no",
+    "TEST_CASE_NAME_SPECIAL_CASING_DETECTED": "no",
+    "EVIDENCE_SELF_VALIDATION_AS_TEST": "no",
+    "TEST_PROVENANCE": "TRACKED_DETERMINISTIC_GUARD_TESTS",
+    "TEST_PROVENANCE_SELF_REPORTED_ONLY": "no",
+    "focused_test_count": 30,
+    "negative_test_count": 7,
+    "write_ingress_result": "UNSUPPORTED_OPERATION; handler not called"
+  },
+  "preserved_source_proofs": {
+    "INTENT_FINGERPRINT_TEST_COUNT": 10,
+    "INTENT_FINGERPRINT_TEST_PASS_COUNT": 10,
+    "CONTRACT_HASH_SEMANTIC_CASE_COUNT": 14,
+    "CONTRACT_HASH_SEMANTIC_CASE_PASS_COUNT": 14,
+    "CONTRACT_HASH_RUNTIME_EXCLUSION_CASE_COUNT": 6,
+    "CONTRACT_HASH_RUNTIME_EXCLUSION_PASS_COUNT": 6,
+    "EXISTING_DESCRIPTOR_REGRESSION": "PASS",
+    "EXISTING_INGRESS_REGRESSION": "PASS",
+    "M2_RELEVANT_REGRESSION": "PASS",
+    "M3_RELEVANT_REGRESSION": "PASS",
+    "M3_B5_HISTORICAL_EXACT_BASE_ASSERTION": "STALE_NON_BLOCKING",
+    "M3_B5_SEMANTIC_CHECKS": "28/28",
+    "M3_B6_CHECKS": "36/36"
+  },
+  "scope_boundary": {
+    "WRITE_DESCRIPTOR_REPRESENTABLE": "yes",
+    "WRITE_DESCRIPTOR_EXECUTABLE_THROUGH_CANONICAL_INGRESS": "no",
+    "PRODUCTION_WRITE_OPERATION_REGISTERED": "no",
+    "INGRESS_WRITE_BEHAVIOR_CHANGED": "no",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_1_WRITE_CAPABLE_INGRESS_IMPLEMENTED": "no",
+    "M4_1_PLAN_INIT_IMPLEMENTED": "no",
+    "M4_1_RETIREMENT_IMPLEMENTED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "PRODUCTION_GRAPH_MUTATED": "no",
+    "PRODUCTION_AUTHORITY_MUTATED": "no",
+    "MUTATION_INTENT_DEEP_IMMUTABILITY_REPAIR_PERFORMED": "no",
+    "HISTORICAL_PHASE_GUARD_REPAIR_PERFORMED": "no",
+    "M4_1_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0
+  },
+  "verdict": "PASS",
+  "next_ready_set": "independent_rereview_of_m4_1_repaired_source"
+}

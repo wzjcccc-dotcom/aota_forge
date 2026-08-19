@@ -36,6 +36,7 @@ WRITE_ONLY = "write"
 READ_WRITE = "read-write"
 
 READ_WRITE_CLASSIFICATIONS = frozenset({READ_ONLY, WRITE_ONLY, READ_WRITE})
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -75,24 +76,48 @@ class OperationContractDescriptor:
 
     name: str
     description: str
-    inputs: tuple[InputSpec, ...] = field(default_factory=tuple)
-    required_context: tuple[str, ...] = field(default_factory=tuple)
-    optional_context: tuple[str, ...] = field(default_factory=tuple)
+    inputs: tuple[InputSpec, ...] | object = _UNSET
+    required_context: tuple[str, ...] | object = _UNSET
+    optional_context: tuple[str, ...] | object = _UNSET
     internal_ids_required: tuple[str, ...] = field(default_factory=tuple)
     internal_ids_created: tuple[str, ...] = field(default_factory=tuple)
     read_write: str = READ_ONLY
-    mutation_scope: str | None = None
-    required_authority: str | None = None
-    approval_required: bool = False
-    valid_predecessor_state: str | None = None
-    valid_successor_state: str | None = None
-    idempotency: str | None = None
-    errors: tuple[str, ...] = field(default_factory=tuple)
-    protocol_version: str = PROTOCOL_VERSION
-    decision_required: bool = False
-    subject_revision_precondition: bool = False
-    external_authority_precondition: bool = False
-    result_contract: str | None = None
+    mutation_scope: str | None | object = _UNSET
+    required_authority: str | None | object = _UNSET
+    approval_required: bool | object = _UNSET
+    valid_predecessor_state: str | None | object = _UNSET
+    valid_successor_state: str | None | object = _UNSET
+    idempotency: str | None | object = _UNSET
+    errors: tuple[str, ...] | object = _UNSET
+    protocol_version: str | object = _UNSET
+    decision_required: bool | object = _UNSET
+    subject_revision_precondition: bool | object = _UNSET
+    external_authority_precondition: bool | object = _UNSET
+    result_contract: str | None | object = _UNSET
+
+    def __post_init__(self) -> None:
+        if self.read_write == READ_ONLY:
+            defaults = {
+                "inputs": (),
+                "required_context": (),
+                "optional_context": (),
+                "mutation_scope": None,
+                "required_authority": None,
+                "approval_required": False,
+                "valid_predecessor_state": None,
+                "valid_successor_state": None,
+                "idempotency": None,
+                "errors": (),
+                "protocol_version": PROTOCOL_VERSION,
+                "decision_required": False,
+                "subject_revision_precondition": False,
+                "external_authority_precondition": False,
+                "result_contract": None,
+            }
+            for name, default in defaults.items():
+                if getattr(self, name) is _UNSET:
+                    object.__setattr__(self, name, default)
+        self.validate()
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain JSON-native dict (no callables, no descriptors).
@@ -146,6 +171,7 @@ class OperationContractDescriptor:
         runtime-local registry state by construction: the descriptor carries
         no such values.
         """
+        self.validate()
         return hashlib.sha256(self.to_canonical_bytes()).hexdigest()
 
     def validate(self) -> None:
@@ -157,6 +183,54 @@ class OperationContractDescriptor:
             raise ValueError(
                 f"descriptor read_write must be one of {sorted(READ_WRITE_CLASSIFICATIONS)}: {self.name}"
             )
+        if self.read_write != READ_ONLY:
+            required = {
+                "inputs": self.inputs,
+                "required_context": self.required_context,
+                "optional_context": self.optional_context,
+                "mutation_scope": self.mutation_scope,
+                "required_authority": self.required_authority,
+                "approval_required": self.approval_required,
+                "decision_required": self.decision_required,
+                "valid_predecessor_state": self.valid_predecessor_state,
+                "valid_successor_state": self.valid_successor_state,
+                "subject_revision_precondition": self.subject_revision_precondition,
+                "external_authority_precondition": self.external_authority_precondition,
+                "idempotency": self.idempotency,
+                "result_contract": self.result_contract,
+                "errors": self.errors,
+                "protocol_version": self.protocol_version,
+            }
+            missing = [name for name, value in required.items() if value is _UNSET]
+            if missing:
+                raise ValueError(
+                    f"write descriptor is missing required declarations: {', '.join(missing)}: {self.name}"
+                )
+            for name in (
+                "mutation_scope",
+                "required_authority",
+                "valid_predecessor_state",
+                "valid_successor_state",
+                "idempotency",
+                "result_contract",
+            ):
+                value = getattr(self, name)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"write descriptor {name} must be a non-empty string: {self.name}")
+            for name in (
+                "approval_required",
+                "decision_required",
+                "subject_revision_precondition",
+                "external_authority_precondition",
+            ):
+                if not isinstance(getattr(self, name), bool):
+                    raise ValueError(f"write descriptor {name} must be a boolean: {self.name}")
+        if self.inputs is _UNSET or self.required_context is _UNSET or self.optional_context is _UNSET:
+            raise ValueError(f"descriptor collection declarations are missing: {self.name}")
+        if self.errors is _UNSET or self.protocol_version is _UNSET:
+            raise ValueError(f"descriptor error/protocol declarations are missing: {self.name}")
+        if not isinstance(self.inputs, tuple):
+            raise ValueError(f"descriptor inputs must be a tuple: {self.name}")
         if not isinstance(self.protocol_version, str) or not self.protocol_version:
             raise ValueError(f"descriptor protocol_version must be a non-empty string: {self.name}")
         for spec in self.inputs:
@@ -167,27 +241,35 @@ class OperationContractDescriptor:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "OperationContractDescriptor":
         """Rebuild a descriptor from its plain dict form (JSON round-trip)."""
+        raw_inputs = raw.get("inputs", _UNSET)
         descriptor = cls(
             name=raw["name"],
             description=raw["description"],
-            inputs=tuple(InputSpec(name=item["name"], type=item["type"]) for item in raw.get("inputs", [])),
-            required_context=tuple(raw.get("required_context", [])),
-            optional_context=tuple(raw.get("optional_context", [])),
+            inputs=(
+                _UNSET
+                if raw_inputs is _UNSET
+                else tuple(InputSpec(name=item["name"], type=item["type"]) for item in raw_inputs)
+            ),
+            required_context=(
+                _UNSET if "required_context" not in raw else tuple(raw["required_context"])
+            ),
+            optional_context=(
+                _UNSET if "optional_context" not in raw else tuple(raw["optional_context"])
+            ),
             internal_ids_required=tuple(raw.get("internal_ids_required", [])),
             internal_ids_created=tuple(raw.get("internal_ids_created", [])),
             read_write=raw.get("read_write", READ_ONLY),
-            mutation_scope=raw.get("mutation_scope"),
-            required_authority=raw.get("required_authority"),
-            approval_required=bool(raw.get("approval_required", False)),
-            decision_required=bool(raw.get("decision_required", False)),
-            valid_predecessor_state=raw.get("valid_predecessor_state"),
-            valid_successor_state=raw.get("valid_successor_state"),
-            subject_revision_precondition=bool(raw.get("subject_revision_precondition", False)),
-            external_authority_precondition=bool(raw.get("external_authority_precondition", False)),
-            idempotency=raw.get("idempotency"),
-            result_contract=raw.get("result_contract"),
-            errors=tuple(raw.get("errors", [])),
-            protocol_version=raw.get("protocol_version", PROTOCOL_VERSION),
+            mutation_scope=raw.get("mutation_scope", _UNSET),
+            required_authority=raw.get("required_authority", _UNSET),
+            approval_required=raw.get("approval_required", _UNSET),
+            decision_required=raw.get("decision_required", _UNSET),
+            valid_predecessor_state=raw.get("valid_predecessor_state", _UNSET),
+            valid_successor_state=raw.get("valid_successor_state", _UNSET),
+            subject_revision_precondition=raw.get("subject_revision_precondition", _UNSET),
+            external_authority_precondition=raw.get("external_authority_precondition", _UNSET),
+            idempotency=raw.get("idempotency", _UNSET),
+            result_contract=raw.get("result_contract", _UNSET),
+            errors=_UNSET if "errors" not in raw else tuple(raw["errors"]),
+            protocol_version=raw.get("protocol_version", _UNSET),
         )
-        descriptor.validate()
         return descriptor

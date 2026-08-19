@@ -20,7 +20,7 @@ import json
 import uuid
 from typing import Any
 
-from aota_forge.core.contracts.mutation import MutationResult
+from aota_forge.core.contracts.mutation import MutationEffect, MutationResult
 
 
 def new_correlation_id() -> str:
@@ -131,13 +131,18 @@ def mutation_envelope(
 ) -> dict[str, Any]:
     """Project a canonical mutation result without promoting local success.
 
-    Only verified applied/replayed effects use the existing success shape.  All
-    other effects remain explicit machine results, including an unknown
-    authoritative outcome after local handler success.
+    Verified effects use the existing success shape.  A bounded no-op and a
+    request for semantic choice are also non-error operation outcomes; their
+    effect state and choice channel remain explicit instead of being converted
+    into generic errors.  Other effects remain explicit failures, including an
+    unknown authoritative outcome after local handler success.
     """
     if not isinstance(mutation, MutationResult):
         raise TypeError("mutation must be MutationResult")
-    if mutation.usable_success:
+    if mutation.usable_success or mutation.mutation_effect in {
+        MutationEffect.NO_EFFECT,
+        MutationEffect.NEEDS_SEMANTIC_CHOICE,
+    }:
         envelope = success(
             mutation.operation,
             data=data,

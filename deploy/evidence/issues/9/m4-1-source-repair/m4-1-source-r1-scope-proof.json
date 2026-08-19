@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 source R1 bounded repair scope proof",
+  "project_id": "aota_forge",
+  "work_item": "M4-1-SOURCE-R1-REPAIR",
+  "repair_base_sha": "dd76e296b74f159f22690ec2d66e8473fe3c938d",
+  "allowed_blockers": ["BF-01", "BF-02", "BF-03", "BF-04"],
+  "changed_source_paths": [
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/results.py",
+    "scripts/m2a_contract_foundation.py",
+    "scripts/m2b_ingress_contract.py",
+    "scripts/m4_1_source_guard.py"
+  ],
+  "unchanged_required_boundary_paths": [
+    "aota_forge/core/contracts/__init__.py",
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/catalog.py",
+    "historical M3/M4-0 guards"
+  ],
+  "non_blocking_findings_preserved": [
+    "Historical exact-base guards remain stale for authorized descendant source.",
+    "MutationIntent nested-value deep immutability remains deferred hardening."
+  ],
+  "scope_safety": {
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_1_WRITE_CAPABLE_INGRESS_IMPLEMENTED": "no",
+    "M4_1_PLAN_INIT_IMPLEMENTED": "no",
+    "M4_1_RETIREMENT_IMPLEMENTED": "no",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "PRODUCTION_GRAPH_MUTATED": "no",
+    "PRODUCTION_AUTHORITY_MUTATED": "no",
+    "DEPLOY_PERFORMED": "no",
+    "RUNTIME_ACTIVATION_PERFORMED": "no",
+    "HERMES_DISPATCH_PERFORMED": "no",
+    "GITHUB_ISSUE_BODY_MUTATED": "no",
+    "GITHUB_CONTROL_COMMENT_MUTATED": "no",
+    "GITHUB_EVENT_LOG_APPENDED": "no"
+  },
+  "boundary_conclusion": "Only the four failed source blockers and the regression fixtures directly required to preserve their tests were changed; no future milestone behavior was implemented.",
+  "verdict": "PASS"
+}

@@ -40,7 +40,7 @@ def _validate_semantic_inputs(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("semantic_inputs must be a mapping")
     for key in value:
-        if key in _TRUSTED_INTENT_KEYS or key.casefold().startswith("gh_") or key.casefold().endswith(("_issue_number", "_comment_id", "_etag")):
+        if key in _TRUSTED_INTENT_KEYS:
             raise ValueError(f"trusted field is not a semantic input: {key}")
     return canonicalize(dict(value), path="semantic_inputs")
 
