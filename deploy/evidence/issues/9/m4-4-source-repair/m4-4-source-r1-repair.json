@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source R1 bounded repair",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE-R1-REPAIR",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "source_branch": "refs/heads/aota/m4/m4-4-source",
+  "repair_base_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+  "failed_review_evidence_sha": "c9c34d020401bdf6be69cbf21fc81fc2702a52e8",
+  "read_before_write": "PASS",
+  "base_sha_verified": true,
+  "remote_source_branch_head_verified": true,
+  "review_evidence_verified": true,
+  "accepted_contracts_read": [
+    "m4-4-retirement-candidate-contract.json",
+    "m4-4-lifecycle-error-contract.json",
+    "m4-4-regression-handoff-map.json"
+  ],
+  "blocking_findings": {
+    "count": 2,
+    "BLOCK-M44-SRC-01": {
+      "status": "closed",
+      "missing_successor_machine_result": "RETIREMENT_SUCCESSOR_INVALID",
+      "raw_subject_not_found_escapes_successor_path": false,
+      "mutation_effect": "NO_EFFECT"
+    },
+    "BLOCK-M44-SRC-02": {
+      "status": "closed",
+      "successor_revision_drift_result": "RETIREMENT_STALE_SNAPSHOT",
+      "successor_revision_drift_detected": true,
+      "retirement_applied_on_successor_drift": false,
+      "mutation_effect": "NO_EFFECT"
+    }
+  },
+  "retirement_protocol_repair": {
+    "status": "PASS",
+    "successor_snapshot_revision_bound": true,
+    "successor_snapshot_fields": [
+      "successor_ref",
+      "source_revision",
+      "revision_token",
+      "source_digest",
+      "plan_state",
+      "eligible"
+    ],
+    "stage_two_exact_successor_re_resolved": true,
+    "stage_two_successor_freshness_rechecked": true,
+    "stage_two_target_snapshot_rechecked": true,
+    "target_cas_preserved": true,
+    "successor_and_target_lock_boundary": true,
+    "automatic_successor_reselection_allowed": false,
+    "snapshot_refresh_without_authorization": false
+  },
+  "no_effect_proof": {
+    "missing_successor_target_mutated": false,
+    "missing_successor_mutation_applied": false,
+    "removed_successor_target_mutated": false,
+    "revision_drift_target_mutated": false,
+    "state_drift_target_mutated": false,
+    "replacement_successor_auto_selected": false
+  },
+  "preserved_behavior": {
+    "plan_init_and_reentry": true,
+    "project_binding_boundary": true,
+    "abandoned_to_cancelled": true,
+    "exact_successor_required": true,
+    "active_current_protection": true,
+    "running_task_protection": true,
+    "no_resurrection": true,
+    "project_steward_boundary": true,
+    "B011": true,
+    "B014": true
+  },
+  "downstream_stops": {
+    "M4_4_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": false,
+    "M4_4_WRITE_CAPABLE_INGRESS_IMPLEMENTED": false,
+    "M4_4_EXTERNAL_AUTHORITY_WRITE_IMPLEMENTED": false,
+    "M4_4_DURABLE_JOURNAL_IMPLEMENTED": false,
+    "M4_3_EXECUTION_AUTHORIZED": false,
+    "production_graph_mutated": false,
+    "github_issue_body_mutated": false,
+    "github_control_comment_mutated": false,
+    "github_event_log_appended": false
+  },
+  "behavioral_closure": {
+    "B013_SOURCE_BEHAVIOR_REPAIR_PROOF": "PASS",
+    "full_downstream_external_authority_e2e_claimed": false
+  },
+  "next_state": {
+    "M4_4_COMPLETED": false,
+    "M4_4_IS_KNOWN_GOOD_CHECKPOINT": false,
+    "M4_3_EXECUTION_AUTHORIZED": false,
+    "NEXT_READY_SET": "independent_rereview_of_m4_4_repaired_source"
+  }
+}

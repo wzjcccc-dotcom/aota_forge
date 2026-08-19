@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source ownership scope proof",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "source_ownership_partition_required": true,
+  "source_ownership_partition_read": "PASS",
+  "partition": {
+    "M4_2_EXCLUSIVE_WRITE_PATHS": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "M4_4_EXCLUSIVE_WRITE_PATHS": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "SHARED_READ_ONLY_PATHS": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "INTEGRATION_ONLY_PATHS": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "FORBIDDEN_CROSS_LANE_PATH_RULES": [
+      "every path in the other lane exclusive list",
+      "every integration-only path",
+      "every shared read-only path",
+      "aota_forge/core/ingress.py remains M4-3-owned",
+      "any unlisted aota_forge/** functional source path"
+    ]
+  },
+  "counts": {
+    "M4_2_EXCLUSIVE_WRITE_PATH_COUNT": 3,
+    "M4_4_EXCLUSIVE_WRITE_PATH_COUNT": 7,
+    "SHARED_READ_ONLY_PATH_COUNT": 8,
+    "INTEGRATION_ONLY_PATH_COUNT": 4,
+    "FORBIDDEN_CROSS_LANE_WRITE_PATH_COUNT": 15
+  },
+  "actual_source_writes": [
+    "aota_forge/core/context.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/validation.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/project/resolver.py"
+  ],
+  "optional_lane_guard": "scripts/m4_4_source_guard.py",
+  "lane_local_evidence_root": "deploy/evidence/issues/9/m4-4-source/",
+  "compliance": {
+    "ALL_SOURCE_WRITES_WITHIN_M4_4_EXCLUSIVE_PATHS": true,
+    "M4_2_EXCLUSIVE_WRITE_PATH_MUTATION_COUNT": 0,
+    "SHARED_READ_ONLY_PATH_MUTATION_COUNT": 0,
+    "INTEGRATION_ONLY_PATH_MUTATION_COUNT": 0,
+    "FORBIDDEN_CROSS_LANE_WRITE_COUNT": 0,
+    "M4_4_SOURCE_NOTE_CORRECTION_REPEATED": false,
+    "core_contracts_mutation_py_modified": false,
+    "write_capable_ingress_modified": false,
+    "external_authority_adapter_modified": false,
+    "durable_journal_modified": false
+  },
+  "deferred_to_serial_integration_paths": [],
+  "production_mutation": {
+    "production_graph_mutated": false,
+    "production_authority_mutated": false,
+    "github_issue_body_mutated": false,
+    "github_control_comment_mutated": false,
+    "github_event_log_appended": false,
+    "deployment_performed": false,
+    "runtime_activation_performed": false
+  }
+}

@@ -43,7 +43,7 @@ from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
 # Context keys the resolver can satisfy statically without any project,
 # subject, plan, authority or lifecycle machinery.
 SATISFIABLE_CONTEXT_KEYS: frozenset[str] = frozenset(
-    {"principal", "operation", "correlation_id", "protocol_version", "contract"}
+    {"principal", "operation", "correlation_id", "protocol_version", "contract", "project_binding"}
 )
 
 _SAFE_CONTEXT_VALUE = re.compile(r"^[A-Za-z0-9._:@-]{1,256}$")
@@ -218,6 +218,100 @@ def resolve_principal_binding(
     return PrincipalResolution(UNBOUND_PRINCIPAL, "unbound")
 
 
+PROJECT_BINDING_REQUIRES_SEMANTIC_DECISION_BASIS = True
+CORE_SELECTS_PROJECT_UNDER_AMBIGUITY = False
+PROJECT_STEWARD_SELECTS_SEMANTIC_PROJECT = False
+RELATIONSHIP_RESOLVE_RESULT_IS_PROJECT_BINDING = False
+PROJECT_STEWARD_AUTO_ACCEPTS_MILESTONE = False
+PROJECT_STEWARD_AUTO_CLOSES_PLAN = False
+PROJECT_STEWARD_INVENTS_PROJECT_BINDING = False
+
+
+def _check_bounded_text(name: str, value: object, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or len(value) > 4096 or (not allow_empty and not value):
+        raise ValueError(f"{name} must be a bounded string")
+    return value
+
+
+@dataclass(frozen=True)
+class ProjectBinding:
+    """An exact project fact carrying an external semantic decision basis.
+
+    Relationship resolution supplies candidate evidence only.  A caller must
+    provide this value after semantic choice; Core and Project Steward never
+    construct it from a candidate.
+    """
+
+    workspace_id: str
+    workspace_root: str
+    project_id: str
+    project_root: str
+    manifest_path: str
+    registry_fingerprint: str
+    candidate_fingerprint: str
+    semantic_decision_ref: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "workspace_id",
+            "workspace_root",
+            "project_id",
+            "project_root",
+            "manifest_path",
+            "semantic_decision_ref",
+        ):
+            _check_bounded_text(name, getattr(self, name))
+        for name in ("registry_fingerprint", "candidate_fingerprint"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(f"{name} must be a SHA-256 digest")
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "workspace_id": self.workspace_id,
+            "workspace_root": self.workspace_root,
+            "project_id": self.project_id,
+            "project_root": self.project_root,
+            "manifest_path": self.manifest_path,
+            "registry_fingerprint": self.registry_fingerprint,
+            "candidate_fingerprint": self.candidate_fingerprint,
+            "semantic_decision_ref": self.semantic_decision_ref,
+        }
+
+
+def prepare_project_binding(evidence: object, binding: ProjectBinding) -> ProjectBinding:
+    """Verify an already-decided binding against one unique evidence record."""
+    if not isinstance(binding, ProjectBinding):
+        raise ValueError("PROJECT_BINDING_REQUIRED")
+    if evidence is None:
+        raise ValueError("PROJECT_BINDING_REQUIRED")
+    status = getattr(evidence, "status", None)
+    if status == "PROJECT_NOT_FOUND":
+        raise ValueError("PROJECT_NOT_FOUND")
+    if status == "NEEDS_SEMANTIC_CHOICE":
+        raise ValueError("NEEDS_SEMANTIC_CHOICE")
+    candidates = tuple(getattr(evidence, "candidates", ()))
+    if status != "RESOLVED" or len(candidates) != 1:
+        raise ValueError("PROJECT_BINDING_REQUIRED")
+    candidate = candidates[0]
+    expected = {
+        "workspace_id": getattr(candidate, "workspace_id", None),
+        "workspace_root": getattr(candidate, "workspace_root", None),
+        "project_id": getattr(candidate, "project_id", None),
+        "project_root": getattr(candidate, "project_root", None),
+        "manifest_path": getattr(candidate, "manifest_path", None),
+        "registry_fingerprint": getattr(candidate, "registry_fingerprint", None),
+        "candidate_fingerprint": getattr(candidate, "candidate_fingerprint", None),
+    }
+    actual = {
+        key: getattr(binding, key)
+        for key in expected
+    }
+    if actual != expected:
+        raise ValueError("PROJECT_BINDING_REQUIRED")
+    return binding
+
+
 @dataclass(frozen=True)
 class OperationContext:
     """Executor-neutral canonical operation context."""
@@ -242,6 +336,7 @@ class OperationContext:
     revision: None = None
     authority: None = None
     capability_lease: None = None
+    project_binding: ProjectBinding | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Bounded metadata view: never echoes params/trusted values."""
@@ -254,6 +349,7 @@ class OperationContext:
             "contract_hash": self.contract_hash,
             "workspace": self.workspace,
             "project": self.project,
+            "project_binding": self.project_binding.to_dict() if self.project_binding else None,
             "session": self.session,
         }
 
@@ -274,6 +370,9 @@ class ContextResolver:
                 raise ContextNotSupportedError(
                     f"operation context not supported in M2: {key}"
                 )
+        project_binding = validated_params.get("project_binding")
+        if "project_binding" in descriptor.required_context and not isinstance(project_binding, ProjectBinding):
+            raise ValueError("PROJECT_BINDING_REQUIRED")
         binding = resolve_principal_binding(principal, trusted_context)
         trusted = {
             key: validated_params[key]
@@ -285,7 +384,7 @@ class ContextResolver:
         semantic_inputs = {
             key: value
             for key, value in validated_params.items()
-            if key not in TRUSTED_ADAPTER_KEYS
+            if key not in TRUSTED_ADAPTER_KEYS and key != "project_binding"
         }
         params = dict(validated_params)
         params.update(trusted)
@@ -299,4 +398,5 @@ class ContextResolver:
             params=params,
             semantic_inputs=semantic_inputs,
             trusted=trusted,
+            project_binding=project_binding if isinstance(project_binding, ProjectBinding) else None,
         )

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 mechanical lifecycle source implementation",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+  "plan_review_evidence": "e3f67fb183f193aa5c010338fae750724f491d74",
+  "source_ownership_partition_read": "PASS",
+  "actual_base_verified": true,
+  "accepted_non_blocking_source_note_correction": "core/contracts/mutation.py exists at the common source base; accepted lifecycle semantics are unchanged",
+  "implementation": {
+    "plan_init": true,
+    "plan_init_reentry_denied": true,
+    "plan_init_valid_uninitialized_to_initialized": true,
+    "plan_init_invalid_predecessor_no_effect": true,
+    "plan_init_stale_subject_no_effect": true,
+    "plan_init_stale_authority_no_effect": true,
+    "plan_init_missing_binding_no_effect": true,
+    "plan_init_ambiguous_project_needs_choice": true,
+    "plan_init_same_intent_replay": true,
+    "plan_init_changed_intent_conflict": true,
+    "retirement_two_stage_protocol": true,
+    "retirement_zero_one_many": true,
+    "retirement_abandoned_to_cancelled": true,
+    "retirement_preserves_plan_history": true,
+    "retirement_superseded_exact_successor": true,
+    "retirement_self_successor_rejected": true,
+    "retirement_active_current_protection": true,
+    "retirement_running_task_protection": true,
+    "retirement_stale_snapshot_fail_closed": true,
+    "retirement_stale_authority_fail_closed": true,
+    "implicit_resurrection_allowed": false
+  },
+  "project_binding_boundary": {
+    "core_selects_project_under_ambiguity": false,
+    "project_steward_selects_semantic_project": false,
+    "relationship_resolve_result_is_project_binding": false,
+    "zero_candidates": "PROJECT_NOT_FOUND",
+    "one_candidate": "evidence_only_until_exact_semantic_binding",
+    "many_candidates": "NEEDS_SEMANTIC_CHOICE",
+    "heuristic_selection": false
+  },
+  "project_steward_boundary": {
+    "mechanical_reconciliation_only": true,
+    "auto_accepts_milestone": false,
+    "auto_closes_plan": false,
+    "invents_project_binding": false,
+    "chooses_retirement_kind": false,
+    "chooses_successor": false,
+    "widens_authority": false
+  },
+  "lifecycle_error_contract": {
+    "semantic_choice_distinct_from_generic_failure": true,
+    "codes": [
+      "PROJECT_NOT_FOUND",
+      "NEEDS_SEMANTIC_CHOICE",
+      "PROJECT_BINDING_REQUIRED",
+      "PLAN_INIT_INVALID_PREDECESSOR",
+      "PLAN_INIT_ALREADY_INITIALIZED",
+      "PLAN_INIT_STALE_SUBJECT_REVISION",
+      "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+      "RETIREMENT_NO_CANDIDATE",
+      "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+      "RETIREMENT_STALE_SNAPSHOT",
+      "RETIREMENT_TARGET_PROTECTED",
+      "RETIREMENT_RUNNING_TASK_PROTECTED",
+      "RETIREMENT_SUCCESSOR_REQUIRED",
+      "RETIREMENT_SUCCESSOR_INVALID",
+      "RETIREMENT_SELF_SUCCESSOR",
+      "RETIREMENT_STALE_AUTHORITY_PRECONDITION"
+    ]
+  },
+  "downstream_stops": {
+    "capability_lease_issuer_implemented": false,
+    "write_capable_ingress_implemented": false,
+    "external_authority_write_implemented": false,
+    "durable_journal_implemented": false,
+    "runtime_activation_performed": false,
+    "production_graph_mutated": false
+  },
+  "source_behavior_status": {
+    "B011": "PASS",
+    "B013": "PASS",
+    "B014": "PASS",
+    "full_production_end_to_end_closure": false,
+    "behavioral_closure_false_claim_count": 0
+  }
+}

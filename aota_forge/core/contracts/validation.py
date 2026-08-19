@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 
 from aota_forge.core.contracts.descriptor import OperationContractDescriptor, ensure_unique_input_names
@@ -50,6 +51,63 @@ MAX_DICT_KEYS = 64
 MAX_INPUT_DEPTH = 8
 MAX_PARAMS_KEYS = 128
 MAX_TOTAL_INPUT_BYTES = 256 * 1024
+
+LIFECYCLE_ERROR_CODES = frozenset(
+    {
+        "PROJECT_NOT_FOUND",
+        "NEEDS_SEMANTIC_CHOICE",
+        "PROJECT_BINDING_REQUIRED",
+        "PLAN_INIT_INVALID_PREDECESSOR",
+        "PLAN_INIT_ALREADY_INITIALIZED",
+        "PLAN_INIT_STALE_SUBJECT_REVISION",
+        "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+        "RETIREMENT_NO_CANDIDATE",
+        "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+        "RETIREMENT_STALE_SNAPSHOT",
+        "RETIREMENT_TARGET_PROTECTED",
+        "RETIREMENT_RUNNING_TASK_PROTECTED",
+        "RETIREMENT_SUCCESSOR_REQUIRED",
+        "RETIREMENT_SUCCESSOR_INVALID",
+        "RETIREMENT_SELF_SUCCESSOR",
+        "RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+    }
+)
+
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def validate_lifecycle_preconditions(
+    preconditions: object,
+    *,
+    expected_revision: int | None = None,
+    require_authority: bool = True,
+) -> object:
+    """Validate M4 lifecycle preconditions without changing intent identity."""
+    from aota_forge.core.contracts.mutation import MutationPreconditions
+
+    if not isinstance(preconditions, MutationPreconditions):
+        raise TypeError("lifecycle preconditions must be MutationPreconditions")
+    subject_revision = preconditions.subject_expected_revision
+    if isinstance(subject_revision, bool) or not isinstance(subject_revision, int) or subject_revision < 1:
+        raise ValueError("lifecycle Subject expected revision must be a positive integer")
+    if expected_revision is not None and subject_revision != expected_revision:
+        raise ValueError("lifecycle Subject expected revision does not match request")
+    if require_authority:
+        source_revision = preconditions.authority_source_revision
+        if isinstance(source_revision, bool) or not isinstance(source_revision, (str, int)):
+            raise ValueError("lifecycle authority source revision is required")
+        if isinstance(source_revision, str) and (not source_revision or len(source_revision) > 256):
+            raise ValueError("lifecycle authority source revision is invalid")
+        if not isinstance(preconditions.authority_observed_raw_digest, str) or not _SHA256_HEX.fullmatch(
+            preconditions.authority_observed_raw_digest
+        ):
+            raise ValueError("lifecycle authority raw digest must be a SHA-256 digest")
+    candidate_digest = preconditions.candidate_raw_digest
+    if candidate_digest is not None and (
+        not isinstance(candidate_digest, str) or not _SHA256_HEX.fullmatch(candidate_digest)
+    ):
+        raise ValueError("lifecycle candidate raw digest must be a SHA-256 digest")
+    return preconditions
 
 # Explicitly enumerated trusted adapter/context metadata.  Non-semantic,
 # bounded, and separate from model-facing descriptor inputs.  Keys not

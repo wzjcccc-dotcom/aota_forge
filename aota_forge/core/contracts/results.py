@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Mapping
 
 from aota_forge.core.contracts.mutation import MutationEffect, MutationResult
 
@@ -172,6 +173,99 @@ def mutation_envelope(
     envelope["mutation_effect"] = mutation.mutation_effect.value
     envelope["authoritative_effect_confirmed"] = mutation.authoritative_effect_confirmed.value
     envelope["effect_evidence"] = [dict(item) for item in mutation.effect_evidence]
+    return envelope
+
+
+@dataclass(frozen=True)
+class LifecycleResult:
+    """Bounded M4 lifecycle result with a distinct mechanical result code."""
+
+    operation: str
+    code: str
+    mutation: MutationResult
+    data: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.operation, str) or not self.operation:
+            raise ValueError("lifecycle operation is required")
+        if self.mutation.operation != self.operation:
+            raise ValueError("lifecycle result operation does not match mutation")
+        object.__setattr__(self, "data", dict(self.data))
+
+    @property
+    def mutation_effect(self) -> MutationEffect:
+        return self.mutation.mutation_effect
+
+    @property
+    def replayed(self) -> bool:
+        return self.mutation.mutation_effect is MutationEffect.REPLAYED_VERIFIED
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation": self.operation,
+            "code": self.code,
+            "data": dict(self.data),
+            "mutation": self.mutation.to_dict(),
+        }
+
+    def to_envelope(self) -> dict[str, Any]:
+        return lifecycle_envelope(self)
+
+
+def lifecycle_result(
+    operation: str,
+    code: str,
+    effect: MutationEffect,
+    *,
+    message: str | None = None,
+    data: Mapping[str, Any] | None = None,
+    blockers: tuple[str, ...] = (),
+    semantic_choices: tuple[Mapping[str, Any], ...] = (),
+    next_action: str | None = None,
+    correlation_id: str | None = None,
+) -> LifecycleResult:
+    """Build the canonical M4 effect/confirmation pairing."""
+    confirmation = {
+        MutationEffect.NO_EFFECT: "no",
+        MutationEffect.APPLIED_VERIFIED: "yes",
+        MutationEffect.REPLAYED_VERIFIED: "yes",
+        MutationEffect.BLOCKED: "no",
+        MutationEffect.CONFLICT: "no",
+        MutationEffect.NEEDS_SEMANTIC_CHOICE: "no",
+        MutationEffect.OUTCOME_UNKNOWN: "unknown",
+        MutationEffect.FAILED_NO_EFFECT: "no",
+    }[effect]
+    errors = ()
+    if message is not None and effect is not MutationEffect.NEEDS_SEMANTIC_CHOICE:
+        errors = ({"code": code, "message": message, "retryable": False},)
+    status = {
+        MutationEffect.APPLIED_VERIFIED: "completed",
+        MutationEffect.REPLAYED_VERIFIED: "replayed",
+        MutationEffect.NEEDS_SEMANTIC_CHOICE: "needs_input",
+        MutationEffect.BLOCKED: "blocked",
+        MutationEffect.CONFLICT: "conflict",
+    }.get(effect, "no_effect")
+    mutation = MutationResult(
+        operation=operation,
+        status=status,
+        result=code,
+        mutation_effect=effect,
+        authoritative_effect_confirmed=confirmation,
+        errors=errors,
+        blockers=blockers,
+        semantic_choices=semantic_choices,
+        next_action=next_action,
+        correlation_id=correlation_id,
+    )
+    return LifecycleResult(operation=operation, code=code, mutation=mutation, data=data or {})
+
+
+def lifecycle_envelope(result: LifecycleResult) -> dict[str, Any]:
+    """Project lifecycle errors without collapsing no-effect into a generic error."""
+    envelope = mutation_envelope(result.mutation, data=dict(result.data))
+    envelope["lifecycle_code"] = result.code
+    if result.mutation.mutation_effect is MutationEffect.NO_EFFECT and result.mutation.errors:
+        envelope["errors"] = [dict(item) for item in result.mutation.errors]
     return envelope
 
 
