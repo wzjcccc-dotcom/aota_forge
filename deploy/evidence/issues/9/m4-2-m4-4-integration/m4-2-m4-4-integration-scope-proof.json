@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 + M4-4 integration ownership proof",
+  "base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "inherited_sibling_source_changes": {
+    "m4_2_source": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py",
+      "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-repair.json",
+      "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-scope-proof.json",
+      "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-repair.json",
+      "deploy/evidence/issues/9/m4-2-source-r3-repair/m4-2-source-r3-scope-proof.json",
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-repair.json",
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-scope-proof.json",
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-implementation.json",
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-scope-proof.json",
+      "scripts/m4_2_source_guard.py"
+    ],
+    "m4_4_source": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py",
+      "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-regression-results.json",
+      "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-repair.json",
+      "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-scope-proof.json",
+      "deploy/evidence/issues/9/m4-4-source/m4-4-source-implementation.json",
+      "deploy/evidence/issues/9/m4-4-source/m4-4-source-regression-results.json",
+      "deploy/evidence/issues/9/m4-4-source/m4-4-source-scope-proof.json",
+      "scripts/m4_4_source_guard.py"
+    ],
+    "provenance_rule": "accepted source and review evidence files are inherited sibling history, not new integration edits"
+  },
+  "new_integration_edit_paths": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "aota_forge/core/__init__.py",
+    "tests/test_m4_2_m4_4_integration.py",
+    "scripts/m4_2_m4_4_integration_guard.py",
+    "deploy/evidence/issues/9/m4-2-m4-4-integration/m4-2-m4-4-integration.json",
+    "deploy/evidence/issues/9/m4-2-m4-4-integration/m4-2-m4-4-integration-regression-results.json",
+    "deploy/evidence/issues/9/m4-2-m4-4-integration/m4-2-m4-4-integration-scope-proof.json",
+    "deploy/evidence/issues/9/m4-2-m4-4-integration/m4-2-m4-4-integration-lineage-proof.json"
+  ],
+  "ownership_assertions": {
+    "new_integration_edit_paths_within_integration_only_set": true,
+    "new_m4_2_exclusive_path_edit_count": 0,
+    "new_m4_4_exclusive_path_edit_count": 0,
+    "new_shared_read_only_path_edit_count": 0,
+    "new_forbidden_path_edit_count": 0,
+    "integration_only_path_count": 4,
+    "m4_2_exclusive_write_path_count": 3,
+    "m4_4_exclusive_write_path_count": 7,
+    "shared_read_only_path_count": 8,
+    "forbidden_cross_lane_write_path_count": 5
+  },
+  "scope_boundary": {
+    "exclusive_semantic_conflict_count": 0,
+    "integration_only_conflict_count": 0,
+    "m4_3_source_changed": false,
+    "downstream_write_source_changed": false
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 + M4-4 integration lineage proof",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_sources": {
+    "m4_2": "9ce364cde6ae84284cd6fb83650417525bbd3144",
+    "m4_4": "10a7e9809d2e1cb3c324ad65a13e6611662957e6"
+  },
+  "mechanics": {
+    "m4_2_merge": "normal --no-ff merge",
+    "m4_4_merge": "normal --no-ff merge",
+    "squash_used": false,
+    "rebase_used": false,
+    "cherry_pick_used": false,
+    "merge_conflict_count": 0,
+    "exclusive_semantic_conflict_count": 0
+  },
+  "ancestry_assertions": {
+    "common_base_ancestor_of_m4_2": true,
+    "common_base_ancestor_of_m4_4": true,
+    "m4_2_accepted_source_ancestor_of_integration": true,
+    "m4_4_accepted_source_ancestor_of_integration": true
+  },
+  "merge_commits": {
+    "m4_2_mechanical_merge": "7fcc57b31bae31afb9039d826721e69ae5db612b",
+    "m4_4_mechanical_merge": "53a8d80b784c20d2b8ee58c5da70002c81e86b77"
+  },
+  "candidate_sha": "resolved from the final integration commit without hardcoding",
+  "source_lineages_preserved": true
+}

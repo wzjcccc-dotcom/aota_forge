@@ -14,7 +14,64 @@ as a package-import side effect.
 """
 
 from aota_forge.core import catalog  # noqa: F401  (registers canonical descriptors)
+from aota_forge.core.authority import (
+    ApprovalEvidence,
+    AuthorityDecision,
+    AuthorityEngine,
+    AuthorityReason,
+    MaterializedDecisionEvidence,
+    TrustedMutationAuthorization,
+)
+from aota_forge.core.authorization import (
+    AuthorizationErrorCode,
+    AuthorizationFailure,
+    AuthorizationResult,
+    CapabilityLeaseIssuer,
+)
+from aota_forge.core.capability_lease import CapabilityLease
 from aota_forge.core.context import Principal, TrustedContext, bind_trusted_context
+from aota_forge.core.contracts.descriptor import (
+    LIFECYCLE_DESCRIPTORS,
+    PLAN_INIT_DESCRIPTOR,
+    PLAN_RETIREMENT_DESCRIPTOR,
+)
 from aota_forge.core.ingress import execute
+from aota_forge.core.transitions import (
+    PlanInitRequest,
+    PlanRetirementRequest,
+    RetirementCandidateResolution,
+    RetirementCandidateSnapshot,
+    capture_retirement_snapshot,
+    plan_init,
+    resolve_retirement_candidates,
+    retire_plan,
+)
 
-__all__ = ["execute", "Principal", "TrustedContext", "bind_trusted_context"]
+__all__ = [
+    "execute",
+    "Principal",
+    "TrustedContext",
+    "bind_trusted_context",
+    "ApprovalEvidence",
+    "AuthorityDecision",
+    "AuthorityEngine",
+    "AuthorityReason",
+    "MaterializedDecisionEvidence",
+    "TrustedMutationAuthorization",
+    "AuthorizationErrorCode",
+    "AuthorizationFailure",
+    "AuthorizationResult",
+    "CapabilityLeaseIssuer",
+    "CapabilityLease",
+    "LIFECYCLE_DESCRIPTORS",
+    "PLAN_INIT_DESCRIPTOR",
+    "PLAN_RETIREMENT_DESCRIPTOR",
+    "PlanInitRequest",
+    "PlanRetirementRequest",
+    "RetirementCandidateResolution",
+    "RetirementCandidateSnapshot",
+    "capture_retirement_snapshot",
+    "resolve_retirement_candidates",
+    "plan_init",
+    "retire_plan",
+]

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 + M4-4 serial source integration",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-M4-4-SERIAL-INTEGRATION",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "m4_2_source_candidate": "9ce364cde6ae84284cd6fb83650417525bbd3144",
+  "m4_2_final_source_review_evidence": "23f652e78e270e608d05246aa2ba22a9aed32c15",
+  "m4_2_source_review_accepted": "yes",
+  "m4_4_source_candidate": "10a7e9809d2e1cb3c324ad65a13e6611662957e6",
+  "m4_4_final_source_review_evidence": "841b020996b8572073aa2e190f4415380124739a",
+  "m4_4_source_review_accepted": "yes",
+  "source_merge_order": ["m4-2", "m4-4"],
+  "source_serialization_required": "no",
+  "ownership_partition": {
+    "m4_2_exclusive_write_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "m4_4_exclusive_write_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "shared_read_only_paths": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "integration_only_paths": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "forbidden_cross_lane_write_path_count": 5
+  },
+  "seams": {
+    "shared_errors_materialized": true,
+    "public_contract_exports_materialized": true,
+    "public_core_exports_materialized": true,
+    "b89_shared_seam_materialized": true,
+    "b89_historical_scope_assertion_used_as_current_authority": false
+  },
+  "integrated_behavior": {
+    "m4_2_authorization_semantics_preserved": true,
+    "m4_4_lifecycle_semantics_preserved": true,
+    "authorization_overrides_semantic_ambiguity": false,
+    "lease_target_cross_lifecycle_binding": true,
+    "decision_kind_cross_lifecycle_binding": true,
+    "project_milestone_cross_lifecycle_binding": true,
+    "retirement_snapshot_authorization_composition": true,
+    "unknown_outcome_lifecycle_replay_denied": true
+  },
+  "downstream_boundary": {
+    "write_capable_unified_ingress_implemented": false,
+    "production_mutation_operation_registered": false,
+    "cli_write_operation_exposed": false,
+    "portable_plan_external_write_implemented": false,
+    "github_authority_write_implemented": false,
+    "durable_mutation_journal_implemented": false,
+    "production_graph_mutated": false,
+    "github_mutation_performed": false
+  },
+  "governance_state": {
+    "m4_2_completed": false,
+    "m4_4_completed": false,
+    "m4_2_known_good_checkpoint": false,
+    "m4_4_known_good_checkpoint": false,
+    "m4_3_execution_authorized": false,
+    "next_ready_set": "independent_review_of_m4_2_m4_4_serial_integration"
+  }
+}

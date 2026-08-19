@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 + M4-4 integration regression results",
+  "source_guards": {
+    "m4_2_accepted_source_guard": "PASS",
+    "m4_4_accepted_source_guard": "PASS",
+    "merged_m4_2_semantic_cases": "PASS 37/37; merged-tree SOURCE_PARTITION_EXACT is historical source-lane scope only",
+    "merged_m4_4_semantic_cases": "PASS 35/35"
+  },
+  "integrated_tests": {
+    "combined_unittest_cases": 19,
+    "combined_unittest_result": "PASS",
+    "required_cases": [
+      "I1 valid decision and bounded lease",
+      "I2 malformed decision no lifecycle mutation",
+      "I3 wrong decision kind no lifecycle mutation",
+      "I4 wrong nested target no lifecycle mutation",
+      "I5 authorization and PLAN_INIT preparation",
+      "I6 ambiguous project NEEDS_SEMANTIC_CHOICE",
+      "I7 PLAN_INIT re-entry denied",
+      "I8 abandoned retirement cancelled",
+      "I9 exact superseded successor",
+      "I10 successor revision drift fail closed",
+      "I11 unknown outcome no retry",
+      "I12 idempotency intent conflict"
+    ],
+    "cross_lane_cases": [
+      "CROSS-01 authorization cannot override ambiguity",
+      "CROSS-02 lease target matches lifecycle target",
+      "CROSS-03 decision kind matches lifecycle operation",
+      "CROSS-04 project decision binding",
+      "CROSS-05 retirement snapshot plus authorization",
+      "CROSS-06 unknown outcome replay denial"
+    ],
+    "cross_lane_result": "PASS"
+  },
+  "b89": {
+    "current_semantic_probe": "PASS",
+    "cases": "B89-N1..B89-N15 plus negative reversion",
+    "historical_n16_scope_assertion_used": false
+  },
+  "regression_classes": {
+    "m4_2_integrated_regression": "PASS",
+    "m4_4_integrated_regression": "PASS",
+    "cross_lane_integration_regression": "PASS",
+    "current_semantic_invariant_failure_count": 0
+  },
+  "historical_guard_findings": [
+    "M3-B2 scope guard rejects accepted descendant M4-2 authority/lease source; current trusted-context cases pass.",
+    "M3-B5 exact-base guard rejects accepted descendant M4-2 source; current authority cases pass.",
+    "M3-B9 and B89 ownership assertions reject accepted M4-4 lifecycle/shared seam paths; current semantic probes pass.",
+    "M4-1 contract-plan exact-scope guard rejects authorized M4-2/M4-4 descendants.",
+    "M2-I future-symbol and branch checks retain pre-M4 scope assumptions.",
+    "M3-B12/B13/BG2 aggregate failures are downstream propagation of the historical B9/B89 assertions, not current M4 semantic failures."
+  ],
+  "historical_findings_are_current_semantic_regressions": false,
+  "full_regression_disposition": "PASS_WITH_HISTORICAL_PROVENANCE_FINDINGS",
+  "hard_stops": {
+    "read_only_ingress_preserved": true,
+    "external_authority_write_absent": true,
+    "durable_journal_absent": true,
+    "cli_write_operation_absent": true
+  }
+}

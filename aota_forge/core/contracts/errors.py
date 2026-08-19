@@ -470,6 +470,177 @@ class UnknownFutureError(ForgeError):
         )
 
 
+# M4 shared seams keep authorization and lifecycle failure codes distinct in
+# the canonical registry without making the registry depend on either source
+# implementation module.
+class _M4ContractError(ForgeError):
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+def _make_m4_contract_error(
+    name: str,
+    code: str,
+    default_message: str,
+    *,
+    default_retryable: bool = False,
+) -> type[ForgeError]:
+    return type(
+        name,
+        (_M4ContractError,),
+        {
+            "__module__": __name__,
+            "code": code,
+            "default_message": default_message,
+            "default_retryable": default_retryable,
+        },
+    )
+
+
+M4_2_AUTHORIZATION_ERROR_CODES = (
+    "AUTHORIZATION_MISSING",
+    "AUTHORIZATION_SCOPE_MISMATCH",
+    "AUTHORIZATION_TARGET_MISMATCH",
+    "AUTHORIZATION_OPERATION_MISMATCH",
+    "AUTHORIZATION_CONTRACT_DRIFT",
+    "APPROVAL_REQUIRED",
+    "MATERIALIZED_DECISION_REQUIRED",
+    "SUBJECT_REVISION_STALE",
+    "AUTHORITY_PRECONDITION_STALE",
+    "LEASE_EXPIRED",
+    "LEASE_REVOKED",
+    "LEASE_CONSUMED",
+    "LEASE_INTENT_MISMATCH",
+    "LEASE_TARGET_MISMATCH",
+    "LEASE_SCOPE_MISMATCH",
+    "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION",
+    "NEEDS_SEMANTIC_CHOICE",
+)
+
+M4_4_LIFECYCLE_ERROR_CODES = (
+    "PROJECT_NOT_FOUND",
+    "NEEDS_SEMANTIC_CHOICE",
+    "PROJECT_BINDING_REQUIRED",
+    "PLAN_INIT_INVALID_PREDECESSOR",
+    "PLAN_INIT_ALREADY_INITIALIZED",
+    "PLAN_INIT_STALE_SUBJECT_REVISION",
+    "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+    "RETIREMENT_NO_CANDIDATE",
+    "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+    "RETIREMENT_STALE_SNAPSHOT",
+    "RETIREMENT_TARGET_PROTECTED",
+    "RETIREMENT_RUNNING_TASK_PROTECTED",
+    "RETIREMENT_SUCCESSOR_REQUIRED",
+    "RETIREMENT_SUCCESSOR_INVALID",
+    "RETIREMENT_SELF_SUCCESSOR",
+    "RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+)
+
+AuthorizationMissingError = _make_m4_contract_error(
+    "AuthorizationMissingError", "AUTHORIZATION_MISSING", "authorization is missing"
+)
+AuthorizationScopeMismatchError = _make_m4_contract_error(
+    "AuthorizationScopeMismatchError", "AUTHORIZATION_SCOPE_MISMATCH", "authorization scope differs"
+)
+AuthorizationTargetMismatchError = _make_m4_contract_error(
+    "AuthorizationTargetMismatchError", "AUTHORIZATION_TARGET_MISMATCH", "authorization target differs"
+)
+AuthorizationOperationMismatchError = _make_m4_contract_error(
+    "AuthorizationOperationMismatchError", "AUTHORIZATION_OPERATION_MISMATCH", "authorization operation differs"
+)
+AuthorizationContractDriftError = _make_m4_contract_error(
+    "AuthorizationContractDriftError", "AUTHORIZATION_CONTRACT_DRIFT", "authorization contract differs"
+)
+ApprovalRequiredError = _make_m4_contract_error(
+    "ApprovalRequiredError", "APPROVAL_REQUIRED", "exact approval evidence is required"
+)
+MaterializedDecisionRequiredError = _make_m4_contract_error(
+    "MaterializedDecisionRequiredError", "MATERIALIZED_DECISION_REQUIRED", "exact materialized decision evidence is required"
+)
+SubjectRevisionStaleAuthorizationError = _make_m4_contract_error(
+    "SubjectRevisionStaleAuthorizationError",
+    "SUBJECT_REVISION_STALE",
+    "Subject revision is stale",
+    default_retryable=True,
+)
+AuthorityPreconditionStaleError = _make_m4_contract_error(
+    "AuthorityPreconditionStaleError",
+    "AUTHORITY_PRECONDITION_STALE",
+    "authority precondition is stale",
+    default_retryable=True,
+)
+LeaseExpiredError = _make_m4_contract_error("LeaseExpiredError", "LEASE_EXPIRED", "lease is expired")
+LeaseRevokedError = _make_m4_contract_error("LeaseRevokedError", "LEASE_REVOKED", "lease is revoked")
+LeaseConsumedError = _make_m4_contract_error("LeaseConsumedError", "LEASE_CONSUMED", "lease is consumed")
+LeaseIntentMismatchError = _make_m4_contract_error(
+    "LeaseIntentMismatchError", "LEASE_INTENT_MISMATCH", "lease intent differs"
+)
+LeaseTargetMismatchError = _make_m4_contract_error(
+    "LeaseTargetMismatchError", "LEASE_TARGET_MISMATCH", "lease target differs"
+)
+LeaseScopeMismatchError = _make_m4_contract_error(
+    "LeaseScopeMismatchError", "LEASE_SCOPE_MISMATCH", "lease scope differs"
+)
+OutcomeUnknownRequiresReconciliationError = _make_m4_contract_error(
+    "OutcomeUnknownRequiresReconciliationError",
+    "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION",
+    "unknown outcome requires reconciliation",
+)
+
+ProjectBindingRequiredError = _make_m4_contract_error(
+    "ProjectBindingRequiredError", "PROJECT_BINDING_REQUIRED", "exact Project Binding is required"
+)
+PlanInitInvalidPredecessorError = _make_m4_contract_error(
+    "PlanInitInvalidPredecessorError", "PLAN_INIT_INVALID_PREDECESSOR", "PLAN_INIT predecessor is invalid"
+)
+PlanInitAlreadyInitializedError = _make_m4_contract_error(
+    "PlanInitAlreadyInitializedError", "PLAN_INIT_ALREADY_INITIALIZED", "PLAN_INIT re-entry is denied"
+)
+PlanInitStaleSubjectRevisionError = _make_m4_contract_error(
+    "PlanInitStaleSubjectRevisionError",
+    "PLAN_INIT_STALE_SUBJECT_REVISION",
+    "PLAN_INIT Subject revision is stale",
+)
+PlanInitStaleAuthorityPreconditionError = _make_m4_contract_error(
+    "PlanInitStaleAuthorityPreconditionError",
+    "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+    "PLAN_INIT authority precondition is stale",
+)
+RetirementNoCandidateError = _make_m4_contract_error(
+    "RetirementNoCandidateError", "RETIREMENT_NO_CANDIDATE", "no eligible retirement candidate exists"
+)
+RetirementNeedsSemanticChoiceError = _make_m4_contract_error(
+    "RetirementNeedsSemanticChoiceError",
+    "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+    "retirement candidate choice is required",
+)
+RetirementStaleSnapshotError = _make_m4_contract_error(
+    "RetirementStaleSnapshotError", "RETIREMENT_STALE_SNAPSHOT", "retirement snapshot is stale"
+)
+RetirementTargetProtectedError = _make_m4_contract_error(
+    "RetirementTargetProtectedError", "RETIREMENT_TARGET_PROTECTED", "retirement target is protected"
+)
+RetirementRunningTaskProtectedError = _make_m4_contract_error(
+    "RetirementRunningTaskProtectedError",
+    "RETIREMENT_RUNNING_TASK_PROTECTED",
+    "retirement target has a running task",
+)
+RetirementSuccessorRequiredError = _make_m4_contract_error(
+    "RetirementSuccessorRequiredError", "RETIREMENT_SUCCESSOR_REQUIRED", "an exact successor is required"
+)
+RetirementSuccessorInvalidError = _make_m4_contract_error(
+    "RetirementSuccessorInvalidError", "RETIREMENT_SUCCESSOR_INVALID", "retirement successor is invalid"
+)
+RetirementSelfSuccessorError = _make_m4_contract_error(
+    "RetirementSelfSuccessorError", "RETIREMENT_SELF_SUCCESSOR", "retirement successor cannot be the target"
+)
+RetirementStaleAuthorityPreconditionError = _make_m4_contract_error(
+    "RetirementStaleAuthorityPreconditionError",
+    "RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+    "retirement authority precondition is stale",
+)
+
+
 ERROR_CLASSES: dict[str, type[ForgeError]] = {
     cls.code: cls
     for cls in (
@@ -511,6 +682,36 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         InputSizeError,
         DuplicateOperationInputError,
         UnknownFutureError,
+        AuthorizationMissingError,
+        AuthorizationScopeMismatchError,
+        AuthorizationTargetMismatchError,
+        AuthorizationOperationMismatchError,
+        AuthorizationContractDriftError,
+        ApprovalRequiredError,
+        MaterializedDecisionRequiredError,
+        SubjectRevisionStaleAuthorizationError,
+        AuthorityPreconditionStaleError,
+        LeaseExpiredError,
+        LeaseRevokedError,
+        LeaseConsumedError,
+        LeaseIntentMismatchError,
+        LeaseTargetMismatchError,
+        LeaseScopeMismatchError,
+        OutcomeUnknownRequiresReconciliationError,
+        ProjectBindingRequiredError,
+        PlanInitInvalidPredecessorError,
+        PlanInitAlreadyInitializedError,
+        PlanInitStaleSubjectRevisionError,
+        PlanInitStaleAuthorityPreconditionError,
+        RetirementNoCandidateError,
+        RetirementNeedsSemanticChoiceError,
+        RetirementStaleSnapshotError,
+        RetirementTargetProtectedError,
+        RetirementRunningTaskProtectedError,
+        RetirementSuccessorRequiredError,
+        RetirementSuccessorInvalidError,
+        RetirementSelfSuccessorError,
+        RetirementStaleAuthorityPreconditionError,
     )
 }
 
