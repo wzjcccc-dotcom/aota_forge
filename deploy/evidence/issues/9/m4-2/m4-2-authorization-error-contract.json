@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 authorization and lease error contract",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "errors": [
+    {"code": "AUTHORIZATION_MISSING", "meaning": "No valid semantic authorization basis was supplied.", "retryable": false},
+    {"code": "AUTHORIZATION_SCOPE_MISMATCH", "meaning": "Authorization scope does not contain the exact requested mutation scope.", "retryable": false},
+    {"code": "AUTHORIZATION_TARGET_MISMATCH", "meaning": "Authorization is bound to a different typed target.", "retryable": false},
+    {"code": "AUTHORIZATION_OPERATION_MISMATCH", "meaning": "Authorization is bound to a different operation.", "retryable": false},
+    {"code": "AUTHORIZATION_CONTRACT_DRIFT", "meaning": "The descriptor contract hash differs from the authorized hash.", "retryable": false},
+    {"code": "APPROVAL_REQUIRED", "meaning": "Explicit ApprovalEvidence is required and absent or invalid.", "retryable": false},
+    {"code": "MATERIALIZED_DECISION_REQUIRED", "meaning": "Exact MaterializedDecisionEvidence is required and absent or invalid.", "retryable": false},
+    {"code": "SUBJECT_REVISION_STALE", "meaning": "Subject expected revision is not current.", "retryable": true},
+    {"code": "AUTHORITY_PRECONDITION_STALE", "meaning": "External authority raw revision/digest precondition is not current.", "retryable": true},
+    {"code": "LEASE_EXPIRED", "meaning": "Lease is at or beyond its expiry boundary.", "retryable": false},
+    {"code": "LEASE_REVOKED", "meaning": "Lease has been revoked.", "retryable": false},
+    {"code": "LEASE_CONSUMED", "meaning": "Lease was already consumed by an authorized attempt.", "retryable": false},
+    {"code": "LEASE_INTENT_MISMATCH", "meaning": "Lease intent_fingerprint differs from the requested semantic intent.", "retryable": false},
+    {"code": "LEASE_TARGET_MISMATCH", "meaning": "Lease target differs from the exact typed target.", "retryable": false},
+    {"code": "LEASE_SCOPE_MISMATCH", "meaning": "Lease scope does not cover the exact requested scope.", "retryable": false},
+    {"code": "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION", "meaning": "Prior attempt outcome is uncertain; reconcile before any retry or lease reuse.", "retryable": false},
+    {"code": "NEEDS_SEMANTIC_CHOICE", "meaning": "A project, Subject, candidate, successor, rollback, or other semantic choice is missing or ambiguous; this is not an authority failure.", "retryable": false}
+  ],
+  "distinctions": {
+    "NEEDS_SEMANTIC_CHOICE_is_authority_failure": "no",
+    "APPROVAL_REQUIRED_equals_MATERIALIZED_DECISION_REQUIRED": "no",
+    "SUBJECT_REVISION_STALE_equals_AUTHORITY_PRECONDITION_STALE": "no",
+    "unknown_outcome_is_silent_success": "no",
+    "unknown_outcome_blind_retry": "no"
+  }
+}

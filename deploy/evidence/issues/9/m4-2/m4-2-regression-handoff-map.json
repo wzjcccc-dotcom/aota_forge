@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 regression ownership and handoff map",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "M4_2_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0,
+  "behavioral_closure_claimed": "no",
+  "entries": [
+    {"failure_class": "WCTX-1", "m4_2_relationship": "AUTHORIZATION_CONTEXT_CONSUMER", "handoff": "Preserve distinct missing trusted principal, missing basis, blocked context, and semantic-choice outcomes; M4-3/M4-4 own integrated behavior.", "future_behavioral_owner": "M4-3 and M4-4, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "BIND-1", "m4_2_relationship": "EXACT_TARGET_BINDING_OWNER", "handoff": "Lease issuance requires an already selected exact typed target and rejects ambiguity; it cannot select a Subject or project.", "future_behavioral_owner": "M4-2 contract with M4-4 lifecycle consumer, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "DRIFT-1", "m4_2_relationship": "CONTRACT_AND_PRECONDITION_BINDING_OWNER", "handoff": "Bind contract hash and separate Subject/external authority domains; descriptor drift fails closed.", "future_behavioral_owner": "M4-3/M4-5/M4-6, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "RECOVERY-1", "m4_2_relationship": "UNKNOWN_OUTCOME_LEASE_OWNER", "handoff": "Unknown outcome requires reconciliation and forbids blind original-lease reuse; M4-7 owns external recovery runtime.", "future_behavioral_owner": "M4-5/M4-7, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "RC2-1", "m4_2_relationship": "RESULT_AUTHORIZATION_INPUT_OWNER", "handoff": "Lease/error contract must preserve blocked, conflict, unknown, no-effect, and semantic-choice distinctions for canonical result projection.", "future_behavioral_owner": "M4-3/M4-5/M4-7, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "B014-F", "m4_2_relationship": "NO_FALSE_VERIFIED_SUCCESS_PREREQUISITE", "handoff": "A lease never proves authoritative effect; external readback and result classification remain downstream.", "future_behavioral_owner": "M4-3/M4-5/M4-7, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "B011", "m4_2_relationship": "DOWNSTREAM_CONSUMER", "handoff": "PLAN_INIT descriptor/intent can consume exact lease semantics; M4-4 owns predecessor and re-entry behavior.", "future_behavioral_owner": "M4-4, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "B013", "m4_2_relationship": "DOWNSTREAM_CONSUMER", "handoff": "Retirement consumes exact selected candidate authorization; M4-2 cannot select retirement target or successor.", "future_behavioral_owner": "M4-4/M4-5, integrated by M4-8", "behavioral_closure_claimed": "no"},
+    {"failure_class": "B014", "m4_2_relationship": "DOWNSTREAM_CONSUMER", "handoff": "Post-binding lifecycle re-entry consumes bounded authorization only after M4-4 semantics and exact preconditions are supplied.", "future_behavioral_owner": "M4-4/M4-3, integrated by M4-8", "behavioral_closure_claimed": "no"}
+  ],
+  "boundary": {
+    "M4_2_FREEZES_INTERFACE_AND_ISSUANCE_RULES_ONLY": "yes",
+    "M4_2_CLAIMS_BEHAVIORAL_CLOSURE": "no",
+    "M4_2_EXTERNAL_WRITE": "no",
+    "M4_3_AUTHORIZATION": "no"
+  }
+}

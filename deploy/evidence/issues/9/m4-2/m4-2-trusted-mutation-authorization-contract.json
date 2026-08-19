@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 Trusted Mutation Authorization contract",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "freeze": {
+    "TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION": "no",
+    "purpose": "Materialize already-existing valid semantic authority into a bounded mechanical authorization input; do not decide semantic intent.",
+    "DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED": "yes",
+    "CAPABILITY_LEASE_IS_DURABLE_SEMANTIC_AUTHORITY": "no",
+    "MODEL_MAY_SELF_ASSERT_TRUSTED_PRINCIPAL": "no",
+    "MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE": "no",
+    "required_binding_fields": [
+      "principal",
+      "operation",
+      "typed_target",
+      "mutation_scope",
+      "contract_hash",
+      "intent_fingerprint",
+      "subject_expected_revision",
+      "external_authority_precondition_digest_or_reference",
+      "exact_candidate_or_exact_mutation_identity_when_applicable",
+      "authorization_basis",
+      "approval_basis_when_required",
+      "materialized_decision_basis_when_required",
+      "issuance_correlation_or_reservation_reference",
+      "issued_at",
+      "expires_at"
+    ],
+    "representation_options": ["candidate_fingerprint", "authorization_precondition_digest", "reservation_ref"],
+    "storage_rule": "The lease may reference a durable evidence/reservation record; the reference must resolve to all exact binding fields and cannot widen them.",
+    "authorization_basis_taxonomy": [
+      {
+        "basis": "trusted_scope_no_extra_approval",
+        "meaning": "Operation is covered by an already-valid trusted scope and descriptor does not require additional approval.",
+        "required_evidence": ["trusted principal", "exact scope", "descriptor requirement"],
+        "issuer_may_create": "no"
+      },
+      {
+        "basis": "approval_evidence",
+        "meaning": "Descriptor requires explicit approval evidence for this exact operation and target.",
+        "required_evidence": ["ApprovalEvidence bound to exact operation/target/revision/scope", "trusted approver", "valid digest"],
+        "issuer_may_create": "no"
+      },
+      {
+        "basis": "materialized_decision_evidence",
+        "meaning": "Descriptor requires the exact durable Decision and its mechanical followup binding.",
+        "required_evidence": ["MaterializedDecisionEvidence", "resolved Decision", "exact operation/target/revision/scope/digest"],
+        "issuer_may_create": "no"
+      },
+      {
+        "basis": "project_milestone_semantic_decision",
+        "meaning": "Project or Milestone semantics require an explicit external semantic decision basis before mechanical issuance.",
+        "required_evidence": ["trusted exact project/milestone decision basis", "exact selected target", "valid descriptor requirements"],
+        "issuer_may_create": "no"
+      }
+    ],
+    "evidence_distinctions": {
+      "APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE": "no",
+      "approval_evidence_may_substitute_for_materialized_decision": "no",
+      "missing_basis_result": "canonical failure; issuer cannot invent or upgrade evidence"
+    },
+    "revision_domains": {
+      "SUBJECT_REVISION": "subject_expected_revision for Subject CAS",
+      "AUTHORITY_SOURCE_REVISION": "opaque external raw revision/digest precondition",
+      "NORMALIZED_PLAN_DIGEST": "semantic normalized content identity/supporting drift evidence",
+      "RAW_SOURCE_DIGEST_DIFFERS_FROM_NORMALIZED_PLAN_DIGEST": "yes",
+      "normalized_plan_digest_may_substitute_for_external_cas": "no"
+    },
+    "validity_boundary": {
+      "short_lived_lease_required": "yes",
+      "lease_expiry_is_inclusive": "yes; now >= expires_at is invalid",
+      "semantic_authorization_may_be_durable": "yes",
+      "expiry_does_not_delete_durable_evidence": "yes"
+    }
+  }
+}

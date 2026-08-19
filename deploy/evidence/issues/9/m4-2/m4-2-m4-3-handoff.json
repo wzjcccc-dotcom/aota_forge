@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 to M4-3 handoff",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "acceptance_gate": {
+    "M4_2_ACCEPTANCE_REQUIRED_BEFORE_M4_3": "yes",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "M4_2_EXECUTION_AUTHORIZED": "no",
+    "M4_3_receives_only_after_acceptance": "yes"
+  },
+  "M4_3_receives": [
+    "trusted authorization validation contract",
+    "bounded short-lived Capability Lease contract",
+    "exact principal/operation/typed-target/scope/contract/intent/precondition binding semantics",
+    "authorization basis taxonomy and ApprovalEvidence versus MaterializedDecisionEvidence distinction",
+    "issued/valid/consumed/expired/revoked lifecycle semantics",
+    "reconcile-before-retry and unknown-outcome lease implications",
+    "canonical authorization and lease errors"
+  ],
+  "M4_3_must_not": [
+    "mint semantic authority",
+    "reinterpret or widen authorization scope",
+    "choose a project or Subject under ambiguity",
+    "turn descriptor requirements into permission",
+    "invent ApprovalEvidence or MaterializedDecisionEvidence",
+    "blindly reuse a lease after unknown outcome",
+    "use normalized_plan_digest as external CAS",
+    "treat a Capability Lease as durable semantic authority"
+  ],
+  "ownership_boundary": {
+    "M4_2": "trusted validation and lease issuance contract only",
+    "M4_3": "future write-capable Unified Ingress consuming accepted M4-2 and M4-4 contracts",
+    "M4_4": "PLAN_INIT, retirement, and Project Steward mechanical lifecycle contract",
+    "M4_5_M4_7": "later journal, external mutation, and recovery mechanics"
+  }
+}

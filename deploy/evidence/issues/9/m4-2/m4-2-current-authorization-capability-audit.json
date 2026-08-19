@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 current authorization and capability audit",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "entries": [
+    {
+      "component": "AuthorityEngine",
+      "source_evidence": ["aota_forge/core/authority.py", "m4-0 D5 architecture freeze"],
+      "current_capability": "Evaluates trusted principal, exact operation, typed target, scope, Subject revision, lease, approval, and Decision evidence without selecting semantic intent or writing the graph.",
+      "current_limit": "No durable authorization materialization or lease issuance boundary exists; supplied facts must already be valid.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "AuthorityRequest",
+      "source_evidence": ["aota_forge/core/authority.py"],
+      "current_capability": "Carries principal/context, operation, target, scope, lease, Subject revision, contract hash, approval, and Decision evidence into evaluation.",
+      "current_limit": "Does not carry the complete M4-2 intent, candidate, external precondition, reservation, or authorization evidence binding required for issuance.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "CapabilityLease",
+      "source_evidence": ["aota_forge/core/capability_lease.py"],
+      "current_capability": "Immutable bounded value object with principal, operation, typed target, scope, issued/expiry times, expected Subject revision, optional contract hash, approval/Decision basis, and fixture state copies.",
+      "current_limit": "It is not durable semantic authority; it has no M4-2 issuer protocol, exact intent/candidate binding, durable revocation, or atomic consumption.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "lease validation",
+      "source_evidence": ["aota_forge/core/capability_lease.py", "aota_forge/core/authority.py"],
+      "current_capability": "Validates bounded identifiers, timestamps, TTL, scope, principal type, target type, revision, and contract hash; AuthorityEngine checks principal/operation/target/scope/time/revision matches.",
+      "current_limit": "Validation does not yet prove exact MutationIntent, authorization reservation, candidate identity, or external authority precondition binding.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "lease issuance",
+      "source_evidence": ["aota_forge/core/capability_lease.py", "deploy/evidence/issues/9/m4-1-source/m4-1-source-implementation.json"],
+      "current_capability": "No issuer or issuance function is implemented.",
+      "current_limit": "There is no boundary that converts existing semantic authorization into an exact bounded short-lived lease.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "lease expiry",
+      "source_evidence": ["aota_forge/core/capability_lease.py"],
+      "current_capability": "Expiry is deterministic at now >= expires_at and TTL is bounded by MAX_LEASE_TTL_SECONDS.",
+      "current_limit": "Expiry validation is local value validation; no durable issuer or lifecycle store consumes the result.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "lease consumption",
+      "source_evidence": ["aota_forge/core/capability_lease.py", "aota_forge/core/transaction.py"],
+      "current_capability": "Transaction-local fixture foundation can stage one lease ID for atomic test-store consumption and rejects known consumed IDs.",
+      "current_limit": "CapabilityLease consume_for_fixture returns a copy; no production or durable lease-consumption service exists.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "lease revocation",
+      "source_evidence": ["aota_forge/core/capability_lease.py", "aota_forge/core/authority.py"],
+      "current_capability": "Fixture revoke returns an isolated revoked copy and AuthorityEngine rejects revoked state.",
+      "current_limit": "Revocation is not persisted, coordinated with issuance, or an atomic runtime operation.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "authorization evidence",
+      "source_evidence": ["aota_forge/core/authority.py", "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json"],
+      "current_capability": "Authority and basis references can be supplied as trusted facts and checked by the existing evaluator.",
+      "current_limit": "No durable M4-2 semantic authorization record or issuance correlation/reservation binding exists.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "approval evidence",
+      "source_evidence": ["aota_forge/core/authority.py"],
+      "current_capability": "ApprovalEvidence is a distinct typed value with approver trust, operation, target, revision, scope, and digest validation.",
+      "current_limit": "It does not itself establish a MaterializedDecisionEvidence record and cannot fill a missing Decision basis.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "MaterializedDecisionEvidence",
+      "source_evidence": ["aota_forge/core/authority.py"],
+      "current_capability": "Binds a durable Decision ObjectRef and resolved Decision canonical fields to operation, target, revision, scope, and a digest.",
+      "current_limit": "The evaluator only validates an already-materialized Decision; it cannot create or infer one.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "MutationIntent",
+      "source_evidence": ["aota_forge/core/contracts/mutation.py", "deploy/evidence/issues/9/m4-1/m4-1-mutation-intent-contract.json"],
+      "current_capability": "Describes semantic operation, logical target, mutation scope, semantic inputs, idempotency key, and deterministic intent fingerprint while excluding trusted fields.",
+      "current_limit": "Intent is not authority, does not select a typed target, and does not grant a lease.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "intent fingerprint",
+      "source_evidence": ["aota_forge/core/contracts/mutation.py"],
+      "current_capability": "Deterministic SHA-256 semantic identity excludes correlation and trusted/mechanical preconditions.",
+      "current_limit": "No issuer currently binds this fingerprint to an authorization reservation or lease.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "Subject revision binding",
+      "source_evidence": ["aota_forge/core/authority.py", "aota_forge/core/revision.py", "aota_forge/core/transaction.py"],
+      "current_capability": "Authority evaluation and isolated transaction mechanics reject a lease whose expected revision differs from the current Subject revision.",
+      "current_limit": "The source primitive is isolated and does not establish the external authority revision domain.",
+      "classification": "EXTEND_IN_M4_2",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "external authority precondition binding",
+      "source_evidence": ["aota_forge/core/contracts/mutation.py", "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json"],
+      "current_capability": "M4-0 and M4-1 name raw source revision/digest and candidate raw digest as separate mechanical values.",
+      "current_limit": "No external authority read, CAS, adapter, or lease binding implementation exists.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "contract hash binding",
+      "source_evidence": ["aota_forge/core/contracts/descriptor.py", "aota_forge/core/authority.py"],
+      "current_capability": "Descriptor contract_hash is deterministic and AuthorityEngine rejects a mismatched request/lease contract hash.",
+      "current_limit": "No M4-2 issuer records contract drift against a complete authorization reservation.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "trusted principal",
+      "source_evidence": ["aota_forge/core/context.py", "deploy/evidence/issues/9/m4-0/m4-0-handoff-capability-audit.json"],
+      "current_capability": "Only a runtime-bound TrustedContext can promote a Principal to trusted status; ordinary model values and plain Principal values are ignored as authority assertions.",
+      "current_limit": "Trusted context is evidence, not semantic authorization and not a self-asserted lease.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "context resolver",
+      "source_evidence": ["aota_forge/core/context.py"],
+      "current_capability": "Assembles operation context and trusted adapter metadata without choosing Subjects/projects or minting authority.",
+      "current_limit": "It cannot resolve M4-2 semantic authorization or issue a lease.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "idempotency",
+      "source_evidence": ["aota_forge/core/idempotency.py", "aota_forge/core/transaction.py"],
+      "current_capability": "Isolated store supports same-key/same-fingerprint replay and same-key/different-fingerprint conflict.",
+      "current_limit": "It is not a durable authorization reservation and does not itself issue or consume a lease.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "transaction-local lease consumption",
+      "source_evidence": ["aota_forge/core/transaction.py"],
+      "current_capability": "The isolated transaction foundation stages lease consumption with graph/revision/idempotency changes atomically in its test store.",
+      "current_limit": "This is not a durable production lease lifecycle and is outside this planning-only work item.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "unknown-outcome recovery",
+      "source_evidence": ["deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json", "aota_forge/core/contracts/mutation.py"],
+      "current_capability": "M4-0 freezes reconcile-before-retry and M4-1 represents OUTCOME_UNKNOWN without verified success.",
+      "current_limit": "No external journal, readback reconciliation, or recovery issuer path exists in the current source.",
+      "classification": "CONSUME_LATER",
+      "production_behavior_claimed": false
+    }
+  ]
+}

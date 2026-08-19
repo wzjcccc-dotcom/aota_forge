@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 Capability Lease issuance contract",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "issuer_boundary": {
+    "LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER": "no",
+    "issuer_role": "Validate and materialize an already-authorized exact mutation as bounded mechanical authority.",
+    "issuer_may": [
+      "validate an already-authorized exact mutation",
+      "validate descriptor requirements",
+      "validate trusted principal and exact typed target",
+      "bind exact operation and mutation scope",
+      "bind exact intent_fingerprint",
+      "bind Subject and external authority preconditions",
+      "bind exact candidate or reservation identity where applicable",
+      "bind authorization, approval, and required MaterializedDecision evidence",
+      "issue a bounded short-lived lease"
+    ],
+    "issuer_may_not": [
+      "choose project",
+      "choose a Subject under ambiguity",
+      "invent mutation scope",
+      "widen authority",
+      "approve a Milestone",
+      "create a semantic Decision",
+      "select rollback",
+      "rebase intent",
+      "change candidate semantics",
+      "turn descriptor requirements into permission"
+    ],
+    "missing_semantic_basis": "NEEDS_SEMANTIC_CHOICE or the canonical basis-specific failure; never automatic issuance"
+  },
+  "exact_binding": {
+    "required_fields": [
+      "principal",
+      "operation",
+      "typed_target",
+      "mutation_scope",
+      "contract_hash",
+      "intent_fingerprint",
+      "subject_expected_revision",
+      "external_authority_precondition_digest_or_reference",
+      "authorization_basis",
+      "reservation_or_candidate_identity",
+      "issued_at",
+      "expires_at"
+    ],
+    "binding_rule": "A lease is valid only for the exact tuple. A reference/digest representation is valid only if it resolves to the same tuple.",
+    "scope_expansion_allowed": "no",
+    "intent_rebase_allowed": "no",
+    "contract_drift_allowed": "no",
+    "subject_revision_domain_equals_external_authority_domain": "no"
+  },
+  "lifecycle": {
+    "states": ["issued", "valid", "consumed", "expired", "revoked"],
+    "validity": "issued lease is valid only before inclusive expiry, with all exact bindings and preconditions still valid",
+    "operations": ["issue", "validate", "consume", "revoke", "expire", "reconcile_unknown_outcome"],
+    "CONSUMED_LEASE_REUSE_ALLOWED": "no",
+    "EXPIRED_LEASE_REUSE_ALLOWED": "no",
+    "REVOKED_LEASE_REUSE_ALLOWED": "no",
+    "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+    "LEASE_MAY_CROSS_UNKNOWN_OUTCOME_RETRY": "no",
+    "consumption_boundary": "Consumption is one-time and must be coupled to the authorized attempt boundary by the later mechanical transaction/journal implementation; fixture copy helpers are not durable state.",
+    "revocation_boundary": "Revocation invalidates the lease without changing semantic authorization evidence.",
+    "expiry_boundary": "Expiry invalidates the lease without changing semantic authorization evidence."
+  },
+  "unknown_outcome_protocol": {
+    "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION": "yes",
+    "prior_attempt_reuse": "no blind reuse of the original lease",
+    "exact_candidate_already_applied": "classify verified/replayed result; perform no second write",
+    "original_external_state_remains": "a new bounded lease may be issued only after semantic authorization, Subject precondition, fresh external precondition, and contract hash are revalidated",
+    "third_external_state": "CONFLICT; no automatic overwrite or reissue",
+    "reconciliation_precedes_any_new_attempt": "yes"
+  },
+  "idempotency_binding": {
+    "same_key_same_semantic_intent": "may replay a prior verified result",
+    "same_key_changed_semantic_intent": "CONFLICT",
+    "fresh_lease_same_authorized_intent": "same intent_fingerprint and semantic mutation identity; no new semantic mutation identity",
+    "attempt_identity": "A fresh attempt identity is mechanical and is distinct from the stable idempotency key and intent fingerprint.",
+    "reservation_reference": "May be reused as evidence for the same semantic intent only; it cannot authorize a changed intent."
+  },
+  "scope_boundary": {
+    "external_authority_write_implemented_in_m4_2": "no",
+    "write_ingress_implemented_in_m4_2": "no",
+    "durable_mutation_journal_implemented_in_m4_2": "no",
+    "runtime_activation_implemented_in_m4_2": "no"
+  }
+}

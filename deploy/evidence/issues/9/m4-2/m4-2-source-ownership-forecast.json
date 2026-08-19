@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source ownership forecast",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-P0",
+  "expected_base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "forecast_status": "read_only_source_ownership_forecast",
+  "M4_2_M4_4_SOURCE_PARALLEL_SAFETY": "pending",
+  "source_parallelism_authorized": "no",
+  "entries": [
+    {
+      "path": "aota_forge/core/authority.py",
+      "ownership_reason": "Likely M4-2 extension point for exact authorization validation and issuer-facing evidence binding around the existing evaluator.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle invocations may consume or adapt AuthorityRequest/AuthorityResult",
+      "possible_m4_3_overlap": "yes; ingress will construct the request and consume canonical failures"
+    },
+    {
+      "path": "aota_forge/core/capability_lease.py",
+      "ownership_reason": "Likely M4-2 owner for lease binding fields, issuer value construction, lifecycle state vocabulary, and validation hooks.",
+      "shared_hot_file": false,
+      "possible_m4_4_overlap": "yes; PLAN_INIT and retirement will consume exact leases",
+      "possible_m4_3_overlap": "yes; ingress will carry and validate lease references"
+    },
+    {
+      "path": "aota_forge/core/context.py",
+      "ownership_reason": "TrustedContext and ContextResolver are the existing trusted principal boundary that M4-2 must consume without turning context into authority.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; Project Steward mechanical invocation needs trusted context",
+      "possible_m4_3_overlap": "yes; ingress assembles trusted context"
+    },
+    {
+      "path": "aota_forge/core/contracts/mutation.py",
+      "ownership_reason": "MutationIntent and intent_fingerprint are M4-1 contracts that M4-2 must bind, not redefine.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle operations consume intent identity",
+      "possible_m4_3_overlap": "yes; ingress accepts and forwards intent"
+    },
+    {
+      "path": "aota_forge/core/contracts/descriptor.py",
+      "ownership_reason": "Descriptor declares authority, approval, Decision, revision, external precondition, and mutation scope requirements.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle descriptors define predecessor/successor requirements",
+      "possible_m4_3_overlap": "yes; ingress resolves descriptor contract hash"
+    },
+    {
+      "path": "aota_forge/core/contracts/errors.py",
+      "ownership_reason": "Likely shared location for canonical typed authorization failures if implementation adds them to the Core error taxonomy.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle-specific semantic-choice and stale errors may share taxonomy",
+      "possible_m4_3_overlap": "yes; ingress projects errors"
+    },
+    {
+      "path": "aota_forge/core/contracts/__init__.py",
+      "ownership_reason": "Shared export surface likely affected if M4-2 introduces an issuer or authorization contract type.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; M4-4 may export lifecycle contracts",
+      "possible_m4_3_overlap": "yes; ingress imports canonical types"
+    },
+    {
+      "path": "aota_forge/core/authorization.py",
+      "ownership_reason": "Potential new M4-2 module for durable authorization evidence, issuer boundary, and exact lease materialization; file does not exist at the accepted base.",
+      "shared_hot_file": false,
+      "possible_m4_4_overlap": "yes; lifecycle callers consume the issuer contract",
+      "possible_m4_3_overlap": "yes; ingress invokes validation/issuance"
+    },
+    {
+      "path": "aota_forge/core/transaction.py",
+      "ownership_reason": "Existing transaction foundation owns transaction-local lease consumption; M4-2 must not duplicate or silently claim durable production consumption.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle mutations use transaction boundaries",
+      "possible_m4_3_overlap": "yes; ingress dispatches into transactions"
+    },
+    {
+      "path": "aota_forge/core/idempotency.py",
+      "ownership_reason": "Existing isolated idempotency records must remain distinct from authorization reservation and attempt identity.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; lifecycle replay/conflict semantics consume it",
+      "possible_m4_3_overlap": "yes; ingress passes idempotency identity"
+    },
+    {
+      "path": "aota_forge/core/ingress.py",
+      "ownership_reason": "Not an M4-2 implementation target; listed as a boundary consumer to prevent accidental write-ingress changes during lease planning.",
+      "shared_hot_file": true,
+      "possible_m4_4_overlap": "yes; later mechanical invocation may share ingress boundary",
+      "possible_m4_3_overlap": "yes; direct M4-3 owner"
+    },
+    {
+      "path": "aota_forge/core/graph/repository.py",
+      "ownership_reason": "Existing read-only target resolution proves owning Subject binding; M4-2 should consume it rather than implement semantic target selection.",
+      "shared_hot_file": false,
+      "possible_m4_4_overlap": "yes; lifecycle target resolution",
+      "possible_m4_3_overlap": "yes; ingress target validation"
+    }
+  ],
+  "overlap_assessment": {
+    "direct_m4_4_shared_files": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/idempotency.py"
+    ],
+    "safe_planning_parallelism": "yes; evidence-only planning paths are disjoint",
+    "safe_source_parallelism": "not established; ownership reconnaissance and integration coordination are required",
+    "source_safety_decision": "pending"
+  }
+}
