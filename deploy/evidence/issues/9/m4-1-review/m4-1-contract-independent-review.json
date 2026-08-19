@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 contract plan independent review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-1-R1",
+  "work_item_name": "M4-1 Contract Plan Independent Review",
+  "governing_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "review_target_sha": "ddfaee840f42710e3ce61c20522dba3674a96526",
+  "accepted_m4_0_base": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "functional_core_source_changed": "no",
+  "lineage_verification": {
+    "target_commit_exists": "yes",
+    "target_remote_ref": "refs/heads/aota/m4/m4-1-contract-planning",
+    "target_remote_sha": "ddfaee840f42710e3ce61c20522dba3674a96526",
+    "target_remote_ref_verified": "yes",
+    "ancestry_includes_accepted_m4_0_base": "yes",
+    "accepted_m4_0_base_verified": "yes"
+  },
+  "changed_path_verification": {
+    "expected_count": 7,
+    "unexpected_changed_path_count": 0,
+    "observed_paths": [
+      "deploy/evidence/issues/9/m4-1/m4-1-canonical-mutation-result-contract.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-current-contract-gap-map.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-downstream-handoff.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-mutation-intent-contract.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-regression-handoff-map.json",
+      "deploy/evidence/issues/9/m4-1/m4-1-write-operation-descriptor-contract.json",
+      "scripts/m4_1_contract_plan_guard.py"
+    ],
+    "candidate_changed_paths_verified": "yes",
+    "m4_0_accepted_evidence_changed": "no",
+    "m2_regression_matrix_changed": "no",
+    "m3_accepted_evidence_changed": "no"
+  },
+  "gap_map_review": {
+    "status": "PASS",
+    "entry_count": 14,
+    "misclassification_count": 0,
+    "observations": [
+      "OperationContractDescriptor is correctly treated as a declarative primitive whose mutation fields are not runtime write semantics.",
+      "HandlerRegistry is correctly retained as one process-local read/write descriptor registry with callable identity outside contract semantics.",
+      "Unified Ingress is correctly identified as read-only at the target source checkpoint and deferred for later write ingress.",
+      "OperationContext reserved authority, subject, revision, and lease fields are correctly identified as placeholders; ContextResolver does not select subjects or issue authority.",
+      "AuthorityEngine, Capability Lease, Subject revision/CAS, and transition primitives are correctly described as supplied or isolated mechanics rather than production mutation services.",
+      "Portable Plan read model and PlanAuthorityReadAdapter are correctly classified as read-only and platform-neutral, with no write port or verification path.",
+      "CLI and Hermes are correctly classified as descriptor projections/read adapters; runtime mutation activation is not inferred."
+    ],
+    "source_shape_does_not_imply_production_readiness": "yes"
+  },
+  "mutation_intent_review": {
+    "status": "PASS",
+    "MUTATION_INTENT_IS_AUTHORITY": "no",
+    "MUTATION_INTENT_IS_SEMANTIC_DECISION_MAKER": "no",
+    "MUTATION_INTENT_IS_EXTERNAL_PLATFORM_PAYLOAD": "no",
+    "MODEL_MAY_SELF_ASSERT_TRUSTED_PRINCIPAL": "no",
+    "MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE": "no",
+    "MODEL_MAY_SELF_ASSERT_INTERNAL_AUTHORITY": "no",
+    "MODEL_INTERNAL_IDS_NORMAL_INPUT": "no",
+    "MODEL_RAW_AUTHORITY_REVISION_NORMAL_INPUT": "no",
+    "required_semantic_fields_present": [
+      "operation",
+      "semantic_inputs",
+      "logical_target",
+      "mutation_scope",
+      "idempotency_key",
+      "intent_fingerprint",
+      "correlation_id"
+    ],
+    "trusted_resolution_fields_present": [
+      "principal",
+      "typed_target",
+      "subject_ref",
+      "subject_expected_revision",
+      "authority_source_revision",
+      "authority_observed_raw_digest",
+      "normalized_plan_digest",
+      "candidate_raw_digest",
+      "contract_hash",
+      "authorization_basis",
+      "capability_lease_or_reservation_reference"
+    ],
+    "INTENT_FINGERPRINT_DETERMINISTIC": "yes",
+    "INTENT_FINGERPRINT_EXCLUDES_RUNTIME_CALLABLE_IDENTITY": "yes",
+    "intent_fingerprint_precondition_separation": "PASS",
+    "precondition_separation_reason": "Subject and external authority preconditions are trusted-resolution fields and are not part of the declared semantic fingerprint input set; a fresh CAS value is mechanically revalidated separately.",
+    "replay_conflict_rule": "same idempotency identity plus same semantic intent replays; same identity plus different semantic intent conflicts"
+  },
+  "descriptor_review": {
+    "status": "PASS",
+    "SINGLE_OPERATION_CONTRACT_DESCRIPTOR_MODEL": "yes",
+    "READ_AND_WRITE_OPERATIONS_SHARE_REGISTRY": "yes",
+    "DESCRIPTOR_IS_AUTHORITY": "no",
+    "DESCRIPTOR_MINTS_CAPABILITY_LEASE": "no",
+    "DESCRIPTOR_SELECTS_SUBJECT": "no",
+    "DESCRIPTOR_SELECTS_PROJECT": "no",
+    "DESCRIPTOR_ACCEPTS_MILESTONE": "no",
+    "required_semantics_complete": "yes",
+    "CONTRACT_HASH_DETERMINISTIC": "yes",
+    "CONTRACT_HASH_MUTATION_SEMANTICS_COVERAGE": "PASS",
+    "CONTRACT_HASH_RUNTIME_VALUE_EXCLUSION": "PASS",
+    "hash_includes": [
+      "operation",
+      "protocol version",
+      "input and context schemas",
+      "read/write classification",
+      "mutation scope",
+      "authority and approval/Decision requirements",
+      "predecessor/successor semantics",
+      "Subject and external precondition requirements",
+      "idempotency semantics",
+      "result and machine-readable error semantics"
+    ],
+    "hash_excludes": [
+      "handler callable identity",
+      "memory address",
+      "current revision and raw authority values",
+      "lease token",
+      "correlation ID",
+      "timestamp",
+      "GitHub ETag",
+      "candidate-specific runtime values",
+      "principal instance and runtime authorization values"
+    ]
+  },
+  "mutation_result_review": {
+    "status": "PASS",
+    "NO_EFFECT_DISTINCT": "yes",
+    "APPLIED_VERIFIED_DISTINCT": "yes",
+    "REPLAYED_VERIFIED_DISTINCT": "yes",
+    "CONFLICT_DISTINCT": "yes",
+    "NEEDS_SEMANTIC_CHOICE_DISTINCT": "yes",
+    "OUTCOME_UNKNOWN_DISTINCT": "yes",
+    "FAILED_NO_EFFECT_DISTINCT": "yes",
+    "operation_status_differs_from_mutation_effect": "yes",
+    "AUTHORITATIVE_EFFECT_CONFIRMATION": "PASS",
+    "effect_confirmation_mapping": {
+      "APPLIED_VERIFIED": "yes",
+      "REPLAYED_VERIFIED": "yes",
+      "NO_EFFECT": "no",
+      "FAILED_NO_EFFECT": "no",
+      "OUTCOME_UNKNOWN": "unknown",
+      "CONFLICT": "no new requested effect confirmed",
+      "BLOCKED": "no",
+      "NEEDS_SEMANTIC_CHOICE": "no"
+    },
+    "SILENT_MATERIALIZATION_FAILURE_ALLOWED": "no",
+    "AUTHORITATIVE_EFFECT_UNKNOWN_MAY_REPORT_VERIFIED_SUCCESS": "no",
+    "LOCAL_HANDLER_SUCCESS_EQUALS_AUTHORITATIVE_EFFECT_SUCCESS": "no",
+    "RC2_1_RESULT_CONTRACT_READY": "yes",
+    "B014_F_RESULT_CONTRACT_READY": "yes",
+    "error_class_separation": "PASS",
+    "M4_1_BEHAVIORAL_CLOSURE_CLAIMED": "no"
+  },
+  "cross_contract_review": {
+    "status": "PASS",
+    "flow": [
+      "semantic Mutation Intent",
+      "descriptor-defined enforcement requirements",
+      "trusted M4-2 resolution and authorization",
+      "mechanical execution in later owners",
+      "canonical authoritative result"
+    ],
+    "contradiction_count": 0,
+    "checks": {
+      "intent_does_not_grant_descriptor_authority": "PASS",
+      "intent_trusted_fields_remain_adapter_bound": "PASS",
+      "descriptor_hash_covers_enforcement_semantics": "PASS",
+      "result_does_not_promote_local_success": "PASS",
+      "intent_fingerprint_and_descriptor_idempotency_are_compatible": "PASS"
+    }
+  },
+  "regression_handoff_review": {
+    "status": "PASS",
+    "M4_1_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0,
+    "entries_reviewed": [
+      {"failure_class": "DRIFT-1", "relationship": "CONTRACT_OWNER", "future_behavioral_owner": "M4-8 with M4-6 adapter compatibility", "status": "PASS"},
+      {"failure_class": "RC2-1", "relationship": "CONTRACT_OWNER", "future_behavioral_owner": "M4-3/M4-5/M4-7, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "B014-F", "relationship": "CONTRACT_OWNER", "future_behavioral_owner": "M4-3/M4-5/M4-7, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "B011", "relationship": "CONTRACT_PREREQUISITE", "future_behavioral_owner": "M4-4, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "B013", "relationship": "CONTRACT_PREREQUISITE", "future_behavioral_owner": "M4-4/M4-5, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "B014", "relationship": "CONTRACT_PREREQUISITE", "future_behavioral_owner": "M4-4, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "RECOVERY-1", "relationship": "DOWNSTREAM_CONSUMER_ONLY", "future_behavioral_owner": "M4-7 with M4-4 consumers, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "BIND-1", "relationship": "CONTRACT_PREREQUISITE", "future_behavioral_owner": "M4-2/M4-4, integrated by M4-8", "status": "PASS"},
+      {"failure_class": "WCTX-1", "relationship": "CONTRACT_PREREQUISITE", "future_behavioral_owner": "M4-3/M4-4, integrated by M4-8", "status": "PASS"}
+    ],
+    "M4_1_DOES_NOT_CLAIM_BEHAVIORAL_CLOSURE": "yes",
+    "M4_4_owns_B011_B013_B014_lifecycle_behavior": "yes",
+    "M4_5_M4_7_own_journal_recovery_behavior": "yes"
+  },
+  "downstream_handoff_review": {
+    "status": "PASS",
+    "M4_2_OWNERSHIP_BOUNDARY": "PASS",
+    "M4_2_owns": ["Trusted Mutation Authorization", "Capability Lease issuance protocol"],
+    "M4_4_OWNERSHIP_BOUNDARY": "PASS",
+    "M4_4_owns": ["PLAN_INIT", "retirement", "Project Steward mechanical invocation boundary"],
+    "M4_3_DEPENDENCY_BOUNDARY": "PASS",
+    "M4_3_requires": ["M4-2 accepted", "M4-4 accepted"],
+    "M4_1_PASS_AUTOMATICALLY_AUTHORIZES_M4_3": "no",
+    "bypass_of_M4_2_or_M4_4": "no"
+  },
+  "platform_neutrality_review": {
+    "status": "PASS",
+    "GITHUB_IS_CORE_ONTOLOGY": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "GITHUB_COMMENT_ID_IS_CORE_SEMANTIC_ID": "no",
+    "accidental_platform_identifier_count": 0,
+    "opaque_platform_neutral_vocabulary_used": "yes"
+  },
+  "scope_boundary_review": {
+    "status": "PASS",
+    "M4_1_DURABLE_JOURNAL_IMPLEMENTATION": "no",
+    "M4_1_EXTERNAL_AUTHORITY_WRITE": "no",
+    "M4_1_CAPABILITY_LEASE_ISSUER_IMPLEMENTED": "no",
+    "M4_1_SEMANTIC_AUTHORIZATION_ENGINE_IMPLEMENTED": "no",
+    "M4_1_WRITE_CAPABLE_INGRESS_IMPLEMENTED": "no",
+    "M4_1_PLAN_INIT_IMPLEMENTED": "no",
+    "M4_1_RETIREMENT_IMPLEMENTED": "no",
+    "M4_1_HERMES_MUTATION_ACTIVATION": "no",
+    "implicit_scope_leakage_count": 0
+  },
+  "planning_guard_review": {
+    "status": "PASS",
+    "PLANNING_GUARD": "PASS",
+    "PLANNING_GUARD_SELF_CONSISTENCY": "PASS",
+    "py_compile": "PASS",
+    "canonical_valid_artifacts": "PASS",
+    "network_dependency": "no",
+    "tracked_file_mutation": "no",
+    "checks_actual_structural_fields": "yes",
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "executor_guard_output": {
+      "GAP_MAP_ENTRY_COUNT": 14,
+      "NEGATIVE_CASE_COUNT": 12,
+      "NEGATIVE_CASE_REJECT_COUNT": 12,
+      "NEGATIVE_CASE_UNEXPECTED_ACCEPT_COUNT": 0
+    }
+  },
+  "negative_test_review": {
+    "status": "PASS",
+    "method": "independent structural mutations of temporary JSON artifact copies",
+    "NEGATIVE_CASE_COUNT": 12,
+    "NEGATIVE_CASE_REJECT_COUNT": 12,
+    "NEGATIVE_CASE_UNEXPECTED_ACCEPT_COUNT": 0,
+    "cases": [
+      {"id": "NEG-M41-01", "mutation": "MUTATION_INTENT_IS_AUTHORITY=yes", "result": "reject"},
+      {"id": "NEG-M41-02", "mutation": "MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE=yes", "result": "reject"},
+      {"id": "NEG-M41-03", "mutation": "runtime callable identity included in intent fingerprint", "result": "reject"},
+      {"id": "NEG-M41-04", "mutation": "DESCRIPTOR_IS_AUTHORITY=yes", "result": "reject"},
+      {"id": "NEG-M41-05", "mutation": "contract hash omits mutation scope", "result": "reject"},
+      {"id": "NEG-M41-06", "mutation": "OUTCOME_UNKNOWN may report verified success", "result": "reject"},
+      {"id": "NEG-M41-07", "mutation": "SILENT_MATERIALIZATION_FAILURE_ALLOWED=yes", "result": "reject"},
+      {"id": "NEG-M41-08", "mutation": "CONFLICT collapsed into NEEDS_SEMANTIC_CHOICE", "result": "reject"},
+      {"id": "NEG-M41-09", "mutation": "GitHub comment ID becomes Core semantic ID", "result": "reject"},
+      {"id": "NEG-M41-10", "mutation": "Capability Lease issuer implemented", "result": "reject"},
+      {"id": "NEG-M41-11", "mutation": "durable journal implemented", "result": "reject"},
+      {"id": "NEG-M41-12", "mutation": "M4-1 source implementation authorized", "result": "reject"}
+    ]
+  },
+  "cross_contract_adversarial_cases": {
+    "status": "PASS",
+    "count": 6,
+    "pass_count": 6,
+    "cases": [
+      {"id": "X1", "result": "PASS", "finding": "same semantic intent remains replay-compatible when a fresh authority CAS token changes; mechanical precondition is separately bound and checked"},
+      {"id": "X2", "result": "PASS", "finding": "changed logical target changes semantic intent and therefore the fingerprint/conflict identity"},
+      {"id": "X3", "result": "PASS", "finding": "authority requirement changes are covered by the deterministic contract hash and adapter contract identity checks"},
+      {"id": "X4", "result": "PASS", "finding": "local success plus unknown external effect yields OUTCOME_UNKNOWN with authoritative confirmation unknown and no usable success"},
+      {"id": "X5", "result": "PASS", "finding": "multiple valid lifecycle targets yield NEEDS_SEMANTIC_CHOICE without automatic selection"},
+      {"id": "X6", "result": "PASS", "finding": "stale raw authority precondition fails closed as conflict/blocked and cannot yield APPLIED_VERIFIED"}
+    ]
+  },
+  "blocking_findings": [],
+  "non_blocking_findings": [],
+  "verdict": "PASS"
+}
