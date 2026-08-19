@@ -320,7 +320,8 @@ class _TransactionBase:
     def __init__(self, store: TransactionStore, *, subject_ref: ObjectRef) -> None:
         self._store = store
         self._subject_ref = subject_ref
-        self._lock = None
+        self._lock_refs: tuple[ObjectRef, ...] = ()
+        self._locks: list[threading.RLock] = []
         self._staged: list = []
         self._active = False
         self._consumed_lease_id: str | None = None
@@ -330,16 +331,27 @@ class _TransactionBase:
         self._replayed = False
 
     def _acquire(self) -> None:
-        self._lock = self._store._subject_lock(self._subject_ref.internal_id.value)
-        self._lock.acquire()
+        refs = {self._subject_ref.internal_id.value: self._subject_ref}
+        for ref in self._lock_refs:
+            if not isinstance(ref, ObjectRef):
+                raise TypeError("transaction lock refs must be ObjectRef values")
+            refs[ref.internal_id.value] = ref
+        try:
+            for value in sorted(refs):
+                lock = self._store._subject_lock(value)
+                lock.acquire()
+                self._locks.append(lock)
+        except Exception:
+            self._release()
+            raise
 
     def _release(self) -> None:
-        if self._lock is not None and self._lock._is_owned():
+        while self._locks:
+            lock = self._locks.pop()
             try:
-                self._lock.release()
+                lock.release()
             except RuntimeError:
                 pass
-        self._lock = None
         self._active = False
 
     @property
@@ -456,8 +468,10 @@ class SubjectTransaction(_TransactionBase):
         new_state: dict,
         state_patch: dict | None = None,
         effect_refs: tuple = (),
+        lock_refs: tuple[ObjectRef, ...] = (),
     ) -> None:
         super().__init__(store, subject_ref=subject_ref)
+        self._lock_refs = tuple(lock_refs)
         self._expected_revision = expected_revision
         self._operation = _bounded_id(operation, "operation")
         self._trusted_context = trusted_context

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source R1 regression results",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE-R1-REPAIR",
+  "repair_base_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+  "repair_candidate_sha": "pending_commit",
+  "source_guard": {
+    "command": "python3 scripts/m4_4_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 35,
+    "real_successor_missing_case": true,
+    "real_successor_drift_case": true,
+    "B011": "PASS",
+    "B013": "PASS",
+    "B014": "PASS"
+  },
+  "compileall": {
+    "command": "python3 -m compileall aota_forge",
+    "result": "PASS"
+  },
+  "retirement_matrix": {
+    "R1_valid_superseded_unchanged_successor": "PASS_RETIREMENT_APPLIED_ONCE",
+    "R2_successor_missing_before_snapshot": "PASS_RETIREMENT_SUCCESSOR_INVALID_NO_EFFECT",
+    "R3_successor_removed_after_snapshot": "PASS_RETIREMENT_STALE_SNAPSHOT_NO_EFFECT",
+    "R4_successor_revision_changed_after_snapshot": "PASS_RETIREMENT_STALE_SNAPSHOT_NO_EFFECT",
+    "R5_successor_state_or_eligibility_changed_after_snapshot": "PASS_RETIREMENT_STALE_SNAPSHOT_NO_EFFECT",
+    "R6_successor_self_equivalent": "PASS_RETIREMENT_SELF_SUCCESSOR_NO_EFFECT",
+    "R7_replacement_successor_available": "PASS_NO_AUTOMATIC_RESELECTION",
+    "R8_target_snapshot_stale": "PASS_RETIREMENT_STALE_SNAPSHOT_NO_EFFECT",
+    "R9_abandoned_flow": "PASS_CANCELLED_HISTORY_PRESERVED",
+    "R10_multiple_candidates": "PASS_RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+    "R11_same_intent_replay": "PASS_RETIREMENT_REPLAYED_NO_DUPLICATE_EFFECT",
+    "R12_changed_intent_same_key": "PASS_CONFLICT_NO_EFFECT"
+  },
+  "old_candidate_negative_proof": {
+    "candidate_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+    "missing_successor_observed": "SubjectNotFoundError_ESCAPED",
+    "successor_revision_drift_observed": "RETIREMENT_APPLIED",
+    "repaired_guard_cases_reject_old_behavior": true
+  },
+  "M4_1_contract_regression": {
+    "command": "python3 scripts/m4_1_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 30,
+    "negative_test_count": 7,
+    "result_projection_case_count": 8,
+    "authoritative_effect_invalid_case_count": 8
+  },
+  "M2_relevant_regressions": {
+    "m2a_contract_foundation": "PASS 28/28",
+    "m2b_ingress_context_error_contract": "PASS 63/63",
+    "m2_successor_regression_corpus": "PASS 30/30",
+    "result": "PASS"
+  },
+  "M3_relevant_regressions": {
+    "m3_b6_revision_cas_transaction": "PASS 36/36",
+    "m3_b7_canonical_transitions": "PASS 56/56",
+    "m3_b8_projection_reconstruction": "PASS 54/54",
+    "m3_b9_subject_binding_recovery": "PASS semantic behavior; historical B9-N19 scope assertion excluded",
+    "m3_b10_behavioral_regression_foundation": "PASS 16/16",
+    "result": "PASS"
+  },
+  "historical_non_blocking_guard_observations": [
+    "B2 source-scope guard rejects the accepted descendant authority classes; semantic cases pass.",
+    "B5 exact-base guard expects a historical base; authority behavior cases pass.",
+    "B9 N19 expects transitions.py to remain untouched despite accepted M4-4 lifecycle ownership.",
+    "B89 shared-hot-file guard reports pre-existing accepted M4-4 context/results ownership; no B89 seam was changed."
+  ],
+  "ownership_safe_validation": {
+    "git_diff_check": "PASS",
+    "production_end_to_end_claimed": false,
+    "M4_4_behavioral_closure_false_claim_count": 0
+  }
+}

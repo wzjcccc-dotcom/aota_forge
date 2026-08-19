@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 source R1 repair ownership scope proof",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-4-SOURCE-R1-REPAIR",
+  "source_branch": "refs/heads/aota/m4/m4-4-source",
+  "repair_base_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+  "source_ownership_partition_read": "PASS",
+  "authoritative_partition_counts": {
+    "M4_2_EXCLUSIVE_WRITE_PATH_COUNT": 3,
+    "M4_4_EXCLUSIVE_WRITE_PATH_COUNT": 7,
+    "SHARED_READ_ONLY_PATH_COUNT": 8,
+    "INTEGRATION_ONLY_PATH_COUNT": 4,
+    "FORBIDDEN_CROSS_LANE_WRITE_PATH_COUNT": 5
+  },
+  "modified_functional_source_paths": [
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py"
+  ],
+  "modified_guard_and_evidence_paths": [
+    "scripts/m4_4_source_guard.py",
+    "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-repair.json",
+    "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-regression-results.json",
+    "deploy/evidence/issues/9/m4-4-source-repair/m4-4-source-r1-scope-proof.json"
+  ],
+  "all_source_writes_within_M4_4_exclusive_paths": true,
+  "M4_4_functional_source_paths_used": [
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py"
+  ],
+  "M4_2_EXCLUSIVE_WRITE_PATH_MUTATION_COUNT": 0,
+  "SHARED_READ_ONLY_PATH_MUTATION_COUNT": 0,
+  "INTEGRATION_ONLY_PATH_MUTATION_COUNT": 0,
+  "FORBIDDEN_CROSS_LANE_WRITE_COUNT": 0,
+  "B89_SERIAL_INTEGRATION_PATH_MUTATED": false,
+  "repair_scope": {
+    "successor_error_projection_only": true,
+    "successor_snapshot_revision_cas_only": true,
+    "retirement_redesigned": false,
+    "M4_2_implemented": false,
+    "M4_3_started": false,
+    "external_authority_write_implemented": false,
+    "durable_journal_implemented": false,
+    "integration_only_paths_modified": false
+  },
+  "forbidden_count_note": {
+    "AUTHORITATIVE_FORBIDDEN_COUNT": 5,
+    "EXPANDED_NON_WRITABLE_PATH_COUNT": 15,
+    "classification": "report_only_expansion"
+  },
+  "production_and_control_state": {
+    "github_issue_body_mutated": false,
+    "github_control_comment_mutated": false,
+    "github_event_log_appended": false,
+    "production_graph_mutated": false,
+    "deployment_performed": false,
+    "runtime_activation_performed": false
+  }
+}

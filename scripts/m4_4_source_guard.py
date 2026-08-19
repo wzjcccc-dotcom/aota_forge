@@ -88,6 +88,33 @@ def intent(operation: str, target, key: str, **semantic):
     )
 
 
+def retirement_request(context, plan_ref, snapshot, key: str, kind: str, successor_ref=None, *, with_lease=True):
+    semantic = {"retirement_kind": kind}
+    if successor_ref is not None:
+        semantic["successor_ref"] = successor_ref.serialize()
+    lease = (
+        make_test_lease(
+            operation="plan_retirement",
+            target_ref=plan_ref,
+            expected_revision=snapshot.source_revision,
+            lease_id=key,
+        )
+        if with_lease
+        else None
+    )
+    return PlanRetirementRequest(
+        trusted_context=context,
+        plan_ref=plan_ref,
+        snapshot=snapshot,
+        intent=intent("plan_retirement", plan_ref, key, **semantic),
+        preconditions=preconditions(snapshot.source_revision),
+        trusted_time=fixture_time(),
+        retirement_kind=kind,
+        successor_ref=successor_ref,
+        lease=lease,
+    )
+
+
 def main() -> int:
     context = make_test_context()
     now = fixture_time()
@@ -451,6 +478,206 @@ def main() -> int:
         check("T14 superseded requires exact successor", required_result.code == "RETIREMENT_SUCCESSOR_REQUIRED")
         check("T15 self-successor is rejected", self_result.code == "RETIREMENT_SELF_SUCCESSOR")
 
+        # T23-T30: superseded successor resolution is exact, fresh, and fail closed.
+        valid_superseded_store = make_test_store()
+        valid_superseded_target = make_plan(valid_superseded_store, "plan_t23_target")
+        valid_superseded_successor = make_plan(valid_superseded_store, "plan_t23_successor")
+        valid_superseded_snapshot = capture_retirement_snapshot(valid_superseded_store, valid_superseded_target)
+        valid_superseded_result = retire_plan(
+            valid_superseded_store,
+            retirement_request(
+                context,
+                valid_superseded_target,
+                valid_superseded_snapshot,
+                "t23-valid-superseded",
+                "superseded",
+                valid_superseded_successor,
+            ),
+        )
+        check(
+            "T23 unchanged successor applies once",
+            valid_superseded_result.code == "RETIREMENT_APPLIED"
+            and valid_superseded_store.read_subject(valid_superseded_target).mechanical_state["state"] == "superseded"
+            and valid_superseded_store.current_revision(valid_superseded_target).revision_number == 2
+            and valid_superseded_store.current_revision(valid_superseded_successor).revision_number == 1
+            and len(valid_superseded_snapshot.successor_snapshots) == 1
+            and valid_superseded_snapshot.successor_snapshots[0].source_revision == 1
+            and bool(valid_superseded_snapshot.successor_snapshots[0].revision_token),
+        )
+
+        missing_successor_store = make_test_store()
+        missing_successor_target = make_plan(missing_successor_store, "plan_t24_target")
+        missing_successor_ref = make_plan(missing_successor_store, "plan_t24_missing")
+        missing_successor_store._subjects.pop(missing_successor_ref.internal_id.value)
+        missing_successor_snapshot = capture_retirement_snapshot(missing_successor_store, missing_successor_target)
+        missing_successor_result = retire_plan(
+            missing_successor_store,
+            retirement_request(
+                context,
+                missing_successor_target,
+                missing_successor_snapshot,
+                "t24-missing-successor",
+                "superseded",
+                missing_successor_ref,
+                with_lease=False,
+            ),
+        )
+        check(
+            "T24 missing successor is lifecycle invalid with no effect",
+            missing_successor_result.code == "RETIREMENT_SUCCESSOR_INVALID"
+            and missing_successor_result.mutation_effect is MutationEffect.NO_EFFECT
+            and lifecycle_envelope(missing_successor_result)["lifecycle_code"] == "RETIREMENT_SUCCESSOR_INVALID"
+            and lifecycle_envelope(missing_successor_result)["errors"][0]["code"] == "RETIREMENT_SUCCESSOR_INVALID"
+            and missing_successor_store.read_subject(missing_successor_target).mechanical_state["state"] == "initialized"
+            and missing_successor_store.current_revision(missing_successor_target).revision_number == 1,
+        )
+
+        removed_successor_store = make_test_store()
+        removed_successor_target = make_plan(removed_successor_store, "plan_t25_target")
+        removed_successor_ref = make_plan(removed_successor_store, "plan_t25_successor")
+        removed_successor_snapshot = capture_retirement_snapshot(removed_successor_store, removed_successor_target)
+        removed_successor_store._subjects.pop(removed_successor_ref.internal_id.value)
+        removed_successor_result = retire_plan(
+            removed_successor_store,
+            retirement_request(
+                context,
+                removed_successor_target,
+                removed_successor_snapshot,
+                "t25-removed-successor",
+                "superseded",
+                removed_successor_ref,
+            ),
+        )
+        check(
+            "T25 removed successor after snapshot is stale with no effect",
+            removed_successor_result.code == "RETIREMENT_STALE_SNAPSHOT"
+            and removed_successor_store.read_subject(removed_successor_target).mechanical_state["state"] == "initialized",
+        )
+
+        drift_successor_store = make_test_store()
+        drift_successor_target = make_plan(drift_successor_store, "plan_t26_target")
+        drift_successor_ref = make_plan(drift_successor_store, "plan_t26_successor")
+        drift_successor_snapshot = capture_retirement_snapshot(drift_successor_store, drift_successor_target)
+        drift_successor = drift_successor_store.read_subject(drift_successor_ref)
+        drift_successor_store._put_staged(set_revision_number(drift_successor, 2))
+        drift_successor_result = retire_plan(
+            drift_successor_store,
+            retirement_request(
+                context,
+                drift_successor_target,
+                drift_successor_snapshot,
+                "t26-successor-revision-drift",
+                "superseded",
+                drift_successor_ref,
+            ),
+        )
+        check(
+            "T26 successor revision drift is stale with no effect",
+            drift_successor_result.code == "RETIREMENT_STALE_SNAPSHOT"
+            and drift_successor_store.read_subject(drift_successor_target).mechanical_state["state"] == "initialized"
+            and drift_successor_store.current_revision(drift_successor_ref).revision_number == 2,
+        )
+
+        state_drift_successor_store = make_test_store()
+        state_drift_successor_target = make_plan(state_drift_successor_store, "plan_t27_target")
+        state_drift_successor_ref = make_plan(state_drift_successor_store, "plan_t27_successor")
+        state_drift_successor_snapshot = capture_retirement_snapshot(state_drift_successor_store, state_drift_successor_target)
+        state_drift_successor = state_drift_successor_store.read_subject(state_drift_successor_ref)
+        successor_state = dict(state_drift_successor.mechanical_state)
+        successor_state["state"] = "paused"
+        state_drift_successor_store._put_staged(replace(state_drift_successor, mechanical_state=successor_state))
+        state_drift_successor_result = retire_plan(
+            state_drift_successor_store,
+            retirement_request(
+                context,
+                state_drift_successor_target,
+                state_drift_successor_snapshot,
+                "t27-successor-state-drift",
+                "superseded",
+                state_drift_successor_ref,
+            ),
+        )
+        check(
+            "T27 successor eligibility/state drift is stale with no effect",
+            state_drift_successor_result.code == "RETIREMENT_STALE_SNAPSHOT"
+            and state_drift_successor_store.read_subject(state_drift_successor_target).mechanical_state["state"] == "initialized",
+        )
+
+        replacement_successor_store = make_test_store()
+        replacement_successor_target = make_plan(replacement_successor_store, "plan_t28_target")
+        replacement_successor_ref = make_plan(replacement_successor_store, "plan_t28_successor")
+        replacement_successor_snapshot = capture_retirement_snapshot(replacement_successor_store, replacement_successor_target)
+        replacement_successor_new = make_plan(replacement_successor_store, "plan_t28_replacement")
+        replacement_successor_result = retire_plan(
+            replacement_successor_store,
+            retirement_request(
+                context,
+                replacement_successor_target,
+                replacement_successor_snapshot,
+                "t28-no-reselection",
+                "superseded",
+                replacement_successor_ref,
+            ),
+        )
+        check(
+            "T28 replacement successor does not trigger reselection",
+            replacement_successor_result.code == "RETIREMENT_STALE_SNAPSHOT"
+            and replacement_successor_store.read_subject(replacement_successor_target).mechanical_state["state"] == "initialized"
+            and replacement_successor_store.read_subject(replacement_successor_new).mechanical_state["state"] == "initialized",
+        )
+
+        retirement_replay_store = make_test_store()
+        retirement_replay_target = make_plan(retirement_replay_store, "plan_t29_target")
+        retirement_replay_successor = make_plan(retirement_replay_store, "plan_t29_successor")
+        retirement_replay_snapshot = capture_retirement_snapshot(retirement_replay_store, retirement_replay_target)
+        retirement_replay_request = retirement_request(
+            context,
+            retirement_replay_target,
+            retirement_replay_snapshot,
+            "t29-retirement-replay",
+            "superseded",
+            retirement_replay_successor,
+        )
+        retirement_replay_first = retire_plan(retirement_replay_store, retirement_replay_request)
+        retirement_replay_second = retire_plan(retirement_replay_store, retirement_replay_request)
+        check(
+            "T29 unchanged retirement intent replays without duplicate effect",
+            retirement_replay_first.code == "RETIREMENT_APPLIED"
+            and retirement_replay_second.code == "RETIREMENT_REPLAYED"
+            and retirement_replay_store.current_revision(retirement_replay_target).revision_number == 2,
+        )
+
+        retirement_conflict_store = make_test_store()
+        retirement_conflict_target = make_plan(retirement_conflict_store, "plan_t30_target")
+        retirement_conflict_snapshot = capture_retirement_snapshot(retirement_conflict_store, retirement_conflict_target)
+        retirement_conflict_first = retire_plan(
+            retirement_conflict_store,
+            retirement_request(
+                context,
+                retirement_conflict_target,
+                retirement_conflict_snapshot,
+                "t30-changed-intent",
+                "abandoned",
+            ),
+        )
+        retirement_conflict_second = retire_plan(
+            retirement_conflict_store,
+            retirement_request(
+                context,
+                retirement_conflict_target,
+                retirement_conflict_snapshot,
+                "t30-changed-intent",
+                "superseded",
+                with_lease=False,
+            ),
+        )
+        check(
+            "T30 changed retirement intent conflicts on same key",
+            retirement_conflict_first.code == "RETIREMENT_APPLIED"
+            and retirement_conflict_second.code == "CONFLICT"
+            and retirement_conflict_store.read_subject(retirement_conflict_target).mechanical_state["state"] == "cancelled",
+        )
+
         # T16/T17: protection is distinct and fail closed.
         active_store = make_test_store()
         active_ref = make_plan(active_store, "plan_t16", active=True, current=True)
@@ -585,6 +812,8 @@ def main() -> int:
     print("M4_4_B011_SOURCE_BEHAVIOR=PASS")
     print("M4_4_B013_SOURCE_BEHAVIOR=PASS")
     print("M4_4_B014_SOURCE_BEHAVIOR=PASS")
+    print("SOURCE_GUARD_REAL_SUCCESSOR_MISSING_CASE=yes")
+    print("SOURCE_GUARD_REAL_SUCCESSOR_DRIFT_CASE=yes")
     print("M4_4_SOURCE_GUARD=PASS")
     return 0
 

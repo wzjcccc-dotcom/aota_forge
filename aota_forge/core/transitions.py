@@ -68,6 +68,7 @@ from aota_forge.core.revision import (
     IdempotencyConflictError,
     LeaseReplayDeniedError,
     MutationError,
+    SubjectNotFoundError,
     StaleRevisionError,
     revision_number_of,
 )
@@ -303,6 +304,28 @@ class PlanInitRequest:
 
 
 @dataclass(frozen=True)
+class RetirementSuccessorSnapshot:
+    """Exact stage-one freshness facts for one valid successor candidate."""
+
+    successor_ref: str
+    source_revision: int
+    revision_token: str
+    source_digest: str
+    plan_state: str
+    eligible: bool
+
+    def to_dict(self) -> dict:
+        return {
+            "successor_ref": self.successor_ref,
+            "source_revision": self.source_revision,
+            "revision_token": self.revision_token,
+            "source_digest": self.source_digest,
+            "plan_state": self.plan_state,
+            "eligible": self.eligible,
+        }
+
+
+@dataclass(frozen=True)
 class RetirementCandidateSnapshot:
     """Bounded stage-one retirement evidence bound to one observed Plan state."""
 
@@ -318,6 +341,7 @@ class RetirementCandidateSnapshot:
     candidate_identity: str
     authority_source_revision: str | int | None
     authority_observed_raw_digest: str | None
+    successor_snapshots: tuple[RetirementSuccessorSnapshot, ...]
 
     def to_dict(self) -> dict:
         return {
@@ -333,6 +357,7 @@ class RetirementCandidateSnapshot:
             "candidate_identity": self.candidate_identity,
             "authority_source_revision": self.authority_source_revision,
             "authority_observed_raw_digest": self.authority_observed_raw_digest,
+            "successor_snapshots": [item.to_dict() for item in self.successor_snapshots],
         }
 
 
@@ -635,16 +660,44 @@ def _eligible_plan(subject: records.Subject) -> bool:
     )
 
 
-def _successor_refs(store: TransactionStore, target: ObjectRef) -> tuple[str, ...]:
-    refs = []
+def _eligible_successor(subject: records.Subject) -> bool:
+    state = subject.mechanical_state
+    return (
+        _is_plan_subject(subject)
+        and not _is_retired_state(state)
+        and _plan_state(subject) not in {"uninitialized", "unknown"}
+    )
+
+
+def _capture_successor_snapshot(
+    store: TransactionStore,
+    successor_ref: ObjectRef,
+    successor: records.Subject,
+) -> RetirementSuccessorSnapshot:
+    revision = store.current_revision(successor_ref)
+    return RetirementSuccessorSnapshot(
+        successor_ref=successor_ref.serialize(),
+        source_revision=revision.revision_number,
+        revision_token=revision.revision_token,
+        source_digest=canonical_fingerprint({"subject": successor.canonical_fields()}),
+        plan_state=_plan_state(successor),
+        eligible=_eligible_successor(successor),
+    )
+
+
+def _successor_snapshots(
+    store: TransactionStore,
+    target: ObjectRef,
+) -> tuple[RetirementSuccessorSnapshot, ...]:
+    snapshots = []
     for subject in store.subjects():
         candidate = make_object_ref(IdKind.SUBJECT, subject.subject_id)
         if candidate == target or not _is_plan_subject(subject):
             continue
-        if _is_retired_state(subject.mechanical_state) or _plan_state(subject) in {"uninitialized", "unknown"}:
+        if not _eligible_successor(subject):
             continue
-        refs.append(candidate.serialize())
-    return tuple(refs)
+        snapshots.append(_capture_successor_snapshot(store, candidate, subject))
+    return tuple(snapshots)
 
 
 def _snapshot_identity(snapshot: RetirementCandidateSnapshot) -> str:
@@ -668,6 +721,7 @@ def _capture_retirement_snapshot(
         if _eligible_plan(subject)
         else ()
     )
+    successor_snapshots = _successor_snapshots(store, plan_ref)
     snapshot = RetirementCandidateSnapshot(
         snapshot_identity="",
         source_revision=revision_number_of(subject),
@@ -677,10 +731,11 @@ def _capture_retirement_snapshot(
         active_current_protection=active_current,
         running_task_protection=running_task,
         eligible_retirement_kinds=eligible,
-        successor_eligibility=_successor_refs(store, plan_ref),
+        successor_eligibility=tuple(item.successor_ref for item in successor_snapshots),
         candidate_identity=plan_ref.serialize(),
         authority_source_revision=state.get("authority_source_revision"),
         authority_observed_raw_digest=state.get("authority_observed_raw_digest"),
+        successor_snapshots=successor_snapshots,
     )
     return replace(snapshot, snapshot_identity=_snapshot_identity(snapshot))
 
@@ -690,6 +745,75 @@ def _snapshot_matches_current(
     current: RetirementCandidateSnapshot,
 ) -> bool:
     return snapshot.to_dict() == current.to_dict()
+
+
+def _bound_successor_snapshot(
+    snapshot: RetirementCandidateSnapshot,
+    successor_ref: ObjectRef,
+) -> RetirementSuccessorSnapshot | None:
+    successor_value = successor_ref.serialize()
+    return next(
+        (item for item in snapshot.successor_snapshots if item.successor_ref == successor_value),
+        None,
+    )
+
+
+def _revalidate_successor(
+    store: TransactionStore,
+    *,
+    plan_ref: ObjectRef,
+    successor_ref: ObjectRef,
+    snapshot: RetirementCandidateSnapshot,
+    correlation_id: str | None,
+) -> tuple[records.Subject | None, LifecycleResult | None]:
+    """Re-resolve the exact selected successor while its CAS lock is held."""
+    bound = _bound_successor_snapshot(snapshot, successor_ref)
+    try:
+        successor = store.read_subject(successor_ref)
+    except SubjectNotFoundError:
+        code = "RETIREMENT_STALE_SNAPSHOT" if bound is not None else "RETIREMENT_SUCCESSOR_INVALID"
+        return None, _lifecycle_error(
+            "plan_retirement",
+            code,
+            "successor disappeared after the retirement snapshot"
+            if bound is not None
+            else "successor_ref does not resolve to a canonical Plan",
+            correlation_id=correlation_id,
+        )
+    if successor_ref == plan_ref or not _eligible_successor(successor):
+        code = "RETIREMENT_STALE_SNAPSHOT" if bound is not None else "RETIREMENT_SUCCESSOR_INVALID"
+        return None, _lifecycle_error(
+            "plan_retirement",
+            code,
+            "successor is no longer the exact valid canonical successor"
+            if bound is not None
+            else "successor_ref is not a valid canonical successor",
+            correlation_id=correlation_id,
+        )
+    if bound is None:
+        return successor, _lifecycle_error(
+            "plan_retirement",
+            "RETIREMENT_STALE_SNAPSHOT",
+            "successor was not present in the selected snapshot",
+            correlation_id=correlation_id,
+        )
+    try:
+        current = _capture_successor_snapshot(store, successor_ref, successor)
+    except SubjectNotFoundError:
+        return None, _lifecycle_error(
+            "plan_retirement",
+            "RETIREMENT_STALE_SNAPSHOT",
+            "successor disappeared while its snapshot was being revalidated",
+            correlation_id=correlation_id,
+        )
+    if current != bound:
+        return successor, _lifecycle_error(
+            "plan_retirement",
+            "RETIREMENT_STALE_SNAPSHOT",
+            "successor revision or freshness token changed after the retirement snapshot",
+            correlation_id=correlation_id,
+        )
+    return successor, None
 
 
 # ---------------------------------------------------------------------------
@@ -1408,7 +1532,7 @@ def retire_plan(store: TransactionStore, req: PlanRetirementRequest) -> Lifecycl
             )
         try:
             successor = store.read_subject(successor_ref)
-        except LookupError:
+        except SubjectNotFoundError:
             return _lifecycle_error(
                 "plan_retirement",
                 "RETIREMENT_SUCCESSOR_INVALID",
@@ -1428,6 +1552,13 @@ def retire_plan(store: TransactionStore, req: PlanRetirementRequest) -> Lifecycl
                 "plan_retirement",
                 "RETIREMENT_STALE_SNAPSHOT",
                 "successor validity was not present in the selected snapshot",
+                correlation_id=intent.correlation_id,
+            )
+        if _bound_successor_snapshot(snapshot, successor_ref) is None:
+            return _lifecycle_error(
+                "plan_retirement",
+                "RETIREMENT_STALE_SNAPSHOT",
+                "successor freshness facts were not present in the selected snapshot",
                 correlation_id=intent.correlation_id,
             )
     if not isinstance(req.lease, CapabilityLease):
@@ -1460,7 +1591,94 @@ def retire_plan(store: TransactionStore, req: PlanRetirementRequest) -> Lifecycl
             trusted_time=req.trusted_time,
             new_state={"lifecycle": "plan_retirement", "state_patch": state_patch},
             state_patch=state_patch,
+            lock_refs=(successor_ref,) if req.retirement_kind == "superseded" else (),
         ).begin()
+        if req.retirement_kind == "superseded":
+            _, successor_failure = _revalidate_successor(
+                store,
+                plan_ref=plan_ref,
+                successor_ref=successor_ref,
+                snapshot=snapshot,
+                correlation_id=intent.correlation_id,
+            )
+            if successor_failure is not None:
+                tx.rollback()
+                return successor_failure
+            try:
+                locked_subject = _resolve_subject(store, plan_ref)
+                locked_snapshot = _capture_retirement_snapshot(store, plan_ref)
+            except (TransitionError, LookupError) as exc:
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    "RETIREMENT_STALE_SNAPSHOT",
+                    str(exc),
+                    correlation_id=intent.correlation_id,
+                )
+            if not _snapshot_matches_current(snapshot, locked_snapshot):
+                tx.rollback()
+                authority_changed = (
+                    snapshot.authority_source_revision != locked_snapshot.authority_source_revision
+                    or snapshot.authority_observed_raw_digest != locked_snapshot.authority_observed_raw_digest
+                )
+                code = "RETIREMENT_STALE_AUTHORITY_PRECONDITION" if authority_changed else "RETIREMENT_STALE_SNAPSHOT"
+                return _lifecycle_error(
+                    "plan_retirement",
+                    code,
+                    "retirement snapshot is stale; no snapshot refresh is permitted",
+                    correlation_id=intent.correlation_id,
+                )
+            if (
+                not isinstance(req.preconditions, MutationPreconditions)
+                or req.preconditions.authority_source_revision != snapshot.authority_source_revision
+                or req.preconditions.authority_observed_raw_digest != snapshot.authority_observed_raw_digest
+            ):
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    "RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+                    "retirement authority precondition does not match the selected snapshot",
+                    correlation_id=intent.correlation_id,
+                )
+            locked_precondition_code = _precondition_failure(
+                locked_subject,
+                req.preconditions,
+                expected_subject_revision=snapshot.source_revision,
+                authority_code="RETIREMENT_STALE_AUTHORITY_PRECONDITION",
+                subject_code="RETIREMENT_STALE_SNAPSHOT",
+            )
+            if locked_precondition_code is not None:
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    locked_precondition_code,
+                    "retirement precondition failed closed",
+                    correlation_id=intent.correlation_id,
+                )
+            if locked_snapshot.active_current_protection:
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    "RETIREMENT_TARGET_PROTECTED",
+                    "active/current Plan retirement is protected",
+                    correlation_id=intent.correlation_id,
+                )
+            if locked_snapshot.running_task_protection:
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    "RETIREMENT_RUNNING_TASK_PROTECTED",
+                    "Plan with a running task is protected",
+                    correlation_id=intent.correlation_id,
+                )
+            if not locked_snapshot.eligible_retirement_kinds:
+                tx.rollback()
+                return _lifecycle_error(
+                    "plan_retirement",
+                    "RETIREMENT_TARGET_PROTECTED",
+                    "target is no longer eligible for retirement",
+                    correlation_id=intent.correlation_id,
+                )
         result = tx.commit()
     except StaleRevisionError:
         return _lifecycle_error(
@@ -1517,6 +1735,7 @@ __all__ = [
     "RecordDecisionRequest",
     "CreateFollowupSubjectRequest",
     "PlanInitRequest",
+    "RetirementSuccessorSnapshot",
     "RetirementCandidateSnapshot",
     "RetirementCandidateResolution",
     "PlanRetirementRequest",
