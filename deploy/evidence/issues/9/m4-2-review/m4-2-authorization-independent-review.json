@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 Trusted Mutation Authorization Plan Independent Review",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-R1",
+  "review_only": true,
+  "repair_performed": false,
+  "read_before_write": "PASS",
+  "review_target_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "accepted_m4_1_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "preflight": {
+    "github_identity_verified": "wzjcccc-dotcom",
+    "issue_repository": "wzjcccc-dotcom/aota-hermes-tools",
+    "M4_1_STATUS": "completed",
+    "M4_1_KNOWN_GOOD_CHECKPOINT": "d74953be16b103fbd09b0ee18b203881244c4f95",
+    "M4_2_PLANNING_READY": "yes",
+    "M4_2_EXECUTION_AUTHORIZED": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "superseded": false
+  },
+  "lineage": {
+    "target_sha_verified": "yes",
+    "target_remote_ref_verified": "yes",
+    "target_remote_ref": "refs/heads/aota/m4/m4-2-authorization-planning",
+    "target_ancestry_verified": "yes",
+    "candidate_changed_paths_verified": "yes",
+    "unexpected_changed_path_count": 0,
+    "functional_core_source_changed": "no",
+    "candidate_changed_paths": [
+      "deploy/evidence/issues/9/m4-2/m4-2-authorization-error-contract.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-capability-lease-issuance-contract.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-current-authorization-capability-audit.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-m4-3-handoff.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-regression-handoff-map.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-source-ownership-forecast.json",
+      "deploy/evidence/issues/9/m4-2/m4-2-trusted-mutation-authorization-contract.json",
+      "scripts/m4_2_authorization_plan_guard.py"
+    ]
+  },
+  "authorization_capability_audit": {
+    "review": "PASS",
+    "entry_count": 21,
+    "misclassification_count": 0,
+    "production_issuance_claim_detected": false,
+    "source_review": [
+      {"component": "AuthorityEngine", "classification": "REUSE_AS_IS", "source": "authority.py:252-374", "verdict": "PASS; evaluator validates supplied facts and does not select semantic intent or write the graph"},
+      {"component": "AuthorityRequest", "classification": "EXTEND_IN_M4_2", "source": "authority.py:218-232", "verdict": "PASS; existing request lacks complete intent, reservation and external precondition binding"},
+      {"component": "CapabilityLease", "classification": "EXTEND_IN_M4_2", "source": "capability_lease.py:64-86", "verdict": "PASS; bounded immutable value object, not durable authority or issuer"},
+      {"component": "lease validation", "classification": "EXTEND_IN_M4_2", "source": "capability_lease.py:88-140; authority.py:304-333", "verdict": "PASS; structural and mechanical checks exist, exact intent/reservation/external binding does not"},
+      {"component": "lease issuance", "classification": "EXTEND_IN_M4_2", "source": "capability_lease.py:64-148", "verdict": "PASS; no issuer or issuance function exists"},
+      {"component": "lease expiry", "classification": "REUSE_AS_IS", "source": "capability_lease.py:20-25,139-140", "verdict": "PASS; bounded TTL and now >= expires_at invalidation are local primitives only"},
+      {"component": "lease consumption", "classification": "CONSUME_LATER", "source": "capability_lease.py:146-148; transaction.py:294-341,424-426", "verdict": "PASS; fixture copy and isolated transaction registry are not production durable consumption"},
+      {"component": "lease revocation", "classification": "CONSUME_LATER", "source": "capability_lease.py:142-144; authority.py:321-324", "verdict": "PASS; fixture copy and evaluator rejection do not provide durable coordinated revocation"},
+      {"component": "authorization evidence", "classification": "EXTEND_IN_M4_2", "source": "authority.py:304-374; M4-0 D5", "verdict": "PASS; supplied evidence is evaluated, but no durable authorization/reservation materialization exists"},
+      {"component": "approval evidence", "classification": "REUSE_AS_IS", "source": "authority.py:123-155,356-390", "verdict": "PASS; typed approval is distinct and digest/operation/target/revision/scope bound"},
+      {"component": "MaterializedDecisionEvidence", "classification": "REUSE_AS_IS", "source": "authority.py:158-215,365-413", "verdict": "PASS; exact existing Decision evidence is validated, not inferred or created"},
+      {"component": "MutationIntent", "classification": "REUSE_AS_IS", "source": "contracts/mutation.py:68-129", "verdict": "PASS; semantic request identity excludes trusted authority fields and grants no permission"},
+      {"component": "intent fingerprint", "classification": "EXTEND_IN_M4_2", "source": "contracts/mutation.py:119-123", "verdict": "PASS; deterministic semantic digest exists but is not yet bound to an authorization reservation or lease"},
+      {"component": "Subject revision binding", "classification": "EXTEND_IN_M4_2", "source": "authority.py:349-355; transaction.py:416-446", "verdict": "PASS; isolated Subject CAS binding exists and remains distinct from external authority revision"},
+      {"component": "external authority precondition binding", "classification": "CONSUME_LATER", "source": "contracts/mutation.py:49-65; M4-0 D6", "verdict": "PASS; raw revision/digest domains are named, but no external read/CAS/adapter binding exists"},
+      {"component": "contract hash binding", "classification": "REUSE_AS_IS", "source": "contracts/descriptor.py:167-175; authority.py:315-318", "verdict": "PASS; deterministic descriptor hash and mismatch rejection exist without complete issuer reservation"},
+      {"component": "trusted principal", "classification": "REUSE_AS_IS", "source": "context.py:188-218", "verdict": "PASS; only runtime-bound TrustedContext promotes a principal to trusted"},
+      {"component": "context resolver", "classification": "REUSE_AS_IS", "source": "context.py:261-302", "verdict": "PASS; deterministic context assembly does not select Subjects/projects or mint authority"},
+      {"component": "idempotency", "classification": "CONSUME_LATER", "source": "idempotency.py:47-96; transaction.py:297-312", "verdict": "PASS; same-key replay and changed-fingerprint conflict are isolated dedupe mechanics, not authorization"},
+      {"component": "transaction-local lease consumption", "classification": "CONSUME_LATER", "source": "transaction.py:294-341", "verdict": "PASS; atomic test-store staging is explicitly non-authoritative and outside planning closure"},
+      {"component": "unknown-outcome recovery", "classification": "CONSUME_LATER", "source": "M4-0 architecture freeze J4/J5/D6; contracts/mutation.py:132-157", "verdict": "PASS; reconcile-before-retry is frozen, while external journal/readback/recovery runtime is absent"}
+    ]
+  },
+  "protocol_reviews": {
+    "trusted_mutation_authorization": "PASS",
+    "TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION": "no",
+    "durable_authorization_evidence_allowed": "yes",
+    "capability_lease_is_durable_semantic_authority": "no",
+    "capability_lease_issuance": "PASS",
+    "LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER": "no",
+    "approval_decision_separation": "PASS",
+    "APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE": "no",
+    "lease_exact_binding": "PASS",
+    "lease_lifecycle": "PASS",
+    "unknown_outcome_retry": "PASS",
+    "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+    "LEASE_MAY_CROSS_UNKNOWN_OUTCOME_RETRY": "no",
+    "revision_domain": "PASS",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+    "idempotency": "PASS",
+    "authorization_error_contract": "PASS",
+    "m4_3_handoff": "PASS",
+    "M4_2_PASS_AUTOMATICALLY_AUTHORIZES_M4_3": "no"
+  },
+  "source_ownership_forecast_review": {
+    "review": "PASS",
+    "M4_2_M4_4_SOURCE_PARALLEL_SAFETY": "pending_cross_lane_reconciliation",
+    "candidate_forecast_correctly_identifies_shared_files": true,
+    "compared_m4_4_forecast_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+    "shared_overlap": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/**",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/idempotency.py",
+      "tests/**",
+      "exports"
+    ],
+    "source_parallelism_finalized": false
+  },
+  "regression_handoff_review": {
+    "review": "PASS",
+    "mappings_reviewed": ["WCTX-1", "BIND-1", "DRIFT-1", "RECOVERY-1", "RC2-1", "B014-F", "B011", "B013", "B014"],
+    "M4_2_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0
+  },
+  "planning_guard_review": {
+    "candidate_guard_py_compile": "PASS",
+    "candidate_guard_execution": "PASS",
+    "candidate_guard_negative_cases": "12/12",
+    "planning_guard_self_consistency": "PASS",
+    "tautological_validation_detected": "no",
+    "test_name_special_casing_detected": "no",
+    "critical_checks_substring_only": "no",
+    "independent_review_guard": "scripts/m4_2_authorization_independent_review_guard.py",
+    "independent_review_guard_execution": "PASS"
+  },
+  "negative_cases": {
+    "count": 12,
+    "reject_count": 12,
+    "unexpected_accept_count": 0,
+    "cases": [
+      {"id": "NEG-M42-R1-01", "mutation": "issuer is semantic decision maker", "result": "reject"},
+      {"id": "NEG-M42-R1-02", "mutation": "issuer may widen scope", "result": "reject"},
+      {"id": "NEG-M42-R1-03", "mutation": "lease not bound to intent", "result": "reject"},
+      {"id": "NEG-M42-R1-04", "mutation": "lease not bound to target", "result": "reject"},
+      {"id": "NEG-M42-R1-05", "mutation": "approval substitutes materialized Decision", "result": "reject"},
+      {"id": "NEG-M42-R1-06", "mutation": "expired lease reusable", "result": "reject"},
+      {"id": "NEG-M42-R1-07", "mutation": "consumed lease reusable", "result": "reject"},
+      {"id": "NEG-M42-R1-08", "mutation": "unknown outcome reuses old lease", "result": "reject"},
+      {"id": "NEG-M42-R1-09", "mutation": "normalized Plan digest acts as external CAS", "result": "reject"},
+      {"id": "NEG-M42-R1-10", "mutation": "model self-asserts trusted lease", "result": "reject"},
+      {"id": "NEG-M42-R1-11", "mutation": "M4-2 contains external authority write", "result": "reject"},
+      {"id": "NEG-M42-R1-12", "mutation": "M4-2 alone authorizes M4-3", "result": "reject"}
+    ]
+  },
+  "cross_contract_cases": {
+    "count": 6,
+    "pass_count": 6,
+    "cases": [
+      {"id": "X1", "case": "same semantic intent, fresh precondition", "result": "same semantic identity; new mechanical validation"},
+      {"id": "X2", "case": "same lease, changed target", "result": "reject"},
+      {"id": "X3", "case": "same lease, changed contract hash", "result": "reject"},
+      {"id": "X4", "case": "same semantic approval, missing required exact Decision", "result": "reject"},
+      {"id": "X5", "case": "unknown outcome, lease still unexpired", "result": "reconciliation required; no blind reuse"},
+      {"id": "X6", "case": "multiple valid Subjects", "result": "NEEDS_SEMANTIC_CHOICE; issuer cannot choose"}
+    ]
+  },
+  "findings": {
+    "blocking_finding_count": 0,
+    "non_blocking_finding_count": 0,
+    "blocking": [],
+    "non_blocking": []
+  },
+  "state": {
+    "M4_2_IS_KNOWN_GOOD_CHECKPOINT": "no",
+    "M4_2_EXECUTION_AUTHORIZED": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "review_verdict": "PASS",
+    "next_ready_set": "m4_2_plan_governance_reconciliation",
+    "next_action": "Reconcile this independent PASS with the accepted M4-4 ownership forecast and governance records; do not authorize M4-2 implementation or M4-3 execution from this review alone."
+  }
+}
