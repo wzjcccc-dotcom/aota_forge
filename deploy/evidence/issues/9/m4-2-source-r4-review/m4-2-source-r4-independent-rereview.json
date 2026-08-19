@@ -351,6 +351,7 @@
   "m4_2_is_known_good_checkpoint": "no",
   "m4_4_is_known_good_checkpoint": "no",
   "m4_3_execution_authorized": "no",
-  "review_commit_created": "pending_commit",
-  "review_push_performed": "pending_push"
+  "review_commit_created": "yes",
+  "review_push_performed": "yes",
+  "review_remote_ref": "refs/heads/aota/m4/m4-2-source-r4-independent-review"
 }
