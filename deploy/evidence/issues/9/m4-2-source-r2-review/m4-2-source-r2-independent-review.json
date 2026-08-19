@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R2 focused independent rereview",
+  "status": "FAIL",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R2",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "read_before_write": "PASS",
+  "review_target_sha": "299a146a1d04086d6d7770a4ce55e7569c760922",
+  "repair_base_sha": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "failed_r1_review_evidence_sha": "237794ced0a8677c57eb9b902503ca6f36502cdb",
+  "source_branch": "refs/heads/aota/m4/m4-2-source",
+  "governance_preflight": {
+    "github_identity": "wzjcccc-dotcom",
+    "issue_read": "PASS",
+    "m4_2_source_implementation_authorized": "yes",
+    "m4_3_execution_authorized": "no",
+    "ownership_partition_read": "PASS",
+    "control_comment_mutated": "no",
+    "issue_body_mutated": "no"
+  },
+  "lineage": {
+    "target_sha_verified": "yes",
+    "target_remote_ref_verified": "yes",
+    "target_remote_sha": "299a146a1d04086d6d7770a4ce55e7569c760922",
+    "target_ancestry_verified": "yes",
+    "ancestry": [
+      "d74953be16b103fbd09b0ee18b203881244c4f95",
+      "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+      "299a146a1d04086d6d7770a4ce55e7569c760922"
+    ],
+    "accepted_plan_sha_verified": "yes",
+    "failed_r1_review_evidence_sha_verified": "yes"
+  },
+  "repair_diff": {
+    "expected_source_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/authorization.py",
+      "scripts/m4_2_source_guard.py"
+    ],
+    "actual_repair_source_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/authorization.py",
+      "scripts/m4_2_source_guard.py"
+    ],
+    "actual_repair_evidence_paths": [
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-repair.json",
+      "deploy/evidence/issues/9/m4-2-source-repair/m4-2-source-r1-scope-proof.json"
+    ],
+    "unexpected_source_path_count": 0
+  },
+  "source_ownership": {
+    "m4_2_exclusive_write_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "m4_4_exclusive_write_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "shared_read_only_paths": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "integration_only_paths": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "forbidden_cross_lane_write_path_count": 5,
+    "all_source_writes_within_m4_2_exclusive_paths": "yes",
+    "m4_4_exclusive_write_path_mutation_count": 0,
+    "shared_read_only_path_mutation_count": 0,
+    "integration_only_path_mutation_count": 0,
+    "forbidden_cross_lane_write_count": 0,
+    "deferred_integration_seams_review": "PASS"
+  },
+  "prior_blockers": {
+    "input_count": 3,
+    "closed_count": 2,
+    "B1_guard_provenance": "closed",
+    "B2_materialized_decision_validation": "not fully closed",
+    "B3_semantic_authority_identifiers": "closed"
+  },
+  "B1_guard_provenance_review": {
+    "result": "PASS",
+    "guard_descendant_aware": "yes",
+    "guard_head_equals_common_base_required": "no",
+    "accepted_base_exists": "yes",
+    "accepted_base_is_ancestor": "yes",
+    "ownership_diff_enforced": "yes",
+    "real_case_count": 23,
+    "real_case_pass_count": 23,
+    "descendant_negative_case": "PASS",
+    "ownership_invalid_descendant_negative_case": "PASS",
+    "hardcoded_repaired_sha_detected": "no",
+    "branch_name_special_casing_detected": "no",
+    "reduced_expected_count_detected": "no",
+    "evidence_self_validation_as_test_detected": "no"
+  },
+  "B2_decision_validation_review": {
+    "result": "FAIL",
+    "materialized_decision_validation_bypass_allowed": "no",
+    "no_authority_engine_required_decision_fails_closed": "yes",
+    "issuance_with_unresolved_decision_accepted": "no",
+    "D1_valid_exact_resolved_decision": "PASS",
+    "D2_unresolved_decision": "PASS_REJECTED",
+    "D3_invalid_decision_evidence_digest": "PASS_REJECTED",
+    "D3_invalid_resolved_decision_record": "FAIL_ACCEPTED",
+    "D4_wrong_operation": "PASS_REJECTED",
+    "D5_wrong_target": "PASS_REJECTED",
+    "D6_wrong_scope": "PASS_REJECTED",
+    "D7_wrong_project_milestone_binding": "PASS_REJECTED",
+    "D8_missing_authority_engine": "PASS_REJECTED_FAIL_CLOSED",
+    "residual_finding": {
+      "id": "BF-M42-SRC-R2-01",
+      "severity": "blocking",
+      "source": [
+        "aota_forge/core/authority.py:519-550",
+        "aota_forge/core/authorization.py:200-213"
+      ],
+      "finding": "A resolver-backed records.Decision with empty decision_kind and statement is accepted when MaterializedDecisionEvidence is recomputed against that malformed record. Exact ref ownership and digest binding are checked, but invalid Decision content is not rejected.",
+      "independent_observation": "CapabilityLeaseIssuer(AuthorityEngine(...)).issue returned a lease for the malformed resolved Decision.",
+      "required_behavior": "D3 invalid Decision must reject before lease issuance"
+    }
+  },
+  "B3_semantic_evidence_review": {
+    "result": "PASS",
+    "arbitrary_authorization_identifier_is_semantic_authority": "no",
+    "arbitrary_reservation_identifier_is_semantic_authority": "no",
+    "S1_arbitrary_authorization_id_only": "PASS_REJECTED",
+    "S2_arbitrary_reservation_id_only": "PASS_REJECTED",
+    "S3_arbitrary_both_ids": "PASS_REJECTED",
+    "S4_wrong_project_evidence": "PASS_REJECTED",
+    "S5_wrong_milestone_evidence": "PASS_REJECTED",
+    "S6_wrong_operation_evidence": "PASS_REJECTED",
+    "S7_approval_substitution": "PASS_REJECTED",
+    "S8_exact_valid_trusted_semantic_evidence": "PASS_ACCEPTED"
+  },
+  "issuer_boundary": {
+    "trusted_authorization_source_review": "FAIL",
+    "lease_issuance_source_review": "FAIL",
+    "lease_issuer_is_semantic_decision_maker": "no",
+    "issuer_selects_project": "no",
+    "issuer_selects_subject_under_ambiguity": "no",
+    "issuer_manufactures_decision": "no",
+    "issuer_widens_target_scope_operation": "no"
+  },
+  "preserved_semantics": {
+    "approval_evidence_equals_materialized_decision_evidence": "no",
+    "capability_lease_is_durable_semantic_authority": "no",
+    "lease_exact_binding_review": "PASS",
+    "lease_lifecycle_review": "PASS",
+    "unknown_outcome_review": "PASS",
+    "unknown_outcome_blind_lease_reuse": "no",
+    "lease_may_cross_unknown_outcome_retry": "no",
+    "revision_domain_review": "PASS",
+    "normalized_plan_digest_is_external_cas_token": "no",
+    "idempotency_authorization_binding_review": "PASS",
+    "error_contract_review": "PASS"
+  },
+  "scope_boundary": {
+    "M4_2_write_ingress_implemented": "no",
+    "M4_2_external_authority_write_implemented": "no",
+    "M4_2_durable_journal_implemented": "no",
+    "M4_3_execution_authorized": "no"
+  },
+  "source_guard": {
+    "result": "PASS",
+    "self_consistency": "PASS",
+    "command": "python3 scripts/m4_2_source_guard.py",
+    "real_case_count": 23,
+    "real_case_pass_count": 23,
+    "tautological_validation_detected": "no",
+    "test_case_name_special_casing_detected": "no",
+    "evidence_self_validation_as_test": "no"
+  },
+  "independent_negative_cases": {
+    "count": 14,
+    "reject_count": 14,
+    "unexpected_accept_count": 0,
+    "cases": [
+      {"id": "NEG-R2-01", "result": "reject", "assertion": "descendant candidate is not rejected for differing from common base"},
+      {"id": "NEG-R2-02", "result": "reject", "assertion": "ownership-invalid descendant is rejected"},
+      {"id": "NEG-R2-03", "result": "reject", "assertion": "unresolved Decision"},
+      {"id": "NEG-R2-04", "result": "reject", "assertion": "missing validator with required Decision"},
+      {"id": "NEG-R2-05", "result": "reject", "assertion": "wrong-target Decision"},
+      {"id": "NEG-R2-06", "result": "reject", "assertion": "wrong-operation Decision"},
+      {"id": "NEG-R2-07", "result": "reject", "assertion": "arbitrary authorization identifier"},
+      {"id": "NEG-R2-08", "result": "reject", "assertion": "arbitrary reservation identifier"},
+      {"id": "NEG-R2-09", "result": "reject", "assertion": "wrong Project evidence"},
+      {"id": "NEG-R2-10", "result": "reject", "assertion": "wrong Milestone evidence"},
+      {"id": "NEG-R2-11", "result": "reject", "assertion": "Approval substitutes exact Decision"},
+      {"id": "NEG-R2-12", "result": "reject", "assertion": "issuer receives ambiguous semantic target"},
+      {"id": "NEG-R2-13", "result": "reject", "assertion": "unknown-outcome old lease reuse"},
+      {"id": "NEG-R2-14", "result": "reject", "assertion": "source enables write ingress"}
+    ]
+  },
+  "regressions": {
+    "m4_1_contract_regression": "PASS",
+    "m3_authority_regression": "PASS",
+    "m3_authority_behavioral_invariants": "28/28 PASS",
+    "m3_authority_historical_exact_base_assertion": "FAIL_EXPECTED_DESCENDANT_BASE",
+    "m3_idempotency_regression": "PASS",
+    "ingress_regression": "PASS",
+    "m3_behavioral_regression_foundation": "PASS"
+  },
+  "historical_m3_b5_finding": "VALID_NON_BLOCKING",
+  "blocking_finding_count": 1,
+  "non_blocking_finding_count": 1,
+  "blocking_findings": [
+    "BF-M42-SRC-R2-01: malformed resolver-backed Decision content is accepted after digest recomputation; D3 invalid Decision rejection is not satisfied."
+  ],
+  "non_blocking_findings": [
+    "Historical M3-B5 exact-base-only assertion is stale on the authorized M4-2 descendant; independent 28/28 behavioral invariants pass."
+  ],
+  "next_ready_set": "bounded_m4_2_source_r2_repair",
+  "m4_2_completed": "no",
+  "m4_2_is_known_good_checkpoint": "no",
+  "m4_3_execution_authorized": "no"
+}
