@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 lifecycle plan independent review",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-R1",
+  "work_item_name": "M4-4 Lifecycle Plan Independent Review",
+  "review_boundary": {
+    "review_only": true,
+    "repair_findings": false,
+    "functional_source_implementation": false,
+    "governance_materialization": false,
+    "runtime_or_deployment": false
+  },
+  "preflight": {
+    "issue_read": true,
+    "M4_1_STATUS": "completed",
+    "M4_1_KNOWN_GOOD_CHECKPOINT": "d74953be16b103fbd09b0ee18b203881244c4f95",
+    "M4_4_PLANNING_READY": "yes",
+    "M4_4_EXECUTION_AUTHORIZED": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "superseded": false
+  },
+  "target_verification": {
+    "review_target_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+    "accepted_m4_1_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+    "target_sha_verified": "yes",
+    "target_remote_ref": "refs/heads/aota/m4/m4-4-lifecycle-planning",
+    "target_remote_sha": "a4e37d163674154e2c7af28c1ac3b7284283d552",
+    "target_remote_ref_verified": "yes",
+    "target_ancestry_verified": "yes",
+    "candidate_changed_paths_verified": "yes",
+    "unexpected_changed_path_count": 0,
+    "functional_core_source_changed": "no",
+    "changed_paths": [
+      "deploy/evidence/issues/9/m4-4/m4-4-lifecycle-capability-audit.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-lifecycle-error-contract.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-m4-3-handoff.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-plan-init-contract.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-project-steward-boundary.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-regression-handoff-map.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-retirement-candidate-contract.json",
+      "deploy/evidence/issues/9/m4-4/m4-4-source-ownership-forecast.json",
+      "scripts/m4_4_lifecycle_plan_guard.py"
+    ]
+  },
+  "source_readback": {
+    "accepted_m4_0_and_m4_1_contracts_reviewed": true,
+    "m3_primitives_reviewed": [
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/context.py",
+      "aota_forge/core/project/resolver.py",
+      "aota_forge/core/project/discovery.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/idempotency.py"
+    ],
+    "primitive_is_complete_m4_lifecycle_service": "no",
+    "capability_audit_misclassification_count": 0,
+    "source_reconnaissance_note_issue": "The audit note incorrectly says core/contracts/mutation.py is absent at the accepted base; it is present at d74953be and was introduced before that checkpoint. This does not change any capability classification or lifecycle boundary.",
+    "source_reconnaissance_note_issue_severity": "non_blocking"
+  },
+  "capability_audit_review": {
+    "review": "PASS",
+    "entry_count": 22,
+    "entries": [
+      {"capability": "create_execution", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct"},
+      {"capability": "record_completion", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct"},
+      {"capability": "record_decision", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct"},
+      {"capability": "create_followup_subject", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct"},
+      {"capability": "relationship_resolve", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct_read_only_deterministic_evidence"},
+      {"capability": "context_prepare", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "project binding", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct_semantic_binding_not_invented"},
+      {"capability": "PLAN_INIT semantics", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "retirement candidate discovery", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "retirement mutation", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "Subject revision/CAS", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct_mechanical_primitive"},
+      {"capability": "idempotency", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct_mechanical_primitive"},
+      {"capability": "Event Log requirement", "candidate_classification": "CONSUME_LATER", "independent_assessment": "correct_not_implemented_by_m3_primitive"},
+      {"capability": "active/current protections", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "running task protections", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "successor resolution", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct_exact_choice_only"},
+      {"capability": "Project Steward boundary", "candidate_classification": "EXTEND_IN_M4_4", "independent_assessment": "correct"},
+      {"capability": "Portable Plan read model", "candidate_classification": "REUSE_AS_IS", "independent_assessment": "correct_read_only"},
+      {"capability": "Portable Plan authority write", "candidate_classification": "CONSUME_LATER", "independent_assessment": "correct"},
+      {"capability": "authority-store precondition", "candidate_classification": "CONSUME_LATER", "independent_assessment": "correct_external_adapter_boundary"},
+      {"capability": "durable mutation journal", "candidate_classification": "OUT_OF_SCOPE_M4_4", "independent_assessment": "correct"},
+      {"capability": "semantic retirement choice", "candidate_classification": "OUT_OF_SCOPE_M4_4", "independent_assessment": "correct_external_semantic_owner"}
+    ]
+  },
+  "plan_init_contract_review": {
+    "review": "PASS",
+    "reentry_denied": "yes",
+    "transitions_reviewed": 3,
+    "required_fields_present_for_each_transition": "yes",
+    "transition_fields_checked": [
+      "predecessor",
+      "successor",
+      "semantic_decision_owner",
+      "mechanical_transition_owner",
+      "authority_store_mutation_owner",
+      "project_binding_required",
+      "semantic_authorization_required",
+      "subject_expected_revision_required",
+      "authority_precondition_required",
+      "idempotency_rule",
+      "replay_result",
+      "stale_subject_result",
+      "stale_authority_result",
+      "invalid_predecessor_result",
+      "no_effect_rule"
+    ],
+    "transitions": [
+      {"name": "PLAN_INIT", "predecessor": "uninitialized", "successor": "initialized", "result": "initialized only after exact semantic authorization, binding, CAS, raw precondition, and idempotency checks"},
+      {"name": "PLAN_INIT_PRE_BINDING_REENTRY", "predecessor": "initialized_unbound", "successor": "initialized_unbound", "result": "PLAN_INIT_ALREADY_INITIALIZED_PRE_BINDING; no effect"},
+      {"name": "PLAN_INIT_POST_BINDING_REENTRY", "predecessor": "initialized_bound", "successor": "initialized_bound", "result": "PLAN_INIT_ALREADY_INITIALIZED_POST_BINDING; no effect"}
+    ],
+    "fail_closed_matrix": [
+      {"case": "invalid predecessor", "result": "PLAN_INIT_INVALID_PREDECESSOR; no effect"},
+      {"case": "stale Subject revision", "result": "PLAN_INIT_STALE_SUBJECT_REVISION; no effect"},
+      {"case": "stale authority precondition", "result": "PLAN_INIT_STALE_AUTHORITY_PRECONDITION; no effect"},
+      {"case": "missing Project Binding", "result": "no effect; PROJECT_BINDING_REQUIRED"},
+      {"case": "NEEDS_SEMANTIC_CHOICE", "result": "no effect; semantic choice remains external"},
+      {"case": "idempotent replay", "result": "REPLAYED_VERIFIED or bounded re-entry denial; no duplicate effect"},
+      {"case": "same key with changed intent", "result": "CONFLICT; no effect"}
+    ]
+  },
+  "project_binding_boundary_review": {
+    "review": "PASS",
+    "CORE_SELECTS_PROJECT_UNDER_AMBIGUITY": "no",
+    "PROJECT_STEWARD_SELECTS_SEMANTIC_PROJECT": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_PROJECT_BINDING": "no",
+    "RELATIONSHIP_RESOLVE_RESULT_IS_SEMANTIC_PROJECT_DECISION": "no",
+    "selection_matrix": [
+      {"candidate_count": 0, "result": "PROJECT_NOT_FOUND or bounded no-candidate result; no mutation"},
+      {"candidate_count": 1, "result": "mechanical evidence only; explicit semantic binding contract remains required"},
+      {"candidate_count": ">1", "result": "NEEDS_SEMANTIC_CHOICE; no heuristic selection or mutation"}
+    ]
+  },
+  "retirement_protocol_review": {
+    "review": "PASS",
+    "two_stage_protocol_frozen": "yes",
+    "stage_1": "bounded candidate snapshot with source revision/digest, target identity/state, protections, eligibility, and successor eligibility",
+    "stage_2": "explicit semantic retirement kind and exact selected target/successor with fresh preconditions and one bounded mutation",
+    "zero_one_many_review": "PASS",
+    "selection_heuristics_forbidden": ["latest", "newest", "first", "timestamp", "similarity", "path ordering"],
+    "abandoned_review": {"review": "PASS", "transition": "abandoned -> cancelled", "destructive_deletion": "no", "history_preserved": ["Milestones", "Work Items", "evidence", "Event Log"]},
+    "superseded_review": {"review": "PASS", "exact_successor_required": "yes", "successor_not_self": "yes", "invalid_or_stale_successor": "fail closed/no effect", "heuristic_successor": "forbidden"},
+    "protection_review": {"active_current_plan": "fail closed/no effect", "running_task": "fail closed/no effect", "stale_snapshot": "fail closed/no effect", "changed_authority_revision": "fail closed/no effect", "changed_raw_digest": "fail closed/no effect", "target_no_longer_eligible": "fail closed/no effect"},
+    "implicit_resurrection_allowed": "no"
+  },
+  "project_steward_boundary_review": {
+    "review": "PASS",
+    "PROJECT_STEWARD_AUTO_ACCEPTS_MILESTONE": "no",
+    "PROJECT_STEWARD_AUTO_CLOSES_PLAN": "no",
+    "PROJECT_STEWARD_INVENTS_PROJECT_BINDING": "no",
+    "may": ["reconcile project truth", "resolve deterministic evidence", "verify mechanical preconditions", "prepare trusted context after semantic decision"],
+    "may_not": ["select ambiguous Project", "invent Project Binding", "auto-accept Milestone", "auto-close Plan", "invent retirement kind", "invent successor", "invent rollback", "expand authority"]
+  },
+  "lifecycle_error_contract_review": {
+    "review": "PASS",
+    "required_distinct_errors_present": "yes",
+    "semantic_choice_not_generic_error": "yes",
+    "checked_codes": [
+      "PROJECT_NOT_FOUND", "NEEDS_SEMANTIC_CHOICE", "PROJECT_BINDING_REQUIRED",
+      "PLAN_INIT_INVALID_PREDECESSOR", "PLAN_INIT_ALREADY_INITIALIZED", "PLAN_INIT_STALE_SUBJECT_REVISION", "PLAN_INIT_STALE_AUTHORITY_PRECONDITION",
+      "RETIREMENT_NO_CANDIDATE", "RETIREMENT_NEEDS_SEMANTIC_CHOICE", "RETIREMENT_STALE_SNAPSHOT", "RETIREMENT_TARGET_PROTECTED",
+      "RETIREMENT_RUNNING_TASK_PROTECTED", "RETIREMENT_SUCCESSOR_REQUIRED", "RETIREMENT_SUCCESSOR_INVALID", "RETIREMENT_SELF_SUCCESSOR", "RETIREMENT_STALE_AUTHORITY_PRECONDITION"
+    ]
+  },
+  "design_closure_review": {
+    "B011_DESIGN_CLOSURE_READY": "yes",
+    "B013_DESIGN_CLOSURE_READY": "yes",
+    "B014_DESIGN_CLOSURE_READY": "yes",
+    "B011_BEHAVIORAL_PASS_CLAIMED": "no",
+    "B013_BEHAVIORAL_PASS_CLAIMED": "no",
+    "B014_BEHAVIORAL_PASS_CLAIMED": "no",
+    "M4_4_BEHAVIORAL_CLOSURE_FALSE_CLAIM_COUNT": 0
+  },
+  "m4_3_handoff_review": {
+    "review": "PASS",
+    "required_inputs_received": ["exact lifecycle operation contracts", "predecessor/successor rules", "semantic choice boundaries", "Project Steward boundary", "canonical lifecycle results/errors"],
+    "accepted_m4_2_also_required": "yes",
+    "M4_4_PASS_AUTOMATICALLY_AUTHORIZES_M4_3": "no",
+    "M4_3_EXECUTION_AUTHORIZED": "no"
+  },
+  "source_ownership_forecast_review": {
+    "review": "PASS",
+    "M4_2_M4_4_SOURCE_PARALLEL_SAFETY": "pending_cross_lane_reconciliation",
+    "source_parallelism_authorized": "no",
+    "actual_likely_m4_2_overlaps": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/idempotency.py"
+    ],
+    "m4_4_likely_additional_ownership": ["aota_forge/core/transitions.py", "aota_forge/core/project/resolver.py", "tests/**", "aota_forge/core/__init__.py and exports"],
+    "parallel_safety_finalized": "no"
+  },
+  "planning_guard_review": {
+    "py_compile": "PASS",
+    "guard": "PASS",
+    "guard_self_consistency": "PASS",
+    "tautological_validation_detected": "no",
+    "special_casing_detected": "no",
+    "guard_negative_case_count": 12,
+    "guard_negative_case_reject_count": 12,
+    "guard_negative_case_unexpected_accept_count": 0
+  },
+  "independent_negative_cases": [
+    {"id": "NEG-M44-R1-01", "adversarial_case": "PLAN_INIT re-entry allowed", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-02", "adversarial_case": "Steward selects ambiguous Project", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-03", "adversarial_case": "relationship result automatically becomes Project Binding", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-04", "adversarial_case": "invalid predecessor mutates", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-05", "adversarial_case": "retirement picks newest", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-06", "adversarial_case": "abandoned deletes Plan", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-07", "adversarial_case": "superseded without successor accepted", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-08", "adversarial_case": "self successor accepted", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-09", "adversarial_case": "active/current target retires automatically", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-10", "adversarial_case": "running-task Plan retires automatically", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-11", "adversarial_case": "retired Plan implicitly resurrected", "expected": "reject", "observed": "rejected"},
+    {"id": "NEG-M44-R1-12", "adversarial_case": "M4-4 alone authorizes M4-3", "expected": "reject", "observed": "rejected"}
+  ],
+  "cross_lifecycle_adversarial_cases": [
+    {"id": "X1", "case": "multiple Project candidates", "expected": "NEEDS_SEMANTIC_CHOICE", "observed": "pass"},
+    {"id": "X2", "case": "unique candidate with stale binding precondition", "expected": "fail closed/no effect", "observed": "pass"},
+    {"id": "X3", "case": "PLAN_INIT replay with same intent", "expected": "no duplicate effect", "observed": "pass"},
+    {"id": "X4", "case": "PLAN_INIT same idempotency key with changed semantic intent", "expected": "CONFLICT/no effect", "observed": "pass"},
+    {"id": "X5", "case": "retirement snapshot stale after semantic selection", "expected": "RETIREMENT_STALE_SNAPSHOT/no silent reselect", "observed": "pass"},
+    {"id": "X6", "case": "selected superseded successor invalid after snapshot", "expected": "conflict/stale/no alternative successor", "observed": "pass"}
+  ],
+  "counts": {
+    "negative_case_count": 12,
+    "negative_case_reject_count": 12,
+    "negative_case_unexpected_accept_count": 0,
+    "cross_lifecycle_case_count": 6,
+    "cross_lifecycle_case_pass_count": 6,
+    "blocking_finding_count": 0,
+    "non_blocking_finding_count": 1
+  },
+  "blocking_findings": [],
+  "non_blocking_findings": [
+    "Correct the capability-audit source note: core/contracts/mutation.py exists at the exact accepted M4-1 base d74953be16b103fbd09b0ee18b203881244c4f95; retain the M4-1 evidence-source reference but remove the false absence claim."
+  ],
+  "review_verdict": "PASS_WITH_NON_BLOCKING_FINDINGS",
+  "next_ready_set": "m4_4_plan_governance_reconciliation",
+  "M4_4_IS_KNOWN_GOOD_CHECKPOINT": "no",
+  "M4_4_EXECUTION_AUTHORIZED": "no",
+  "M4_3_EXECUTION_AUTHORIZED": "no"
+}
