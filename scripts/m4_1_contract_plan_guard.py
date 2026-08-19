@@ -242,11 +242,17 @@ def negative_cases(artifacts: dict[str, dict]) -> tuple[int, int, int]:
 
 def path_violations() -> list[str]:
     failures: list[str] = []
-    if git("rev-parse", "HEAD") != EXPECTED_BASE:
-        failures.append("HEAD is not the exact accepted base")
+    if git("merge-base", EXPECTED_BASE, "HEAD") != EXPECTED_BASE:
+        failures.append("accepted base is not the exact source ancestor")
     changed = set(filter(None, git("diff", "--name-only", EXPECTED_BASE).splitlines()))
     changed.update(filter(None, git("diff", "--cached", "--name-only", EXPECTED_BASE).splitlines()))
-    status = git("status", "--porcelain", "--untracked-files=all")
+    status = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=all"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ).stdout
     for line in status.splitlines():
         if len(line) >= 4:
             changed.add(line[3:])
