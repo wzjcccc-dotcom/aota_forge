@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 functional source independent review",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R1",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "status": "FAIL",
+  "read_before_write": "PASS",
+  "review_target_sha": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_plan_sha": "8458c0150bd9ec96e35f1f4059e684908fe67469",
+  "source_branch": "refs/heads/aota/m4/m4-2-source",
+  "sibling_source_candidate_sha": "9ed2cbaabff61ff0dfd4a3e5a5f89f21642c6c98",
+  "governance_preflight": {
+    "github_identity": "wzjcccc-dotcom",
+    "issue_read": "PASS",
+    "m4_2_source_implementation_authorized": "yes",
+    "m4_4_source_implementation_authorized": "yes",
+    "m4_2_m4_4_source_parallel_safety": "conditional",
+    "m4_3_execution_authorized": "no",
+    "control_comment_mutated": "no",
+    "issue_body_mutated": "no"
+  },
+  "lineage": {
+    "target_commit_exists": "yes",
+    "target_remote_ref": "refs/heads/aota/m4/m4-2-source",
+    "target_remote_sha": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+    "target_remote_ref_verified": "yes",
+    "target_ancestry_from_common_base": "yes",
+    "sibling_ancestry_required": "no"
+  },
+  "source_ownership_partition": {
+    "read": "PASS",
+    "m4_2_exclusive_write_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authorization.py"
+    ],
+    "m4_4_exclusive_write_paths": [
+      "aota_forge/core/context.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/core/contracts/validation.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py",
+      "aota_forge/core/project/resolver.py"
+    ],
+    "shared_read_only_paths": [
+      "aota_forge/core/contracts/canonical.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/operations.py",
+      "aota_forge/core/contracts/registry.py",
+      "aota_forge/core/contracts/version.py",
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/graph/repository.py"
+    ],
+    "integration_only_paths": [
+      "aota_forge/core/contracts/errors.py",
+      "aota_forge/core/contracts/__init__.py",
+      "tests/**",
+      "aota_forge/core/__init__.py and exports"
+    ],
+    "forbidden_cross_lane_write_paths": [
+      "every path in the other lane's exclusive write list",
+      "every path in INTEGRATION_ONLY_PATHS",
+      "every path in SHARED_READ_ONLY_PATHS",
+      "aota_forge/core/ingress.py remains M4-3-owned and cannot be widened",
+      "any unlisted aota_forge/** functional source path"
+    ],
+    "m4_2_exclusive_write_path_count": 3,
+    "m4_4_exclusive_write_path_count": 7,
+    "shared_read_only_path_count": 8,
+    "integration_only_path_count": 4,
+    "forbidden_cross_lane_write_path_count": 5
+  },
+  "diff_scope": {
+    "review": "PASS",
+    "candidate_production_paths": [
+      "aota_forge/core/authority.py",
+      "aota_forge/core/authorization.py",
+      "aota_forge/core/capability_lease.py"
+    ],
+    "candidate_lane_evidence_paths": [
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-implementation.json",
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-regression-results.json",
+      "deploy/evidence/issues/9/m4-2-source/m4-2-source-scope-proof.json"
+    ],
+    "candidate_lane_guard": "scripts/m4_2_source_guard.py",
+    "unexpected_production_paths": [],
+    "all_source_writes_within_m4_2_exclusive_paths": "yes",
+    "m4_4_exclusive_write_path_mutation_count": 0,
+    "shared_read_only_path_mutation_count": 0,
+    "integration_only_path_mutation_count": 0,
+    "forbidden_cross_lane_write_count": 0
+  },
+  "source_reviews": {
+    "trusted_authorization_source_review": "FAIL",
+    "lease_issuance_source_review": "FAIL",
+    "lease_issuer_is_semantic_decision_maker": "unexpected",
+    "approval_evidence_equals_materialized_decision_evidence": "no",
+    "capability_lease_is_durable_semantic_authority": "no",
+    "lease_exact_binding_review": "PASS",
+    "lease_lifecycle_review": "PASS",
+    "unknown_outcome_review": "PASS",
+    "unknown_outcome_blind_lease_reuse": "no",
+    "lease_may_cross_unknown_outcome_retry": "no",
+    "revision_domain_review": "PASS",
+    "normalized_plan_digest_is_external_cas_token": "no",
+    "idempotency_authorization_binding_review": "PASS",
+    "error_contract_review": "PASS",
+    "deferred_integration_seams_review": "PASS",
+    "deferred_integration_path_count": 4
+  },
+  "behavioral_observations": {
+    "trusted_target_selection": "no selection; exact ObjectRef required",
+    "ambiguous_target": "NEEDS_SEMANTIC_CHOICE rejected",
+    "ordinary_untrusted_authorization": "rejected without bound TrustedContext",
+    "approval_without_decision": "MATERIALIZED_DECISION_REQUIRED rejected",
+    "lease_operation_target_scope_intent_contract_principal_bindings": "all required negative cases rejected",
+    "valid_consumed_expired_revoked_lifecycle": "valid accepted; consumed/expired/revoked rejected",
+    "unknown_outcome_retry": "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION rejected",
+    "semantic_intent_identity": "fresh lease preserves intent fingerprint and changes mechanical attempt identity",
+    "write_ingress": "not implemented",
+    "external_authority_write": "not implemented",
+    "durable_journal": "not implemented"
+  },
+  "independent_negative_cases": {
+    "count": 12,
+    "reject_count": 12,
+    "unexpected_accept_count": 0,
+    "cases": [
+      {"id": "NEG-M42-SRC-01", "result": "reject", "assertion": "issuer widening operation"},
+      {"id": "NEG-M42-SRC-02", "result": "reject", "assertion": "issuer widening scope"},
+      {"id": "NEG-M42-SRC-03", "result": "reject", "assertion": "lease used for another target"},
+      {"id": "NEG-M42-SRC-04", "result": "reject", "assertion": "lease used for another intent"},
+      {"id": "NEG-M42-SRC-05", "result": "reject", "assertion": "ApprovalEvidence cannot substitute MaterializedDecisionEvidence"},
+      {"id": "NEG-M42-SRC-06", "result": "reject", "assertion": "expired lease reuse"},
+      {"id": "NEG-M42-SRC-07", "result": "reject", "assertion": "consumed lease reuse"},
+      {"id": "NEG-M42-SRC-08", "result": "reject", "assertion": "revoked lease reuse"},
+      {"id": "NEG-M42-SRC-09", "result": "reject", "assertion": "unknown outcome blind lease reuse"},
+      {"id": "NEG-M42-SRC-10", "result": "reject", "assertion": "normalized Plan digest as external CAS"},
+      {"id": "NEG-M42-SRC-11", "result": "reject", "assertion": "model self-asserted trusted lease"},
+      {"id": "NEG-M42-SRC-12", "result": "reject", "assertion": "source enables write ingress"}
+    ]
+  },
+  "source_guard": {
+    "candidate_guard": "scripts/m4_2_source_guard.py",
+    "command": "python3 scripts/m4_2_source_guard.py",
+    "result": "FAIL",
+    "focused_test_count": 23,
+    "focused_test_pass_count": 22,
+    "focused_test_fail_count": 1,
+    "failed_case": "EXACT_BASE_VERIFIED",
+    "observed_head": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+    "guard_expected_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+    "self_consistency": "FAIL",
+    "tautological_validation_detected": "no",
+    "independent_guard": {
+      "path": "scripts/m4_2_source_independent_review_guard.py",
+      "required_negative_cases": "12/12",
+      "result": "FAIL",
+      "extra_probe_failures": [
+        "EXTRA_INVALID_DECISION_EVIDENCE_REJECTED",
+        "EXTRA_PROJECT_DECISION_BASIS_NOT_INVENTED"
+      ]
+    }
+  },
+  "regressions": {
+    "m4_1_contract_regression": "PASS",
+    "m3_authority_regression": "PASS_WITH_STALE_HISTORICAL_BASE_ASSERTION",
+    "m3_authority_behavioral_checks": "28/28",
+    "m3_authority_historical_exact_base_assertion": "FAIL_EXPECTED_DESCENDANT_BASE",
+    "m3_idempotency_regression": "PASS",
+    "ingress_regression": "PASS"
+  },
+  "safety_stop": {
+    "m4_2_write_ingress_implemented": "no",
+    "production_write_operation_registered": "no",
+    "m4_2_external_authority_write_implemented": "no",
+    "m4_2_durable_journal_implemented": "no",
+    "m4_3_execution_authorized": "no"
+  },
+  "blocking_findings": [
+    {
+      "id": "BF-M42-SRC-R1-01",
+      "severity": "blocking",
+      "area": "source_guard",
+      "finding": "The committed candidate guard hard-codes the common base as the current HEAD. At the exact candidate commit it fails EXACT_BASE_VERIFIED and reports 22/23, contradicting the claimed 23/23 PASS and preventing the required SOURCE_GUARD gate from passing.",
+      "source": "scripts/m4_2_source_guard.py:19,187-193",
+      "observed": "candidate guard exit failure with observed HEAD 44150acf551edf8b77101eb5c64d74d090f9a7b5"
+    },
+    {
+      "id": "BF-M42-SRC-R1-02",
+      "severity": "blocking",
+      "area": "materialized_decision_validation",
+      "finding": "CapabilityLeaseIssuer accepts a typed MaterializedDecisionEvidence with an arbitrary digest and unresolved Decision when no AuthorityEngine is supplied. The no-engine branch returns true after only field matching, so an operation requiring an exact materialized Decision can receive a lease without resolved durable Decision evidence.",
+      "source": "aota_forge/core/authorization.py:201-225",
+      "observed": "independent probe EXTRA_INVALID_DECISION_EVIDENCE_REJECTED unexpectedly accepted"
+    },
+    {
+      "id": "BF-M42-SRC-R1-03",
+      "severity": "blocking",
+      "area": "semantic_authorization_basis",
+      "finding": "The project_milestone_semantic_decision basis is treated as valid when only authorization_id or reservation_ref is present. Those identifiers are correlation/reference fields, not trusted exact project or milestone Decision evidence, so the issuer can manufacture a lease from an arbitrary semantic-basis label and identifier.",
+      "source": "aota_forge/core/authorization.py:358-364",
+      "observed": "independent probe EXTRA_PROJECT_DECISION_BASIS_NOT_INVENTED unexpectedly accepted"
+    }
+  ],
+  "non_blocking_findings": [
+    {
+      "id": "NBF-M42-SRC-R1-01",
+      "area": "historical_regression_guard",
+      "finding": "The M3-B5 regression guard also reports its historical exact-base assertion stale on this authorized descendant; its 28/28 behavioral checks pass. This is retained as a known historical guard maintenance issue, separate from the committed M4-2 guard failure above.",
+      "source": "scripts/m3_b5_authority_capability_lease.py:21,149-155"
+    }
+  ],
+  "blocking_finding_count": 3,
+  "non_blocking_finding_count": 1,
+  "next_ready_set": "bounded_m4_2_source_repair",
+  "m4_2_completed": "no",
+  "m4_2_is_known_good_checkpoint": "no",
+  "m4_3_execution_authorized": "no",
+  "review_branch": "aota/m4/m4-2-source-independent-review",
+  "review_evidence_path": "deploy/evidence/issues/9/m4-2-source-review/m4-2-source-independent-review.json",
+  "review_guard_path": "scripts/m4_2_source_independent_review_guard.py",
+  "issue_or_control_mutation": "no",
+  "candidate_source_mutation": "no",
+  "integration_mutation": "no"
+}
