@@ -29,8 +29,10 @@ ALLOWED_NON_SOURCE_PATHS = {
 EVIDENCE_PREFIXES = (
     "deploy/evidence/issues/9/m4-2-source/",
     "deploy/evidence/issues/9/m4-2-source-repair/",
+    "deploy/evidence/issues/9/m4-2-source-r2-repair/",
 )
 RESULTS: list[tuple[str, bool, str]] = []
+RECOMPUTED_DIGEST_RESULTS: list[tuple[str, bool, bool]] = []
 
 
 def check(name: str, condition: bool, detail: str = "") -> bool:
@@ -357,6 +359,19 @@ def main() -> int:
         basis="project_milestone_semantic_decision",
         decision=valid_project_decision,
     )
+    valid_milestone_decision = decision_evidence(
+        milestone_decision_a,
+        milestone_a,
+        operation=project_descriptor.name,
+    )
+    valid_milestone_auth = _authorization(
+        context,
+        milestone_a,
+        project_descriptor,
+        external=False,
+        basis="project_milestone_semantic_decision",
+        decision=valid_milestone_decision,
+    )
     project_only_auth = replace(valid_project_auth, decision_basis=None)
     reservation_only_auth = replace(
         project_only_auth,
@@ -370,6 +385,140 @@ def main() -> int:
         external=False,
         basis="approval_evidence",
         approval=approval,
+    )
+
+    def expect_recomputed_rejection(name, auth, contract) -> None:
+        try:
+            _issue(CapabilityLeaseIssuer(decision_engine), auth, contract, context, auth.target)
+        except AuthorizationFailure as exc:
+            passed = exc.code == AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value
+            detail = exc.code
+        except Exception as exc:
+            passed = False
+            detail = type(exc).__name__
+        else:
+            passed = False
+            detail = "lease issued"
+        RECOMPUTED_DIGEST_RESULTS.append((name, passed, True))
+        check(name, passed, detail)
+
+    # Every malformed candidate below gets a fresh digest from its own content.
+    expect_recomputed_rejection(
+        "D1_RECOMPUTED_MISSING_STATEMENT_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(replace(decision_a, statement=""), target_a),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "R2_EXACT_MALFORMED_DECISION_RECOMPUTED_DIGEST_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(replace(decision_a, decision_kind="", statement=""), target_a),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D2_RECOMPUTED_WRONG_OPERATION_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_a, target_a, operation="other_operation"),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D3_RECOMPUTED_WRONG_TARGET_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_a, target_b),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D4_RECOMPUTED_WRONG_SCOPE_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_a, target_a, scope={"mode": "other"}),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D5_RECOMPUTED_WRONG_PROJECT_REJECTED",
+        replace(
+            valid_project_auth,
+            decision_basis=decision_evidence(
+                project_decision_a,
+                project_b,
+                operation=project_descriptor.name,
+            ),
+        ),
+        project_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D6_RECOMPUTED_WRONG_MILESTONE_REJECTED",
+        replace(
+            valid_milestone_auth,
+            decision_basis=decision_evidence(
+                milestone_decision_a,
+                milestone_b,
+                operation=project_descriptor.name,
+            ),
+        ),
+        project_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D7_RECOMPUTED_WRONG_SUBJECT_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(decision_b, target_a),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D8_RECOMPUTED_INVALID_DECISION_KIND_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(replace(decision_a, decision_kind=""), target_a),
+        ),
+        decision_descriptor,
+    )
+    expect_recomputed_rejection(
+        "D9_RECOMPUTED_MALFORMED_NESTED_CONTENT_REJECTED",
+        replace(
+            valid_decision_auth,
+            decision_basis=decision_evidence(
+                replace(decision_a, target_refs=[{"malformed": True}]),
+                target_a,
+            ),
+        ),
+        decision_descriptor,
+    )
+    try:
+        _issue(CapabilityLeaseIssuer(decision_engine), valid_decision_auth, decision_descriptor, context, target_a)
+    except Exception as exc:
+        valid_recomputed = False
+        valid_recomputed_detail = type(exc).__name__
+    else:
+        valid_recomputed = True
+        valid_recomputed_detail = "accepted"
+    RECOMPUTED_DIGEST_RESULTS.append(("D10_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, False))
+    check("D10_EXACT_VALID_CONTENT_AND_DIGEST_ACCEPTED", valid_recomputed, valid_recomputed_detail)
+    check(
+        "INTEGRITY_INVALID_DIGEST_REJECTED",
+        _expect_failure(
+            lambda: _issue(
+                CapabilityLeaseIssuer(decision_engine),
+                replace(
+                    valid_decision_auth,
+                    decision_basis=replace(valid_decision, evidence_digest="0" * 64),
+                ),
+                decision_descriptor,
+                context,
+                target_a,
+            ),
+            AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
+        ),
     )
 
     decision_cases: list[tuple[str, bool]] = []
@@ -462,7 +611,6 @@ def main() -> int:
         project_descriptor,
         AuthorizationErrorCode.MATERIALIZED_DECISION_REQUIRED.value,
     )
-    valid_milestone_decision = decision_evidence(milestone_decision_a, milestone_a, operation=project_descriptor.name)
     expect_decision_failure(
         "wrong_milestone_decision",
         _authorization(
@@ -556,6 +704,16 @@ def main() -> int:
 
     check("T19_REVISION_DOMAINS_REMAIN_SEPARATE", lease.authority_source_revision == "3" and lease.normalized_plan_digest == "c" * 64 and lease.external_authority_precondition == "raw-revision-3" and lease.binding_dict()["normalized_plan_digest"] != lease.binding_dict()["external_authority_precondition"])
     check("T20_DURABLE_AUTHORITY_IS_NOT_LEASE_AUTHORITY", authorization.DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED and not lease.CAPABILITY_LEASE_IS_DURABLE_SEMANTIC_AUTHORITY and lease.semantic_intent_identity == authorization.intent_fingerprint)
+
+    recomputed_invalid = [
+        name for name, passed, invalid in RECOMPUTED_DIGEST_RESULTS if invalid and not passed
+    ]
+    recomputed_invalid_case_count = sum(1 for _, _, invalid in RECOMPUTED_DIGEST_RESULTS if invalid)
+    recomputed_invalid_reject_count = recomputed_invalid_case_count - len(recomputed_invalid)
+    print(f"RECOMPUTED_DIGEST_ADVERSARIAL_CASE_COUNT={len(RECOMPUTED_DIGEST_RESULTS)}")
+    print(f"RECOMPUTED_DIGEST_INVALID_CASE_REJECT_COUNT={recomputed_invalid_reject_count}")
+    if recomputed_invalid:
+        print("RECOMPUTED_DIGEST_FAILED_CASES=" + ",".join(recomputed_invalid))
 
     failed = [name for name, passed, _ in RESULTS if not passed]
     passed = len(RESULTS) - len(failed)

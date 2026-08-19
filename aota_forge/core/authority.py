@@ -30,9 +30,10 @@ from aota_forge.core.context import (
 )
 from aota_forge.core.graph import records
 from aota_forge.core.graph.repository import OwningSubjectResolver
-from aota_forge.core.identity.errors import ObjectRefError
+from aota_forge.core.identity.errors import IdentityError, ObjectRefError
+from aota_forge.core.identity.ids import InternalId
 from aota_forge.core.identity.kinds import IdKind
-from aota_forge.core.identity.refs import ObjectRef, make_object_ref
+from aota_forge.core.identity.refs import ObjectRef, make_object_ref, parse_object_ref
 
 CAS_IMPLEMENTATION_STARTED = False
 TRANSACTION_IMPLEMENTATION_STARTED = False
@@ -65,6 +66,13 @@ AUTHORIZATION_BASIS_VALUES = frozenset(
     }
 )
 FOLLOWUP_DECISION_MISMATCH_DENIED = True
+DECISION_DIGEST_VALIDITY_EQUALS_SEMANTIC_VALIDITY = False
+RESOLVER_RETURNED_OBJECT_EQUALS_VALID_DECISION = False
+RESOLVER_IS_SEMANTIC_DECISION_MAKER = False
+MATERIALIZED_DECISION_VALIDATION_BYPASS_ALLOWED = False
+
+_MAX_DECISION_TEXT_LENGTH = 4096
+_MAX_DECISION_REFERENCE_LENGTH = 4096
 
 
 class AuthorityDecision(str, Enum):
@@ -451,6 +459,53 @@ def _decision_canonical(evidence: MaterializedDecisionEvidence | None) -> dict[s
     }
 
 
+def _decision_record_is_structurally_valid(decision: object) -> bool:
+    """Validate the canonical Decision shape before checking its digest."""
+    if not isinstance(decision, records.Decision):
+        return False
+    if not isinstance(decision.decision_id, InternalId) or decision.decision_id.kind != IdKind.DECISION:
+        return False
+    if not isinstance(decision.subject_ref, InternalId) or decision.subject_ref.kind != IdKind.SUBJECT:
+        return False
+    if (
+        not isinstance(decision.decision_kind, str)
+        or not _SAFE_AUTHORIZATION_TOKEN.fullmatch(decision.decision_kind)
+        or not decision.decision_kind.strip()
+    ):
+        return False
+    if (
+        not isinstance(decision.statement, str)
+        or not decision.statement.strip()
+        or len(decision.statement) > _MAX_DECISION_TEXT_LENGTH
+    ):
+        return False
+    if not isinstance(decision.target_refs, list):
+        return False
+    for target_ref in decision.target_refs:
+        if not isinstance(target_ref, str) or not target_ref or len(target_ref) > _MAX_DECISION_REFERENCE_LENGTH:
+            return False
+        try:
+            parsed_target = parse_object_ref(target_ref)
+        except (IdentityError, TypeError, ValueError):
+            return False
+        if parsed_target.object_kind not in {IdKind.SUBJECT, IdKind.EXECUTION}:
+            return False
+    if decision.decision_time is not None and (
+        not isinstance(decision.decision_time, str)
+        or not decision.decision_time
+        or len(decision.decision_time) > _MAX_DECISION_REFERENCE_LENGTH
+    ):
+        return False
+    if not isinstance(decision.evidence_refs, list):
+        return False
+    return all(
+        isinstance(evidence_ref, str)
+        and bool(evidence_ref)
+        and len(evidence_ref) <= _MAX_DECISION_REFERENCE_LENGTH
+        for evidence_ref in decision.evidence_refs
+    )
+
+
 @dataclass(frozen=True)
 class AuthorityRequest:
     principal: object = None
@@ -525,28 +580,65 @@ class AuthorityEngine:
         expected_revision: int,
         scope: Mapping[str, str],
     ) -> bool:
-        """Validate exact Decision evidence through the trusted graph resolver."""
+        """Validate resolved Decision structure, integrity, and exact bindings.
+
+        Resolver lookup and digest verification are necessary evidence checks,
+        but neither one makes arbitrary resolved content a valid Decision.
+        """
         if not isinstance(evidence, MaterializedDecisionEvidence):
+            return False
+        if (
+            not isinstance(operation, str)
+            or not operation
+            or not isinstance(target, ObjectRef)
+            or target.object_kind not in {IdKind.SUBJECT, IdKind.EXECUTION, IdKind.COMPLETION, IdKind.DECISION}
+            or isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
             return False
         try:
             normalized_scope = _canonical_scope(scope)
+            if (
+                not isinstance(evidence.decision_ref, ObjectRef)
+                or evidence.decision_ref.object_kind != IdKind.DECISION
+                or not isinstance(evidence.decision_ref.internal_id, InternalId)
+                or evidence.decision_ref.internal_id.kind != IdKind.DECISION
+                or not isinstance(evidence.target, ObjectRef)
+                or not isinstance(evidence.target.internal_id, InternalId)
+                or evidence.evidence_digest is None
+                or not isinstance(evidence.evidence_digest, str)
+                or not _SHA256.fullmatch(evidence.evidence_digest)
+            ):
+                return False
+            if (
+                evidence.operation != operation
+                or evidence.target != target
+                or evidence.expected_revision != expected_revision
+                or dict(evidence.scope) != normalized_scope
+            ):
+                return False
             resolved = resolve_authority_target(target, self._resolver)
             decision = self._resolver.resolve_decision(evidence.decision_ref)
-        except (LookupError, ObjectRefError, TypeError, ValueError):
+        except (LookupError, IdentityError, ObjectRefError, TypeError, ValueError, KeyError, AttributeError):
             return False
-        if not isinstance(decision, records.Decision):
+        if not _decision_record_is_structurally_valid(decision):
             return False
         try:
-            return (
-                evidence.operation == operation
-                and evidence.target == target
-                and evidence.expected_revision == expected_revision
-                and dict(evidence.scope) == normalized_scope
-                and evidence.decision_ref.internal_id == decision.decision_id
-                and decision.subject_ref == resolved.owning_subject_ref.internal_id
-                and evidence.evidence_digest == evidence.computed_digest(decision)
-            )
-        except (TypeError, ValueError):
+            if (
+                not isinstance(resolved, AuthorityTarget)
+                or not isinstance(resolved.owning_subject_ref, ObjectRef)
+                or resolved.owning_subject_ref.object_kind != IdKind.SUBJECT
+                or not isinstance(resolved.subject, records.Subject)
+                or resolved.subject.subject_id != resolved.owning_subject_ref.internal_id
+                or evidence.decision_ref.internal_id != decision.decision_id
+                or decision.subject_ref != resolved.owning_subject_ref.internal_id
+            ):
+                return False
+            # This is an integrity check only; structural and binding checks above
+            # establish what the digest is allowed to cover.
+            return evidence.evidence_digest == evidence.computed_digest(decision)
+        except (TypeError, ValueError, KeyError, AttributeError, OverflowError):
             return False
 
     @staticmethod
@@ -748,7 +840,7 @@ class AuthorityEngine:
             decision = request.decision or lease.decision_basis
             if decision is None:
                 return self._result(AuthorityDecision.DENY, AuthorityReason.DECISION_REQUIRED)
-            if not self._decision_matches(decision, request, resolved, requested_scope):
+            if not self._decision_matches(decision, request, requested_scope):
                 return self._result(AuthorityDecision.DENY, AuthorityReason.DECISION_MISMATCH)
 
         return self._result(AuthorityDecision.ALLOW, AuthorityReason.AUTHORIZED, lease.lease_id)
@@ -773,23 +865,17 @@ class AuthorityEngine:
         self,
         evidence: MaterializedDecisionEvidence,
         request: AuthorityRequest,
-        resolved: AuthorityTarget,
         requested_scope: Mapping[str, str],
     ) -> bool:
-        if (
-            evidence.operation != request.operation
-            or evidence.target != request.target
-            or evidence.expected_revision != request.current_revision
-            or dict(evidence.scope) != dict(requested_scope)
-        ):
+        if request.current_revision is None:
             return False
-        try:
-            decision = self._resolver.resolve_decision(evidence.decision_ref)
-        except (LookupError, ObjectRefError, TypeError, ValueError):
-            return False
-        if decision.subject_ref != resolved.owning_subject_ref.internal_id:
-            return False
-        return evidence.evidence_digest == evidence.computed_digest(decision)
+        return self.validate_materialized_decision_evidence(
+            evidence,
+            operation=request.operation,
+            target=request.target,
+            expected_revision=request.current_revision,
+            scope=requested_scope,
+        )
 
 
 __all__ = [
@@ -806,8 +892,12 @@ __all__ = [
     "APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE",
     "AUTHORIZATION_BASIS_VALUES",
     "DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED",
+    "DECISION_DIGEST_VALIDITY_EQUALS_SEMANTIC_VALIDITY",
+    "MATERIALIZED_DECISION_VALIDATION_BYPASS_ALLOWED",
     "MODEL_MAY_SELF_ASSERT_TRUSTED_AUTHORIZATION",
     "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN",
+    "RESOLVER_IS_SEMANTIC_DECISION_MAKER",
+    "RESOLVER_RETURNED_OBJECT_EQUALS_VALID_DECISION",
     "TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION",
     "resolve_authority_target",
 ]

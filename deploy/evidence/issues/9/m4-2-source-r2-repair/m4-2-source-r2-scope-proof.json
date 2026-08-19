@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R2 ownership and scope proof",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R2-REPAIR",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "repair_base_sha": "299a146a1d04086d6d7770a4ce55e7569c760922",
+  "source_branch": "aota/m4/m4-2-source",
+  "worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-2-source",
+  "source_ownership_partition_read": "PASS",
+  "m4_2_exclusive_write_paths": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py"
+  ],
+  "m4_4_exclusive_write_paths": [
+    "aota_forge/core/context.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/validation.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/project/resolver.py"
+  ],
+  "shared_read_only_paths": [
+    "aota_forge/core/contracts/canonical.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/operations.py",
+    "aota_forge/core/contracts/registry.py",
+    "aota_forge/core/contracts/version.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/graph/repository.py"
+  ],
+  "integration_only_paths": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "tests/**",
+    "aota_forge/core/__init__.py and exports"
+  ],
+  "forbidden_cross_lane_write_path_count": 5,
+  "actual_source_changed_files": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/authorization.py",
+    "scripts/m4_2_source_guard.py"
+  ],
+  "actual_evidence_changed_files": [
+    "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-repair.json",
+    "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-regression-results.json",
+    "deploy/evidence/issues/9/m4-2-source-r2-repair/m4-2-source-r2-scope-proof.json"
+  ],
+  "m4_2_exclusive_write_path_count": 3,
+  "m4_4_exclusive_write_path_count": 7,
+  "shared_read_only_path_count": 8,
+  "integration_only_path_count": 4,
+  "all_source_writes_within_m4_2_exclusive_paths": "yes",
+  "m4_4_exclusive_write_path_mutation_count": 0,
+  "shared_read_only_path_mutation_count": 0,
+  "integration_only_path_mutation_count": 0,
+  "forbidden_cross_lane_write_count": 0,
+  "m4_4_candidate_touched": "no",
+  "integration_only_exports_or_tests_touched": "no",
+  "repair_scope_expansion_allowed": "no",
+  "runtime_or_github_mutation": "none",
+  "deferred_to_serial_integration": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "tests/**",
+    "aota_forge/core/__init__.py and exports"
+  ]
+}
