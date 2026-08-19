@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-1 source regression results",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-1-SOURCE",
+  "expected_base_sha": "ddfaee840f42710e3ce61c20522dba3674a96526",
+  "focused": {
+    "command": "python3 scripts/m4_1_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 19,
+    "negative_reversion_test_count": 10
+  },
+  "static": [
+    {"command": "python3 -m compileall aota_forge", "result": "PASS"},
+    {"command": "git diff --check", "result": "PASS"}
+  ],
+  "existing_descriptor_regression": {"command": "python3 scripts/m2a_contract_foundation.py", "result": "PASS", "checks": "28/28"},
+  "existing_ingress_regression": {"command": "python3 scripts/m2b_ingress_contract.py", "result": "PASS", "checks": "63/63"},
+  "m2_relevant_regression": {"command": "python3 scripts/m2_regression_corpus.py --json", "result": "PASS", "evidence_executed": 30, "fixtures_passed": 30},
+  "m3_relevant_regression": {
+    "authority": {"command": "python3 scripts/m3_b5_authority_capability_lease.py", "semantic_result": "PASS", "checks": "28/28", "historical_exact_base_assertion": "FAIL"},
+    "cas_idempotency": {"command": "python3 scripts/m3_b6_revision_cas_transaction.py", "result": "PASS", "checks": "36/36"},
+    "classification": "PASS_WITH_HISTORICAL_EXACT_BASE_ASSERTION_STALE"
+  },
+  "regression_ownership": {
+    "DRIFT-1": "contract descriptor/hash source proof",
+    "RC2-1": "canonical authoritative-effect result source proof",
+    "B014-F": "canonical authoritative-effect result source proof",
+    "B011": "contract prerequisite only; lifecycle behavior deferred",
+    "B013": "contract prerequisite only; retirement behavior deferred",
+    "B014": "contract prerequisite only; lifecycle behavior deferred",
+    "RECOVERY-1": "result/intention prerequisite only; recovery runtime deferred"
+  },
+  "behavioral_closure_claimed": "no",
+  "false_behavioral_closure_claim_count": 0
+}

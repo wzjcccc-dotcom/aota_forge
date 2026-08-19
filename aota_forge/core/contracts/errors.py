@@ -283,6 +283,87 @@ class NeedsSemanticChoiceError(ForgeError):
         _canonical_init(self, message, retryable, details)
 
 
+class MutationConflictError(ForgeError):
+    code = "CONFLICT"
+    default_message = "mutation intent or precondition conflicts"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class MutationBlockedError(ForgeError):
+    code = "BLOCKED"
+    default_message = "mutation prerequisite is not satisfied"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class OutcomeUnknownError(ForgeError):
+    code = "OUTCOME_UNKNOWN"
+    default_message = "authoritative mutation outcome is unknown"
+    default_retryable = True
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class FailedNoEffectError(ForgeError):
+    code = "FAILED_NO_EFFECT"
+    default_message = "mutation failed with no authoritative effect"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class StaleSubjectError(ForgeError):
+    code = "STALE_SUBJECT"
+    default_message = "Subject revision precondition is stale"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class StaleAuthorityError(ForgeError):
+    code = "STALE_AUTHORITY"
+    default_message = "external authority precondition is stale"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class InvalidPredecessorError(ForgeError):
+    code = "INVALID_PREDECESSOR"
+    default_message = "mutation predecessor state is invalid"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class MaterializationFailedError(ForgeError):
+    code = "MATERIALIZATION_FAILED"
+    default_message = "authoritative mutation materialization failed"
+    default_retryable = True
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class IdempotencyConflictError(ForgeError):
+    code = "IDEMPOTENCY_CONFLICT"
+    default_message = "idempotency identity is bound to a different intent"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
 class GovernanceProjectionDriftError(ForgeError):
     code = "GOVERNANCE_PROJECTION_DRIFT"
     default_message = "governance projection drift"
@@ -413,6 +494,15 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         ActiveWorkItemMissingError,
         ProjectInitializationRequiredError,
         NeedsSemanticChoiceError,
+        MutationConflictError,
+        MutationBlockedError,
+        OutcomeUnknownError,
+        FailedNoEffectError,
+        StaleSubjectError,
+        StaleAuthorityError,
+        InvalidPredecessorError,
+        MaterializationFailedError,
+        IdempotencyConflictError,
         GovernanceProjectionDriftError,
         ContextNotSupportedError,
         UnknownInputError,

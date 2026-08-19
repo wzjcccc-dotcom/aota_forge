@@ -20,6 +20,8 @@ import json
 import uuid
 from typing import Any
 
+from aota_forge.core.contracts.mutation import MutationResult
+
 
 def new_correlation_id() -> str:
     return uuid.uuid4().hex
@@ -118,6 +120,54 @@ def failure_from_error(
         next_action=next_action,
         audit=audit,
     )
+
+
+def mutation_envelope(
+    mutation: MutationResult,
+    *,
+    data: dict[str, Any] | None = None,
+    evidence: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    """Project a canonical mutation result without promoting local success.
+
+    Only verified applied/replayed effects use the existing success shape.  All
+    other effects remain explicit machine results, including an unknown
+    authoritative outcome after local handler success.
+    """
+    if not isinstance(mutation, MutationResult):
+        raise TypeError("mutation must be MutationResult")
+    if mutation.usable_success:
+        envelope = success(
+            mutation.operation,
+            data=data,
+            evidence=evidence,
+            warnings=warnings,
+            status=mutation.status,
+            result=mutation.result,
+            next_action=mutation.next_action,
+            semantic_choices=list(mutation.semantic_choices),
+            correlation_id=mutation.correlation_id,
+        )
+    else:
+        first_error = next(iter(mutation.errors), None)
+        code = str(first_error.get("code")) if first_error and first_error.get("code") else mutation.mutation_effect.value
+        message = str(first_error.get("message")) if first_error and first_error.get("message") else mutation.mutation_effect.value
+        envelope = failure(
+            mutation.operation,
+            code,
+            message,
+            correlation_id=mutation.correlation_id,
+            blockers=list(mutation.blockers),
+            next_action=mutation.next_action,
+        )
+        envelope["status"] = mutation.status
+        envelope["result"] = mutation.result
+        envelope["semantic_choices"] = list(mutation.semantic_choices)
+    envelope["mutation_effect"] = mutation.mutation_effect.value
+    envelope["authoritative_effect_confirmed"] = mutation.authoritative_effect_confirmed.value
+    envelope["effect_evidence"] = [dict(item) for item in mutation.effect_evidence]
+    return envelope
 
 
 def to_json(payload: dict[str, Any]) -> str:

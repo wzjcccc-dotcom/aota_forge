@@ -26,6 +26,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from aota_forge.core.contracts.canonical import canonicalize
 from aota_forge.core.contracts.version import PROTOCOL_VERSION
 
 from aota_forge.core.contracts.errors import DuplicateOperationInputError
@@ -88,6 +89,10 @@ class OperationContractDescriptor:
     idempotency: str | None = None
     errors: tuple[str, ...] = field(default_factory=tuple)
     protocol_version: str = PROTOCOL_VERSION
+    decision_required: bool = False
+    subject_revision_precondition: bool = False
+    external_authority_precondition: bool = False
+    result_contract: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain JSON-native dict (no callables, no descriptors).
@@ -108,12 +113,16 @@ class OperationContractDescriptor:
             "internal_ids_required": list(self.internal_ids_required),
             "internal_ids_created": list(self.internal_ids_created),
             "read_write": self.read_write,
-            "mutation_scope": self.mutation_scope,
-            "required_authority": self.required_authority,
+            "mutation_scope": canonicalize(self.mutation_scope, path="mutation_scope"),
+            "required_authority": canonicalize(self.required_authority, path="required_authority"),
             "approval_required": self.approval_required,
-            "valid_predecessor_state": self.valid_predecessor_state,
-            "valid_successor_state": self.valid_successor_state,
-            "idempotency": self.idempotency,
+            "decision_required": self.decision_required,
+            "valid_predecessor_state": canonicalize(self.valid_predecessor_state, path="valid_predecessor_state"),
+            "valid_successor_state": canonicalize(self.valid_successor_state, path="valid_successor_state"),
+            "subject_revision_precondition": self.subject_revision_precondition,
+            "external_authority_precondition": self.external_authority_precondition,
+            "idempotency": canonicalize(self.idempotency, path="idempotency"),
+            "result_contract": canonicalize(self.result_contract, path="result_contract"),
             "errors": list(self.errors),
             "protocol_version": self.protocol_version,
         }
@@ -170,9 +179,13 @@ class OperationContractDescriptor:
             mutation_scope=raw.get("mutation_scope"),
             required_authority=raw.get("required_authority"),
             approval_required=bool(raw.get("approval_required", False)),
+            decision_required=bool(raw.get("decision_required", False)),
             valid_predecessor_state=raw.get("valid_predecessor_state"),
             valid_successor_state=raw.get("valid_successor_state"),
+            subject_revision_precondition=bool(raw.get("subject_revision_precondition", False)),
+            external_authority_precondition=bool(raw.get("external_authority_precondition", False)),
             idempotency=raw.get("idempotency"),
+            result_contract=raw.get("result_contract"),
             errors=tuple(raw.get("errors", [])),
             protocol_version=raw.get("protocol_version", PROTOCOL_VERSION),
         )

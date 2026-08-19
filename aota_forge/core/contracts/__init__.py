@@ -29,6 +29,14 @@ from aota_forge.core.contracts.version import (
     PROTOCOL_VERSION,
     protocol_version,
 )
+from aota_forge.core.contracts.mutation import (
+    AuthoritativeEffectConfirmation,
+    CanonicalMutationResult,
+    MutationEffect,
+    MutationIntent,
+    MutationPreconditions,
+    MutationResult,
+)
 
 __all__ = [
     "OperationContractDescriptor",
@@ -43,4 +51,10 @@ __all__ = [
     "OPERATION_CONTRACT_PROTOCOL",
     "PROTOCOL_VERSION",
     "protocol_version",
+    "MutationIntent",
+    "MutationPreconditions",
+    "MutationEffect",
+    "AuthoritativeEffectConfirmation",
+    "MutationResult",
+    "CanonicalMutationResult",
 ]
