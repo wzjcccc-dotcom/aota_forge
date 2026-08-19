@@ -8,12 +8,13 @@ by the accepted B3 resolver; the Subject is the authority and revision root.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
-from typing import Mapping
+import re
+from typing import Any, Mapping
 
 from aota_forge.core.capability_lease import (
     CapabilityLease,
@@ -29,9 +30,10 @@ from aota_forge.core.context import (
 )
 from aota_forge.core.graph import records
 from aota_forge.core.graph.repository import OwningSubjectResolver
-from aota_forge.core.identity.errors import ObjectRefError
+from aota_forge.core.identity.errors import IdentityError, ObjectRefError
+from aota_forge.core.identity.ids import InternalId
 from aota_forge.core.identity.kinds import IdKind
-from aota_forge.core.identity.refs import ObjectRef, make_object_ref
+from aota_forge.core.identity.refs import ObjectRef, make_object_ref, parse_object_ref
 
 CAS_IMPLEMENTATION_STARTED = False
 TRANSACTION_IMPLEMENTATION_STARTED = False
@@ -47,7 +49,38 @@ LEASE_OPERATION_MISMATCH_DENIED = True
 LEASE_TARGET_MISMATCH_DENIED = True
 STALE_EXPECTED_REVISION_DENIED_OR_BLOCKED = True
 FOLLOWUP_REQUIRES_MATERIALIZED_DECISION = True
+TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION = False
+DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED = True
+APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE = False
+MODEL_MAY_SELF_ASSERT_TRUSTED_AUTHORIZATION = False
+NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN = False
+
+_SAFE_AUTHORIZATION_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+AUTHORIZATION_BASIS_VALUES = frozenset(
+    {
+        "trusted_scope_no_extra_approval",
+        "approval_evidence",
+        "materialized_decision_evidence",
+        "project_milestone_semantic_decision",
+    }
+)
 FOLLOWUP_DECISION_MISMATCH_DENIED = True
+DECISION_DIGEST_VALIDITY_EQUALS_SEMANTIC_VALIDITY = False
+RESOLVER_RETURNED_OBJECT_EQUALS_VALID_DECISION = False
+RESOLVER_IS_SEMANTIC_DECISION_MAKER = False
+MATERIALIZED_DECISION_VALIDATION_BYPASS_ALLOWED = False
+
+_MAX_DECISION_TEXT_LENGTH = 4096
+_MAX_DECISION_REFERENCE_LENGTH = 4096
+
+# The descriptor schema does not carry a Decision-kind field.  Existing source
+# semantics bind followup creation to ``followup``; M4-2 authorization evidence
+# uses the distinct ``authorization`` kind.
+_EXPECTED_DECISION_KINDS_BY_OPERATION = {
+    "create_followup_subject": frozenset({"followup", "branch_followup"}),
+}
+_M4_2_AUTHORIZATION_DECISION_KIND = "authorization"
 
 
 class AuthorityDecision(str, Enum):
@@ -82,6 +115,17 @@ class AuthorityReason(str, Enum):
     APPROVAL_MISMATCH = "APPROVAL_MISMATCH"
     DECISION_REQUIRED = "DECISION_REQUIRED"
     DECISION_MISMATCH = "DECISION_MISMATCH"
+    AUTHORIZATION_MISSING = "AUTHORIZATION_MISSING"
+    AUTHORIZATION_SCOPE_MISMATCH = "AUTHORIZATION_SCOPE_MISMATCH"
+    AUTHORIZATION_TARGET_MISMATCH = "AUTHORIZATION_TARGET_MISMATCH"
+    AUTHORIZATION_OPERATION_MISMATCH = "AUTHORIZATION_OPERATION_MISMATCH"
+    AUTHORIZATION_CONTRACT_DRIFT = "AUTHORIZATION_CONTRACT_DRIFT"
+    MATERIALIZED_DECISION_REQUIRED = "MATERIALIZED_DECISION_REQUIRED"
+    SUBJECT_REVISION_STALE = "SUBJECT_REVISION_STALE"
+    AUTHORITY_PRECONDITION_STALE = "AUTHORITY_PRECONDITION_STALE"
+    LEASE_CONSUMED = "LEASE_CONSUMED"
+    LEASE_INTENT_MISMATCH = "LEASE_INTENT_MISMATCH"
+    OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION = "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION"
 
 
 @dataclass(frozen=True)
@@ -215,6 +259,284 @@ class MaterializedDecisionEvidence:
 
 
 @dataclass(frozen=True)
+class TrustedMutationAuthorization:
+    """Already-decided mutation authority, never a semantic decision engine.
+
+    This value is durable evidence for an exact semantic decision.  A runtime
+    bound ``TrustedContext`` is retained separately from the canonical
+    representation so a model-supplied ``Principal`` cannot promote itself to
+    trusted authority.
+    """
+
+    principal: Principal
+    operation: str
+    target: ObjectRef
+    mutation_scope: Mapping[str, str]
+    contract_hash: str
+    intent_fingerprint: str
+    subject_expected_revision: int | None = None
+    external_authority_precondition: str | None = None
+    authority_source_revision: str | int | None = None
+    authority_observed_raw_digest: str | None = None
+    candidate_raw_digest: str | None = None
+    normalized_plan_digest: str | None = None
+    authorization_basis: str = "trusted_scope_no_extra_approval"
+    approval_basis: ApprovalEvidence | None = None
+    decision_basis: MaterializedDecisionEvidence | None = None
+    reservation_ref: str | None = None
+    candidate_identity: str | None = None
+    authorization_id: str | None = None
+    issued_at: datetime | None = None
+    expires_at: datetime | None = None
+    trusted_context: TrustedContext | None = field(default=None, repr=False, compare=False)
+
+    TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION = False
+    DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED = True
+    APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE = False
+    MODEL_MAY_SELF_ASSERT_TRUSTED_PRINCIPAL = False
+    MODEL_MAY_SELF_ASSERT_CAPABILITY_LEASE = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.principal, Principal):
+            raise ValueError("trusted authorization principal must be a Principal")
+        if not isinstance(self.operation, str) or not _SAFE_AUTHORIZATION_TOKEN.fullmatch(self.operation):
+            raise ValueError("trusted authorization operation must be a bounded safe identifier")
+        if not isinstance(self.target, ObjectRef):
+            raise ValueError("trusted authorization target must be an ObjectRef")
+        object.__setattr__(self, "mutation_scope", normalize_scope(self.mutation_scope))
+        if not isinstance(self.contract_hash, str) or not _SHA256.fullmatch(self.contract_hash):
+            raise ValueError("trusted authorization contract_hash must be a SHA-256 hex digest")
+        if not isinstance(self.intent_fingerprint, str) or not _SHA256.fullmatch(self.intent_fingerprint):
+            raise ValueError("trusted authorization intent_fingerprint must be a SHA-256 hex digest")
+        if self.subject_expected_revision is not None and (
+            isinstance(self.subject_expected_revision, bool)
+            or not isinstance(self.subject_expected_revision, int)
+            or self.subject_expected_revision < 0
+        ):
+            raise ValueError("subject_expected_revision must be a non-negative integer when supplied")
+        if self.external_authority_precondition is not None and (
+            not isinstance(self.external_authority_precondition, str)
+            or not self.external_authority_precondition
+            or len(self.external_authority_precondition) > 4096
+        ):
+            raise ValueError("external_authority_precondition must be a bounded string when supplied")
+        if self.authority_source_revision is not None and (
+            isinstance(self.authority_source_revision, bool)
+            or not isinstance(self.authority_source_revision, (str, int))
+            or (isinstance(self.authority_source_revision, str) and not self.authority_source_revision)
+        ):
+            raise ValueError("authority_source_revision must be a bounded string or integer when supplied")
+        for name, value in (
+            ("authority_observed_raw_digest", self.authority_observed_raw_digest),
+            ("candidate_raw_digest", self.candidate_raw_digest),
+            ("normalized_plan_digest", self.normalized_plan_digest),
+        ):
+            if value is not None and (not isinstance(value, str) or not _SHA256.fullmatch(value)):
+                raise ValueError(f"{name} must be a SHA-256 hex digest when supplied")
+        if (
+            self.authority_observed_raw_digest is not None
+            and self.normalized_plan_digest is not None
+            and self.authority_observed_raw_digest == self.normalized_plan_digest
+        ):
+            raise ValueError("raw source and normalized plan digests are separate domains")
+        if self.authorization_basis not in AUTHORIZATION_BASIS_VALUES:
+            raise ValueError("authorization_basis is not a recognized authorization basis")
+        if self.approval_basis is not None and not isinstance(self.approval_basis, ApprovalEvidence):
+            raise ValueError("approval_basis must be typed ApprovalEvidence")
+        if self.decision_basis is not None and not isinstance(self.decision_basis, MaterializedDecisionEvidence):
+            raise ValueError("decision_basis must be typed MaterializedDecisionEvidence")
+        for name, value in (
+            ("reservation_ref", self.reservation_ref),
+            ("candidate_identity", self.candidate_identity),
+            ("authorization_id", self.authorization_id),
+        ):
+            if value is not None and (not isinstance(value, str) or not _SAFE_AUTHORIZATION_TOKEN.fullmatch(value)):
+                raise ValueError(f"{name} must be a bounded safe identifier when supplied")
+        if self.issued_at is not None:
+            issued_at = _require_authorization_timestamp("issued_at", self.issued_at)
+            object.__setattr__(self, "issued_at", issued_at)
+        if self.expires_at is not None:
+            expires_at = _require_authorization_timestamp("expires_at", self.expires_at)
+            object.__setattr__(self, "expires_at", expires_at)
+        if self.issued_at is not None and self.expires_at is not None and self.expires_at <= self.issued_at:
+            raise ValueError("trusted authorization expires_at must be after issued_at")
+
+    def to_canonical_dict(self) -> dict[str, Any]:
+        """Return the deterministic exact binding representation."""
+        return {
+            "principal": self.principal.to_audit(),
+            "operation": self.operation,
+            "typed_target": self.target.to_canonical(),
+            "mutation_scope": dict(self.mutation_scope),
+            "contract_hash": self.contract_hash,
+            "intent_fingerprint": self.intent_fingerprint,
+            "subject_expected_revision": self.subject_expected_revision,
+            "external_authority_precondition": self.external_authority_precondition,
+            "authority_source_revision": self.authority_source_revision,
+            "authority_observed_raw_digest": self.authority_observed_raw_digest,
+            "candidate_raw_digest": self.candidate_raw_digest,
+            "normalized_plan_digest": self.normalized_plan_digest,
+            "authorization_basis": self.authorization_basis,
+            "approval_basis": _approval_canonical(self.approval_basis),
+            "decision_basis": _decision_canonical(self.decision_basis),
+            "reservation_ref": self.reservation_ref,
+            "candidate_identity": self.candidate_identity,
+            "authorization_id": self.authorization_id,
+            "issued_at": self.issued_at.isoformat() if self.issued_at is not None else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at is not None else None,
+        }
+
+    @property
+    def typed_target(self) -> ObjectRef:
+        return self.target
+
+    @property
+    def external_authority_precondition_digest_or_reference(self) -> str | None:
+        return self.external_authority_precondition
+
+    @property
+    def exact_candidate_or_exact_mutation_identity(self) -> str | None:
+        return self.candidate_identity
+
+    @property
+    def materialized_decision_basis(self) -> MaterializedDecisionEvidence | None:
+        return self.decision_basis
+
+    @property
+    def issuance_correlation_or_reservation_reference(self) -> str | None:
+        return self.reservation_ref or self.authorization_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.to_canonical_dict()
+
+    def to_canonical_json(self) -> str:
+        return json.dumps(self.to_canonical_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def binding_digest(self) -> str:
+        return _digest(self.to_canonical_dict())
+
+    def authorization_fingerprint(self) -> str:
+        return self.binding_digest()
+
+    def to_audit(self) -> dict[str, Any]:
+        """Return bounded authority evidence without trusted-context tokens."""
+        return {
+            "authorization_fingerprint": self.authorization_fingerprint(),
+            "operation": self.operation,
+            "typed_target": self.target.to_canonical(),
+            "mutation_scope": dict(self.mutation_scope),
+            "contract_hash": self.contract_hash,
+            "intent_fingerprint": self.intent_fingerprint,
+            "subject_expected_revision": self.subject_expected_revision,
+            "authorization_basis": self.authorization_basis,
+            "reservation_ref": self.reservation_ref,
+            "candidate_identity": self.candidate_identity,
+        }
+
+
+def _require_authorization_timestamp(name: str, value: datetime) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{name} must be a timezone-aware datetime")
+    return value.astimezone(timezone.utc)
+
+
+def _approval_canonical(evidence: ApprovalEvidence | None) -> dict[str, Any] | None:
+    if evidence is None:
+        return None
+    approver = evidence.approver.to_audit() if isinstance(evidence.approver, Principal) else None
+    return {
+        "approver": approver,
+        "operation": evidence.operation,
+        "target": evidence.target.to_canonical(),
+        "expected_revision": evidence.expected_revision,
+        "scope": dict(evidence.scope),
+        "evidence_digest": evidence.evidence_digest,
+    }
+
+
+def _decision_canonical(evidence: MaterializedDecisionEvidence | None) -> dict[str, Any] | None:
+    if evidence is None:
+        return None
+    return {
+        "decision_ref": evidence.decision_ref.to_canonical(),
+        "operation": evidence.operation,
+        "target": evidence.target.to_canonical(),
+        "expected_revision": evidence.expected_revision,
+        "scope": dict(evidence.scope),
+        "evidence_digest": evidence.evidence_digest,
+    }
+
+
+def _decision_record_is_structurally_valid(decision: object) -> bool:
+    """Validate the canonical Decision shape before checking its digest."""
+    if not isinstance(decision, records.Decision):
+        return False
+    if not isinstance(decision.decision_id, InternalId) or decision.decision_id.kind != IdKind.DECISION:
+        return False
+    if not isinstance(decision.subject_ref, InternalId) or decision.subject_ref.kind != IdKind.SUBJECT:
+        return False
+    if (
+        not isinstance(decision.decision_kind, str)
+        or not _SAFE_AUTHORIZATION_TOKEN.fullmatch(decision.decision_kind)
+        or not decision.decision_kind.strip()
+    ):
+        return False
+    if (
+        not isinstance(decision.statement, str)
+        or not decision.statement.strip()
+        or len(decision.statement) > _MAX_DECISION_TEXT_LENGTH
+    ):
+        return False
+    if not isinstance(decision.target_refs, list):
+        return False
+    for target_ref in decision.target_refs:
+        if not isinstance(target_ref, str) or not target_ref or len(target_ref) > _MAX_DECISION_REFERENCE_LENGTH:
+            return False
+        try:
+            parsed_target = parse_object_ref(target_ref)
+        except (IdentityError, TypeError, ValueError):
+            return False
+        if parsed_target.object_kind not in {IdKind.SUBJECT, IdKind.EXECUTION}:
+            return False
+    if decision.decision_time is not None and (
+        not isinstance(decision.decision_time, str)
+        or not decision.decision_time
+        or len(decision.decision_time) > _MAX_DECISION_REFERENCE_LENGTH
+    ):
+        return False
+    if not isinstance(decision.evidence_refs, list):
+        return False
+    return all(
+        isinstance(evidence_ref, str)
+        and bool(evidence_ref)
+        and len(evidence_ref) <= _MAX_DECISION_REFERENCE_LENGTH
+        for evidence_ref in decision.evidence_refs
+    )
+
+
+def _decision_kind_matches_operation(decision_kind: str, operation: str) -> bool:
+    expected_kinds = _EXPECTED_DECISION_KINDS_BY_OPERATION.get(
+        operation,
+        frozenset({_M4_2_AUTHORIZATION_DECISION_KIND}),
+    )
+    return decision_kind in expected_kinds
+
+
+def _decision_target_matches(decision: records.Decision, target: ObjectRef) -> bool:
+    """Match the optional nested target against the exact typed request target."""
+    if not decision.target_refs:
+        # Existing Subject-rooted authorization records use their owning
+        # Subject as the target binding and omit the redundant nested ref.
+        return target.object_kind == IdKind.SUBJECT
+    if len(decision.target_refs) != 1:
+        return False
+    try:
+        return parse_object_ref(decision.target_refs[0]) == target
+    except (IdentityError, TypeError, ValueError):
+        return False
+
+
+@dataclass(frozen=True)
 class AuthorityRequest:
     principal: object = None
     trusted_context: TrustedContext | None = None
@@ -229,6 +551,15 @@ class AuthorityRequest:
     approval_required: bool = False
     approval: ApprovalEvidence | None = None
     decision: MaterializedDecisionEvidence | None = None
+    authorization: TrustedMutationAuthorization | None = None
+    intent_fingerprint: str | None = None
+    external_authority_precondition: str | None = None
+    candidate_identity: str | None = None
+    reservation_ref: str | None = None
+    authority_source_revision: str | int | None = None
+    authority_observed_raw_digest: str | None = None
+    candidate_raw_digest: str | None = None
+    normalized_plan_digest: str | None = None
 
 
 def resolve_authority_target(target: ObjectRef, resolver: OwningSubjectResolver) -> AuthorityTarget:
@@ -270,6 +601,80 @@ class AuthorityEngine:
     def __init__(self, resolver: OwningSubjectResolver) -> None:
         self._resolver = resolver
 
+    def validate_materialized_decision_evidence(
+        self,
+        evidence: MaterializedDecisionEvidence,
+        *,
+        operation: str,
+        target: ObjectRef,
+        expected_revision: int,
+        scope: Mapping[str, str],
+    ) -> bool:
+        """Validate resolved Decision structure, integrity, and exact bindings.
+
+        Resolver lookup and digest verification are necessary evidence checks,
+        but neither one makes arbitrary resolved content a valid Decision.
+        """
+        if not isinstance(evidence, MaterializedDecisionEvidence):
+            return False
+        if (
+            not isinstance(operation, str)
+            or not operation
+            or not isinstance(target, ObjectRef)
+            or target.object_kind not in {IdKind.SUBJECT, IdKind.EXECUTION, IdKind.COMPLETION, IdKind.DECISION}
+            or isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            return False
+        try:
+            normalized_scope = _canonical_scope(scope)
+            if (
+                not isinstance(evidence.decision_ref, ObjectRef)
+                or evidence.decision_ref.object_kind != IdKind.DECISION
+                or not isinstance(evidence.decision_ref.internal_id, InternalId)
+                or evidence.decision_ref.internal_id.kind != IdKind.DECISION
+                or not isinstance(evidence.target, ObjectRef)
+                or not isinstance(evidence.target.internal_id, InternalId)
+                or evidence.evidence_digest is None
+                or not isinstance(evidence.evidence_digest, str)
+                or not _SHA256.fullmatch(evidence.evidence_digest)
+            ):
+                return False
+            if (
+                evidence.operation != operation
+                or evidence.target != target
+                or evidence.expected_revision != expected_revision
+                or dict(evidence.scope) != normalized_scope
+            ):
+                return False
+            resolved = resolve_authority_target(target, self._resolver)
+            decision = self._resolver.resolve_decision(evidence.decision_ref)
+        except (LookupError, IdentityError, ObjectRefError, TypeError, ValueError, KeyError, AttributeError):
+            return False
+        if not _decision_record_is_structurally_valid(decision):
+            return False
+        try:
+            if (
+                not isinstance(resolved, AuthorityTarget)
+                or not isinstance(resolved.owning_subject_ref, ObjectRef)
+                or resolved.owning_subject_ref.object_kind != IdKind.SUBJECT
+                or not isinstance(resolved.subject, records.Subject)
+                or resolved.subject.subject_id != resolved.owning_subject_ref.internal_id
+                or evidence.decision_ref.internal_id != decision.decision_id
+                or decision.subject_ref != resolved.owning_subject_ref.internal_id
+            ):
+                return False
+            # Integrity is checked before semantic Decision bindings.  A valid
+            # digest covers content; it does not certify that content's meaning.
+            if evidence.evidence_digest != evidence.computed_digest(decision):
+                return False
+            if not _decision_kind_matches_operation(decision.decision_kind, operation):
+                return False
+            return _decision_target_matches(decision, target)
+        except (TypeError, ValueError, KeyError, AttributeError, OverflowError):
+            return False
+
     @staticmethod
     def _result(
         decision: AuthorityDecision,
@@ -301,6 +706,54 @@ class AuthorityEngine:
             return self._result(AuthorityDecision.DENY, reason)
         principal = binding.principal
 
+        authorization = request.authorization
+        if authorization is not None:
+            if not isinstance(authorization, TrustedMutationAuthorization):
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_MISSING)
+            authorization_binding = resolve_principal_binding(
+                authorization.principal,
+                authorization.trusted_context or request.trusted_context,
+            )
+            if authorization_binding.trust != "trusted" or authorization_binding.principal != principal:
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_MISSING)
+            if authorization.operation != request.operation:
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_OPERATION_MISMATCH)
+            if authorization.target != request.target:
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_TARGET_MISMATCH)
+            if dict(authorization.mutation_scope) != dict(requested_scope):
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_SCOPE_MISMATCH)
+            if request.contract_hash != authorization.contract_hash:
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_CONTRACT_DRIFT)
+            if (
+                request.intent_fingerprint is not None
+                and request.intent_fingerprint != authorization.intent_fingerprint
+            ):
+                return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_INTENT_MISMATCH)
+            if (
+                request.external_authority_precondition is not None
+                and request.external_authority_precondition != authorization.external_authority_precondition
+            ):
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORITY_PRECONDITION_STALE)
+            for authorization_value, request_value in (
+                (authorization.authority_source_revision, request.authority_source_revision),
+                (authorization.authority_observed_raw_digest, request.authority_observed_raw_digest),
+                (authorization.candidate_raw_digest, request.candidate_raw_digest),
+                (authorization.normalized_plan_digest, request.normalized_plan_digest),
+            ):
+                if authorization_value is not None and authorization_value != request_value:
+                    return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORITY_PRECONDITION_STALE)
+            if (
+                authorization.subject_expected_revision is not None
+                and request.current_revision is not None
+                and authorization.subject_expected_revision != request.current_revision
+            ):
+                return self._result(AuthorityDecision.DENY, AuthorityReason.SUBJECT_REVISION_STALE)
+            if authorization.expires_at is not None:
+                if request.trusted_time is None:
+                    return self._result(AuthorityDecision.BLOCKED, AuthorityReason.TRUSTED_TIME_REQUIRED)
+                if _require_authorization_timestamp("trusted_time", request.trusted_time) >= authorization.expires_at:
+                    return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORIZATION_MISSING)
+
         lease = request.lease
         if lease is None:
             return self._result(AuthorityDecision.BLOCKED, AuthorityReason.LEASE_REQUIRED)
@@ -312,12 +765,55 @@ class AuthorityEngine:
             return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_PRINCIPAL_MISMATCH)
         if lease.operation != request.operation:
             return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_OPERATION_MISMATCH)
+        if lease.intent_fingerprint is not None and lease.intent_fingerprint != request.intent_fingerprint:
+            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_INTENT_MISMATCH)
+        if (
+            lease.external_authority_precondition is not None
+            and lease.external_authority_precondition != request.external_authority_precondition
+        ):
+            return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORITY_PRECONDITION_STALE)
+        for lease_value, request_value in (
+            (lease.authority_source_revision, request.authority_source_revision),
+            (lease.authority_observed_raw_digest, request.authority_observed_raw_digest),
+            (lease.candidate_raw_digest, request.candidate_raw_digest),
+            (lease.normalized_plan_digest, request.normalized_plan_digest),
+        ):
+            if lease_value is not None and lease_value != request_value:
+                return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORITY_PRECONDITION_STALE)
         if lease.contract_hash is not None and request.contract_hash != lease.contract_hash:
-            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_OPERATION_MISMATCH)
+            reason = (
+                AuthorityReason.AUTHORIZATION_CONTRACT_DRIFT
+                if authorization is not None
+                else AuthorityReason.LEASE_OPERATION_MISMATCH
+            )
+            return self._result(AuthorityDecision.DENY, reason)
         if request.contract_hash is not None and lease.contract_hash != request.contract_hash:
-            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_OPERATION_MISMATCH)
+            reason = (
+                AuthorityReason.AUTHORIZATION_CONTRACT_DRIFT
+                if authorization is not None
+                else AuthorityReason.LEASE_OPERATION_MISMATCH
+            )
+            return self._result(AuthorityDecision.DENY, reason)
         if lease.target != request.target:
-            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_TARGET_MISMATCH)
+            reason = (
+                AuthorityReason.AUTHORIZATION_TARGET_MISMATCH
+                if authorization is not None
+                else AuthorityReason.LEASE_TARGET_MISMATCH
+            )
+            return self._result(AuthorityDecision.DENY, reason)
+        if authorization is not None and lease.intent_fingerprint != authorization.intent_fingerprint:
+            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_INTENT_MISMATCH)
+        if (
+            authorization is not None
+            and lease.external_authority_precondition != authorization.external_authority_precondition
+        ):
+            return self._result(AuthorityDecision.DENY, AuthorityReason.AUTHORITY_PRECONDITION_STALE)
+        if lease.is_outcome_unknown:
+            return self._result(
+                AuthorityDecision.DENY,
+                AuthorityReason.OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION,
+                lease.lease_id,
+            )
         if lease.revocation_state == LEASE_REVOKED:
             return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_REVOKED, lease.lease_id)
         if lease.consumption_state == LEASE_CONSUMED:
@@ -329,8 +825,18 @@ class AuthorityEngine:
                 return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_EXPIRED, lease.lease_id)
         except (TypeError, ValueError):
             return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_INVALID)
-        if not scope_contains(lease.scope, requested_scope):
-            return self._result(AuthorityDecision.DENY, AuthorityReason.LEASE_SCOPE_MISMATCH)
+        scope_matches = (
+            dict(lease.scope) == dict(requested_scope)
+            if lease.intent_fingerprint is not None
+            else scope_contains(lease.scope, requested_scope)
+        )
+        if not scope_matches:
+            reason = (
+                AuthorityReason.AUTHORIZATION_SCOPE_MISMATCH
+                if authorization is not None
+                else AuthorityReason.LEASE_SCOPE_MISMATCH
+            )
+            return self._result(AuthorityDecision.DENY, reason)
 
         try:
             resolved = resolve_authority_target(request.target, self._resolver)
@@ -368,7 +874,7 @@ class AuthorityEngine:
             decision = request.decision or lease.decision_basis
             if decision is None:
                 return self._result(AuthorityDecision.DENY, AuthorityReason.DECISION_REQUIRED)
-            if not self._decision_matches(decision, request, resolved, requested_scope):
+            if not self._decision_matches(decision, request, requested_scope):
                 return self._result(AuthorityDecision.DENY, AuthorityReason.DECISION_MISMATCH)
 
         return self._result(AuthorityDecision.ALLOW, AuthorityReason.AUTHORIZED, lease.lease_id)
@@ -393,23 +899,17 @@ class AuthorityEngine:
         self,
         evidence: MaterializedDecisionEvidence,
         request: AuthorityRequest,
-        resolved: AuthorityTarget,
         requested_scope: Mapping[str, str],
     ) -> bool:
-        if (
-            evidence.operation != request.operation
-            or evidence.target != request.target
-            or evidence.expected_revision != request.current_revision
-            or dict(evidence.scope) != dict(requested_scope)
-        ):
+        if request.current_revision is None:
             return False
-        try:
-            decision = self._resolver.resolve_decision(evidence.decision_ref)
-        except (LookupError, ObjectRefError, TypeError, ValueError):
-            return False
-        if decision.subject_ref != resolved.owning_subject_ref.internal_id:
-            return False
-        return evidence.evidence_digest == evidence.computed_digest(decision)
+        return self.validate_materialized_decision_evidence(
+            evidence,
+            operation=request.operation,
+            target=request.target,
+            expected_revision=request.current_revision,
+            scope=requested_scope,
+        )
 
 
 __all__ = [
@@ -422,5 +922,16 @@ __all__ = [
     "AuthorityTarget",
     "AuthorityTargetError",
     "MaterializedDecisionEvidence",
+    "TrustedMutationAuthorization",
+    "APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION_EVIDENCE",
+    "AUTHORIZATION_BASIS_VALUES",
+    "DURABLE_AUTHORIZATION_EVIDENCE_ALLOWED",
+    "DECISION_DIGEST_VALIDITY_EQUALS_SEMANTIC_VALIDITY",
+    "MATERIALIZED_DECISION_VALIDATION_BYPASS_ALLOWED",
+    "MODEL_MAY_SELF_ASSERT_TRUSTED_AUTHORIZATION",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN",
+    "RESOLVER_IS_SEMANTIC_DECISION_MAKER",
+    "RESOLVER_RETURNED_OBJECT_EQUALS_VALID_DECISION",
+    "TRUSTED_MUTATION_AUTHORIZATION_IS_SEMANTIC_DECISION",
     "resolve_authority_target",
 ]

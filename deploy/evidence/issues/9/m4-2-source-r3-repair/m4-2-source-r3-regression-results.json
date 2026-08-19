@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R3 regression results",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R3-REPAIR",
+  "repair_base_sha": "cf456734b0490c8be1d0341bc58f0915b18f9619",
+  "failed_r3_review_evidence_sha": "a6123526bd3264d6a5ddbc665d58f424b32d499b",
+  "focused_source_guard": {
+    "command": "python3 scripts/m4_2_source_guard.py",
+    "result": "PASS",
+    "real_case_count": 37,
+    "real_case_pass_count": 37,
+    "recomputed_digest_case_count": 13,
+    "recomputed_digest_invalid_case_reject_count": 12,
+    "invalid_digest_case_reject_count": 1
+  },
+  "exact_independent_r3_cases": {
+    "BF-M42-SRC-R3-01": {
+      "old_candidate": "reproduced: A12 accepted a materialized review_result Decision with recomputed digest",
+      "repaired_source": "rejected:MATERIALIZED_DECISION_REQUIRED"
+    },
+    "BF-M42-SRC-R3-02": {
+      "old_candidate": "reproduced: A13 accepted a materialized alternate nested target with recomputed digest",
+      "repaired_source": "rejected:MATERIALIZED_DECISION_REQUIRED"
+    },
+    "BF-M42-SRC-R3-03": {
+      "old_candidate": "reproduced: shipped helper did not materialize cloned resolver records",
+      "repaired_source": "guard materializes and restores the exact resolver record per issuance case"
+    }
+  },
+  "required_repair_tests": {
+    "R1_reproduce_BF_R3_01_on_old_candidate": "PASS_REPRODUCED",
+    "R2_reproduce_BF_R3_02_on_old_candidate": "PASS_REPRODUCED",
+    "R3_reproduce_BF_R3_03_guard_defect": "PASS_REPRODUCED",
+    "R4_incompatible_valid_kind_rejected": "PASS_REJECTED",
+    "R5_incompatible_nested_target_rejected": "PASS_REJECTED",
+    "R6_correct_kind_wrong_target_rejected": "PASS_REJECTED",
+    "R7_wrong_kind_correct_target_rejected": "PASS_REJECTED",
+    "R8_valid_exact_decision_accepted": "PASS_ACCEPTED",
+    "R9_malformed_decision_rejected": "PASS_REJECTED",
+    "R10_invalid_digest_rejected": "PASS_REJECTED",
+    "R11_missing_authority_engine_fail_closed": "PASS_FAIL_CLOSED",
+    "R12_arbitrary_authorization_id_rejected": "PASS_REJECTED",
+    "R13_arbitrary_reservation_id_rejected": "PASS_REJECTED",
+    "R14_approval_does_not_substitute_decision": "PASS_REJECTED",
+    "R15_lease_exact_binding": "PASS",
+    "R16_lease_lifecycle": "PASS",
+    "R17_unknown_outcome": "PASS",
+    "R18_revision_domain": "PASS",
+    "R19_idempotency": "PASS",
+    "R20_read_only_ingress": "PASS"
+  },
+  "regression_commands": {
+    "compileall": {
+      "command": "python3 -m compileall aota_forge",
+      "result": "PASS"
+    },
+    "m4_1_contract_regression": {
+      "command": "python3 scripts/m4_1_source_guard.py",
+      "result": "PASS",
+      "focused_cases": 30,
+      "negative_cases": 7
+    },
+    "m3_authority_regression": {
+      "command": "python3 scripts/m3_b5_authority_capability_lease.py",
+      "semantic_result": "PASS",
+      "semantic_checks": "28/28",
+      "historical_exact_base_assertion": "stale_non_blocking_descendant_guard"
+    },
+    "m3_idempotency_regression": {
+      "command": "python3 scripts/m3_b6_revision_cas_transaction.py",
+      "result": "PASS",
+      "checks": "36/36"
+    },
+    "m3_behavioral_regression_foundation": {
+      "command": "python3 scripts/m3_b10_behavioral_regression_foundation.py",
+      "result": "PASS",
+      "matrix_classes": "16/16",
+      "required_proofs": "19/19",
+      "negative_guards": "16/16"
+    },
+    "ingress_regression": {
+      "command": "python3 scripts/m3_b12_integration_reconciliation.py",
+      "result": "PASS"
+    },
+    "git_diff_check": {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  },
+  "preserved_invariants": {
+    "materialized_decision_semantic_validation": "PASS",
+    "materialized_decision_trust_chain": "PASS",
+    "resolver_returned_object_equals_valid_decision": "no",
+    "resolver_is_semantic_decision_maker": "no",
+    "materialized_decision_validation_bypass_allowed": "no",
+    "no_authority_engine_required_decision_fails_closed": "yes",
+    "lease_issuer_is_semantic_decision_maker": "no",
+    "arbitrary_authorization_identifier_is_semantic_authority": "no",
+    "arbitrary_reservation_identifier_is_semantic_authority": "no",
+    "approval_evidence_equals_materialized_decision_evidence": "no",
+    "m4_2_write_ingress_implemented": "no",
+    "m4_2_external_authority_write_implemented": "no",
+    "m4_2_durable_journal_implemented": "no",
+    "m4_3_execution_authorized": "no"
+  }
+}

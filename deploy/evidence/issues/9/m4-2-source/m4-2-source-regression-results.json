@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source regression results",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE",
+  "base_sha": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "focused_guard": {
+    "command": "python3 scripts/m4_2_source_guard.py",
+    "result": "PASS",
+    "test_count": 23,
+    "passed_count": 23,
+    "failed_count": 0
+  },
+  "compileall": {
+    "command": "python3 -m compileall aota_forge",
+    "result": "PASS"
+  },
+  "contract_regressions": {
+    "m4_1_source_guard": {
+      "command": "python3 scripts/m4_1_source_guard.py",
+      "result": "PASS",
+      "focused_test_count": 30,
+      "negative_test_count": 7
+    },
+    "m4_1_contract_regression": "PASS"
+  },
+  "m3_regressions": {
+    "authority": {
+      "command": "python3 scripts/m3_b5_authority_capability_lease.py",
+      "behavioral_result": "PASS",
+      "behavioral_checks": "28/28",
+      "historical_exact_base_check": "FAIL_EXPECTED_DESCENDANT_BASE",
+      "historical_guard_expected_base": "b09b19e4fd4a083f165d04e96b35d52a8beacf12"
+    },
+    "idempotency_and_transaction": {
+      "command": "python3 scripts/m3_b6_revision_cas_transaction.py",
+      "result": "PASS",
+      "checks": "36/36"
+    },
+    "behavioral_regression_foundation": {
+      "command": "python3 scripts/m3_b10_behavioral_regression_foundation.py",
+      "result": "PASS",
+      "matrix_classes": "16/16",
+      "negative_guards": "16/16"
+    },
+    "ingress_readonly_regression": {
+      "command": "python3 scripts/m3_b12_integration_reconciliation.py",
+      "result": "PASS"
+    }
+  },
+  "validation": {
+    "git_diff_check": "PASS",
+    "m4_2_write_ingress": "no",
+    "external_authority_write": "no",
+    "durable_journal": "no",
+    "behavioral_closure_claimed": "no"
+  }
+}

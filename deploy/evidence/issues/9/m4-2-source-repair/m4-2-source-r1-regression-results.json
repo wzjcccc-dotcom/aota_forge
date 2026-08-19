@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-2 source R1 repair regression results",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-2-SOURCE-R1-REPAIR",
+  "repair_base_sha": "44150acf551edf8b77101eb5c64d74d090f9a7b5",
+  "focused_source_guard": {
+    "command": "python3 scripts/m4_2_source_guard.py",
+    "result": "PASS",
+    "real_case_count": 23,
+    "real_case_pass_count": 23,
+    "descendant_ancestry_case": "PASS",
+    "ownership_partition_case": "PASS"
+  },
+  "repair_case_matrix": {
+    "invalid_materialized_decision_evidence": "PASS_REJECTED",
+    "unresolved_decision_evidence": "PASS_REJECTED",
+    "missing_authority_engine": "PASS_REJECTED_FAIL_CLOSED",
+    "wrong_target_decision": "PASS_REJECTED",
+    "wrong_operation_decision": "PASS_REJECTED",
+    "wrong_scope_decision": "PASS_REJECTED",
+    "arbitrary_authorization_id_only": "PASS_REJECTED",
+    "arbitrary_reservation_id_only": "PASS_REJECTED",
+    "wrong_project_evidence": "PASS_REJECTED",
+    "wrong_milestone_evidence": "PASS_REJECTED",
+    "exact_valid_decision_evidence": "PASS_ACCEPTED",
+    "approval_evidence_cannot_substitute_decision": "PASS_REJECTED"
+  },
+  "independent_review_probe": {
+    "required_negative_cases": "12/12",
+    "result": "PASS",
+    "invalid_decision_evidence_probe": "PASS_REJECTED",
+    "project_decision_basis_probe": "PASS_REJECTED"
+  },
+  "compile_validation": {
+    "py_compile_guard": "PASS",
+    "compileall_aota_forge": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "regressions": {
+    "m4_1_contract_regression": "PASS",
+    "m3_authority_behavioral_regression": "PASS",
+    "m3_authority_behavioral_checks": "28/28",
+    "m3_authority_historical_exact_base_guard": "FAIL_EXPECTED_DESCENDANT_BASE_UNTOUCHED",
+    "m3_idempotency_regression": "PASS",
+    "m3_idempotency_checks": "36/36",
+    "m3_behavioral_regression_foundation": "PASS",
+    "m3_behavioral_regression_classes": "16/16",
+    "m3_behavioral_negative_guards": "16/16",
+    "ingress_readonly_regression": "PASS"
+  },
+  "preserved_invariants": {
+    "approval_evidence_equals_materialized_decision_evidence": "no",
+    "capability_lease_is_durable_semantic_authority": "no",
+    "lease_exact_binding": "PASS",
+    "lease_lifecycle": "PASS",
+    "unknown_outcome_blind_lease_reuse": "no",
+    "lease_may_cross_unknown_outcome_retry": "no",
+    "revision_domain_separation": "PASS",
+    "normalized_plan_digest_is_external_cas_token": "no",
+    "idempotency_authorization_binding": "PASS",
+    "authorization_error_contract": "PASS",
+    "m4_2_write_ingress_implemented": "no",
+    "m4_2_external_authority_write_implemented": "no",
+    "m4_2_durable_journal_implemented": "no"
+  }
+}
