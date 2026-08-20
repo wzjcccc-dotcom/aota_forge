@@ -1,0 +1,94 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "convergence_surface_count": 12,
+  "surfaces": [
+    {
+      "surface_id": "direct_core_mutation_surface",
+      "current_implementation_path": "aota_forge/core/transitions.py",
+      "current_semantic_contract": "plan_init and retire_plan direct mechanical transitions against TransactionStore with Lease, Preconditions, and Intent",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/core/transitions.py"
+    },
+    {
+      "surface_id": "unified_ingress_mutation_surface",
+      "current_implementation_path": "aota_forge/core/ingress.py",
+      "current_semantic_contract": "execute_mutation() with MutationIngressRequest, lease validation, descriptor lookup, handler routing, lifecycle result projection",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/core/ingress.py"
+    },
+    {
+      "surface_id": "canonical_cli_surface",
+      "current_implementation_path": "aota_forge/cli/__main__.py",
+      "current_semantic_contract": "Canonical CLI machine adapter routing, argument parsing, ingress dispatch, JSON and human rendering, exit code projection",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/cli/"
+    },
+    {
+      "surface_id": "plan_authority_port_surface",
+      "current_implementation_path": "aota_forge/adapters/plan_authority/port.py",
+      "current_semantic_contract": "PlanAuthorityMutationPort abstract port with read_raw_authority, mutate, and verify methods, multi-domain precondition model",
+      "m4_8_action": "REUSE",
+      "authorized_write_path": "aota_forge/adapters/plan_authority/port.py"
+    },
+    {
+      "surface_id": "github_authority_adapter_surface",
+      "current_implementation_path": "aota_forge/adapters/plan_authority/github.py",
+      "current_semantic_contract": "GitHubAuthorityAdapter typed external transport, read-before-write, verify-after-write, role cardinality 0/1/>1, Event Log append-only",
+      "m4_8_action": "REUSE",
+      "authorized_write_path": "aota_forge/adapters/plan_authority/github.py"
+    },
+    {
+      "surface_id": "durable_journal_store_surface",
+      "current_implementation_path": "aota_forge/core/journal/store.py",
+      "current_semantic_contract": "DurableJournalStore port with atomic CAS, PREPARED->APPLYING reservation, close/reopen durability in FileBackedDurableJournalStore",
+      "m4_8_action": "REUSE",
+      "authorized_write_path": "aota_forge/core/journal/store.py"
+    },
+    {
+      "surface_id": "mechanical_recovery_surface",
+      "current_implementation_path": "aota_forge/core/journal/recovery.py",
+      "current_semantic_contract": "RecoveryScanner and RecoveryExecutor consuming M4-5 three-way classifier and J1-J10 recovery matrix",
+      "m4_8_action": "REUSE",
+      "authorized_write_path": "aota_forge/core/journal/recovery.py"
+    },
+    {
+      "surface_id": "result_and_error_envelope_surface",
+      "current_implementation_path": "aota_forge/core/contracts/results.py",
+      "current_semantic_contract": "Canonical 5-key result envelope, LifecycleResult projection, structured ForgeError serialization without generic collapse",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/core/contracts/results.py"
+    },
+    {
+      "surface_id": "operation_contract_registry_surface",
+      "current_implementation_path": "aota_forge/core/contracts/registry.py",
+      "current_semantic_contract": "HandlerRegistry with declarative descriptors (PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR) and lazy handler bootstrap",
+      "m4_8_action": "REUSE",
+      "authorized_write_path": "aota_forge/core/contracts/registry.py"
+    },
+    {
+      "surface_id": "plan_init_lifecycle_surface",
+      "current_implementation_path": "aota_forge/core/transitions.py",
+      "current_semantic_contract": "PLAN_INIT transition handling, ProjectBinding preparation, CAS enforcement, idempotency memory",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/core/transitions.py"
+    },
+    {
+      "surface_id": "plan_retirement_lifecycle_surface",
+      "current_implementation_path": "aota_forge/core/transitions.py",
+      "current_semantic_contract": "PLAN_RETIREMENT stage-two transition, snapshot validation, active/running task protection, successor re-validation",
+      "m4_8_action": "CONVERGE",
+      "authorized_write_path": "aota_forge/core/transitions.py"
+    },
+    {
+      "surface_id": "regression_and_fixture_corpus_surface",
+      "current_implementation_path": "tests/",
+      "current_semantic_contract": "Test suites verifying M4-2..M4-7 contracts (117 total tests, 113 passing, 4 fixture debt items)",
+      "m4_8_action": "TEST_ONLY",
+      "authorized_write_path": "tests/"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "exact_title": "Post-Integration Convergence, Canonical Entry-Surface Parity, and Mutation Acceptance Closure",
+  "primary_objective": "Plan the convergence and entry-surface parity of Direct Core, Unified Ingress, and Canonical CLI across the accepted closed mutation operation set (plan_init, plan_retirement), verifying authorization-bound complete identity, multi-domain precondition enforcement, at-most-one execution, verify-after-write, durable recovery, and strict 3-way parity with zero semantic drift, zero new semantic operations, and zero cross-authority atomicity claims, while mapping historical regressions and preparing handoff to M4-R.",
+  "prerequisites": "Accepted and integrated M4-6 + M4-7 known-good checkpoint 76b89a8cf73c8b6f690e5cb74ebe8900cc101dde (with review evidence 0224cdbb99d479f152e180633479db6a61dec73d), satisfying M4 DAG M4-6+M4-7 -> M4-8.",
+  "owns": "Entry-surface convergence and parity (Direct Core, Unified Ingress, CLI) for plan_init and plan_retirement; end-to-end mechanical mutation flow; CLI mutation argument and output projection; result/error envelope convergence; authorization-bound complete identity convergence; successor/retirement regression map; historical regression mapping (Issue #8 and Issue #9); inherited fixture-debt and historical guard dispositions; M4-R handoff specification.",
+  "does_not_own": "New semantic operations; new semantic authority; CLI exclusive entrypoint/generic terminal/Git write/GitHub API; cross-authority atomic transactions; production storage engine freezing; M5 runtime/Hermes dispatch/deployment execution; M4-R implementation or completion; production Issue #9 mutations.",
+  "recovered_authority_rules": [
+    {
+      "rule_id": "AUTH-01",
+      "principle": "LLM is the semantic actor; Forge Core is executor-neutral; Unified Control Plane is deterministic/mechanical.",
+      "enforcement": "No mechanical component (Core, Ingress, CLI, Port, Adapter, Journal) may make semantic choices."
+    },
+    {
+      "rule_id": "AUTH-02",
+      "principle": "CLI is canonical machine adapter only, not exclusive entrypoint or semantic engine.",
+      "enforcement": "Direct Core and Unified Ingress remain fully supported first-class entry surfaces with 0 semantic authority delta."
+    },
+    {
+      "rule_id": "AUTH-03",
+      "principle": "GitHub is an external authority adapter, not Core ontology or semantic authority.",
+      "enforcement": "Core contracts never reference GitHub API primitives; GitHub adapter is isolated behind PlanAuthorityMutationPort."
+    },
+    {
+      "rule_id": "AUTH-04",
+      "principle": "Cross-authority atomic transactions are not available.",
+      "enforcement": "Subject graph CAS and external authority writes are separate mechanical steps; atomicity is never claimed across boundaries."
+    },
+    {
+      "rule_id": "AUTH-05",
+      "principle": "Durable storage neutrality.",
+      "enforcement": "Durable journal is an abstract port; file-backed adapter is reference/test-only, never frozen as production engine."
+    },
+    {
+      "rule_id": "AUTH-06",
+      "principle": "Closed mutation operation set.",
+      "enforcement": "Exactly plan_init and plan_retirement are accepted writable operations in M4; zero new semantic operations allowed."
+    },
+    {
+      "rule_id": "AUTH-07",
+      "principle": "Multi-domain precondition separation.",
+      "enforcement": "Subject revision CAS, authority source revision token, observed raw digest, candidate raw digest, and normalized plan digest are distinct domains."
+    },
+    {
+      "rule_id": "AUTH-08",
+      "principle": "Complete authorization-bound identity.",
+      "enforcement": "Idempotency key alone is not complete identity; full semantic and authority context is bound to prevent replay on changed auth."
+    },
+    {
+      "rule_id": "AUTH-09",
+      "principle": "Read-before-write and verify-after-write.",
+      "enforcement": "External writes require precondition verification before write and mandatory readback re-verification after write."
+    },
+    {
+      "rule_id": "AUTH-10",
+      "principle": "Fresh authorization required for retry.",
+      "enforcement": "UNKNOWN_OUTCOME or RETRYABLE_NO_EFFECT do not grant automatic retry authority; a fresh CapabilityLease is required."
+    }
+  ]
+}

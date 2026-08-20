@@ -1,0 +1,24 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "downstream_milestone": "M4-R",
+  "m4_r_title": "Milestone 4 Full Regression, Review, Fixture Modernization, and Final Closure",
+  "handoff_prerequisites": [
+    "M4-8 planning package accepted by Project Steward",
+    "M4-8 source implementation completed and independently reviewed",
+    "Converged checkpoint established containing all M4 slices (M4-1 through M4-8)",
+    "3-way entry surface parity (Core / Ingress / CLI) proven with 0 drift",
+    "Historical regression mapping and failure injection suites fully passing"
+  ],
+  "m4_r_scope": [
+    "Execute full milestone regression across all M4 contracts",
+    "Modernize inherited non-acceptance test fixtures (i5, i8, i9, i12) with genuine CapabilityLeaseIssuer bindings",
+    "Modernize historical single-lane partition guards into unified descendant-aware guards",
+    "Complete independent final review of Milestone 4",
+    "Produce M4 Milestone Completion Evidence and advance global accepted writable base to M4 final checkpoint"
+  ],
+  "m5_boundary_reaffirmation": "M5 (Executor-Neutral Runtime and CLI Dispatch) remains blocked until M4-R completion and Project Steward signoff. No Hermes runtime dispatch or deployment is authorized in M4."
+}

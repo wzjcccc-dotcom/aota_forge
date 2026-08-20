@@ -1,0 +1,48 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "idempotency_key_alone_is_complete_identity": "no",
+  "complete_identity_definition": {
+    "fields": [
+      "operation",
+      "typed_target",
+      "principal",
+      "contract_hash",
+      "idempotency_key",
+      "intent_fingerprint",
+      "subject_expected_revision",
+      "authority_source_revision",
+      "authority_observed_raw_digest",
+      "candidate_raw_digest",
+      "normalized_plan_digest",
+      "authorization_reference",
+      "lease_reference"
+    ],
+    "hashing": "Deterministic SHA-256 over canonical JSON serialization"
+  },
+  "convergence_rules": [
+    {
+      "scenario": "Same idempotency key + identical complete authorization identity",
+      "expected_outcome": "REPLAYED_VERIFIED",
+      "behavior": "Returns prior committed result idempotently without executing second mutation"
+    },
+    {
+      "scenario": "Same idempotency key + changed intent or authorization parameters",
+      "expected_outcome": "CONFLICT",
+      "behavior": "Fails closed with IDEMPOTENCY_CONFLICT; replay denied"
+    },
+    {
+      "scenario": "Same idempotency key + changed raw authority precondition",
+      "expected_outcome": "CONFLICT / STALE_AUTHORITY",
+      "behavior": "Fails closed; mutation denied"
+    },
+    {
+      "scenario": "Fresh authorization on retry after RETRYABLE_NO_EFFECT",
+      "expected_outcome": "New attempt with new lease reference",
+      "behavior": "Processed as fresh authorized mutation attempt"
+    }
+  ]
+}

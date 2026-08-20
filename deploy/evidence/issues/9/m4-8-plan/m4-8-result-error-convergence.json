@@ -1,0 +1,85 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "generic_failed_collapse_allowed": "no",
+  "canonical_result_envelope_keys": [
+    "ok",
+    "operation",
+    "data",
+    "evidence",
+    "warnings",
+    "status",
+    "result",
+    "errors",
+    "blockers",
+    "semantic_choices",
+    "next_action",
+    "correlation_id",
+    "mutation_effect",
+    "authoritative_effect_confirmed",
+    "lifecycle_code"
+  ],
+  "canonical_mutation_effects": [
+    "NO_EFFECT",
+    "APPLIED_VERIFIED",
+    "REPLAYED_VERIFIED",
+    "BLOCKED",
+    "CONFLICT",
+    "NEEDS_SEMANTIC_CHOICE",
+    "OUTCOME_UNKNOWN",
+    "FAILED_NO_EFFECT"
+  ],
+  "error_mapping_table": [
+    {
+      "category": "Precondition / Authorization",
+      "codes": [
+        "AUTHORIZATION_MISSING",
+        "AUTHORIZATION_SCOPE_MISMATCH",
+        "APPROVAL_REQUIRED",
+        "STALE_SUBJECT",
+        "STALE_AUTHORITY",
+        "LEASE_EXPIRED"
+      ],
+      "exit_code": 1,
+      "retryable": false,
+      "collapse_behavior": "distinct error codes preserved, never collapsed to generic FORGE_ERROR"
+    },
+    {
+      "category": "Conflict / Replay",
+      "codes": [
+        "CONFLICT",
+        "IDEMPOTENCY_CONFLICT",
+        "CONTROL_ROLE_DUPLICATE",
+        "PLAN_INIT_ALREADY_INITIALIZED"
+      ],
+      "exit_code": 3,
+      "retryable": false,
+      "collapse_behavior": "distinct conflict codes preserved"
+    },
+    {
+      "category": "Semantic Choice Required",
+      "codes": [
+        "NEEDS_SEMANTIC_CHOICE",
+        "RETIREMENT_NEEDS_SEMANTIC_CHOICE",
+        "PROJECT_AMBIGUOUS"
+      ],
+      "exit_code": 0,
+      "retryable": false,
+      "collapse_behavior": "emitted as non-error result with semantic_choices channel populated"
+    },
+    {
+      "category": "Authoritative Outcome Unknown",
+      "codes": [
+        "OUTCOME_UNKNOWN",
+        "TIMEOUT",
+        "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION"
+      ],
+      "exit_code": 4,
+      "retryable": true,
+      "collapse_behavior": "distinct outcome unknown code preserved, triggers mechanical recovery"
+    }
+  ]
+}

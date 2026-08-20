@@ -1,0 +1,51 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "successor_rules": [
+    {
+      "rule_id": "SUCC-01",
+      "name": "Abandoned Plan Retirement",
+      "description": "Retirement kind 'abandoned' transitions state to 'cancelled' with no successor reference.",
+      "contract": "successor_ref must be None; state becomes cancelled; history preserved"
+    },
+    {
+      "rule_id": "SUCC-02",
+      "name": "Superseded Plan Retirement",
+      "description": "Retirement kind 'superseded' requires exact eligible successor_ref and transitions state to 'superseded'.",
+      "contract": "successor_ref must be valid, initialized, non-self, non-retired Plan; state becomes superseded"
+    },
+    {
+      "rule_id": "SUCC-03",
+      "name": "Active / Current Plan Protection",
+      "description": "Active or current plans are protected from retirement until deactivated.",
+      "contract": "Fails closed with RETIREMENT_TARGET_PROTECTED"
+    },
+    {
+      "rule_id": "SUCC-04",
+      "name": "Running Task Protection",
+      "description": "Plans with active running tasks cannot be retired.",
+      "contract": "Fails closed with RETIREMENT_RUNNING_TASK_PROTECTED"
+    },
+    {
+      "rule_id": "SUCC-05",
+      "name": "Stage-One Snapshot Binding",
+      "description": "Stage-two retirement request must bind to fresh stage-one candidate snapshot.",
+      "contract": "Stale snapshot fails closed with RETIREMENT_STALE_SNAPSHOT"
+    },
+    {
+      "rule_id": "SUCC-06",
+      "name": "No Heuristic Successor Selection",
+      "description": "System never guesses or auto-selects a successor when multiple candidates exist.",
+      "contract": "Fails closed with NEEDS_SEMANTIC_CHOICE"
+    },
+    {
+      "rule_id": "SUCC-07",
+      "name": "No Implicit Resurrection",
+      "description": "Retired, cancelled, or superseded plans cannot be re-initialized or un-retired.",
+      "contract": "PLAN_INIT_ALREADY_INITIALIZED / INVALID_PREDECESSOR"
+    }
+  ]
+}

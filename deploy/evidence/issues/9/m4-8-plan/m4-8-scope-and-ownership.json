@@ -1,0 +1,104 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "planning_phase_exclusive_writes": [
+    "deploy/evidence/issues/9/m4-8-plan/",
+    "scripts/m4_8_plan_guard.py"
+  ],
+  "m4_8_exclusive_write_path_count": 2,
+  "m4_8_shared_read_only_path_count": 14,
+  "m4_8_integration_only_path_count": 7,
+  "m4_8_forbidden_path_count": 4,
+  "future_execution_exclusive_write_paths": [
+    {
+      "path": "aota_forge/cli/commands/plan.py",
+      "ownership_class": "EXCLUSIVE_M4_8",
+      "rationale": "New canonical CLI command adapter for closed plan mutation operations (plan_init, plan_retirement).",
+      "consumed_contracts": [
+        "aota_forge.core.contracts.descriptor",
+        "aota_forge.core.ingress"
+      ],
+      "conflict_risk": "low"
+    },
+    {
+      "path": "tests/test_m4_8_convergence.py",
+      "ownership_class": "EXCLUSIVE_M4_8",
+      "rationale": "Dedicated end-to-end convergence, parity, and failure injection test suite for M4-8.",
+      "consumed_contracts": [
+        "aota_forge.core.ingress",
+        "aota_forge.cli.__main__",
+        "aota_forge.core.transitions"
+      ],
+      "conflict_risk": "none"
+    }
+  ],
+  "m4_8_shared_read_only_paths": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py"
+  ],
+  "m4_8_integration_only_paths": [
+    {
+      "path": "aota_forge/cli/__main__.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Attach 'aota plan init' and 'aota plan retire' subcommand routing.",
+      "conflict_risk": "medium"
+    },
+    {
+      "path": "aota_forge/cli/projection.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Ensure mutation descriptors project CLI flags and argument bindings.",
+      "conflict_risk": "low"
+    },
+    {
+      "path": "aota_forge/core/ingress.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Verify execute_mutation handles plan_init and plan_retirement through canonical ingress.",
+      "conflict_risk": "low"
+    },
+    {
+      "path": "aota_forge/core/handlers.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Verify handler registration for plan_init and plan_retirement.",
+      "conflict_risk": "low"
+    },
+    {
+      "path": "aota_forge/core/contracts/descriptor.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Export LIFECYCLE_DESCRIPTORS and contract hashes.",
+      "conflict_risk": "low"
+    },
+    {
+      "path": "aota_forge/core/contracts/results.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Export canonical result and lifecycle envelope projections.",
+      "conflict_risk": "low"
+    },
+    {
+      "path": "aota_forge/core/contracts/errors.py",
+      "ownership_class": "INTEGRATION_ONLY",
+      "rationale": "Export canonical lifecycle error codes.",
+      "conflict_risk": "low"
+    }
+  ],
+  "m4_8_forbidden_paths": [
+    "aota_forge/adapters/hermes/**",
+    "aota_forge/core/runtime/**",
+    "deploy/evidence/issues/9/m4-0/ through m4-7/",
+    "live external network transport / live GitHub mutation"
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "negative_scope_items": [
+    {
+      "item": "New Semantic Operations",
+      "allowed": "no",
+      "rationale": "Only plan_init and plan_retirement are accepted writable operations in M4."
+    },
+    {
+      "item": "New Semantic Authority",
+      "allowed": "no",
+      "rationale": "LLM remains sole semantic decision maker; Core is executor-neutral; UCP is mechanical."
+    },
+    {
+      "item": "CLI Exclusive Entrypoint",
+      "allowed": "no",
+      "rationale": "Direct Core and Unified Ingress remain valid first-class entry surfaces."
+    },
+    {
+      "item": "Generic Terminal / Execution API",
+      "allowed": "no",
+      "rationale": "CLI is a machine adapter for declared Forge operations only."
+    },
+    {
+      "item": "Generic Git Write API",
+      "allowed": "no",
+      "rationale": "Git inspection is read-only within project boundary; generic Git write is forbidden."
+    },
+    {
+      "item": "Generic GitHub API / Passthrough",
+      "allowed": "no",
+      "rationale": "GitHub adapter is typed transport behind PlanAuthorityMutationPort only."
+    },
+    {
+      "item": "Cross-Authority Atomic Transactions",
+      "allowed": "no",
+      "rationale": "Subject graph CAS and external authority are non-atomic independent systems."
+    },
+    {
+      "item": "Production Storage Engine Freezing",
+      "allowed": "no",
+      "rationale": "Durable journal store is an abstract port; file-backed adapter is reference/test-only."
+    },
+    {
+      "item": "Blind Retry / Old Lease Reuse",
+      "allowed": "no",
+      "rationale": "Retries require fresh authorization and newly issued CapabilityLease."
+    },
+    {
+      "item": "Heuristic Selection",
+      "allowed": "no",
+      "rationale": "Ambiguity in Subject, successor, or role binding returns NEEDS_SEMANTIC_CHOICE."
+    },
+    {
+      "item": "Semantic Rollback",
+      "allowed": "no",
+      "rationale": "Automatic compensating mutations or rollbacks of decisions are forbidden."
+    },
+    {
+      "item": "Production Issue #9 Write for Acceptance",
+      "allowed": "no",
+      "rationale": "Testing uses fake adapter and test stores; production Issue #9 mutation is forbidden."
+    },
+    {
+      "item": "M5 Runtime Activation / Hermes Dispatch",
+      "allowed": "no",
+      "rationale": "Runtime execution belongs to Milestone 5."
+    },
+    {
+      "item": "Early M4-R Implementation in M4-8",
+      "allowed": "no",
+      "rationale": "M4-R is a separate milestone slice for final regression and fixture modernization."
+    }
+  ]
+}

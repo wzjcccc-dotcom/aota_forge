@@ -1,0 +1,94 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "historical_regression_case_count": 14,
+  "cases": [
+    {
+      "case_id": "DRIFT-1",
+      "origin": "Issue #8 / M2-F",
+      "description": "Adapter and Core argument/type drift",
+      "resolution": "Descriptor-driven CLI argument projection; 0 authority delta"
+    },
+    {
+      "case_id": "RC2-1",
+      "origin": "Issue #8 / M4-1",
+      "description": "Authoritative outcome unknown treated as success",
+      "resolution": "Mandatory verify-after-write readback and OUTCOME_UNKNOWN classification"
+    },
+    {
+      "case_id": "B014-F",
+      "origin": "Issue #8 / M4-1",
+      "description": "Silent materialization failure",
+      "resolution": "Readback verification compares observed raw digest with candidate"
+    },
+    {
+      "case_id": "B011",
+      "origin": "Issue #8 / M3-B",
+      "description": "Subject revision CAS bypass",
+      "resolution": "TransactionStore atomic CAS with exact revision validation"
+    },
+    {
+      "case_id": "B013",
+      "origin": "Issue #8 / M4-2",
+      "description": "Capability lease replay across multiple operations",
+      "resolution": "Exact operation/target/scope binding on lease validation"
+    },
+    {
+      "case_id": "B014",
+      "origin": "Issue #8 / M4-3",
+      "description": "Duplicate mutation execution on changed intent",
+      "resolution": "Complete authorization-bound identity fingerprinting -> CONFLICT"
+    },
+    {
+      "case_id": "RECOVERY-1",
+      "origin": "Issue #8 / M4-5",
+      "description": "Heuristic recovery decision",
+      "resolution": "Pure deterministic three-way classifier (candidate/original/third)"
+    },
+    {
+      "case_id": "BIND-1",
+      "origin": "Issue #8 / M3-B9",
+      "description": "Unbound / heuristic subject binding",
+      "resolution": "Deterministic 0/1/>1 cardinality with fail-closed resolution"
+    },
+    {
+      "case_id": "WCTX-1",
+      "origin": "Issue #8 / M2-E",
+      "description": "Model-facing path injection",
+      "resolution": "Logical resource IDs resolved through operator trusted config channel"
+    },
+    {
+      "case_id": "CAS-1",
+      "origin": "Issue #9 / M4-5",
+      "description": "Subject revision confused with external CAS token",
+      "resolution": "Multi-domain precondition separation (Subject CAS vs raw revision vs digest)"
+    },
+    {
+      "case_id": "PRE-1",
+      "origin": "Issue #9 / M4-6",
+      "description": "Read-before-write omitted before GitHub write",
+      "resolution": "Mandatory raw precondition verification before external mutation"
+    },
+    {
+      "case_id": "ROLE-1",
+      "origin": "Issue #9 / M4-6",
+      "description": "Latest comment heuristic selection for control roles",
+      "resolution": "Deterministic role markers + count 0/1/>1 cardinality fail closed"
+    },
+    {
+      "case_id": "CARD-1",
+      "origin": "Issue #9 / M4-6",
+      "description": "Duplicate control role creation",
+      "resolution": "Update-in-place required; duplicate creation forbidden"
+    },
+    {
+      "case_id": "APPLY-1",
+      "origin": "Issue #9 / M4-7",
+      "description": "External write before durable journal reservation",
+      "resolution": "PREPARED -> CAS APPLYING required before external mutation call"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "historical_guards": [
+    {
+      "guard_script": "scripts/m4_2_source_guard.py",
+      "role": "M4-2 single-lane partition guard",
+      "status_on_integrated_tree": "HISTORICAL_PARTITION_NBF",
+      "disposition": "NON_BLOCKING_HISTORICAL_PARTITION_GUARD_DEBT carry-forward to M4-R"
+    },
+    {
+      "guard_script": "scripts/m4_4_source_guard.py",
+      "role": "M4-4 single-lane partition guard",
+      "status_on_integrated_tree": "HISTORICAL_PARTITION_NBF",
+      "disposition": "NON_BLOCKING_HISTORICAL_PARTITION_GUARD_DEBT carry-forward to M4-R"
+    },
+    {
+      "guard_script": "scripts/m4_5_source_guard.py",
+      "role": "M4-5 contract layer guard",
+      "status_on_integrated_tree": "HISTORICAL_PARTITION_NBF (reports M4-6/M4-7 files as out of M4-5 scope)",
+      "disposition": "NON_BLOCKING_HISTORICAL_PARTITION_GUARD_DEBT carry-forward to M4-R"
+    },
+    {
+      "guard_script": "scripts/m4_6_source_guard.py",
+      "role": "M4-6 single-lane partition guard",
+      "status_on_integrated_tree": "HISTORICAL_PARTITION_NBF",
+      "disposition": "NON_BLOCKING_HISTORICAL_PARTITION_GUARD_DEBT carry-forward to M4-R"
+    },
+    {
+      "guard_script": "scripts/m4_7_source_guard.py",
+      "role": "M4-7 single-lane partition guard",
+      "status_on_integrated_tree": "HISTORICAL_PARTITION_NBF",
+      "disposition": "NON_BLOCKING_HISTORICAL_PARTITION_GUARD_DEBT carry-forward to M4-R"
+    }
+  ],
+  "integrated_guard_status": {
+    "guard_script": "scripts/m4_6_m4_7_integration_guard.py",
+    "check_count": 69,
+    "pass_count": 69,
+    "status": "PASS"
+  }
+}

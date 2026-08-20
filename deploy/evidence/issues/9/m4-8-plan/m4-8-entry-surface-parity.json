@@ -1,0 +1,97 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "parity_semantic_drift_count": 0,
+  "parity_rules": [
+    "The same authorized operation with the same semantic inputs produces semantically equivalent results across Direct Core, Unified Ingress, and Canonical CLI.",
+    "Zero authority delta exists between entry surfaces; no entry surface has extra or bypassed semantic authority.",
+    "CLI is a canonical machine adapter only and never becomes a semantic decision engine or exclusive entrypoint."
+  ],
+  "operations": [
+    {
+      "operation": "plan_init",
+      "direct_core": {
+        "entrypoint": "aota_forge.core.transitions.plan_init(store, request)",
+        "authorization_required": "CapabilityLease valid and bound to context",
+        "input_normalization": "PlanInitRequest dataclass with typed ObjectRef, ProjectBinding, Intent, Preconditions",
+        "semantic_identity": "Canonical complete identity fingerprint (operation, target, principal, scope, contract_hash, intent_fingerprint, revisions, digests)",
+        "precondition_handling": "Subject expected revision + external raw authority precondition checked fail-closed",
+        "result_envelope": "LifecycleResult with code, mutation result, and data",
+        "error_envelope": "Structured ForgeError / LifecycleResult error projection",
+        "external_mutation_path": "PlanAuthorityMutationPort -> GitHubAuthorityAdapter",
+        "journal_usage": "DurableJournalStore PREPARED -> APPLYING -> verify -> terminal CAS",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "unified_ingress": {
+        "entrypoint": "aota_forge.core.ingress.execute_mutation(MutationIngressRequest)",
+        "authorization_required": "CapabilityLease valid and bound to context",
+        "input_normalization": "MutationIngressRequest wrapping typed PlanInitRequest and TransactionStore",
+        "semantic_identity": "Canonical complete identity fingerprint matching Direct Core",
+        "precondition_handling": "Subject expected revision + external raw authority precondition checked fail-closed",
+        "result_envelope": "Canonical 5-key dictionary envelope with lifecycle_code and mutation_effect",
+        "error_envelope": "Canonical error envelope with code, message, retryable, blockers, and audit",
+        "external_mutation_path": "PlanAuthorityMutationPort -> GitHubAuthorityAdapter",
+        "journal_usage": "DurableJournalStore PREPARED -> APPLYING -> verify -> terminal CAS",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "canonical_cli": {
+        "entrypoint": "aota plan init --plan-ref <ref> --workspace-id <ws> --project-id <p> ...",
+        "authorization_required": "CapabilityLease valid and bound to context (resolved via trusted adapter config)",
+        "input_normalization": "argparse flags projected from PLAN_INIT_DESCRIPTOR inputs, dispatched to ingress",
+        "semantic_identity": "Canonical complete identity fingerprint matching Ingress and Direct Core",
+        "precondition_handling": "Subject expected revision + external raw authority precondition checked fail-closed",
+        "result_envelope": "JSON-formatted canonical 5-key envelope (or human rendering) matching ingress",
+        "error_envelope": "JSON error envelope + exit code mapped via classify()",
+        "external_mutation_path": "Dispatches through Unified Ingress -> Core -> Port -> GitHub adapter",
+        "journal_usage": "Executed mechanically by Core journal layer",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "authority_delta": 0,
+      "drift_count": 0
+    },
+    {
+      "operation": "plan_retirement",
+      "direct_core": {
+        "entrypoint": "aota_forge.core.transitions.retire_plan(store, request)",
+        "authorization_required": "CapabilityLease valid and bound to context",
+        "input_normalization": "PlanRetirementRequest dataclass with typed ObjectRef, RetirementCandidateSnapshot, Intent, Preconditions",
+        "semantic_identity": "Canonical complete identity fingerprint (operation, target, principal, scope, contract_hash, intent_fingerprint, snapshot_id, retirement_kind, successor)",
+        "precondition_handling": "Subject expected revision + snapshot freshness + external raw authority precondition checked fail-closed",
+        "result_envelope": "LifecycleResult with code, mutation result, and data",
+        "error_envelope": "Structured ForgeError / LifecycleResult error projection",
+        "external_mutation_path": "PlanAuthorityMutationPort -> GitHubAuthorityAdapter",
+        "journal_usage": "DurableJournalStore PREPARED -> APPLYING -> verify -> terminal CAS",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "unified_ingress": {
+        "entrypoint": "aota_forge.core.ingress.execute_mutation(MutationIngressRequest)",
+        "authorization_required": "CapabilityLease valid and bound to context",
+        "input_normalization": "MutationIngressRequest wrapping typed PlanRetirementRequest and TransactionStore",
+        "semantic_identity": "Canonical complete identity fingerprint matching Direct Core",
+        "precondition_handling": "Subject expected revision + snapshot freshness + external raw authority precondition checked fail-closed",
+        "result_envelope": "Canonical 5-key dictionary envelope with lifecycle_code and mutation_effect",
+        "error_envelope": "Canonical error envelope with code, message, retryable, blockers, and audit",
+        "external_mutation_path": "PlanAuthorityMutationPort -> GitHubAuthorityAdapter",
+        "journal_usage": "DurableJournalStore PREPARED -> APPLYING -> verify -> terminal CAS",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "canonical_cli": {
+        "entrypoint": "aota plan retire --plan-ref <ref> --retirement-kind <kind> --snapshot-identity <id> ...",
+        "authorization_required": "CapabilityLease valid and bound to context (resolved via trusted adapter config)",
+        "input_normalization": "argparse flags projected from PLAN_RETIREMENT_DESCRIPTOR inputs, dispatched to ingress",
+        "semantic_identity": "Canonical complete identity fingerprint matching Ingress and Direct Core",
+        "precondition_handling": "Subject expected revision + snapshot freshness + external raw authority precondition checked fail-closed",
+        "result_envelope": "JSON-formatted canonical 5-key envelope (or human rendering) matching ingress",
+        "error_envelope": "JSON error envelope + exit code mapped via classify()",
+        "external_mutation_path": "Dispatches through Unified Ingress -> Core -> Port -> GitHub adapter",
+        "journal_usage": "Executed mechanically by Core journal layer",
+        "retry_policy": "Fresh authorization required; blind retry forbidden"
+      },
+      "authority_delta": 0,
+      "drift_count": 0
+    }
+  ]
+}

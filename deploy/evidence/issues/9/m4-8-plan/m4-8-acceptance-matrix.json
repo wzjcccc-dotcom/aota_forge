@@ -1,0 +1,111 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "positive_cases": [
+    {
+      "case_id": "POS-01",
+      "name": "Direct Core accepted mutation",
+      "description": "Direct execution of plan_init via transitions.plan_init against TransactionStore with genuine lease succeeds with PLAN_INIT_APPLIED."
+    },
+    {
+      "case_id": "POS-02",
+      "name": "Unified Ingress same mutation",
+      "description": "Execution of plan_init via ingress.execute_mutation() with same parameters produces equivalent verified result."
+    },
+    {
+      "case_id": "POS-03",
+      "name": "Canonical CLI same mutation",
+      "description": "Execution of plan_init via CLI entrypoint produces identical JSON result envelope with exit code 0."
+    },
+    {
+      "case_id": "POS-04",
+      "name": "Equivalent semantic result",
+      "description": "All three entry surfaces produce identical audit, complete identity, and state effects (0 authority delta)."
+    },
+    {
+      "case_id": "POS-05",
+      "name": "Durable external mutation success",
+      "description": "End-to-end mutation through journal PREPARED->APPLYING, fake GitHub write, readback verify, and journal VERIFIED CAS."
+    },
+    {
+      "case_id": "POS-06",
+      "name": "Unknown outcome to recovery",
+      "description": "Transport timeout transitions journal to OUTCOME_UNKNOWN; recovery scanner and executor reconcile state."
+    },
+    {
+      "case_id": "POS-07",
+      "name": "Fresh authorization retry",
+      "description": "Retry after RETRYABLE_NO_EFFECT requires and consumes fresh CapabilityLease, creating new attempt lineage."
+    },
+    {
+      "case_id": "POS-08",
+      "name": "Exact successor retirement",
+      "description": "Retirement of plan with exact successor transitions state to superseded and binds successor reference."
+    }
+  ],
+  "negative_cases": [
+    {
+      "case_id": "NEG-01",
+      "name": "CLI semantic authority",
+      "description": "CLI attempt to bypass ingress or make semantic decisions is rejected."
+    },
+    {
+      "case_id": "NEG-02",
+      "name": "Direct Core authorization bypass",
+      "description": "Direct Core call without valid CapabilityLease fails closed with AuthorizationMissingError."
+    },
+    {
+      "case_id": "NEG-03",
+      "name": "Unified Ingress lease bypass",
+      "description": "Ingress call with expired or mismatched lease fails closed."
+    },
+    {
+      "case_id": "NEG-04",
+      "name": "Same key changed authorization replay",
+      "description": "Reusing idempotency key with modified intent or authorization fails closed with CONFLICT."
+    },
+    {
+      "case_id": "NEG-05",
+      "name": "Generic terminal / Git write",
+      "description": "Attempts to execute unconstrained terminal or Git write APIs are rejected."
+    },
+    {
+      "case_id": "NEG-06",
+      "name": "Transport success treated VERIFIED without readback",
+      "description": "Adapter success alone does not commit VERIFIED; readback re-read is strictly required."
+    },
+    {
+      "case_id": "NEG-07",
+      "name": "Journal CAS treated as cross-authority atomicity",
+      "description": "No claim of atomic transaction across Subject graph and external authority."
+    },
+    {
+      "case_id": "NEG-08",
+      "name": "Retry without fresh authorization",
+      "description": "Blind retry or reusing old lease on retry is rejected."
+    },
+    {
+      "case_id": "NEG-09",
+      "name": "Heuristic successor selection",
+      "description": "Retirement without exact successor when multiple exist fails closed with NEEDS_SEMANTIC_CHOICE."
+    },
+    {
+      "case_id": "NEG-10",
+      "name": "Semantic rollback",
+      "description": "Compensating or automatic rollback of semantic decisions is forbidden."
+    },
+    {
+      "case_id": "NEG-11",
+      "name": "Frozen production storage engine",
+      "description": "FileBackedDurableJournalStore is not treated as production engine default."
+    },
+    {
+      "case_id": "NEG-12",
+      "name": "M5 runtime / deploy in M4-8",
+      "description": "Hermes dispatch, runtime activation, and deployment are rejected in M4-8."
+    }
+  ]
+}

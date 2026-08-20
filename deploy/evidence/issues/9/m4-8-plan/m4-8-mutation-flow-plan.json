@@ -1,0 +1,70 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "cross_authority_atomic_transaction_available": "no",
+  "execution_steps": [
+    {
+      "step": 1,
+      "name": "Semantic Authorization",
+      "actor": "LLM / Trusted Principal",
+      "actions": "Evaluates semantic requirements, issues AuthorityDecision.ALLOW, mints CapabilityLease with explicit intent fingerprint, scope, and contract hash."
+    },
+    {
+      "step": 2,
+      "name": "Request Construction & Entry Dispatch",
+      "actor": "Caller / Ingress / CLI Adapter",
+      "actions": "Constructs typed mutation request (PlanInitRequest / PlanRetirementRequest) with TrustedContext, Lease, Intent, and Preconditions."
+    },
+    {
+      "step": 3,
+      "name": "Ingress Validation & Lease Verification",
+      "actor": "Unified Ingress",
+      "actions": "Validates inputs against OperationContractDescriptor, verifies lease signature/scope/time via CapabilityLeaseIssuer, derives complete identity."
+    },
+    {
+      "step": 4,
+      "name": "Local Subject Transition",
+      "actor": "Core Transitions Engine",
+      "actions": "Executes local subject graph transition in TransactionStore with CAS revision checks; stages mutations."
+    },
+    {
+      "step": 5,
+      "name": "Durable Journal Reservation",
+      "actor": "Journal Executor",
+      "actions": "Creates PREPARED record in DurableJournalStore (rev 1), executes atomic CAS transition to APPLYING (rev 2) holding at-most-one attempt reservation."
+    },
+    {
+      "step": 6,
+      "name": "External Authority Mutation",
+      "actor": "PlanAuthorityMutationPort / GitHubAuthorityAdapter",
+      "actions": "Executes read-before-write to verify raw authority precondition, performs single typed mutation attempt on external target."
+    },
+    {
+      "step": 7,
+      "name": "Verify-After-Write Readback",
+      "actor": "PlanAuthorityMutationPort / GitHubAuthorityAdapter",
+      "actions": "Re-reads authoritative raw target to obtain observed revision and observed raw digest; transport success alone does not imply VERIFIED."
+    },
+    {
+      "step": 8,
+      "name": "Three-Way Classification & Terminal CAS",
+      "actor": "Journal Reconciler",
+      "actions": "Classifies observed state (candidate -> VERIFIED, original -> FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT, third -> CONFLICT, timeout/read-fail -> OUTCOME_UNKNOWN/RECONCILING) and commits terminal journal CAS."
+    },
+    {
+      "step": 9,
+      "name": "Canonical Result Projection",
+      "actor": "Core / Ingress / CLI",
+      "actions": "Projects LifecycleResult envelope and maps exit code deterministically."
+    }
+  ],
+  "transaction_boundaries": {
+    "local_graph_boundary": "TransactionStore CAS transaction on Subject graph records",
+    "durable_journal_boundary": "DurableJournalStore per-record CAS transaction on journal entries",
+    "external_authority_boundary": "External target write (GitHub Issue body / control comment)",
+    "cross_boundary_atomicity": "Explicitly unavailable; coordinated mechanically via PREPARED->APPLYING journal CAS and readback verification"
+  }
+}

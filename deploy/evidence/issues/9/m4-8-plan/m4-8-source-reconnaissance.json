@@ -1,0 +1,79 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "integrated_base_sha": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "inspected_modules": [
+    {
+      "module": "aota_forge/core/authority.py",
+      "role": "Authority engine and evaluation model",
+      "state_at_base": "Materialized decision evidence and evaluation contracts accepted in M4-2"
+    },
+    {
+      "module": "aota_forge/core/capability_lease.py",
+      "role": "Capability lease value and validation model",
+      "state_at_base": "Lease schema and cryptographic-like bounded lease token accepted in M4-2"
+    },
+    {
+      "module": "aota_forge/core/authorization.py",
+      "role": "Capability lease issuer and authorization evaluator",
+      "state_at_base": "CapabilityLeaseIssuer with strict validate_lease accepted in M4-2"
+    },
+    {
+      "module": "aota_forge/core/ingress.py",
+      "role": "Canonical Unified Ingress",
+      "state_at_base": "Read execute() + closed execute_mutation() with MutationIngressRequest accepted in M4-3"
+    },
+    {
+      "module": "aota_forge/core/transitions.py",
+      "role": "Mechanical lifecycle transitions",
+      "state_at_base": "plan_init and retire_plan with stage-one snapshot accepted in M4-4"
+    },
+    {
+      "module": "aota_forge/adapters/plan_authority/port.py",
+      "role": "Portable Plan Mutation Port",
+      "state_at_base": "Executor-neutral typed port and multi-domain precondition model accepted in M4-5"
+    },
+    {
+      "module": "aota_forge/core/journal/model.py",
+      "role": "Mutation journal model and 9-state vocabulary",
+      "state_at_base": "JournalRecord and 9-state JournalState accepted in M4-5"
+    },
+    {
+      "module": "aota_forge/adapters/plan_authority/github.py",
+      "role": "GitHub Issue / Control-Comment Authority Adapter",
+      "state_at_base": "Typed transport with read-before-write and verify-after-write accepted in M4-6"
+    },
+    {
+      "module": "aota_forge/core/journal/store.py",
+      "role": "Durable journal store port and reference adapter",
+      "state_at_base": "DurableJournalStore port and FileBackedDurableJournalStore accepted in M4-7"
+    },
+    {
+      "module": "aota_forge/core/journal/recovery.py",
+      "role": "Mechanical recovery scanner and executor",
+      "state_at_base": "Pure mechanical recovery using M4-5 three-way classifier accepted in M4-7"
+    },
+    {
+      "module": "aota_forge/cli/__main__.py",
+      "role": "Canonical CLI machine adapter",
+      "state_at_base": "Read-only CLI router with schema projection from M2-F"
+    }
+  ],
+  "baseline_regression_verification": {
+    "full_suite_total_count": 117,
+    "full_suite_pass_count": 113,
+    "failure_count": 4,
+    "failure_set": [
+      "i5",
+      "i8",
+      "i9",
+      "i12"
+    ],
+    "failure_disposition": "NON_ACCEPTANCE_FIXTURE_DEBT inherited from M4-2/M4-4 integration repair",
+    "semantic_invariant_failures": 0,
+    "m4_6_m4_7_integration_guard": "PASS (69/69 checks passed)"
+  }
+}

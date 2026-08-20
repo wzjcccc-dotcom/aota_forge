@@ -1,0 +1,81 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "failure_injection_points": [
+    {
+      "point_id": "FI-01",
+      "name": "Authorization drift",
+      "trigger": "Request supplied with mismatched contract hash or modified mutation scope",
+      "expected_outcome": "Fails closed at ingress with AUTHORIZATION_CONTRACT_DRIFT or AUTHORIZATION_SCOPE_MISMATCH"
+    },
+    {
+      "point_id": "FI-02",
+      "name": "Stale Subject revision",
+      "trigger": "Subject revision in store has incremented past expected_revision",
+      "expected_outcome": "Fails closed with STALE_SUBJECT / StaleRevisionError; no mutation applied"
+    },
+    {
+      "point_id": "FI-03",
+      "name": "Stale external authority precondition",
+      "trigger": "Raw authority revision or digest differs from authorized observation",
+      "expected_outcome": "Read-before-write rejects mutation with STALE_AUTHORITY; zero external write attempts"
+    },
+    {
+      "point_id": "FI-04",
+      "name": "Duplicate control role comment",
+      "trigger": "Issue contains >1 comment with the same control role marker",
+      "expected_outcome": "Fails closed with CONTROL_ROLE_DUPLICATE; no heuristic selection"
+    },
+    {
+      "point_id": "FI-05",
+      "name": "Durable journal CAS race",
+      "trigger": "Concurrent executor attempts to CAS from PREPARED to APPLYING on same record",
+      "expected_outcome": "Second executor receives StaleJournalRevisionError; exactly 1 external attempt executes"
+    },
+    {
+      "point_id": "FI-06",
+      "name": "External write timeout",
+      "trigger": "Transport raises TimeoutError during external mutate() call",
+      "expected_outcome": "Surfaces OUTCOME_UNKNOWN; journal transitions to RECONCILING for mechanical recovery"
+    },
+    {
+      "point_id": "FI-07",
+      "name": "Lost response / connection reset",
+      "trigger": "Transport raises ConnectionResetError during mutate()",
+      "expected_outcome": "Surfaces OUTCOME_UNKNOWN; verify readback recovers true state"
+    },
+    {
+      "point_id": "FI-08",
+      "name": "Verify readback failure",
+      "trigger": "Re-read of external target fails after write attempt",
+      "expected_outcome": "Surfaces OUTCOME_UNKNOWN; classified as RECONCILING"
+    },
+    {
+      "point_id": "FI-09",
+      "name": "Third-state observation",
+      "trigger": "Readback observes raw digest differing from both original and candidate",
+      "expected_outcome": "Classified as CONFLICT (J9); no auto-merge or heuristic resolution"
+    },
+    {
+      "point_id": "FI-10",
+      "name": "Terminal journal persist failure (J10)",
+      "trigger": "Durable store fails to persist terminal CAS transition",
+      "expected_outcome": "Rolls back to nonterminal state; recovery scanner maps J10 to RECONCILING"
+    },
+    {
+      "point_id": "FI-11",
+      "name": "Process crash & restart recovery",
+      "trigger": "Store re-opened after crash while records in APPLYING / RECONCILING",
+      "expected_outcome": "RecoveryScanner identifies nonterminals; RecoveryExecutor performs readback verify"
+    },
+    {
+      "point_id": "FI-12",
+      "name": "Fresh authorization retry lineage",
+      "trigger": "Retry attempted on RETRYABLE_NO_EFFECT record with fresh lease",
+      "expected_outcome": "Creates new journal record with distinct attempt_id linked via correlation_id"
+    }
+  ]
+}

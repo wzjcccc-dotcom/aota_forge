@@ -1,0 +1,42 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-PLANNING",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "fixture_debt_items": [
+    {
+      "test_id": "test_i5_valid_authorization_and_plan_init_are_compatible",
+      "file": "tests/test_m4_2_m4_4_integration.py",
+      "failure_code": "PLAN_INIT_AUTHORIZATION_DENIED",
+      "root_cause": "Test fixture created synthetic mock lease via _make_lease() helper without authentic issuer validation bindings matching M4-4 post-integration repair.",
+      "disposition": "NON_ACCEPTANCE_FIXTURE_DEBT carry-forward to M4-R",
+      "m4_r_remedy": "Modernize fixture in M4-R to use genuine CapabilityLeaseIssuer with valid bindings"
+    },
+    {
+      "test_id": "test_i8_abandoned_retirement_preserves_cancelled_semantics",
+      "file": "tests/test_m4_2_m4_4_integration.py",
+      "failure_code": "RETIREMENT_AUTHORIZATION_DENIED",
+      "root_cause": "Synthetic mock lease in fixture lacked authentic issuer bindings.",
+      "disposition": "NON_ACCEPTANCE_FIXTURE_DEBT carry-forward to M4-R",
+      "m4_r_remedy": "Modernize fixture in M4-R to use genuine CapabilityLeaseIssuer"
+    },
+    {
+      "test_id": "test_i9_exact_successor_retirement_is_valid",
+      "file": "tests/test_m4_2_m4_4_integration.py",
+      "failure_code": "RETIREMENT_AUTHORIZATION_DENIED",
+      "root_cause": "Synthetic mock lease in fixture lacked authentic issuer bindings.",
+      "disposition": "NON_ACCEPTANCE_FIXTURE_DEBT carry-forward to M4-R",
+      "m4_r_remedy": "Modernize fixture in M4-R to use genuine CapabilityLeaseIssuer"
+    },
+    {
+      "test_id": "test_i12_changed_intent_conflicts_on_same_idempotency_identity",
+      "file": "tests/test_m4_2_m4_4_integration.py",
+      "failure_code": "PLAN_INIT_AUTHORIZATION_DENIED",
+      "root_cause": "Synthetic mock lease in fixture lacked authentic issuer bindings.",
+      "disposition": "NON_ACCEPTANCE_FIXTURE_DEBT carry-forward to M4-R",
+      "m4_r_remedy": "Modernize fixture in M4-R to use genuine CapabilityLeaseIssuer"
+    }
+  ],
+  "m4_8_responsibility": "Document exact fixture debt; preserve non-acceptance classification; do not edit test fixtures in planning phase; schedule modernization in M4-R."
+}
