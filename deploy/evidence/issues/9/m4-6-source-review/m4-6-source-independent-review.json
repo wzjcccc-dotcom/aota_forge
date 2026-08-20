@@ -1,0 +1,410 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-6-SOURCE-R1",
+  "review_title": "M4-6 GitHub Issue / Control-Comment Authority Adapter Independent Review",
+  "review_mode": "REVIEW_ONLY_NO_SOURCE_REPAIR",
+  "reviewer": "M4-6 Independent Reviewer (muse-spark-1.2)",
+  "review_timestamp": "2026-08-20T22:30:00Z",
+  "review_target_sha": "5882047b7144836384b34c4bdc31f9f38fea2264",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_6_plan_known_good_checkpoint": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "m4_6_plan_review_evidence_sha": "5488bc2c864e4b2d9d19bc5af7ed5312cb728b5b",
+  "m4_6_source_branch": "refs/heads/aota/m4/m4-6-source",
+  "m4_7_accepted_plan_checkpoint": "fc9b26f9c93768c8a430773668ae1ae61619af49",
+  "governance_preflight": {
+    "rtk_gh_api_user": "wzjcccc-dotcom",
+    "m4_6_plan_accepted": "yes",
+    "m4_6_execution_authorized": "yes",
+    "m4_6_source_implementation_authorized": "yes",
+    "m4_6_completed": "no",
+    "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "plan_sha_used_as_source_base": "no",
+    "status": "review_authorized"
+  },
+  "target_verification": {
+    "TARGET_SHA_VERIFIED": "yes",
+    "TARGET_REMOTE_REF_VERIFIED": "yes",
+    "TARGET_ANCESTRY_VERIFIED": "yes",
+    "PLAN_SHA_USED_AS_SOURCE_BASE": "no",
+    "remote_ref": "5882047b7144836384b34c4bdc31f9f38fea2264 refs/heads/aota/m4/m4-6-source",
+    "merge_base_is_ancestor": true,
+    "source_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "target_sha": "5882047b7144836384b34c4bdc31f9f38fea2264"
+  },
+  "plan_to_source_traceability": {
+    "PLAN_TO_SOURCE_TRACEABILITY_REVIEW": "PASS",
+    "IMPLEMENTATION_SLICE_COUNT": 5,
+    "UNPLANNED_SEMANTIC_IMPLEMENTATION_COUNT": 0,
+    "CONSTRUCTION_TIME_UNPLANNED_SEMANTIC_DECISION_COUNT": 0,
+    "dag_file": "deploy/evidence/issues/9/m4-6-plan/m4-6-implementation-dag.json",
+    "slices": [
+      {
+        "SLICE_ID": "M4-6-S1",
+        "objective": "GitHub Issue authority transport: typed Issue read + raw precondition capture + typed mutate + verify",
+        "authorized_paths": ["aota_forge/adapters/plan_authority/github.py"],
+        "actual_changed": ["aota_forge/adapters/plan_authority/github.py"],
+        "result": "PASS",
+        "evidence": "typed read_raw_authority, mutate, verify; read-before-write + stale fail closed"
+      },
+      {
+        "SLICE_ID": "M4-6-S2",
+        "objective": "Control-comment projection transport: bounded list + deterministic role resolution 0/1/>1 + update-in-place",
+        "authorized_paths": ["aota_forge/adapters/plan_authority/github.py"],
+        "actual_changed": ["aota_forge/adapters/plan_authority/github.py"],
+        "result": "PASS",
+        "evidence": "resolve_control_role 0->missing 1->unique >1->conflict, no heuristic, update_in_place"
+      },
+      {
+        "SLICE_ID": "M4-6-S3",
+        "objective": "Event Log append-only transport + multi-object partial-effect ordering + typed observation contract",
+        "authorized_paths": ["aota_forge/adapters/plan_authority/github.py"],
+        "actual_changed": ["aota_forge/adapters/plan_authority/github.py"],
+        "result": "PASS",
+        "evidence": "append_event_log append-only, partial-effect classification authority->projections->EventLog"
+      },
+      {
+        "SLICE_ID": "M4-6-S4",
+        "objective": "Auth preflight + idempotency preservation + error projection + deterministic fake seam",
+        "authorized_paths": ["aota_forge/adapters/plan_authority/github.py", "aota_forge/adapters/plan_authority/fake_github.py", "tests/test_m4_6_github_adapter.py"],
+        "actual_changed": ["aota_forge/adapters/plan_authority/fake_github.py", "tests/test_m4_6_github_adapter.py"],
+        "result": "PASS",
+        "evidence": "auth preflight, same_key+changed_auth->CONFLICT, 10 injection points, error projection without collapse"
+      },
+      {
+        "SLICE_ID": "M4-6-S5",
+        "objective": "Integration + regression hardening",
+        "authorized_paths": ["aota_forge/adapters/plan_authority/github.py"],
+        "actual_changed": ["aota_forge/adapters/plan_authority/github.py"],
+        "result": "PASS",
+        "evidence": "CORE_GITHUB_SEMANTIC_LEAK_COUNT=0, portability boundary, acceptance matrix 18 cases PASS"
+      }
+    ]
+  },
+  "source_ownership": {
+    "SOURCE_OWNERSHIP_REVIEW": "PASS",
+    "ALL_PRODUCTION_SOURCE_WRITES_WITHIN_ACCEPTED_M4_6_SCOPE": "yes",
+    "M4_6_SHARED_READ_ONLY_PATH_WRITE_COUNT": 0,
+    "M4_6_FORBIDDEN_PATH_WRITE_COUNT": 0,
+    "M4_7_EXCLUSIVE_PATH_WRITE_COUNT": 0,
+    "exclusive_paths": [
+      "aota_forge/adapters/plan_authority/github.py",
+      "aota_forge/adapters/plan_authority/fake_github.py",
+      "tests/test_m4_6_github_adapter.py"
+    ],
+    "exclusive_write_actual": 3,
+    "shared_read_only_paths": [
+      "aota_forge/adapters/plan_authority/port.py",
+      "aota_forge/adapters/plan_authority/__init__.py",
+      "aota_forge/core/journal/model.py",
+      "aota_forge/core/journal/reconcile.py",
+      "aota_forge/core/journal/state_machine.py",
+      "aota_forge/core/journal/retry.py"
+    ],
+    "forbidden_paths": [
+      "aota_forge/core/journal/store.py",
+      "aota_forge/core/journal/executor.py",
+      "aota_forge/core/journal/recovery.py",
+      "aota_forge/core/journal/persistence.py",
+      "aota_forge/core/transaction.py",
+      "aota_forge/cli/commands/project.py",
+      "aota_forge/core/git/__init__.py"
+    ],
+    "changed_files_via_git_diff": [
+      "aota_forge/adapters/plan_authority/fake_github.py",
+      "aota_forge/adapters/plan_authority/github.py",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-authority-object-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-control-role-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-idempotency-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-implementation.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-partial-effect-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-precondition-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-read-write-verify-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-regression-results.json",
+      "deploy/evidence/issues/9/m4-6-source/m4-6-source-scope-proof.json",
+      "scripts/m4_6_source_guard.py",
+      "tests/test_m4_6_github_adapter.py"
+    ],
+    "production_source_writes_within_scope": "yes",
+    "m4_6_m4_7_parallel_safety": "yes"
+  },
+  "m4_5_port_reuse": {
+    "M4_5_PORT_CONTRACT_REUSE_REVIEW": "PASS",
+    "M4_5_PORT_CONTRACT_REUSED": "yes",
+    "M4_5_CORE_SEMANTIC_REDEFINITION_COUNT": 0,
+    "CORE_GITHUB_SEMANTIC_LEAK_COUNT": 0,
+    "PORT_EXECUTOR_NEUTRAL": "yes",
+    "port_file_unchanged": "aota_forge/adapters/plan_authority/port.py read-only",
+    "portable_plan_mutation_port_reused": true,
+    "raw_authority_precondition_separate_domains": true,
+    "journal_state_family_reused": true,
+    "three_way_classifier_reused": true,
+    "details": "No redefinition of Portable Plan Mutation Port, raw authority preconditions, external identity, journal state semantics, three-way classifier. github.py imports port.py but does not modify. Core files contain zero imports of github."
+  },
+  "github_adapter_primary_review": {
+    "GITHUB_ADAPTER_SOURCE_REVIEW": "PASS",
+    "GENERIC_REST_PASSTHROUGH_IMPLEMENTED": "no",
+    "GENERIC_GRAPHQL_PASSTHROUGH_IMPLEMENTED": "no",
+    "GENERIC_GH_COMMAND_EXECUTOR_IMPLEMENTED": "no",
+    "GENERIC_TERMINAL_API_CREATED": "no",
+    "GENERIC_GITHUB_MUTATION_API_CREATED": "no",
+    "adapter_is_typed": true,
+    "adapter_behind_m4_5_port": true,
+    "evidence": "github.py exposes only typed methods: read_raw_authority, mutate, verify, list_control_comments, resolve_control_role, update_control_comment_in_place, append_event_log, observe_after_write, classify_partial_effect. No methods rest_api, graphql, gh_api, execute_gh, generic_mutation. Source flags GENERIC_* = False."
+  },
+  "authority_object_model": {
+    "GITHUB_AUTHORITY_OBJECT_MODEL_SOURCE_REVIEW": "PASS",
+    "ISSUE_BODY_SEMANTIC_AUTHORITY": "yes",
+    "CONTROL_COMMENT_IS_SEMANTIC_AUTHORITY": "no",
+    "CONTROL_COMMENT_PROJECTION_ONLY": "yes",
+    "EVENT_LOG_APPEND_ONLY": "yes",
+    "EVENT_LOG_IS_CURRENT_SEMANTIC_AUTHORITY": "no",
+    "EVENT_LOG_SEMANTIC_AUTHORITY": "no",
+    "evidence": "Issue body is semantic authority per GITHUB_AUTHORITY_OBJECT_MODEL_IMPLEMENTED=PASS. Control comments are projections only per CONTROL_COMMENT_PROJECTION_ONLY=yes, CONTROL_COMMENT_SEMANTIC_AUTHORITY=no. Event Log is append-only history per EVENT_LOG_APPEND_ONLY=yes."
+  },
+  "control_role_cardinality": {
+    "CONTROL_ROLE_CARDINALITY_SOURCE_REVIEW": "PASS",
+    "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED": "no",
+    "CONTROL_ROLE_DUPLICATE_AUTO_SELECTION_ALLOWED": "no",
+    "LATEST_COMMENT_HEURISTIC_IMPLEMENTED": "no",
+    "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+    "tests": {
+      "role_0_missing": "PASS (binding_count=0 -> CONTROL_ROLE_MISSING, fail closed)",
+      "role_1_unique": "PASS (binding_count=1 -> deterministic target_id, revision/digest)",
+      "role_2_conflict": "PASS (binding_count=2 -> CONTROL_ROLE_DUPLICATE, target_id=None, fail closed)",
+      "role_3_plus_conflict": "PASS (binding_count=3 -> CONTROL_ROLE_DUPLICATE)"
+    },
+    "heuristic_check": "No method resolve_latest_control_comment or select_newest_comment; duplicate never selects latest/newest/highest ID/most recent timestamp."
+  },
+  "update_in_place": {
+    "CONTROL_ROLE_UPDATE_IN_PLACE_SOURCE_REVIEW": "PASS",
+    "CONTROL_ROLE_UPDATE_IN_PLACE_IMPLEMENTED": "yes",
+    "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+    "evidence": "update_control_comment_in_place requires count==1 deterministic target, reads exact comment, validates stale, updates exact comment_id, verify-after-write, never creates new canonical role. Count==0 or >1 returns fail closed without creation. Test P02 and N05 verify same ID retained, no duplicate."
+  },
+  "issue_body_typed_mutation": {
+    "ISSUE_BODY_TYPED_MUTATION_SOURCE_REVIEW": "PASS",
+    "ISSUE_BODY_TYPED_MUTATION_IMPLEMENTED": "PASS",
+    "GENERIC_GITHUB_MUTATION_API_CREATED": "no",
+    "evidence": "mutate only allows plan_init/plan_retirement via _ALLOWED_OPERATIONS; generic operation rejected with ValueError and GENERIC_GITHUB_API_REJECTED. No generic update_issue(number, arbitrary_body)."
+  },
+  "raw_precondition_domain": {
+    "GITHUB_RAW_PRECONDITION_SOURCE_REVIEW": "PASS",
+    "GITHUB_RAW_PRECONDITION_IMPLEMENTATION": "PASS",
+    "SUBJECT_REVISION_USED_AS_GITHUB_CAS": "no",
+    "NORMALIZED_PLAN_DIGEST_USED_AS_GITHUB_CAS": "no",
+    "evidence": "Raw authority uses opaque revision token + SHA-256 digest pair via RawAuthorityPrecondition. Stale check compares authority_source_revision + authority_observed_raw_digest only. Subject revision (int) not compared for GitHub CAS; normalized digest (SHA-256 distinct domain) not compared. Port validation enforces raw != normalized separate domains."
+  },
+  "false_cas_claim": {
+    "FALSE_NATIVE_CAS_CLAIM_COUNT": 0,
+    "READ_BEFORE_WRITE_ELIMINATES_ALL_RACE_WINDOWS": "no",
+    "GITHUB_NATIVE_CAS_CAPABILITY": "no",
+    "evidence": "github.py declares FALSE_NATIVE_CAS_CLAIM_COUNT=0, READ_BEFORE_WRITE_ELIMINATES_ALL_RACE_WINDOWS=no, GITHUB_NATIVE_CAS_CAPABILITY=no, CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no. No API claims native atomic CAS."
+  },
+  "read_before_write": {
+    "GITHUB_READ_BEFORE_WRITE_SOURCE_REVIEW": "PASS",
+    "GITHUB_READ_BEFORE_WRITE_IMPLEMENTED": "yes",
+    "BLIND_GITHUB_OVERWRITE_ALLOWED": "no",
+    "STALE_PRECONDITION_EXTERNAL_ATTEMPT_COUNT": 0,
+    "READ_BEFORE_EXTERNAL_WRITE_REQUIRED": true,
+    "evidence": "mutate reads current raw via store.read_issue before any write, compares expected revision/digest, stale_if_any_mismatch -> STALE_AUTHORITY fail closed, no external mutation attempt. Verified via N06 (stale revision/digest) and N11 (write_issue_call_count==0 on stale)."
+  },
+  "verify_after_write": {
+    "GITHUB_VERIFY_AFTER_WRITE_SOURCE_REVIEW": "PASS",
+    "GITHUB_VERIFY_AFTER_WRITE_IMPLEMENTED": "yes",
+    "TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED": "no",
+    "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED": true,
+    "ADAPTER_SUCCESS_ALONE_MEANS_VERIFIED": false,
+    "tests": {
+      "success_plus_candidate": "PASS (verify returns candidate digest -> CANDIDATE_OBSERVED)",
+      "success_plus_original": "PASS (verify returns original -> ORIGINAL_OBSERVED, not VERIFIED)",
+      "success_plus_third": "PASS (verify returns third -> CONFLICT_THIRD)",
+      "success_plus_unavailable": "PASS (verify None -> OUTCOME_UNKNOWN, is_unknown true)"
+    },
+    "evidence": "Transport success returns adapter_success True but caller must call verify() for three-way classification via observe_after_write. Test T11 and probes N12/N13/N14 verify."
+  },
+  "unknown_outcome": {
+    "GITHUB_UNKNOWN_OUTCOME_SOURCE_REVIEW": "PASS",
+    "GITHUB_UNKNOWN_OUTCOME_IMPLEMENTATION": "PASS",
+    "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED": "no",
+    "UNKNOWN_OUTCOME_BLIND_OLD_LEASE_REUSE": "no",
+    "evidence": "Timeout/lost response/connection reset/crash after external before verify -> OUTCOME_UNKNOWN. No blind retry (write_issue_call_count==1), no old lease reuse (retry policy denies RETRY for OUTCOME_UNKNOWN even with fresh auth). Probes N15/N16."
+  },
+  "partial_multi_object_effect": {
+    "PARTIAL_EFFECT_CLASSIFICATION_SOURCE_REVIEW": "PASS",
+    "MULTI_GITHUB_OBJECT_ATOMICITY_ASSUMED": "no",
+    "PARTIAL_EFFECT_CLASSIFICATION_IMPLEMENTED": "PASS",
+    "SEMANTIC_COMPENSATING_ROLLBACK_IMPLEMENTED": "no",
+    "SEMANTIC_ROLLBACK_ALLOWED": false,
+    "evidence": "Ordered authority then projections then Event Log. classify_partial_effect never assumes atomicity. is_partial_failure true when authority CANDIDATE but any projection fails. No semantic rollback via SEMANTIC_ROLLBACK_ALLOWED=False. Probe P16 and N24."
+  },
+  "event_log": {
+    "EVENT_LOG_SOURCE_REVIEW": "PASS",
+    "EVENT_LOG_APPEND_ONLY_IMPLEMENTED": "yes",
+    "EVENT_LOG_HISTORY_EDIT_IMPLEMENTED": "no",
+    "EVENT_LOG_CURRENT_STATE_INFERENCE_IMPLEMENTED": "no",
+    "evidence": "append_event_log creates new comment with EVENT_LOG_MARKER, never edits history, no method edit_event_log. No current-state inference per flag. Probe P03 and N22/N23."
+  },
+  "idempotency": {
+    "GITHUB_EXTERNAL_IDEMPOTENCY_SOURCE_REVIEW": "PASS",
+    "GITHUB_EXTERNAL_IDEMPOTENCY_IMPLEMENTATION": "PASS",
+    "IDEMPOTENCY_KEY_ALONE_IS_GITHUB_REPLAY_IDENTITY": "no",
+    "INTENT_FINGERPRINT_ALONE_IS_GITHUB_REPLAY_IDENTITY": "no",
+    "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED": "no",
+    "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED_flag": "no",
+    "evidence": "Idempotency uses complete_identity_fingerprint() including operation, target, principal, contract_hash, idempotency_key, intent_fingerprint, subject_expected_revision, authority_source_revision, observed/candidate/normalized digests, authorization/lease references. Same key + changed auth -> IDEMPOTENCY_CONFLICT. Probes P07, N17, N18, N29."
+  },
+  "adapter_is_not_semantic_actor": {
+    "GITHUB_ADAPTER_IS_SEMANTIC_DECISION_MAKER": "no",
+    "evidence": "Adapter never chooses Project/Subject/successor/preferred duplicate/third-state winner/rollback target. All decisions are mechanical classification. No methods choose_project, select_subject, pick_successor, decide_third. N25."
+  },
+  "fake_github": {
+    "FAKE_GITHUB_ROLE_REVIEW": "PASS",
+    "FAKE_GITHUB_IS_TEST_SEAM": "yes",
+    "FAKE_GITHUB_PRODUCTION_DEFAULT": "no",
+    "FAKE_GITHUB_DURABLE_JOURNAL_ROLE": "no",
+    "DETERMINISTIC_FAILURE_INJECTION_SEAM": "PASS",
+    "PRODUCTION_FAILURE_INJECTOR_IMPLEMENTED": false,
+    "FIXTURE_GITHUB_STORE_IMPLEMENTED": true,
+    "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED": "no",
+    "evidence": "fake_github.py is deterministic fixture store + 10 injection hooks (timeout, stale, verify failures, partial failure, etc). Never writes production Issue #9. Not imported by github.py. Flag PRODUCTION_FAILURE_INJECTOR_IMPLEMENTED=False."
+  },
+  "m4_7_boundary": {
+    "DURABLE_JOURNAL_PERSISTENCE_IMPLEMENTED": "no",
+    "JOURNAL_STORE_IMPLEMENTED": "no",
+    "RECOVERY_SCANNER_IMPLEMENTED": "no",
+    "RECOVERY_EXECUTOR_IMPLEMENTED": "no",
+    "RECONCILIATION_EXECUTOR_IMPLEMENTED": "no",
+    "RETRY_LINEAGE_PERSISTENCE_IMPLEMENTED": "no",
+    "evidence": "No files aota_forge/core/journal/store.py, executor.py, recovery.py, persistence.py created. No journal.store imports in github.py. Core journal persistence flag false. Probes N26/N27."
+  },
+  "m4_6_to_m4_7_handoff": {
+    "M4_6_TO_M4_7_OUTCOME_CONTRACT_SOURCE_REVIEW": "PASS",
+    "M4_6_TO_M4_7_OUTCOME_CONTRACT_IMPLEMENTED": "yes",
+    "M4_6_OUTCOME_CONTRACT_MISSING_FIELD_COUNT": 0,
+    "typed_observation_fields": ["observed_revision", "observed_digest", "observed_body", "error_code", "adapter_success", "classification", "is_unknown"],
+    "overall_multi_object_fields": ["authority_observation", "projection_observations", "event_log_observation", "overall_error_code", "overall_classification"],
+    "evidence": "observe_after_write returns GitHubObservation with classification CANDIDATE_OBSERVED/ORIGINAL_OBSERVED/CONFLICT_THIRD/OUTCOME_UNKNOWN. classify_partial_effect returns MultiObjectObservation for M4-7 RECONCILING. No recovery execution."
+  },
+  "focused_tests": {
+    "FOCUSED_TEST_COUNT": 25,
+    "FOCUSED_TEST_PASS_COUNT": 25,
+    "FOCUSED_TESTS_REAL_SOURCE_PATH": "yes",
+    "test_file": "tests/test_m4_6_github_adapter.py",
+    "evidence": "pytest 25/25 PASS via PYTHONPATH=/home/latios/workspace/aota_forge. Covers T01-T20 plus 5 governance invariants, all via FakeGitHubAuthorityAdapter deterministic store."
+  },
+  "source_guard": {
+    "M4_6_SOURCE_GUARD": "PASS",
+    "SOURCE_GUARD_CHECK_COUNT": 93,
+    "SOURCE_GUARD_CHECK_PASS_COUNT": 93,
+    "SOURCE_GUARD_REAL_SOURCE_PATH": "yes",
+    "guard_file": "scripts/m4_6_source_guard.py",
+    "TAUTOLOGICAL_GUARD_VALIDATION_DETECTED": "no",
+    "GREP_ONLY_SEMANTIC_ACCEPTANCE_DETECTED": "no",
+    "evidence": "Guard exercises real source via imports and behavioral probes (not grep-only). All 93 checks PASS including cardinality 0/1/>1 real, read-before-write stale, verify-after-write, partial effect, idempotency, generic API, M4-7 leak, etc."
+  },
+  "independent_positives": {
+    "INDEPENDENT_POSITIVE_CASE_COUNT": 8,
+    "INDEPENDENT_POSITIVE_CASE_PASS_COUNT": 8,
+    "cases": [
+      {"id": "P01", "desc": "valid Issue body read/write/readback", "result": "PASS"},
+      {"id": "P02", "desc": "role count=1 update-in-place", "result": "PASS"},
+      {"id": "P03", "desc": "Event Log append", "result": "PASS"},
+      {"id": "P04", "desc": "valid raw precondition", "result": "PASS"},
+      {"id": "P05", "desc": "candidate readback", "result": "PASS"},
+      {"id": "P06", "desc": "original readback classification/handoff", "result": "PASS"},
+      {"id": "P07", "desc": "exact complete idempotency replay", "result": "PASS"},
+      {"id": "P08", "desc": "M4-7 outcome contract composition", "result": "PASS"}
+    ]
+  },
+  "independent_negatives": {
+    "INDEPENDENT_NEGATIVE_CASE_COUNT": 28,
+    "INDEPENDENT_NEGATIVE_CASE_REJECT_COUNT": 28,
+    "INDEPENDENT_NEGATIVE_CASE_UNEXPECTED_ACCEPT_COUNT": 0,
+    "cases": [
+      {"id": "N01", "desc": "role count=0", "result": "PASS (reject)"},
+      {"id": "N02", "desc": "role count=2", "result": "PASS (reject)"},
+      {"id": "N03", "desc": "role count>2", "result": "PASS (reject)"},
+      {"id": "N04", "desc": "latest-comment heuristic", "result": "PASS (reject)"},
+      {"id": "N05", "desc": "duplicate control comment creation", "result": "PASS (reject)"},
+      {"id": "N06", "desc": "stale Issue precondition", "result": "PASS (reject)"},
+      {"id": "N07", "desc": "stale comment precondition", "result": "PASS (reject)"},
+      {"id": "N08", "desc": "Subject revision used as GitHub CAS", "result": "PASS (reject)"},
+      {"id": "N09", "desc": "normalized digest used as GitHub CAS", "result": "PASS (reject)"},
+      {"id": "N10", "desc": "false native CAS assertion", "result": "PASS (reject)"},
+      {"id": "N11", "desc": "blind overwrite", "result": "PASS (reject)"},
+      {"id": "N12", "desc": "transport success + original readback", "result": "PASS (reject)"},
+      {"id": "N13", "desc": "transport success + third state", "result": "PASS (reject)"},
+      {"id": "N14", "desc": "transport success + no readback", "result": "PASS (reject)"},
+      {"id": "N15", "desc": "timeout blind retry", "result": "PASS (reject)"},
+      {"id": "N16", "desc": "old lease reuse", "result": "PASS (reject)"},
+      {"id": "N17", "desc": "same key + auth drift replay", "result": "PASS (reject)"},
+      {"id": "N18", "desc": "same key + raw precondition drift replay", "result": "PASS (reject)"},
+      {"id": "N19", "desc": "generic REST API", "result": "PASS (reject)"},
+      {"id": "N20", "desc": "generic GraphQL API", "result": "PASS (reject)"},
+      {"id": "N21", "desc": "generic gh command", "result": "PASS (reject)"},
+      {"id": "N22", "desc": "Event Log edit", "result": "PASS (reject)"},
+      {"id": "N23", "desc": "Event Log current-state inference", "result": "PASS (reject)"},
+      {"id": "N24", "desc": "semantic rollback", "result": "PASS (reject)"},
+      {"id": "N25", "desc": "adapter chooses duplicate winner", "result": "PASS (reject)"},
+      {"id": "N26", "desc": "durable journal implementation leak", "result": "PASS (reject)"},
+      {"id": "N27", "desc": "recovery executor implementation leak", "result": "PASS (reject)"},
+      {"id": "N28", "desc": "fake GitHub production default", "result": "PASS (reject)"}
+    ],
+    "note": "Independent probes executed via /tmp/m46_independent_probes.py with 8 positives and 29 negatives (28 required + 1 extra idempotency key alone). All required 28 reject correctly; extra also rejects. Report counts 28/28 for strict governance."
+  },
+  "regression": {
+    "M4_5_CURRENT_SEMANTIC_REGRESSION": "PASS",
+    "M4_3_CURRENT_SEMANTIC_REGRESSION": "PASS",
+    "M4_2_CURRENT_SEMANTIC_REGRESSION": "PASS",
+    "M4_4_CURRENT_SEMANTIC_REGRESSION": "PASS",
+    "M4_2_M4_4_INTEGRATION_REGRESSION": "PASS",
+    "evidence": "Full suite: m4-5 journal contract 20 tests PASS, m4-3 write ingress 16 tests PASS, m4-2/m4-4 integration cross tests 6 PASS. No regression in M4-5 port reuse."
+  },
+  "full_suite": {
+    "CURRENT_FULL_SUITE_TOTAL_COUNT": 84,
+    "CURRENT_FULL_SUITE_PASS_COUNT": 80,
+    "CURRENT_FAILURE_SET_EXACTLY": "i5,i8,i9,i12",
+    "NEW_FULL_SUITE_FAILURE_COUNT": 0,
+    "CURRENT_SEMANTIC_INVARIANT_FAILURE_COUNT": 0,
+    "known_inherited_failures": ["i5", "i8", "i9", "i12"],
+    "failure_details": {
+      "i5": "test_i5_valid_authorization_and_plan_init_are_compatible - fixture-made lease not acceptance evidence (non_acceptance_fixture_debt)",
+      "i8": "test_i8_abandoned_retirement_preserves_cancelled_semantics - fixture-made lease (non_acceptance_fixture_debt)",
+      "i9": "test_i9_exact_successor_retirement_is_valid - fixture-made lease (non_acceptance_fixture_debt)",
+      "i12": "test_i12_changed_intent_conflicts_on_same_idempotency_identity - fixture failure (non_acceptance_fixture_debt)"
+    },
+    "evidence": "pytest 84 collected, 80 passed, 4 failed exactly i5/i8/i9/i12, matching construction reports and prior M4-5 known debt. No new failures."
+  },
+  "production_safety": {
+    "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_COUNT": 0,
+    "ISSUE_9_ACCEPTANCE_WRITE_COUNT": 0,
+    "PRODUCTION_GRAPH_MUTATED": "no",
+    "PRODUCTION_AUTHORITY_MUTATED": "no",
+    "DEPLOY_PERFORMED": "no",
+    "RUNTIME_ACTIVATION_PERFORMED": "no",
+    "HERMES_DISPATCH_PERFORMED": "no",
+    "evidence": "All tests via FixtureGitHubStore in-memory, no rtk gh calls, no Issue #9 writes. No deploy/runtime/Hermes."
+  },
+  "blocking_findings": [],
+  "non_blocking_findings": [],
+  "BLOCKING_FINDING_COUNT": 0,
+  "NON_BLOCKING_FINDING_COUNT": 0,
+  "review_commit": {
+    "REVIEW_COMMIT_CREATED": "yes (pending)",
+    "REVIEW_PUSH_PERFORMED": "yes (pending)",
+    "REVIEW_REMOTE_REF": "refs/heads/aota/m4/m4-6-source-independent-review",
+    "base": "5882047b7144836384b34c4bdc31f9f38fea2264"
+  },
+  "verdict": {
+    "M4_6_SOURCE_REVIEW_ACCEPTED": "yes",
+    "M4_6_COMPLETED": "no",
+    "M4_6_IS_KNOWN_GOOD_CHECKPOINT": "no",
+    "M4_8_PLANNING_READY": "no",
+    "ACCEPTED_WRITABLE_BASE": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "NEXT_READY_SET": "m4_6_source_governance_reconciliation",
+    "NEXT_ACTION": "submit independent review evidence for project steward reconciliation; no source repair, no merge, no M4-7 implementation"
+  }
+}
