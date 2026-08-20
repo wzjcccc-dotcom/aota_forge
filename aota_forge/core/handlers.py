@@ -1,4 +1,4 @@
-"""Canonical read-only operation handlers (M1, M2-I wiring).
+"""Canonical operation handlers (M1, M2-I, and M4-3 wiring).
 
 Handlers are thin routes: resolve context, call Core domain, return bounded
 payload.  They are attached onto the canonical descriptors owned by
@@ -38,11 +38,13 @@ from aota_forge.core.contracts.errors import (
 )
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.git.inspect import inspect_git
+from aota_forge.core.ingress import MutationIngressRequest
 from aota_forge.core.project.resolver import (
     resolve_project_with_fingerprint,
     resolve_workspace,
 )
 from aota_forge.core.runtime.inspect import process_status, version_identity
+from aota_forge.core.transitions import plan_init, retire_plan
 
 
 def _registry_path(params: dict[str, Any]) -> Path:
@@ -225,6 +227,16 @@ def _handle_operations_list(ctx: OperationContext) -> dict[str, Any]:
     return {"data": {"operations": available_operations()}}
 
 
+def _handle_plan_init_mutation(request: MutationIngressRequest):
+    """Dispatch the already-validated PLAN_INIT request to M4-4."""
+    return plan_init(request.store, request.request)
+
+
+def _handle_plan_retirement_mutation(request: MutationIngressRequest):
+    """Dispatch the already-validated retirement request to M4-4."""
+    return retire_plan(request.store, request.request)
+
+
 def register_operations() -> None:
     """Attach the default canonical handlers onto their registered descriptors.
 
@@ -238,6 +250,8 @@ def register_operations() -> None:
     DEFAULT_REGISTRY.bind_handler("runtime.status", _handle_runtime_status)
     DEFAULT_REGISTRY.bind_handler("host.status", _handle_host_status)
     DEFAULT_REGISTRY.bind_handler("operations.list", _handle_operations_list)
+    DEFAULT_REGISTRY.bind_handler("plan_init", _handle_plan_init_mutation)
+    DEFAULT_REGISTRY.bind_handler("plan_retirement", _handle_plan_retirement_mutation)
 
 
 register_operations()

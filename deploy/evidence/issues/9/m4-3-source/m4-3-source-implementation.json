@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 write-capable Unified Ingress source implementation",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-3-SOURCE",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "common_source_base": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "accepted_plan_sha": "5842a51527c9941d8577efc157109f68b1ae0325",
+  "plan_review_evidence": "f450840d4f086aec2d5fcedaa00e654f5094f852",
+  "read_before_write": "PASS",
+  "source_ownership_partition_read": "PASS",
+  "actual_base_verified": true,
+  "implementation": {
+    "closed_mutation_operations": [
+      "plan_init",
+      "plan_retirement"
+    ],
+    "read_only_operations_unchanged": true,
+    "lifecycle_descriptors_registered": true,
+    "contract_hashes_frozen": {
+      "plan_init": "4c23e2ca954773f33f5f9fc4ef119e8bfba8108c3ca5424a11337d707aade981",
+      "plan_retirement": "ff8c7a76237c5fe15631fd73b6900a292278ccac9c5cac23af82a5b88538252a"
+    },
+    "handlers_bound_lazily_and_idempotently": true,
+    "received_lease_only": true,
+    "lease_issue_calls_from_m4_3": 0,
+    "lease_validated_before_handler_dispatch": true,
+    "bindings_derived_from_actual_request": true,
+    "plan_init_dispatches_existing_m4_4_transition": true,
+    "retirement_dispatches_existing_m4_4_transition": true,
+    "canonical_lifecycle_result_projection": true,
+    "missing_lease_fails_closed": true,
+    "wrong_target_fails_before_mutation": true,
+    "invalid_envelope_fails_closed": true,
+    "plan_init_positive": true,
+    "plan_init_reentry_no_effect": true,
+    "plan_init_ambiguous_project_needs_choice": true,
+    "plan_init_idempotency_replay_and_conflict": true,
+    "retirement_abandoned_to_cancelled": true,
+    "retirement_exact_successor": true,
+    "retirement_snapshot_drift_no_effect": true,
+    "retirement_protection_and_resurrection_boundaries": true,
+    "no_external_authority_write": true,
+    "no_production_graph_write": true
+  },
+  "source_paths": {
+    "exclusive_m4_3_write_paths": [
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/catalog.py",
+      "aota_forge/core/handlers.py"
+    ],
+    "integration_only_paths": [
+      "scripts/m4_3_source_guard.py",
+      "tests/test_m4_3_write_ingress.py",
+      "deploy/evidence/issues/9/m4-3-source/"
+    ],
+    "shared_and_downstream_paths_modified": []
+  },
+  "downstream_stops": {
+    "external_authority_write_implemented": false,
+    "durable_journal_implemented": false,
+    "cli_mutation_projection_implemented": false,
+    "runtime_activation_performed": false,
+    "production_graph_mutated": false,
+    "production_authority_mutated": false,
+    "github_issue_mutated": false,
+    "deployment_performed": false
+  },
+  "checkpoint_status": {
+    "M4_3_COMPLETED": "no",
+    "M4_3_IS_KNOWN_GOOD_CHECKPOINT": "no",
+    "implementation_ready_for_acceptance_review": true,
+    "global_regression_closure": false
+  }
+}

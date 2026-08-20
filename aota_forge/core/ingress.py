@@ -1,4 +1,4 @@
-"""Canonical read-only Unified Ingress (M1-A / M2-B).
+"""Canonical Unified Ingress (M1-A / M2-B / M4-3).
 
 All canonical operations from all external adapters enter through
 ``execute``.  The canonical sequence is:
@@ -30,20 +30,51 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
+from aota_forge.core.authorization import AuthorizationFailure, CapabilityLeaseIssuer
 from aota_forge.core.context import ContextResolver, TrustedContext, resolve_principal_binding
-from aota_forge.core.contracts.descriptor import READ_ONLY
+from aota_forge.core.contracts.descriptor import (
+    PLAN_INIT_OPERATION,
+    PLAN_RETIREMENT_OPERATION,
+    READ_ONLY,
+    WRITE_ONLY,
+)
 from aota_forge.core.contracts.errors import ForgeError, UnsupportedOperationError
+from aota_forge.core.contracts.mutation import MutationIntent, MutationPreconditions
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
-from aota_forge.core.contracts.results import failure, failure_from_error, success
+from aota_forge.core.contracts.results import LifecycleResult, failure, failure_from_error, lifecycle_envelope, success
 from aota_forge.core.contracts.validation import validate_inputs
 from aota_forge.core.contracts.version import PROTOCOL_VERSION
 from aota_forge.core.bootstrap import ensure_handlers_bound
+from aota_forge.core.identity.refs import ObjectRef
+from aota_forge.core.transaction import TransactionStore
+from aota_forge.core.transitions import PlanInitRequest, PlanRetirementRequest
 
 _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 _RESOLVER = ContextResolver()
+
+
+@dataclass(frozen=True)
+class MutationIngressRequest:
+    """Trusted internal envelope for the closed M4-3 mutation set.
+
+    Adapters may carry semantic values into the existing M4-4 request models,
+    but the store, trusted context, lease, and mechanical preconditions remain
+    typed runtime values supplied by the trusted boundary.
+    """
+
+    operation: str
+    store: TransactionStore
+    request: PlanInitRequest | PlanRetirementRequest
+
+
+_MUTATION_REQUEST_TYPES: dict[str, type] = {
+    PLAN_INIT_OPERATION: PlanInitRequest,
+    PLAN_RETIREMENT_OPERATION: PlanRetirementRequest,
+}
 
 
 def resolve_correlation_id(correlation_id: object) -> str:
@@ -220,6 +251,186 @@ def _normalize_handler_result(
         return failure_from_error(operation, err, correlation_id=correlation_id, audit=audit)
 
 
+def _mutation_target(request: PlanInitRequest | PlanRetirementRequest) -> ObjectRef:
+    return request.plan_ref
+
+
+def _intent_target_matches(intent: MutationIntent, target: ObjectRef) -> bool:
+    logical_target = intent.logical_target
+    if isinstance(logical_target, ObjectRef):
+        return logical_target == target
+    if isinstance(logical_target, str):
+        return logical_target == target.to_canonical()
+    if isinstance(logical_target, Mapping) and "typed_target" in logical_target:
+        typed_target = logical_target["typed_target"]
+        if isinstance(typed_target, ObjectRef):
+            return typed_target == target
+        return typed_target == target.to_canonical()
+    return False
+
+
+def _validate_mutation_request(
+    envelope: MutationIngressRequest,
+    descriptor,
+) -> dict[str, object]:
+    """Derive lease bindings from the actual typed mutation request."""
+    expected_type = _MUTATION_REQUEST_TYPES.get(envelope.operation)
+    if expected_type is None or not isinstance(envelope.request, expected_type):
+        raise ForgeError("INPUT_TYPE_INVALID", "operation payload type is invalid")
+    if not isinstance(envelope.store, TransactionStore):
+        raise ForgeError("INPUT_TYPE_INVALID", "mutation store must be the isolated TransactionStore")
+
+    request = envelope.request
+    if not isinstance(request.trusted_context, TrustedContext) or not request.trusted_context.is_bound:
+        raise AuthorizationFailure("AUTHORIZATION_MISSING", "runtime-bound trusted context is required")
+    if request.trusted_context.principal is None:
+        raise AuthorizationFailure("AUTHORIZATION_MISSING", "a trusted principal is required")
+    if not isinstance(request.intent, MutationIntent):
+        raise ForgeError("INPUT_TYPE_INVALID", "mutation intent must be typed")
+    if request.intent.operation != envelope.operation:
+        raise AuthorizationFailure("AUTHORIZATION_OPERATION_MISMATCH", "intent operation differs from request")
+    target = _mutation_target(request)
+    if not isinstance(target, ObjectRef):
+        raise ForgeError("INPUT_TYPE_INVALID", "mutation target must be a typed ObjectRef")
+    if not _intent_target_matches(request.intent, target):
+        raise AuthorizationFailure("AUTHORIZATION_TARGET_MISMATCH", "intent target differs from request target")
+    if not isinstance(request.preconditions, MutationPreconditions):
+        raise ForgeError("INPUT_TYPE_INVALID", "mutation preconditions must be typed")
+    if not isinstance(request.intent.mutation_scope, Mapping):
+        raise AuthorizationFailure("AUTHORIZATION_SCOPE_MISMATCH", "mutation scope must be a mapping")
+
+    return {
+        "trusted_context": request.trusted_context,
+        "operation": envelope.operation,
+        "target": target,
+        "mutation_scope": dict(request.intent.mutation_scope),
+        "contract_hash": descriptor.contract_hash(),
+        "intent_fingerprint": request.intent.intent_fingerprint(),
+        "subject_expected_revision": request.preconditions.subject_expected_revision,
+        "external_authority_precondition": request.external_authority_precondition,
+        "authority_source_revision": request.preconditions.authority_source_revision,
+        "authority_observed_raw_digest": request.preconditions.authority_observed_raw_digest,
+        "candidate_raw_digest": request.preconditions.candidate_raw_digest,
+        "normalized_plan_digest": request.normalized_plan_digest,
+    }
+
+
+def _mutation_failure(
+    operation: str,
+    code: str,
+    message: str,
+    correlation_id: str,
+    audit: dict[str, Any],
+) -> dict[str, Any]:
+    audit["validation"] = code
+    audit["context"] = "not_reached"
+    audit["handler"] = "not_executed"
+    return failure(
+        operation=operation,
+        code=code,
+        message=message,
+        correlation_id=correlation_id,
+        audit=audit,
+    )
+
+
+def execute_mutation(envelope: MutationIngressRequest) -> dict[str, Any]:
+    """Execute one exact, received-lease-only lifecycle mutation."""
+    ensure_handlers_bound()
+    operation = envelope.operation if isinstance(envelope, MutationIngressRequest) and isinstance(envelope.operation, str) else ""
+    request = envelope.request if isinstance(envelope, MutationIngressRequest) else None
+    trusted_context = getattr(request, "trusted_context", None)
+    principal_binding = resolve_principal_binding(None, trusted_context)
+    principal_audit = principal_binding.to_audit()
+    intent = getattr(request, "intent", None)
+    cid = resolve_correlation_id(getattr(intent, "correlation_id", None))
+
+    if not isinstance(envelope, MutationIngressRequest):
+        return _mutation_failure(operation, "INPUT_TYPE_INVALID", "typed mutation ingress request is required", cid, _audit(operation, None, None, cid, "invalid", "not_reached", "not_executed", principal_audit))
+
+    descriptor = DEFAULT_REGISTRY.get(operation)
+    if descriptor is None:
+        err = UnsupportedOperationError(f"unsupported operation: {operation}")
+        return failure_from_error(
+            operation,
+            err,
+            correlation_id=cid,
+            audit=_audit(operation, None, None, cid, "ok", "ok", "no_descriptor", principal_audit),
+        )
+    audit = _audit(
+        operation,
+        descriptor.protocol_version,
+        descriptor.contract_hash(),
+        cid,
+        "pending",
+        "pending",
+        "pending",
+        principal_audit,
+    )
+    if descriptor.read_write != WRITE_ONLY:
+        return _mutation_failure(
+            operation,
+            "UNSUPPORTED_OPERATION",
+            f"operation is not writable: {operation}",
+            cid,
+            audit,
+        )
+
+    try:
+        bindings = _validate_mutation_request(envelope, descriptor)
+    except AuthorizationFailure as exc:
+        return _mutation_failure(operation, exc.code, exc.message, cid, audit)
+    except ForgeError as exc:
+        return _mutation_failure(operation, exc.code, exc.message, cid, audit)
+    except (TypeError, ValueError) as exc:
+        return _mutation_failure(operation, "INPUT_TYPE_INVALID", str(exc), cid, audit)
+    audit["validation"] = "ok"
+
+    try:
+        CapabilityLeaseIssuer().validate_lease(
+            envelope.request.lease,
+            trusted_context=bindings["trusted_context"],
+            operation=bindings["operation"],
+            target=bindings["target"],
+            mutation_scope=bindings["mutation_scope"],
+            contract_hash=bindings["contract_hash"],
+            intent_fingerprint=bindings["intent_fingerprint"],
+            subject_expected_revision=bindings["subject_expected_revision"],
+            external_authority_precondition=bindings["external_authority_precondition"],
+            authority_source_revision=bindings["authority_source_revision"],
+            authority_observed_raw_digest=bindings["authority_observed_raw_digest"],
+            candidate_raw_digest=bindings["candidate_raw_digest"],
+            normalized_plan_digest=bindings["normalized_plan_digest"],
+            now=envelope.request.trusted_time,
+        )
+    except AuthorizationFailure as exc:
+        return _mutation_failure(operation, exc.code, exc.message, cid, audit)
+    except (TypeError, ValueError) as exc:
+        return _mutation_failure(operation, "INPUT_TYPE_INVALID", str(exc), cid, audit)
+    audit["context"] = "ok"
+
+    handler = DEFAULT_REGISTRY.handler(operation)
+    if handler is None:
+        return _mutation_failure(operation, "UNSUPPORTED_OPERATION", f"operation has no handler: {operation}", cid, audit)
+
+    try:
+        result = handler(envelope)
+    except ForgeError as exc:
+        audit["handler"] = "forge_error"
+        return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
+    except Exception as exc:  # bounded internal guard
+        audit["handler"] = "internal_error"
+        err = ForgeError("FORGE_ERROR", f"internal error: {type(exc).__name__}", retryable=False)
+        return failure_from_error(operation, err, correlation_id=cid, audit=audit)
+
+    if not isinstance(result, LifecycleResult):
+        return _mutation_failure(operation, "FORGE_ERROR", "invalid lifecycle handler result", cid, audit)
+    audit["handler"] = "lifecycle"
+    projected = lifecycle_envelope(result)
+    projected["audit"] = audit
+    return projected
+
+
 def execute(
     operation: str,
     params: dict[str, Any] | None = None,
@@ -310,4 +521,4 @@ def execute(
     return _normalize_handler_result(operation, payload, cid, audit)
 
 
-__all__ = ["execute", "resolve_correlation_id"]
+__all__ = ["MutationIngressRequest", "execute", "execute_mutation", "resolve_correlation_id"]

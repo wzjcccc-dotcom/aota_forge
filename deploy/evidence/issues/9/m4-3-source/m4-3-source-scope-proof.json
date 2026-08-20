@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 source ownership and scope proof",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-3-SOURCE",
+  "common_source_base": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "source_ownership_partition_required": true,
+  "source_ownership_partition_read": "PASS",
+  "partition": {
+    "M4_3_EXCLUSIVE_WRITE_PATHS": [
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/catalog.py",
+      "aota_forge/core/handlers.py"
+    ],
+    "INTEGRATION_ONLY_PATHS": [
+      "scripts/m4_3_source_guard.py",
+      "tests/test_m4_3_write_ingress.py",
+      "deploy/evidence/issues/9/m4-3-source/"
+    ],
+    "FORBIDDEN_CROSS_LANE_WRITE_PATH_RULES": [
+      "every M4-2 exclusive authority and lease path",
+      "every M4-4 exclusive lifecycle, transaction, context, descriptor, and resolver path",
+      "every shared read-only path",
+      "aota_forge/core/graph/**",
+      "aota_forge/core/journal.py",
+      "aota_forge/core/recovery.py",
+      "aota_forge/adapters/github/**",
+      "aota_forge/adapters/external_authority/**",
+      "aota_forge/cli.py",
+      "any unlisted aota_forge/** functional source path"
+    ]
+  },
+  "actual_source_writes": [
+    "aota_forge/core/catalog.py",
+    "aota_forge/core/handlers.py",
+    "aota_forge/core/ingress.py"
+  ],
+  "actual_integration_only_writes": [
+    "scripts/m4_3_source_guard.py",
+    "tests/test_m4_3_write_ingress.py",
+    "deploy/evidence/issues/9/m4-3-source/m4-3-source-implementation.json",
+    "deploy/evidence/issues/9/m4-3-source/m4-3-source-regression-results.json",
+    "deploy/evidence/issues/9/m4-3-source/m4-3-source-scope-proof.json"
+  ],
+  "compliance": {
+    "all_source_writes_within_m4_3_exclusive_paths": true,
+    "M4_2_EXCLUSIVE_PATH_MUTATION_COUNT": 0,
+    "M4_4_EXCLUSIVE_PATH_MUTATION_COUNT": 0,
+    "SHARED_READ_ONLY_PATH_MUTATION_COUNT": 0,
+    "FORBIDDEN_CROSS_LANE_WRITE_COUNT": 0,
+    "source_guard_result": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "production_mutation": {
+    "production_graph_mutated": false,
+    "production_authority_mutated": false,
+    "github_issue_body_mutated": false,
+    "github_control_comment_mutated": false,
+    "github_event_log_appended": false,
+    "deployment_performed": false,
+    "runtime_activation_performed": false
+  }
+}

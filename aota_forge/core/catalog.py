@@ -15,7 +15,9 @@ registration as a package-import side effect
 
 from __future__ import annotations
 
+from aota_forge.core.contracts.descriptor import LIFECYCLE_DESCRIPTORS
 from aota_forge.core.contracts.operations import OperationContract, register
+from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 
 _CANONICAL_OPERATIONS: tuple[OperationContract, ...] = (
     OperationContract(
@@ -60,12 +62,14 @@ _REGISTERED = False
 
 
 def register_canonical_descriptors() -> None:
-    """Register the canonical M2 operation descriptors exactly once."""
+    """Register the canonical read and closed lifecycle descriptors once."""
     global _REGISTERED
     if _REGISTERED:
         return
     for contract in _CANONICAL_OPERATIONS:
         register(contract)
+    for descriptor in LIFECYCLE_DESCRIPTORS:
+        DEFAULT_REGISTRY.bind(descriptor)
     _REGISTERED = True
 
 

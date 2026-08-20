@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 source regression results",
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-3-SOURCE",
+  "common_source_base": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "focused_m4_3": {
+    "test_command": "python3 -m unittest discover -s tests -p 'test_m4_3_write_ingress.py'",
+    "result": "PASS",
+    "test_count": 11
+  },
+  "source_guard": {
+    "command": "python3 scripts/m4_3_source_guard.py",
+    "result": "PASS",
+    "focused_check_count": 16,
+    "received_lease_only": "PASS",
+    "no_external_write_boundary": "PASS",
+    "actual_request_binding": "PASS"
+  },
+  "compileall": {
+    "command": "python3 -m compileall -q aota_forge tests scripts/m4_3_source_guard.py",
+    "result": "PASS"
+  },
+  "m4_1_regression": {
+    "command": "python3 scripts/m4_1_source_guard.py",
+    "result": "PASS",
+    "focused_test_count": 30,
+    "negative_test_count": 7,
+    "result_projection_case_count": 8,
+    "authoritative_effect_invalid_case_count": 8
+  },
+  "current_semantic_suite": {
+    "command": "python3 -m unittest discover -s tests -p 'test_*.py'",
+    "result": "FAIL_KNOWN_FIXTURE_DEBT",
+    "test_count": 30,
+    "passed_count": 26,
+    "known_failures": [
+      "test_i5_valid_authorization_and_plan_init_are_compatible",
+      "test_i8_abandoned_retirement_preserves_cancelled_semantics",
+      "test_i9_exact_successor_retirement_is_valid",
+      "test_i12_changed_intent_conflicts_on_same_idempotency_identity"
+    ],
+    "classification": "inherited integration fixtures use fixture-made leases rather than genuine M4-2 issuer leases; deferred by accepted M4-3 plan"
+  },
+  "historical_or_serial_guard_observations": [
+    {
+      "command": "python3 scripts/m4_2_source_guard.py",
+      "result": "FAIL_SOURCE_PARTITION_EXACT",
+      "classification": "historical_descendant_scope_guard",
+      "reason": "M4-2 behavior cases pass, but the guard is exact to its earlier lane and rejects accepted descendant M4-4, integration, and M4-3 paths."
+    },
+    {
+      "command": "python3 scripts/m4_4_source_guard.py",
+      "result": "FAIL_T1_VALID_PLAN_INIT_TRANSITION",
+      "classification": "historical_base_guard",
+      "reason": "The existing guard fails its base-tree T1 fixture before reaching the M4-3 ingress path."
+    },
+    {
+      "command": "python3 scripts/m4_4_post_integration_repair_guard.py",
+      "result": "FAIL_OWNERSHIP_PROBE",
+      "classification": "serial_scope_guard",
+      "real_lease_positive_cases": "2/2",
+      "real_lease_negative_cases": "12/12",
+      "reason": "Behavioral real-lease matrix passes; the inherited guard rejects the newly authorized M4-3 source/test paths in its M4-4 ownership probe."
+    }
+  ],
+  "ownership_safe_validation": {
+    "git_diff_check": "PASS",
+    "focused_behavioral_source_proof": "PASS",
+    "production_end_to_end_claimed": false,
+    "M4_3_COMPLETED": "no",
+    "M4_3_IS_KNOWN_GOOD_CHECKPOINT": "no"
+  }
+}
