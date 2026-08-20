@@ -295,7 +295,7 @@
   ],
   "REVIEW_COMMIT_CREATED": "yes",
   "R2_INTEGRATION_REVIEW_EVIDENCE_SHA": "bfc8a810a92613b9a09ecf0d8a11e506bea6bcb1",
-  "REVIEW_PUSH_PERFORMED": "no",
+  "REVIEW_PUSH_PERFORMED": "yes",
   "REVIEW_REMOTE_REF": "refs/heads/aota/m4/m4-2-m4-4-integration-r2-review",
   "M4_2_M4_4_INTEGRATION_REVIEW_ACCEPTED": "yes",
   "M4_2_COMPLETED": "no",
