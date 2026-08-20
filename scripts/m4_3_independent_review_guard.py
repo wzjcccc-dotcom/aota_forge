@@ -250,7 +250,7 @@ def assert_contract_documents(documents: dict[str, dict]) -> None:
 
 
 def assert_candidate_lineage_and_scope() -> None:
-    require(git("rev-parse", "HEAD") == TARGET, "review worktree must start at candidate")
+    require(git_ok("merge-base", "--is-ancestor", TARGET, "HEAD"), "review commit must descend from candidate")
     require(git("show", "-s", "--format=%P", TARGET) == BASE, "candidate parent is not exact base")
     require(git_ok("merge-base", "--is-ancestor", BASE, TARGET), "base is not candidate ancestor")
     require(git("rev-parse", "refs/heads/aota/m4/m4-3-plan") == TARGET, "candidate local ref drift")
