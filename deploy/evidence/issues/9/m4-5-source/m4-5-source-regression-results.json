@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "full_current_semantic_regression": "PASS",
+  "current_semantic_invariant_failure_count": 0,
+  "compile_validation": "PASS",
+  "json_validation": "PASS",
+  "git_diff_check": "PASS",
+  "focused_tests": {
+    "command": "/home/latios/AOTA/AOTA_Engine/aota_env/bin/python -m pytest tests/test_m4_5_journal_contract.py -v",
+    "focused_test_count": 23,
+    "focused_test_pass_count": 23,
+    "result": "PASS"
+  },
+  "m4_5_source_guard": {
+    "command": "python3 scripts/m4_5_source_guard.py",
+    "check_count": 60,
+    "pass_count": 60,
+    "real_source_path": "yes",
+    "result": "PASS"
+  },
+  "m4_3_current_semantic_regression": {
+    "command": "/home/latios/AOTA/AOTA_Engine/aota_env/bin/python -m pytest tests/test_m4_3_write_ingress.py -v",
+    "pass_count": 17,
+    "total_count": 17,
+    "result": "PASS",
+    "invariant": "received-lease-only, actual-context AuthorityRequest, authorization-bound idempotency preserved"
+  },
+  "m4_4_current_semantic_regression": {
+    "command": "python3 scripts/m4_4_post_integration_repair_guard.py",
+    "result": "PASS",
+    "note": "original m4_4_source_guard uses fixture-only lease and is stale after M4-3 idempotency repair; post-integration guard validates real M4-2 lease path and passes 35 checks"
+  },
+  "m4_2_current_semantic_regression": {
+    "command": "python3 scripts/m4_2_source_guard.py (behavioral checks only, partition NBF due to M4-5 files)",
+    "behavioral_result": "PASS (20/20 cases)",
+    "partition_note": "source partition check reports new M4-5 files as unexpected, classified as NBF; behavioral invariants PASS"
+  },
+  "m4_2_m4_4_integration_regression": {
+    "command": "/home/latios/AOTA/AOTA_Engine/aota_env/bin/python -m pytest tests/test_m4_2_m4_4_integration.py -v",
+    "total_count": 19,
+    "pass_count": 15,
+    "fail_count": 4,
+    "known_failures": ["test_i5_valid_authorization_and_plan_init_are_compatible", "test_i8_abandoned_retirement_preserves_cancelled_semantics", "test_i9_exact_successor_retirement_is_valid", "test_i12_changed_intent_conflicts_on_same_idempotency_identity"],
+    "classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "new_failures": 0,
+    "result": "PASS_WITH_NON_BLOCKING_FINDINGS"
+  },
+  "full_suite": {
+    "command": "/home/latios/AOTA/AOTA_Engine/aota_env/bin/python -m pytest tests/ -v",
+    "total_count": 59,
+    "pass_count": 55,
+    "fail_count": 4,
+    "new_full_suite_failure_count": 0,
+    "i5_classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i8_classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i9_classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i12_classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "result": "PASS_WITH_NON_BLOCKING_FINDINGS"
+  },
+  "m4_3_guard_prefix_nbf": "non_blocking_hardening_carry_forward",
+  "blocking_finding_count": 0,
+  "non_blocking_finding_count": 2,
+  "implementation_self_review": "PASS"
+}

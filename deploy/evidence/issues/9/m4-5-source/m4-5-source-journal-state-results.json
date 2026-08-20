@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "journal_state_machine_implemented": "yes",
+  "journal_state_count": 9,
+  "journal_states": ["PREPARED", "APPLYING", "FAILED_NO_EFFECT", "VERIFIED", "OUTCOME_UNKNOWN", "RECONCILING", "VERIFIED_RECOVERED", "RETRYABLE_NO_EFFECT", "CONFLICT"],
+  "allowed_transitions": [
+    {"from": "PREPARED", "to": "APPLYING", "when": "APPLYING attempt-start is durably persisted after PREPARED"},
+    {"from": "PREPARED", "to": "FAILED_NO_EFFECT", "when": "durability fails before external attempt (J1/J9)"},
+    {"from": "APPLYING", "to": "VERIFIED", "when": "external authoritative effect confirmed and terminal persists"},
+    {"from": "APPLYING", "to": "FAILED_NO_EFFECT", "when": "authority definitively rejects with no effect (J2)"},
+    {"from": "APPLYING", "to": "OUTCOME_UNKNOWN", "when": "transport timeout/disconnect leaves effect uncertain (J4)"},
+    {"from": "APPLYING", "to": "RECONCILING", "when": "stranded APPLYING after restart (J3)"},
+    {"from": "OUTCOME_UNKNOWN", "to": "RECONCILING", "when": "authority readback starts"},
+    {"from": "RECONCILING", "to": "VERIFIED_RECOVERED", "when": "observed == candidate (J6)"},
+    {"from": "RECONCILING", "to": "RETRYABLE_NO_EFFECT", "when": "observed == original with fresh auth (J5)"},
+    {"from": "RECONCILING", "to": "CONFLICT", "when": "third state neither candidate nor original (J7/J8)"},
+    {"from": "NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE", "to": "RECONCILING", "when": "future run observes nonterminal and reads authority (J10)"}
+  ],
+  "invalid_transitions_rejected": [
+    {"from": "VERIFIED", "to": "APPLYING", "result": "REJECTED"},
+    {"from": "CONFLICT", "to": "VERIFIED", "result": "REJECTED"},
+    {"from": "FAILED_NO_EFFECT", "to": "APPLYING", "result": "REJECTED"}
+  ],
+  "invalid_journal_transition_rejected": "yes",
+  "journal_write_order_contract": "PASS",
+  "external_apply_before_prepared_allowed": "no",
+  "required_write_order": [
+    "validate existing semantic authorization",
+    "validate Subject precondition",
+    "read external authority state",
+    "validate raw external precondition",
+    "construct exact candidate",
+    "compute candidate_raw_digest",
+    "persist PREPARED journal record durably",
+    "persist APPLYING attempt-start state durably",
+    "perform at most one external mutation attempt",
+    "read authority store after mutation where result permits",
+    "classify exact observed state",
+    "persist terminal or reconciliation state"
+  ],
+  "at_most_one_external_attempt_contract": "PASS",
+  "distributed_lock_implemented": "no",
+  "recovery_executor_implemented": "no",
+  "crash_window_count": 10,
+  "j10_source_contract_explicit": "yes"
+}

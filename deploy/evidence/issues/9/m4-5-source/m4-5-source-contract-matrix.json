@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "contracts": [
+    {
+      "id": "T01",
+      "name": "typed Portable Plan Mutation Port contract",
+      "status": "PASS",
+      "evidence": "PortablePlanMutationRequest validates operation, typed_target, correlation, contract_hash, idempotency, intent, preconditions, candidate digest"
+    },
+    {
+      "id": "T02",
+      "name": "operation limited to accepted descriptors",
+      "status": "PASS",
+      "evidence": "only plan_init/plan_retirement allowed; external_plan_init etc rejected"
+    },
+    {
+      "id": "T03",
+      "name": "Subject revision distinct from authority revision",
+      "status": "PASS",
+      "evidence": "subject_expected_revision int vs authority_source_revision opaque str|int separate fields; SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS=no"
+    },
+    {
+      "id": "T04",
+      "name": "authority revision distinct from normalized digest",
+      "status": "PASS",
+      "evidence": "authority_observed_raw_digest SHA vs normalized_plan_digest SHA separate; NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no"
+    },
+    {
+      "id": "T05",
+      "name": "stale raw authority rejected",
+      "status": "PASS",
+      "evidence": "FakePlanAuthorityAdapter CAS fails closed on stale revision/digest; fixture not overwritten"
+    },
+    {
+      "id": "T06",
+      "name": "invalid journal transition rejected",
+      "status": "PASS",
+      "evidence": "VERIFIED->APPLYING, CONFLICT->VERIFIED, FAILED_NO_EFFECT->APPLYING all rejected via is_valid_transition"
+    },
+    {
+      "id": "T07",
+      "name": "apply-before-PREPARED forbidden",
+      "status": "PASS",
+      "evidence": "can_perform_external_attempt requires PREPARED durable then APPLYING durable; EXTERNAL_APPLY_BEFORE_PREPARED_ALLOWED=no"
+    },
+    {
+      "id": "T08",
+      "name": "transport success alone not VERIFIED",
+      "status": "PASS",
+      "evidence": "PortablePlanMutationResponse.adapter_success does not imply VERIFIED; requires verify-after-write classification"
+    },
+    {
+      "id": "T09",
+      "name": "observed candidate classification",
+      "status": "PASS",
+      "evidence": "classify_three_way candidate==observed -> VERIFIED_RECOVERED"
+    },
+    {
+      "id": "T10",
+      "name": "observed original classification",
+      "status": "PASS",
+      "evidence": "observed==original -> RETRYABLE_NO_EFFECT (fresh auth required)"
+    },
+    {
+      "id": "T11",
+      "name": "observed third state -> conflict",
+      "status": "PASS",
+      "evidence": "third state !=original !=candidate -> CONFLICT, heuristic merge denied"
+    },
+    {
+      "id": "T12",
+      "name": "OUTCOME_UNKNOWN does not authorize retry",
+      "status": "PASS",
+      "evidence": "is_retry_allowed OUTCOME_UNKNOWN always false; UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no"
+    },
+    {
+      "id": "T13",
+      "name": "RETRYABLE_NO_EFFECT requires fresh authorization",
+      "status": "PASS",
+      "evidence": "RETRYABLE requires fresh auth+Subject+raw+new lease; blind old lease reuse denied"
+    },
+    {
+      "id": "T14",
+      "name": "same key + same complete M4-3 semantic identity stable",
+      "status": "PASS",
+      "evidence": "same complete fingerprint stable across request and journal record"
+    },
+    {
+      "id": "T15",
+      "name": "same key + changed authorization identity not replay",
+      "status": "PASS",
+      "evidence": "changed principal/candidate changes complete identity -> CONFLICT, no replay"
+    },
+    {
+      "id": "T16",
+      "name": "opaque journal/correlation ID is not semantic authority",
+      "status": "PASS",
+      "evidence": "OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT=0; journal_id not driving authorization"
+    },
+    {
+      "id": "T17",
+      "name": "J1-J10 all represented",
+      "status": "PASS",
+      "evidence": "CRASH_WINDOW_COUNT=10, all J1-J10 distinguishable"
+    },
+    {
+      "id": "T18",
+      "name": "explicit J10 reconciliation mapping",
+      "status": "PASS",
+      "evidence": "J10 NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE -> RECONCILING explicit in model, state_machine, reconcile"
+    },
+    {
+      "id": "T19",
+      "name": "no semantic rollback",
+      "status": "PASS",
+      "evidence": "SEMANTIC_ROLLBACK_ALLOWED=no, SEMANTIC_COMPENSATING_MUTATION_IMPLEMENTED=no"
+    },
+    {
+      "id": "T20",
+      "name": "M4-6/M4-7 downstream interfaces type-check / compose",
+      "status": "PASS",
+      "evidence": "FakePlanAuthorityAdapter issubclass Port, JournalRecord composes with classify, M4_6/M4_7 flags true"
+    }
+  ],
+  "focused_test_count": 23,
+  "focused_test_pass_count": 23,
+  "contract_level_tests": "PASS"
+}

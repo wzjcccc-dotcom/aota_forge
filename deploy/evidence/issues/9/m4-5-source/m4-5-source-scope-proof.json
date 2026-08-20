@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "accepted_writable_base": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "exclusive_write_paths": [
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py"
+  ],
+  "exclusive_write_path_count": 5,
+  "shared_read_only_paths": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/adapters/plan_authority/__init__.py",
+    "aota_forge/core/transaction.py"
+  ],
+  "shared_read_only_path_count": 6,
+  "integration_only_paths": [
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authority.py"
+  ],
+  "integration_only_path_count": 3,
+  "forbidden_paths": [
+    "aota_forge/adapters/plan_authority/github.py (M4-6)",
+    "aota_forge/core/journal/store.py (M4-7 durable store)",
+    "aota_forge/core/journal/executor.py (M4-7 engine)",
+    "aota_forge/cli/* (M4-8)",
+    "aota_forge/core/git/* (generic Git write out of scope)",
+    "deploy/evidence/issues/9/m4-3/**/* (frozen M4-3 evidence)",
+    "aota_forge/core/runtime/* (M5)",
+    "scripts/* (except m4_5_plan_guard.py planning guard)",
+    "tests/test_m4_6_* (M4-6 tests)",
+    "tests/test_m4_7_* (M4-7 tests)",
+    ".aota-worktrees/*",
+    "deploy/evidence/issues/9/m4-6-plan/*"
+  ],
+  "forbidden_path_count": 12,
+  "actual_changed_files": [
+    "aota_forge/adapters/plan_authority/fake_port.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/core/journal/__init__.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py",
+    "aota_forge/core/journal/state_machine.py",
+    "scripts/m4_5_source_guard.py",
+    "tests/test_m4_5_journal_contract.py"
+  ],
+  "production_source_writes_within_accepted_m4_5_scope": "yes",
+  "m4_5_exclusive_path_write_count": 5,
+  "m4_5_integration_only_path_write_count": 0,
+  "m4_5_shared_read_only_path_write_count": 0,
+  "m4_5_forbidden_path_write_count": 0,
+  "all_production_source_writes_within_accepted_m4_5_scope": "yes",
+  "m4_6_m4_7_parallel_safety_preserved": "yes",
+  "github_api_call_count": 0,
+  "github_adapter_implemented": "no",
+  "durable_journal_persistence_implemented": "no",
+  "recovery_executor_implemented": "no",
+  "reconciliation_executor_implemented": "no",
+  "restart_scanner_implemented": "no",
+  "background_recovery_worker_implemented": "no",
+  "cli_write_exposure_implemented": "no"
+}

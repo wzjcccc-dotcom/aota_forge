@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "m4_6_consumable_port_contract_implemented": "yes",
+  "m4_7_consumable_journal_contract_implemented": "yes",
+  "m4_6_m4_7_parallel_safety_preserved": "yes",
+  "m4_5_provides_to_m4_6": [
+    "Portable Plan Mutation Port contract (typed operation/target/correlation/contract/idempotency/intent + Subject+raw preconditions + candidate/normalized digests + authorization/lease ref)",
+    "Multi-domain precondition model (raw_source_revision + observed_raw_digest as external CAS distinct from Subject CAS and normalized digest)",
+    "Read-before-write contract and stale precondition fail-closed rule",
+    "At-most-one external attempt contract (PREPARED->APPLYING before write)",
+    "Verify-after-write mandatory readback contract"
+  ],
+  "m4_6_owns_not_implemented_in_m4_5": [
+    "GitHub Issue number, comment ID, gh api plumbing",
+    "GitHub-specific optimistic concurrency mapping",
+    "Control-comment role resolution",
+    "GitHub-specific error mapping"
+  ],
+  "m4_5_provides_to_m4_7": [
+    "Mutation journal contract (states PREPARED..CONFLICT, required write order, journal fields)",
+    "Crash windows J1-J10 and stranded APPLYING reconciliation rule",
+    "Three-way reconciliation precedence and classification rules",
+    "Retry authorization rule (UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no)",
+    "External idempotency identity linkage contract"
+  ],
+  "m4_7_owns_not_implemented_in_m4_5": [
+    "Durable journal store implementation",
+    "Deterministic reconciliation/recovery execution engine",
+    "Retry eligibility enforcement",
+    "Duplicate executor reservation and recovery takeover"
+  ],
+  "platform_neutrality": {
+    "GITHUB_IS_FORGE_CORE_ONTOLOGY": "no",
+    "CORE_GITHUB_SEMANTIC_LEAK_COUNT": 0,
+    "GITHUB_ADAPTER_IMPLEMENTED": "no",
+    "GITHUB_API_CALL_COUNT": 0
+  },
+  "generic_mutation_denied": {
+    "GENERIC_EXTERNAL_MUTATION_API_CREATED": "no",
+    "GENERIC_GIT_WRITE_API_CREATED": "no",
+    "GENERIC_TERMINAL_API_CREATED": "no"
+  },
+  "deterministic_failure_injection_seam": "PASS",
+  "production_failure_injector_implemented": "no",
+  "injection_points": [
+    "before-PREPARED (durability failure)",
+    "before-APPLYING (durability failure)",
+    "during mutation (rejection/timeout/success-then-crash)",
+    "after external before verify (crash)",
+    "during verify (read error / candidate / original / third)",
+    "during terminal persist (J10)"
+  ],
+  "production_external_authority_test_write_count": 0,
+  "production_github_test_write_count": 0,
+  "T20_downstream_compose": "PASS"
+}

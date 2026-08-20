@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "three_way_reconciliation_classifier_implemented": "yes",
+  "reconciliation_executor_implemented": "no",
+  "heuristic_third_state_selection_allowed": "no",
+  "third_state_auto_merge_allowed": "no",
+  "semantic_rollback_allowed": "no",
+  "semantic_compensating_mutation_implemented": "no",
+  "reconciliation_inputs": {
+    "ORIGINAL": "recorded original_raw_digest at PREPARED time",
+    "CANDIDATE": "recorded candidate_raw_digest (exact intended effect)",
+    "OBSERVED": "fresh raw authority read after uncertain outcome"
+  },
+  "classification": [
+    {"condition": "observed == candidate (exact raw identity)", "result": "VERIFIED_RECOVERED", "retry": "no"},
+    {"condition": "observed == original and fresh auth re-established", "result": "RETRYABLE_NO_EFFECT", "retry": "only with fresh bounded attempt"},
+    {"condition": "observed == original but fresh auth not re-established", "result": "RECONCILING remains", "retry": "no until fresh auth"},
+    {"condition": "observed != candidate and != original (third state)", "result": "CONFLICT", "retry": "no"},
+    {"condition": "normalized equal but raw differs", "result": "CONFLICT (J8)", "retry": "no"}
+  ],
+  "precedence": ["exact candidate raw identity", "exact original raw identity", "third raw state"],
+  "forbidden": ["best effort merge", "heuristic selection", "silent overwrite", "semantic rollback", "automatic newest selection"],
+  "crash_windows_j1_j10": {
+    "J1": "PREPARED durability fails before APPLYING -> FAILED_NO_EFFECT",
+    "J2": "APPLYING known failure/no effect -> FAILED_NO_EFFECT",
+    "J3": "stranded APPLYING after restart -> RECONCILING",
+    "J4": "APPLYING timeout -> OUTCOME_UNKNOWN -> RECONCILING",
+    "J5": "RECONCILING observed original -> RETRYABLE_NO_EFFECT (fresh auth)",
+    "J6": "RECONCILING observed candidate -> VERIFIED_RECOVERED",
+    "J7": "RECONCILING observed third -> CONFLICT",
+    "J8": "normalized equality alone -> CONFLICT (supporting evidence only)",
+    "J9": "PREPARED durability fails (variant) -> FAILED_NO_EFFECT",
+    "J10": "NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE -> RECONCILING (explicit)"
+  },
+  "j10_source_contract_explicit": "yes",
+  "normalized_equality_proves_exact_external_effect": "no",
+  "test_evidence": {
+    "T09_candidate": "PASS",
+    "T10_original": "PASS",
+    "T11_third_conflict": "PASS",
+    "T19_no_rollback": "PASS"
+  }
+}

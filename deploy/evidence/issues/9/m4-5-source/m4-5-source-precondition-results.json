@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "multi_domain_precondition_implementation": "PASS",
+  "domains": [
+    {"name": "Subject lifecycle concurrency", "fields": ["subject_expected_revision"], "purpose": "Subject aggregate CAS"},
+    {"name": "external authority-store concurrency", "fields": ["raw_source_revision", "observed_raw_digest"], "purpose": "external optimistic write precondition (raw authority CAS)"},
+    {"name": "Portable Plan semantic identity", "fields": ["normalized_plan_digest"], "purpose": "semantic validation and drift comparison only"}
+  ],
+  "invariants": {
+    "SUBJECT_REVISION_DIFFERS_FROM_AUTHORITY_SOURCE_REVISION": "yes",
+    "RAW_SOURCE_DIGEST_DIFFERS_FROM_NORMALIZED_PLAN_DIGEST": "yes",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+    "CANDIDATE_RAW_DIGEST_BINDS_EXACT_INTENT": "yes",
+    "SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS": "no",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN_FLAG": "no"
+  },
+  "raw_authority_precondition_contract": "PASS",
+  "required_fields": ["operation", "principal", "typed_target", "correlation_id", "contract_hash", "idempotency_key", "intent_fingerprint", "subject_expected_revision", "raw_source_revision", "observed_raw_digest", "candidate_raw_digest", "normalized_plan_digest", "authorization_basis", "lease_or_attempt_reference", "journal_state"],
+  "read_before_external_write_required": "yes",
+  "verify_after_external_write_required": "yes",
+  "stale_external_authority_fails_closed": "yes",
+  "last_write_wins": "no",
+  "overwrite_after_stale_read": "no",
+  "cross_authority_atomic_transaction_available": "no",
+  "cross_authority_atomicity_claim_count": 0,
+  "test_evidence": {
+    "T03_subject_distinct_from_authority": "PASS",
+    "T04_authority_distinct_from_normalized": "PASS",
+    "T05_stale_rejected_via_fake_port": "PASS"
+  }
+}

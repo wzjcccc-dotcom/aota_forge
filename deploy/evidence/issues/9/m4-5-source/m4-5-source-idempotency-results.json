@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5-SOURCE-IMPLEMENTATION",
+  "external_idempotency_reuses_m4_3_complete_identity": "yes",
+  "intent_fingerprint_used_as_complete_external_identity": "no",
+  "external_journal_identity_components": [
+    "operation (plan_init or plan_retirement)",
+    "typed_target (ObjectRef canonical)",
+    "idempotency_key",
+    "intent_fingerprint (semantic inputs only)",
+    "contract_hash",
+    "authorization fingerprint (principal, lease/attempt reference, approval/Decision basis, expiry)",
+    "subject_expected_revision",
+    "authority_source_revision + authority_observed_raw_digest (external CAS)",
+    "candidate_raw_digest",
+    "normalized_plan_digest (evidence only)",
+    "correlation_id"
+  ],
+  "same_key_same_complete_semantics": "same external mutation identity (replay, no duplicate effect)",
+  "same_key_changed_authorization": "different semantic identity / conflict (never automatic replay)",
+  "same_key_changed_authorization_external_replay_allowed": "no",
+  "opaque_identifier_semantic_authority_count": 0,
+  "opaque_ids": ["journal_id", "correlation_id", "reservation_id", "authorization_id"],
+  "approval_not_decision": "preserved",
+  "lease_issuer_not_semantic_decision_maker": "preserved",
+  "operation_contract_reuse": "PASS",
+  "registered_operations": ["plan_init", "plan_retirement"],
+  "duplicate_operation_semantics_created": "no",
+  "canonical_result_model_implementation": "PASS",
+  "internal_lifecycle_result_equals_external_verification_result": "no",
+  "external_effect_mapping": {
+    "VERIFIED": "APPLIED_VERIFIED with AuthoritativeEffectConfirmation.YES",
+    "VERIFIED_RECOVERED": "APPLIED_VERIFIED/REPLAYED_VERIFIED via RECONCILING candidate observed",
+    "FAILED_NO_EFFECT": "FAILED_NO_EFFECT with NO (definitive rejection or PREPARED without APPLYING)",
+    "RETRYABLE_NO_EFFECT": "FAILED_NO_EFFECT variant retryable only after fresh authorization",
+    "CONFLICT": "CONFLICT with NO (third state or authorization drift)",
+    "OUTCOME_UNKNOWN": "OUTCOME_UNKNOWN with UNKNOWN (stranded APPLYING/timeout before reconciliation)"
+  },
+  "unknown_outcome_contract": "PASS",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "unknown_outcome_blind_lease_reuse": "no",
+  "retryable_no_effect_grants_automatic_authorization": "no",
+  "fresh_authorization_required_for_retry": "yes",
+  "test_evidence": {
+    "T14_same_key_same_identity_stable": "PASS",
+    "T15_same_key_changed_auth_not_replay": "PASS",
+    "T16_opaque_not_authority": "PASS"
+  }
+}
