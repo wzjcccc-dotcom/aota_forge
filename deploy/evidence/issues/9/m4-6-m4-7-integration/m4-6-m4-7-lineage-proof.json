@@ -1,0 +1,23 @@
+{
+  "common_accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "integration_candidate_sha": "9346a734f3b4e1ae0b71e78c291cf45c2abbb1f4",
+  "integration_is_merge_commit": true,
+  "m4_6_common_base_ancestry": true,
+  "m4_6_is_ancestor_of_integration": true,
+  "m4_6_m4_7_are_sibling_candidates": true,
+  "m4_6_plan_known_good_checkpoint": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "m4_6_source_candidate_sha": "5882047b7144836384b34c4bdc31f9f38fea2264",
+  "m4_6_source_review_evidence_sha": "d2f31a6b1b5ca0fd2c7f8fe98b6aafe034f31b96",
+  "m4_7_common_base_ancestry": true,
+  "m4_7_is_ancestor_of_integration": true,
+  "m4_7_plan_known_good_checkpoint": "fc9b26f9c93768c8a430773668ae1ae61619af49",
+  "m4_7_source_candidate_sha": "00bdc8e8fdaf13755149039956024a124bba68ce",
+  "m4_7_source_review_evidence_sha": "927dc015c98fa6ba7bdedff040606fedb4c2e244",
+  "merge_base_m4_6_m4_7": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "milestone": "M4",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "timestamp": "2026-08-20T14:32:00.475290+00:00",
+  "work_item": "M4-6-M4-7-SOURCE-INTEGRATION"
+}

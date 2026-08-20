@@ -1,0 +1,19 @@
+{
+  "detail": "M4-7 recovery/executor -> M4-5 Plan Authority Port abstraction -> M4-6 GitHub adapter as one concrete transport, without either lane redefining M4-5",
+  "github_adapter_import_count_in_m4_7": 0,
+  "github_api_call_count_in_m4_7": 0,
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "m4_5_classifier_reused": true,
+  "m4_5_contract_redefinition_count": 0,
+  "m4_5_journal_state_family_reused": true,
+  "m4_5_port_reused": true,
+  "m4_6_github_adapter_uses_m4_5_port": true,
+  "m4_6_m4_7_interface_adaptation_required": "no",
+  "m4_6_m4_7_interface_composition": "PASS",
+  "m4_7_recovery_uses_m4_5_port_abstraction": true,
+  "milestone": "M4",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "timestamp": "2026-08-20T14:32:00.475856+00:00",
+  "work_item": "M4-6-M4-7-SOURCE-INTEGRATION"
+}

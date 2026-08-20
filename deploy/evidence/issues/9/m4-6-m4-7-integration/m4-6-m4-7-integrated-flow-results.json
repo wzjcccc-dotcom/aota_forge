@@ -1,0 +1,23 @@
+{
+  "detail": "All flows validated via deterministic fake GitHub + file-backed journal + recovery executor with M4-5 classifier",
+  "external_transport_attempt_count_for_single_identity": 1,
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "integrated_candidate_observed_flow": "PASS",
+  "integrated_duplicate_executor_flow": "PASS",
+  "integrated_false_cross_authority_atomicity_claim_count": 0,
+  "integrated_fresh_auth_retry_flow": "PASS",
+  "integrated_mechanical_mutation_flow": "PASS",
+  "integrated_original_observed_flow": "PASS",
+  "integrated_partial_projection_flow": "PASS",
+  "integrated_stale_external_authority_flow": "PASS",
+  "integrated_third_state_flow": "PASS",
+  "integrated_unknown_outcome_flow": "PASS",
+  "integration_candidate_sha": "9346a734f3b4e1ae0b71e78c291cf45c2abbb1f4",
+  "m4_6_external_write_attempt_count_on_stale_precondition": 0,
+  "milestone": "M4",
+  "old_authorization_history_mutation_count": 0,
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "timestamp": "2026-08-20T14:32:00.475959+00:00",
+  "work_item": "M4-6-M4-7-SOURCE-INTEGRATION"
+}

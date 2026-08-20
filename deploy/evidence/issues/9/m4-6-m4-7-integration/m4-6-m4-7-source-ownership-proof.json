@@ -1,0 +1,43 @@
+{
+  "common_accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "cross_lane_exclusive_write_violation_count": 0,
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "m4_6_exclusive_write_by_m4_7_count": 0,
+  "m4_6_exclusive_write_paths": [
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/fake_github.py",
+    "tests/test_m4_6_github_adapter.py"
+  ],
+  "m4_6_m4_7_parallel_safety": "yes",
+  "m4_6_shared_read_only_paths": [
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/__init__.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/retry.py"
+  ],
+  "m4_7_exclusive_write_by_m4_6_count": 0,
+  "m4_7_exclusive_write_paths": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/retry_handoff.py",
+    "tests/test_m4_7_durable_journal.py",
+    "tests/test_m4_7_recovery.py"
+  ],
+  "m4_7_shared_read_only_paths": [
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/fake_port.py"
+  ],
+  "milestone": "M4",
+  "parallel_source_ownership_reverified": "PASS",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "timestamp": "2026-08-20T14:32:00.475649+00:00",
+  "work_item": "M4-6-M4-7-SOURCE-INTEGRATION"
+}

@@ -1,0 +1,19 @@
+{
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "m4_2_historical_partition_guard": "NON_BLOCKING_HISTORICAL_GUARD_HARDENING",
+  "m4_3_evidence_prefix_narrowness": "NON_BLOCKING_HARDENING_CARRY_FORWARD",
+  "m4_4_stale_fixture_guard": "NON_BLOCKING_STALE_GUARD_DEBT",
+  "m4_6_m4_7_historical_partition_guards": "HISTORICAL_PARTITION_NBF carry-forward, semantic behavior PASS",
+  "milestone": "M4",
+  "non_acceptance_fixture_debt": [
+    "i5",
+    "i8",
+    "i9",
+    "i12"
+  ],
+  "non_acceptance_fixture_debt_disposition": "NON_BLOCKING_HISTORICAL_DEBT carry-forward",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "timestamp": "2026-08-20T14:32:00.476152+00:00",
+  "work_item": "M4-6-M4-7-SOURCE-INTEGRATION"
+}
