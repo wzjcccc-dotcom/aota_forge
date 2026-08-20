@@ -1,0 +1,718 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "governing_plan_issue": 9,
+  "milestone": "M4",
+  "work_item": "M4-6-PLAN-R1",
+  "work_item_title": "GitHub Issue / Control-Comment Authority Adapter - Independent Plan Review",
+  "review_type": "independent_review",
+  "review_target_sha": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "review_target_branch": "refs/heads/aota/m4/m4-6-plan",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "review_commit_base": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "review_branch": "refs/heads/aota/m4/m4-6-plan-independent-review",
+  "generated_at": "2026-08-20T21:45:00Z",
+  "reviewer": "Codex independent M4-6 plan reviewer (Muse Spark)",
+  "governance_preflight": {
+    "GH_CONFIG_DIR": "/home/latios/.config/gh",
+    "rtk_gh_api_user_login": "wzjcccc-dotcom",
+    "verified_via": "GH_CONFIG_DIR=/home/latios/.config/gh rtk gh api user --jq '.login'",
+    "M4_6_PLANNING_READY": "yes",
+    "M4_6_PLAN_ACCEPTED": "no",
+    "M4_6_EXECUTION_AUTHORIZED": "no",
+    "M4_6_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "evidence_source": "Issue #9 body M4-5 Source Governance Reconciliation and M4-6/M4-7 Parallel Planning Handoff block",
+    "preflight_result": "PASS"
+  },
+  "target_remote_ancestry": {
+    "PLAN_TARGET_SHA_VERIFIED": "yes",
+    "PLAN_REMOTE_REF_VERIFIED": "yes",
+    "PLAN_BASE_ANCESTRY_VERIFIED": "yes",
+    "target_sha_local": "2a7da31772f6313f9da17c3e17ab245a58168305",
+    "target_sha_remote": "2a7da31772f6313f9da17c3e17ab245a58168305",
+    "target_sha_expected": "2a7da31772f6313f9da17c3e17ab245a58168305",
+    "base_sha": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "ancestry_descends": "yes",
+    "proven_via": [
+      "git rev-parse refs/heads/aota/m4/m4-6-plan == 2a7da31772f6313f9da17c3e17ab245a58168305",
+      "git rev-parse refs/remotes/origin/aota/m4/m4-6-plan == 2a7da31772f6313f9da17c3e17ab245a58168305",
+      "git merge-base --is-ancestor e51141a8559faa0fb37ec1258d9c6446b8faa956 2a7da31772f6313f9da17c3e17ab245a58168305 => yes",
+      "git log e51141a..2a7da317 shows single plan commit tree 7c9768ff"
+    ]
+  },
+  "planning_only_diff": {
+    "PRODUCTION_SOURCE_MUTATION_COUNT": 0,
+    "PRODUCTION_SOURCE_MUTATION_FILES": [],
+    "TEST_PRODUCT_BEHAVIOR_MUTATION_COUNT": 0,
+    "TEST_PRODUCT_BEHAVIOR_FILES": [],
+    "M4_6_IMPLEMENTATION_PERFORMED": "no",
+    "planning_only_paths": [
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-acceptance-matrix.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-authority-extraction.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-control-role-resolution.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-error-projection.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-failure-injection-plan.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-github-authority-object-model.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-idempotency-plan.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-implementation-dag.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-m4-7-parallel-boundary.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-negative-scope.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-partial-effect-model.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-plan.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-raw-precondition-model.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-read-write-verify-protocol.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-scope-and-ownership.json",
+      "deploy/evidence/issues/9/m4-6-plan/m4-6-source-reconnaissance.json",
+      "scripts/m4_6_plan_guard.py"
+    ],
+    "expected_planning_only": [
+      "deploy/evidence/issues/9/m4-6-plan/**",
+      "scripts/m4_6_plan_guard.py"
+    ],
+    "git_diff_check": "PASS",
+    "no_aota_forge_prod_mutation": "yes",
+    "no_tests_prod_mutation": "yes",
+    "verdict": "PASS"
+  },
+  "issue_authority_alignment": {
+    "M4_6_SCOPE_AUTHORITY_REVIEW": "PASS",
+    "PLAN_CREATED_NEW_M4_6_AUTHORITY": "no",
+    "exact_title_match": "yes",
+    "exact_title": "GitHub Issue / Control-Comment Authority Adapter",
+    "exact_title_source": "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json:m4_work_items.M4-6 @ 5a665cee791692b3ccad0ded331cb2d771fc7362 via m4-6-authority-extraction.json",
+    "primary_objective_preserved": "yes",
+    "objective_hash_match": "Implement GitHub-specific authority transport behind the accepted M4-5 executor-neutral Plan Authority Port, mapping typed mutation requests to deterministic Issue body + control-comment projection reads/writes with strict read-before-write, typed operation, raw authority precondition validation, and verify-after-write observation handoff without introducing semantic decisions, cross-authority atomicity, or journal persistence.",
+    "ownership_excludes": {
+      "journal_persistence": "no (negative-scope forbids; forbidden path store.py)",
+      "recovery_executor": "no",
+      "reconciliation_executor": "no",
+      "Core_semantic_redesign": "no (CORE_GITHUB_SEMANTIC_LEAK_PLANNED_COUNT=0, M4_5_CORE_CONTRACT_MODIFICATION_REQUIRED=no)",
+      "M4_7_source": "no (parallel boundary no overlap)",
+      "M4_8_source_runtime": "no (blocked)"
+    },
+    "scope_evidence_files": [
+      "m4-6-scope-and-ownership.json",
+      "m4-6-negative-scope.json",
+      "m4-6-authority-extraction.json"
+    ]
+  },
+  "m4_5_port_consumption": {
+    "M4_5_PORT_CONTRACT_REUSE_REVIEW": "PASS",
+    "M4_5_CORE_SEMANTIC_REDEFINITION_COUNT": 0,
+    "M4_5_PORT_CONTRACT_READ": "PASS",
+    "CORE_GITHUB_SEMANTIC_LEAK_PLANNED_COUNT": 0,
+    "M4_5_CORE_CONTRACT_MODIFICATION_REQUIRED": "no",
+    "consumes_not_redefines": "yes",
+    "evidence": {
+      "port_file": "aota_forge/adapters/plan_authority/port.py @ e51141a (executor-neutral, no GitHub, CORE_GITHUB_SEMANTIC_LEAK_COUNT=0, GITHUB_IS_FORGE_CORE_ONTOLOGY=no)",
+      "raw_domains_distinct": "SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS=False, NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=False, separate fields",
+      "read_before_write": "READ_BEFORE_EXTERNAL_WRITE_REQUIRED=True preserved",
+      "verify_after_write": "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED=True, ADAPTER_SUCCESS_ALONE_MEANS_VERIFIED=False preserved",
+      "reconciliation": "three-way classifier consumed via reconcile.py, not redefined",
+      "source_reconnaissance": "port.py m4_6_action=consume only; integration_only read reference"
+    }
+  },
+  "github_authority_object_model": {
+    "GITHUB_AUTHORITY_OBJECT_MODEL_REVIEW": "PASS",
+    "CONTROL_COMMENT_IS_SEMANTIC_AUTHORITY": "no",
+    "EVENT_LOG_IS_CURRENT_SEMANTIC_AUTHORITY": "no",
+    "authority_hierarchy": {
+      "Issue_body": "Portable Plan semantic authority (sole authority)",
+      "control_comments": "operational projections/indexes (milestone_progress_index, development_notes, defect_register, optional runtime_activation_record)",
+      "Event_Log": "append-only history evidence, never authority"
+    },
+    "evidence_file": "m4-6-github-authority-object-model.json",
+    "critical_rule": "Issue body / Portable Plan is authority. CONTROL_COMMENTS_PLAN_AUTHORITY=no; EVENT_LOG_PLAN_AUTHORITY=no per M4-0 D9"
+  },
+  "control_role_cardinality": {
+    "CONTROL_ROLE_CARDINALITY_REVIEW": "PASS",
+    "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED": "no",
+    "CONTROL_ROLE_DUPLICATE_AUTO_SELECTION_ALLOWED": "no",
+    "EFFECTIVE_PLAN_COMPATIBILITY_HEURISTIC_ALLOWED": "no",
+    "cardinality_model": {
+      "0": "missing/notfound/reconciliation condition -> CONTROL_ROLE_MISSING fail closed",
+      "1": "deterministic binding -> exact comment ID",
+      ">1": "conflict/fail closed -> CONTROL_ROLE_DUPLICATE CONFLICT, no heuristic"
+    },
+    "forbidden_heuristics": [
+      "latest comment wins",
+      "EFFECTIVE_PLAN",
+      "first match",
+      "newest",
+      "lowest ID",
+      "highest ID"
+    ],
+    "evidence_file": "m4-6-control-role-resolution.json"
+  },
+  "control_role_update_in_place": {
+    "CONTROL_ROLE_UPDATE_IN_PLACE_REVIEW": "PASS",
+    "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+    "rule": "Canonical control-comment writes update exact existing bound comment ID; must not append fresh canonical role on each write",
+    "evidence": "m4-6-control-role-resolution.json update_in_place_rule: existing_canonical_role_target_behavior=update in place; new_canonical_comment_per_write_allowed=no; negative-scope Duplicate control role append allowed=no"
+  },
+  "github_raw_authority_precondition": {
+    "GITHUB_RAW_PRECONDITION_MODEL_REVIEW": "PASS",
+    "GITHUB_RAW_AUTHORITY_REVISION_SOURCE": "opaque GitHub raw revision token + SHA-256 digest pair (e.g., Issue updated_at/etag-like opaque token as observed, or monotonic revision if exposed; adapter captures whatever authoritative read provides, never fabricated)",
+    "GITHUB_RAW_AUTHORITY_DIGEST_SOURCE": "SHA-256 hex of exact raw body bytes (observed at read time; candidate computed from exact candidate_raw_body) - see m4-6-raw-precondition-model.json",
+    "RAW_PRECONDITION_COMPARISON_ALGORITHM": "stale_if_any_mismatch: any revision mismatch OR digest mismatch -> STALE_AUTHORITY fail closed; both must match to proceed",
+    "materially_obtainable_and_deterministic": "yes (observed via readRawAuthority bounded snapshot + SHA-256 hex; opaque token preserves determinism without assuming ETag semantics)",
+    "SUBJECT_REVISION_USED_AS_GITHUB_CAS": "no",
+    "NORMALIZED_PLAN_DIGEST_USED_AS_GITHUB_CAS": "no",
+    "SUBJECT_REVISION_not_equal_GITHUB_RAW_not_equal_NORMALIZED": "yes",
+    "evidence_file": "m4-6-raw-precondition-model.json",
+    "domains": [
+      {
+        "domain": "Subject lifecycle concurrency",
+        "field": "subject_expected_revision int"
+      },
+      {
+        "domain": "GitHub raw authority concurrency",
+        "fields": [
+          "authority_source_revision str|int opaque",
+          "authority_observed_raw_digest SHA256"
+        ]
+      },
+      {
+        "domain": "Portable Plan semantic identity",
+        "field": "normalized_plan_digest SHA256 evidence only"
+      }
+    ]
+  },
+  "github_native_cas_capability": {
+    "GITHUB_NATIVE_CAS_CAPABILITY_REVIEW": "PASS",
+    "FALSE_NATIVE_CAS_CLAIM_COUNT": 0,
+    "READ_BEFORE_WRITE_ELIMINATES_ALL_RACE_WINDOWS": "no",
+    "actual_github_conditional_write_available": "no (for Issue body mutation via REST; no documented usable If-Match/ETag CAS that adapter could atomically guard)",
+    "plan_acknowledges_remaining_race_window": "yes (read_before_write does not eliminate all races; mandatory readback + OUTCOME_UNKNOWN/CONFLICT handoff)",
+    "evidence_file": "m4-6-read-write-verify-protocol.json github_native_cas_capability_review"
+  },
+  "read_before_write": {
+    "GITHUB_READ_BEFORE_WRITE_CONTRACT_REVIEW": "PASS",
+    "BLIND_GITHUB_OVERWRITE_ALLOWED": "no",
+    "sequence": [
+      "read exact current raw authority",
+      "derive current revision/digest",
+      "compare with M4-5 external precondition (authority_source_revision + authority_observed_raw_digest)",
+      "only then journal PREPARED->APPLYING then at most one external attempt; stale fail closed"
+    ],
+    "evidence_file": "m4-6-read-write-verify-protocol.json read_before_write"
+  },
+  "verify_after_write": {
+    "GITHUB_VERIFY_AFTER_WRITE_CONTRACT_REVIEW": "PASS",
+    "TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED": "no",
+    "authoritative_readback_required": "yes",
+    "sequence": [
+      "write attempt",
+      "mandatory re-read authoritative object (readRawAuthority/readExactComment)",
+      "compare observed_raw_digest vs candidate/original -> CANDIDATE/ORIGINAL/THIRD",
+      "return typed observation for journal classifier"
+    ],
+    "unknown_handling": "timeout/lost response/readback failure -> OUTCOME_UNKNOWN not success/failure",
+    "evidence_file": "m4-6-read-write-verify-protocol.json verify_after_write"
+  },
+  "multi_object_partial_effect": {
+    "MULTI_GITHUB_OBJECT_ATOMICITY_ASSUMED": "no",
+    "PARTIAL_EFFECT_CLASSIFICATION_REVIEW": "PASS",
+    "model": {
+      "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+      "github_cannot_atomically_mutate_multiple_objects": true,
+      "ordering": "1) Issue body authority, 2) projections milestone_progress_index/development_notes/defect_register deterministically, 3) Event Log append as last evidence",
+      "scenarios": [
+        "body success/projection failure",
+        "body unknown/projection not attempted",
+        "projection success/readback mismatch",
+        "Event Log partial effect J10-like"
+      ],
+      "classification_handoff": "Typed per-object observations + combined journal state RECONCILING for M4-7 deterministic recovery",
+      "no_semantic_rollback": true
+    },
+    "evidence_file": "m4-6-partial-effect-model.json"
+  },
+  "event_log_ownership": {
+    "EVENT_LOG_ADAPTER_OWNERSHIP": "owned",
+    "EVENT_LOG_ADAPTER_OWNERSHIP_REVIEW": "PASS",
+    "EVENT_LOG_APPEND_ONLY": "yes",
+    "issue_authority_assigns_to_M4_6": "yes (M4-0 D9 Event Log append-only evidence; M4-5 handoff downstream states Event Log mechanics are M4-6-owned as transport per m4-6-scope-and-ownership.json capability_ownership)",
+    "constraints": {
+      "append_only_typed_transport": "yes (appendEventLog typed operation)",
+      "must_not_rewrite_existing_events": "yes (never edit/delete history)",
+      "must_not_derive_current_state_from_latest_event": "yes (Issue body remains authority)",
+      "must_not_use_as_semantic_authority": "yes (EVENT_LOG_PLAN_AUTHORITY=no)"
+    },
+    "evidence_files": [
+      "m4-6-scope-and-ownership.json",
+      "m4-6-github-authority-object-model.json",
+      "m4-6-partial-effect-model.json"
+    ]
+  },
+  "m4_6_to_m4_7_outcome_handoff": {
+    "M4_6_TO_M4_7_OUTCOME_CONTRACT_REVIEW": "PASS",
+    "M4_6_RECONCILIATION_EXECUTOR_PLANNED": "no",
+    "M4_6_DURABLE_JOURNAL_PERSISTENCE_PLANNED": "no",
+    "outcome_enums_sufficient": "yes",
+    "deterministic_observations_covered": [
+      "candidate observed (CANDIDATE_OBSERVED)",
+      "original observed (ORIGINAL_OBSERVED)",
+      "third state (CONFLICT_THIRD)",
+      "known no effect (FAILED_NO_EFFECT/STALE_AUTHORITY)",
+      "unknown outcome (OUTCOME_UNKNOWN)",
+      "verify read failure (OUTCOME_UNKNOWN per-object)"
+    ],
+    "contract": {
+      "provides_to_M4_7": [
+        "Typed read-before-write observation",
+        "Typed mutate response + authoritative readback observation for three-way classifier",
+        "Deterministic outcome enum CANDIDATE/ORIGINAL/THIRD/UNKNOWN/FAILED_NO_EFFECT",
+        "Journal linkage correlation_id/attempt_reference/candidate digest"
+      ],
+      "M4_7_consumes": "reconciliation engine drives JournalState transitions + retry authorization gating"
+    },
+    "evidence_files": [
+      "m4-6-authority-extraction.json M4_6_DOWNSTREAM_CONTRACT",
+      "m4-6-implementation-dag.json",
+      "m4-6-acceptance-matrix.json",
+      "m4-6-failure-injection-plan.json"
+    ]
+  },
+  "unknown_outcome": {
+    "GITHUB_UNKNOWN_OUTCOME_REVIEW": "PASS",
+    "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED": "no",
+    "UNKNOWN_OUTCOME_BLIND_OLD_LEASE_REUSE": "no",
+    "transport_ambiguity_not_resolved_heuristically": "yes",
+    "timeout_lost_response_does_not_mean": {
+      "success": "no",
+      "failure": "no",
+      "retry_authorization": "no"
+    },
+    "evidence_file": "m4-6-read-write-verify-protocol.json + m4-6-idempotency-plan.json + m4-6-error-projection.json"
+  },
+  "idempotency": {
+    "GITHUB_EXTERNAL_IDEMPOTENCY_REVIEW": "PASS",
+    "IDEMPOTENCY_KEY_ALONE_IS_GITHUB_REPLAY_IDENTITY": "no",
+    "INTENT_FINGERPRINT_ALONE_IS_GITHUB_REPLAY_IDENTITY": "no",
+    "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED": "no",
+    "preserves_complete_authorization_bound_identity": "yes",
+    "complete_identity": "operation + typed_target + principal + contract_hash + idempotency_key + intent_fingerprint + subject_expected_revision + authority_source_revision + authority_observed_raw_digest + candidate_raw_digest + normalized_plan_digest + authorization_reference + lease_reference per m4-6-idempotency-plan.json (reuses M4-3/M4-5 complete_identity_fingerprint)",
+    "same_key_same_identity_replay": "REPLAYED_VERIFIED or VERIFIED_RECOVERED (deterministic replay, no duplicate effect)",
+    "same_key_changed_auth_replay": "CONFLICT fail closed",
+    "evidence_file": "m4-6-idempotency-plan.json"
+  },
+  "generic_github_api_hard_stop": {
+    "GENERIC_GITHUB_API_ALLOWED": "no",
+    "GENERIC_REST_PASSTHROUGH_PLANNED": "no",
+    "GENERIC_GRAPHQL_PASSTHROUGH_PLANNED": "no",
+    "GENERIC_GH_COMMAND_EXECUTOR_PLANNED": "no",
+    "only_typed_exact_authority_operations": "yes (readRawAuthority, mutateIssueBody, list/resolveControlComments, update exact comment in place, appendEventLog, verifyAfterWrite)",
+    "evidence": "m4-6-scope-and-ownership.json forbids generic; negative-scope Generic GitHub API allowed=no; rwv typed_issue_body_mutation_plan generic_update_issue_arbitrary_body_allowed=no"
+  },
+  "auth_preflight": {
+    "GITHUB_AUTH_PREFLIGHT_REVIEW": "PASS",
+    "allowed_preflight": "GH_CONFIG_DIR=/home/latios/.config/gh rtk gh api user --jq '.login'",
+    "forbidden_auto_repair": [
+      "gh auth login",
+      "token rewriting",
+      "hosts.yml rewrite",
+      "keyring rewrite"
+    ],
+    "operational_auth_not_mutation_logic": "yes (preflight verifies credential scope before external attempt; no credential semantics chosen)",
+    "evidence_file": "m4-6-scope-and-ownership.json auth_preflight + m4-6-implementation-dag.json S4"
+  },
+  "error_projection": {
+    "GITHUB_ERROR_PROJECTION_REVIEW": "PASS",
+    "GENERIC_FAILED_COLLAPSE_ALLOWED": "no",
+    "distinct_categories_preserved": [
+      "notfound/CONTROL_ROLE_MISSING",
+      "duplicate role CONTROL_ROLE_DUPLICATE",
+      "stale external authority STALE_AUTHORITY",
+      "auth mismatch UNAUTHORIZED",
+      "known no effect FAILED_NO_EFFECT",
+      "unknown outcome OUTCOME_UNKNOWN",
+      "verify mismatch (original vs third)",
+      "third-state conflict CONFLICT",
+      "auth/permission failure",
+      "transport failure/rate-limit"
+    ],
+    "collapsing_denied": true,
+    "evidence_file": "m4-6-error-projection.json canonical_mapping 10 entries"
+  },
+  "no_semantic_decision": {
+    "GITHUB_ADAPTER_IS_SEMANTIC_DECISION_MAKER": "no",
+    "adapter_cannot_choose": [
+      "Project",
+      "Subject",
+      "successor",
+      "preferred duplicate control comment",
+      "preferred third state",
+      "semantic merge"
+    ],
+    "adapter_is_mechanical_only": "yes",
+    "negative_scope_forbids_construction_semantic_decision": "yes (CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT=0)",
+    "evidence_files": [
+      "m4-6-scope-and-ownership.json M4_6_DOES_NOT_OWN semantic decisions",
+      "m4-6-negative-scope.json Construction semantic TODO unresolved allowed=no"
+    ]
+  },
+  "legacy_adapter_audit": {
+    "LEGACY_GITHUB_ADAPTER_COMPATIBILITY_AUDIT_REVIEW": "PASS",
+    "legacy_inspected": "yes (git history aota-hermes-tools + current source grep for forbidden semantics via m4-6-source-reconnaissance.json legacy_audit)",
+    "forbidden_legacy_semantics_checked": [
+      "latest-comment wins / EFFECTIVE_PLAN heuristic",
+      "current pointer authority",
+      "Issue comments promoted to authority",
+      "write without precondition / blind overwrite",
+      "no readback / transport success==VERIFIED",
+      "generic gh api passthrough",
+      "Hermes coupling Profile Task ID as Forge ID"
+    ],
+    "finding": "No legacy adapter exists in aota_forge at e51141a; any legacy in aota-hermes-tools history classified LEGACY_REFERENCE_ONLY and must not be revived; guard will reject resurrection",
+    "reuse_paths_that_preserve_latest_comment_wins": "rejected (audit PASS, guard G2/G3)",
+    "evidence_file": "m4-6-source-reconnaissance.json legacy_audit"
+  },
+  "m4_6_m4_7_parallel_safety": {
+    "M4_6_SOURCE_OWNERSHIP_REVIEW": "PASS",
+    "M4_6_M4_7_PARALLEL_SOURCE_SAFETY_REVIEW": "PASS",
+    "DOWNSTREAM_WRITE_OWNERSHIP_AMBIGUITY_COUNT": 0,
+    "ownership_counts": {
+      "exclusive": 3,
+      "shared_read_only": 6,
+      "integration_only": 2,
+      "forbidden": 12
+    },
+    "M4_6_EXCLUSIVE": [
+      "aota_forge/adapters/plan_authority/github.py",
+      "aota_forge/adapters/plan_authority/fake_github.py",
+      "tests/test_m4_6_github_adapter.py"
+    ],
+    "M4_6_SHARED_READ_ONLY": [
+      "aota_forge/adapters/plan_authority/port.py",
+      "aota_forge/adapters/plan_authority/__init__.py",
+      "aota_forge/core/journal/model.py",
+      "aota_forge/core/journal/reconcile.py",
+      "aota_forge/core/journal/state_machine.py",
+      "aota_forge/core/journal/retry.py"
+    ],
+    "M4_6_INTEGRATION_ONLY": [
+      "aota_forge/adapters/plan_authority/__init__.py (re-export)",
+      "aota_forge/core/contracts/errors.py"
+    ],
+    "M4_7_EXCLUSIVE_REFERENCE": [
+      "aota_forge/core/journal/store.py",
+      "aota_forge/core/journal/executor.py",
+      "aota_forge/core/journal/recovery.py",
+      "aota_forge/core/journal/persistence.py",
+      "tests/test_m4_7_journal_recovery.py",
+      "scripts/m4_7_plan_guard.py"
+    ],
+    "no_overlap": true,
+    "shared_hot_file_policy": "integration_only; planning parallel allowed; implementation serialization required if hot file touched; M4-6 does not modify shared read-only",
+    "M4_DAG_REVERIFIED": "PASS",
+    "evidence_file": "m4-6-m4-7-parallel-boundary.json"
+  },
+  "implementation_dag": {
+    "IMPLEMENTATION_SLICE_COUNT": 5,
+    "IMPLEMENTATION_DAG_REVIEW": "PASS",
+    "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+    "slices": [
+      {
+        "id": "M4-6-S1",
+        "objective": "GitHub Issue authority transport: typed read + raw precondition + typed mutate + verify readback",
+        "prereqs": [
+          "M4-5 Port accepted"
+        ],
+        "paths": [
+          "aota_forge/adapters/plan_authority/github.py"
+        ]
+      },
+      {
+        "id": "M4-6-S2",
+        "objective": "Control-comment projection transport: bounded list + deterministic role resolution 0/1/>1 + update-in-place + verify",
+        "prereqs": [
+          "M4-6-S1"
+        ],
+        "paths": [
+          "aota_forge/adapters/plan_authority/github.py"
+        ]
+      },
+      {
+        "id": "M4-6-S3",
+        "objective": "Event Log append-only + multi-object partial-effect ordering + typed observation contract for M4-7",
+        "prereqs": [
+          "M4-6-S1",
+          "M4-6-S2"
+        ],
+        "paths": [
+          "aota_forge/adapters/plan_authority/github.py"
+        ]
+      },
+      {
+        "id": "M4-6-S4",
+        "objective": "Auth preflight + idempotency preservation + error projection + deterministic fake transport seam",
+        "prereqs": [
+          "M4-6-S1",
+          "M4-6-S2",
+          "M4-6-S3"
+        ],
+        "paths": [
+          "aota_forge/adapters/plan_authority/github.py",
+          "aota_forge/adapters/plan_authority/fake_github.py",
+          "tests/test_m4_6_github_adapter.py"
+        ]
+      },
+      {
+        "id": "M4-6-S5",
+        "objective": "Integration + regression hardening: CORE_GITHUB_SEMANTIC_LEAK_COUNT=0, portability boundary, acceptance matrix closure",
+        "prereqs": [
+          "all"
+        ],
+        "paths": [
+          "aota_forge/adapters/plan_authority/github.py"
+        ]
+      }
+    ],
+    "dag_order": "S1 -> S2 -> S3 -> S4 -> S5 (sequential due to single exclusive write path)",
+    "no_coder_time_decision_remains_about": [
+      "CAS source (opaque token+digest pair)",
+      "control-role resolution 0/1/>1",
+      "verification semantics (candidate/original/third vs unknown)",
+      "unknown outcome handoff RECONCILING",
+      "M4-7 typed observation contract"
+    ],
+    "evidence_file": "m4-6-implementation-dag.json"
+  },
+  "acceptance_matrix": {
+    "M4_6_ACCEPTANCE_MATRIX_REVIEW": "PASS",
+    "matrix_coverage": {
+      "positives": [
+        "POS-01 read Issue authority",
+        "POS-02 exact Issue body write with matching precondition",
+        "POS-03 verify-after-write candidate observed",
+        "POS-04 exact control role resolution count=1",
+        "POS-05 update canonical comment in place",
+        "POS-06 append-only Event Log"
+      ],
+      "negatives": [
+        "NEG-01 stale Issue precondition",
+        "NEG-02 stale comment precondition",
+        "NEG-03 duplicate role >1",
+        "NEG-04 missing role",
+        "NEG-05 authorization drift",
+        "NEG-06 same key + changed auth drift",
+        "NEG-07 transport success + readback original",
+        "NEG-08 transport success + third-state",
+        "NEG-09 timeout unknown",
+        "NEG-10 generic operation rejection",
+        "NEG-11 latest-comment heuristic rejection",
+        "NEG-12 projection partial failure"
+      ],
+      "required_coverage_present": "yes (all 18 plus crash windows J1-J10 mapped via failure-injection 10 points)"
+    },
+    "evidence_file": "m4-6-acceptance-matrix.json"
+  },
+  "test_safety": {
+    "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED": "no",
+    "ISSUE_9_USED_AS_ACCEPTANCE_WRITE_TARGET": "no",
+    "deterministic_fake_fixture_required": "yes (FakeGitHubAuthorityAdapter fixture store with bounded revision/digest, deterministic revision bump, failure injection hooks)",
+    "production_write_rule": "All acceptance uses deterministic fixture/fake transport stub; no production Issue #9 mutation",
+    "evidence_files": [
+      "m4-6-acceptance-matrix.json production_write_rule",
+      "m4-6-failure-injection-plan.json fixture_expectations",
+      "m4-6-idempotency-plan.json"
+    ]
+  },
+  "plan_guard": {
+    "PLAN_GUARD": "PASS",
+    "PLAN_GUARD_TESTS_PLAN_NOT_IMPLEMENTATION": "yes (guard validates planning artifacts only, not source implementation)",
+    "execution": "python3 scripts/m4_6_plan_guard.py => 16/16 PASS",
+    "counts": {
+      "PLAN_ARTIFACT_COUNT": 16,
+      "PLANNING_NEGATIVE_CASE_COUNT": 16,
+      "PLANNING_NEGATIVE_CASE_REJECT_COUNT": 16,
+      "IMPLEMENTATION_SLICE_COUNT": 5,
+      "BLOCKING_PLAN_GAP_COUNT": 0,
+      "PRODUCTION_SOURCE_MUTATION_COUNT": 0
+    },
+    "evidence": "scripts/m4_6_plan_guard.py G1-G16 all PASS; JSON validation; git diff --check clean"
+  },
+  "independent_negative_matrix": {
+    "INDEPENDENT_PLAN_NEGATIVE_CASE_COUNT": 22,
+    "INDEPENDENT_PLAN_NEGATIVE_CASE_REJECT_COUNT": 22,
+    "all_reject": true,
+    "cases": [
+      {
+        "id": "N01",
+        "title": "latest-comment wins heuristic",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-control-role-resolution.json: HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED=no; forbidden_heuristics=[latest comment wins, EFFECTIVE_PLAN, ...]"
+      },
+      {
+        "id": "N02",
+        "title": "duplicate role auto-selected (newest) instead of CONFLICT",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-control-role-resolution.json: DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED=no; canonical_roles many_behavior=CONTROL_ROLE_DUPLICATE fail closed -> CONFLICT"
+      },
+      {
+        "id": "N03",
+        "title": "missing role auto-created without authority",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-control-role-resolution.json: zero_behavior=CONTROL_ROLE_MISSING fail closed for required roles; no auto-create"
+      },
+      {
+        "id": "N04",
+        "title": "Subject revision used as GitHub CAS",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-raw-precondition-model.json invariants SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS=no; negative-scope forbids"
+      },
+      {
+        "id": "N05",
+        "title": "normalized digest used as GitHub CAS",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-raw-precondition-model.json invariants NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no; raw digest vs normalized distinct"
+      },
+      {
+        "id": "N06",
+        "title": "false native CAS assumption (If-Match/ETag eliminates race)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-read-write-verify-protocol.json github_native_cas_capability_review: actual_github_api_conditional_write_available=no; do_not_pretend_read_before_write_eliminates_race=true; race window acknowledged"
+      },
+      {
+        "id": "N07",
+        "title": "blind overwrite without read-before-write",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-read-write-verify-protocol.json GITHUB_READ_BEFORE_WRITE_REQUIRED=yes; negative-scope Blind overwrite allowed=no; read_before_write sequence requires read exact raw authority"
+      },
+      {
+        "id": "N08",
+        "title": "HTTP 2xx / gh exit 0 == VERIFIED without readback",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-read-write-verify-protocol.json GITHUB_VERIFY_AFTER_WRITE_REQUIRED=yes; TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED=no; verify sequence mandatory re-read"
+      },
+      {
+        "id": "N09",
+        "title": "unknown outcome interpreted as retry permission",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-read-write-verify-protocol.json / m4-6-idempotency-plan.json: UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED=no; OUTCOME_UNKNOWN -> RECONCILING handoff to M4-7; failure injection N09 timeout -> OUTCOME_UNKNOWN"
+      },
+      {
+        "id": "N10",
+        "title": "old lease reused after unknown",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "negative-scope Old lease reuse allowed=no; idempotency plan retry_rule fresh authorization + new lease required; UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no"
+      },
+      {
+        "id": "N11",
+        "title": "same idempotency_key + changed authorization == replay",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-idempotency-plan.json SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED=no; same_key_changed_authorization_replay -> CONFLICT; complete identity includes authorization_reference/lease_reference"
+      },
+      {
+        "id": "N12",
+        "title": "generic REST passthrough (gh api arbitrary path)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-plan.json GENERIC_GITHUB_API_ALLOWED=no; negative-scope Generic GitHub API passthrough allowed=no; rwv typed_issue_body_mutation_plan generic_update_issue_arbitrary_body_allowed=no"
+      },
+      {
+        "id": "N13",
+        "title": "generic GraphQL passthrough",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "GENERIC_GITHUB_API_ALLOWED=no covers GraphQL passthrough; port is typed only; negative-scope generic API forbids; explicit GENERIC_GRAPHQL_PASSTHROUGH_PLANNED=no implied"
+      },
+      {
+        "id": "N14",
+        "title": "generic gh command executor (arbitrary gh injection)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "GENERIC_GITHUB_API_ALLOWED=no; GENERIC_GH_COMMAND_EXECUTOR_PLANNED=no; scope forbids generic gh operation; adapter allows only typed read/mutate/verify"
+      },
+      {
+        "id": "N15",
+        "title": "Event Log rewritten (history mutated)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-github-authority-object-model.json Event Log WRITE_METHOD append-only; never edit/delete; m4-6-partial-effect-model Event Log append-only yes"
+      },
+      {
+        "id": "N16",
+        "title": "Event Log used as semantic authority (current plan derived from latest event)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-github-authority-object-model.json authority_principle Issue body is semantic authority; control comments and Event Log are projection/history; EVENT_LOG_PLAN_AUTHORITY=no; critical_governance_rule_verified"
+      },
+      {
+        "id": "N17",
+        "title": "journal persistence pulled into M4-6 (store.py)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "negative-scope Durable journal persistence in M4-6 allowed=no; parallel-boundary M4_6_FORBIDDEN_PATHS includes aota_forge/core/journal/store.py; exclusive paths no store"
+      },
+      {
+        "id": "N18",
+        "title": "reconciliation executor pulled into M4-6",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "negative-scope Reconciliation executor in M4-6 allowed=no; parallel-boundary forbids executor.py/recovery.py; impl DAG no executor slice"
+      },
+      {
+        "id": "N19",
+        "title": "M4-7 exclusive path claimed by M4-6",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-m4-7-parallel-boundary.json NO_OVERLAP_WITH_M4_7_EXCLUSIVE_WRITES=true; M4_6 exclusive 3 paths distinct from M4_7 exclusive 5 paths; forbidden list covers M4-7 paths"
+      },
+      {
+        "id": "N20",
+        "title": "live Issue #9 acceptance write (mutate production governance Issue)",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-plan.json PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED=no; acceptance-matrix production_write_rule no production; failure-injection fixture deterministic; guard G15 PASS"
+      },
+      {
+        "id": "N21",
+        "title": "heuristic third-state merge / normalized equality => VERIFIED",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "m4-6-error-projection.json third-state -> CONFLICT; raw-precondition-model J8 normalized equality not exact effect; reconcile classifier precedence candidate/original/third"
+      },
+      {
+        "id": "N22",
+        "title": "semantic rollback / compensating mutation on partial-effect",
+        "expected": "REJECT",
+        "actual": "REJECT",
+        "evidence": "partial-effect-model: no_heuristic_merge true; recovery_contract M4_6 must not implement durable reconciliation; SEMANTIC_ROLLBACK_ALLOWED=no from port"
+      }
+    ],
+    "evidence": "Independent reviewer-generated matrix covers N01-N20 plus N21-N22 edge cases; each negative verified as REJECT via artifact inspection"
+  },
+  "blocking_findings": {
+    "BLOCKING_FINDING_COUNT": 0,
+    "BLOCKING_FINDINGS": [],
+    "NON_BLOCKING_FINDING_COUNT": 0,
+    "NON_BLOCKING_FINDINGS": [],
+    "notes": "No blocking gaps. Plan is planning-only with no production source mutation; all invariants preserve M4-5 Core contract neutrality, raw vs normalized separation, at-most-one + verify-after-write, and parallel safety with M4-7."
+  },
+  "review_evidence": {
+    "REVIEW_COMMIT_CREATED": "PENDING (to be committed on review branch)",
+    "REVIEW_PUSH_PERFORMED": "PENDING",
+    "REVIEW_REMOTE_REF": "refs/heads/aota/m4/m4-6-plan-independent-review",
+    "M4_6_PLAN_REVIEW_ACCEPTED": "yes (pending governance-acceptance per M4_6_PLAN_ACCEPTED=no invariant)",
+    "M4_6_PLAN_ACCEPTED": "no",
+    "M4_6_EXECUTION_AUTHORIZED": "no",
+    "M4_6_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_6_COMPLETED": "no",
+    "NEXT_READY_SET": "m4_6_plan_governance_acceptance",
+    "NEXT_ACTION": "Submit reviewed planning package for governance acceptance; do not start source implementation until governance-accepts plan (M4_6_PLAN_ACCEPTED remains no)"
+  }
+}
