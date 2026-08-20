@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "NEGATIVE_SCOPE_GUARD_COUNT": 18,
+  "FORBIDDEN_IMPLEMENTATIONS": [
+    "Implement GitHub Issue/Control-Comment adapter transport (belongs to M4-6)",
+    "Call GitHub API (GITHUB_API_PLANNED_CALL_COUNT must remain 0)",
+    "Redefine M4-5 9-state journal vocabulary or transition table (JOURNAL_STATE_REDEFINITION_COUNT must be 0)",
+    "Use in-memory-only lock as sole at-most-one protection (durability required)",
+    "Perform external apply before durable PREPARED persists",
+    "Perform external apply without durable APPLYING eligibility",
+    "Blindly retry APPLYING after restart without reconciliation",
+    "Blindly retry OUTCOME_UNKNOWN without RECONCILING",
+    "Reuse old CapabilityLease after RETRYABLE (blind old lease reuse)",
+    "Heuristic third-state merge/select (candidate if normalized equal but raw differs -> CONFLICT not VERIFIED)",
+    "Semantic rollback or compensating mutation (recovery differs from rollback)",
+    "Reprocess terminal states (VERIFIED, VERIFIED_RECOVERED, FAILED_NO_EFFECT, RETRYABLE_NO_EFFECT, CONFLICT) via recovery scan",
+    "Treat same idempotency key + changed authorization as replay (must be CONFLICT)",
+    "Use opaque journal/correlation/attempt ID as semantic authority",
+    "Write production GitHub Issue body or control comment during tests",
+    "Write production external authority or production journal DB during source acceptance",
+    "Claim M4-6 exclusive adapter files (github.py) as M4-7 writer",
+    "Leave construction-time semantic TODOs (e.g., TODO decide storage engine) unresolved",
+    "Introduce daemon/runtime deployment lifecycle (M4-7 authority excludes runtime)",
+    "Implement generic external mutation API, generic Git write API, or mega-tool"
+  ],
+  "PRODUCTION_GUARDS": {
+    "PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED": "no",
+    "PRODUCTION_GITHUB_TEST_WRITE_ALLOWED": "no",
+    "PRODUCTION_JOURNAL_TEST_WRITE_ALLOWED": "no",
+    "PRODUCTION_GRAPH_MUTATED": "no",
+    "PRODUCTION_AUTHORITY_MUTATED": "no"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_7_SOURCE_RECONNAISSANCE": "PASS",
+  "reconnaissance_scope": ["aota_forge/core/journal/model.py","aota_forge/core/journal/state_machine.py","aota_forge/core/journal/reconcile.py","aota_forge/core/journal/retry.py","aota_forge/adapters/plan_authority/port.py","aota_forge/adapters/plan_authority/fake_port.py","aota_forge/core/transaction.py","aota_forge/core/idempotency.py","aota_forge/core/graph/repository.py","aota_forge/core/capability_lease.py","aota_forge/core/authority.py","aota_forge/core/ingress.py"],
+  "findings": [
+    {"path": "aota_forge/core/journal/model.py", "classification": "EXISTS_AND_REUSE", "details": "JournalState 9-state enum, JournalRecord dataclass with journal_id/correlation/attempt, operation/typed_target/principal/contract_hash/idempotency_key/intent_fingerprint, subject_expected_revision/authority_source_revision/observed/candidate/normalized digests, authorization/lease refs, journal_state, observed outcome; M4_7_CONSUMABLE_JOURNAL_CONTRACT_IMPLEMENTED=yes; OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT=0"},
+    {"path": "aota_forge/core/journal/state_machine.py", "classification": "EXISTS_AND_REUSE", "details": "ALLOWED_TRANSITIONS dict, REQUIRED_WRITE_ORDER, EXTERNAL_APPLY_BEFORE_PREPARED_ALLOWED=no, AT_MOST_ONE contract, STRANDED_APPLYING_BLIND_RETRY_ALLOWED=no, J10_NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE->RECONCILING"},
+    {"path": "aota_forge/core/journal/reconcile.py", "classification": "EXISTS_AND_REUSE", "details": "Pure three-way classifier classify_three_way with precedence candidate->VERIFIED_RECOVERED, original->RETRYABLE_NO_EFFECT, third->CONFLICT; HEURISTIC_THIRD_STATE_SELECTION_ALLOWED=no; NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT=no; RECONCILIATION_EXECUTOR_IMPLEMENTED=no"},
+    {"path": "aota_forge/core/journal/retry.py", "classification": "EXISTS_AND_REUSE", "details": "is_retry_allowed requires fresh auth+Subject+raw+new lease for RETRYABLE; UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED=no; RETRYABLE_NO_EFFECT_BLIND_OLD_LEASE_REUSE=no; FRESH_AUTHORIZATION_REQUIRED_FOR_RETRY=yes"},
+    {"path": "aota_forge/adapters/plan_authority/port.py", "classification": "EXISTS_AND_REUSE", "details": "PlanAuthorityMutationPort ABC with read_raw_authority/mutate/verify; PortablePlanMutationRequest with typed operation/target/correlation/contract/idempotency/intent, multi-domain preconditions, authorization/lease refs; GITHUB_IS_FORGE_CORE_ONTOLOGY=no; CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no; VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED=yes"},
+    {"path": "aota_forge/adapters/plan_authority/fake_port.py", "classification": "EXISTS_AND_REUSE", "details": "FixtureAuthority + FakePlanAuthorityAdapter deterministic seam with InjectionHooks for known failure/timeout/crash-after-external/verify candidate/original/third/verify_fails/terminal_persist_fails; DETERMINISTIC_FAILURE_INJECTION_SEAM=PASS; no production injector"},
+    {"path": "aota_forge/core/transaction.py", "classification": "EXISTS_AND_REUSE", "details": "TransactionStore isolated in-memory with per-Subject locking, Subject CAS, atomic lease consumption, idempotency committed records, retired-ID no-reuse; PRODUCTION_GRAPH_AUTHORITY_ACTIVE=no; pattern proves storage-neutral transactional discipline for journal store"},
+    {"path": "aota_forge/core/idempotency.py", "classification": "EXISTS_AND_REUSE", "details": "IdempotencyStore with canonical_fingerprint, IdempotencyRecord key->operation/target/principal/fingerprint/state/effect; SAME_KEY_DIFFERENT_REQUEST=conflict; isolated durable-for-tests"},
+    {"path": "aota_forge/core/graph/repository.py", "classification": "EXISTS_AND_REUSE", "details": "GraphRepository storage-neutral ABC, InMemoryGraphRepository isolated non-authoritative; OwningSubjectResolver mechanical; pattern for journal store port"},
+    {"path": "aota_forge/core/capability_lease.py", "classification": "EXISTS_BUT_NEEDS_WIRING", "details": "CapabilityLease value object with principal/operation/target/scope/issued/expires/expected_revision/contract_hash + authorization_basis fields; atomic consumption deferred to transaction; M4-7 will wire fresh-authorization validation without inventing lease issuer"},
+    {"path": "aota_forge/core/authority.py", "classification": "EXISTS_AND_REUSE", "details": "AuthorityEngine evaluates trusted facts, never selects subjects; APPROVAL_EVIDENCE_EQUALS_MATERIALIZED_DECISION=no; exists for fresh authorization check"},
+    {"path": "aota_forge/core/journal/store.py", "classification": "MISSING_M4_7", "details": "Durable journal store with atomic CAS and close/reopen persistence not yet implemented; owned by M4-7 S1"},
+    {"path": "aota_forge/core/journal/recovery.py", "classification": "MISSING_M4_7", "details": "Recovery discovery scanner for nonterminal journal records not yet implemented; owned by M4-7 S4"},
+    {"path": "aota_forge/core/journal/executor.py", "classification": "MISSING_M4_7", "details": "Recovery/reconciliation executor (read, classify, persist terminal, handoff) not yet implemented; owned by M4-7 S5/S6"},
+    {"path": "aota_forge/adapters/plan_authority/github.py", "classification": "M4_6_OWNED", "details": "GitHub Issue/Control-Comment adapter is M4-6 exclusive; M4-7 must not implement or import GitHub mechanics"},
+    {"path": "aota_forge/cli/*", "classification": "OUT_OF_SCOPE", "details": "CLI thin projection deferred to M4-8"},
+    {"path": "aota_forge/core/runtime/*", "classification": "OUT_OF_SCOPE", "details": "Executor runtime deferred to M5"}
+  ],
+  "reuse_decisions": {
+    "reuse_M4_5_journal_contract_verbatim": "yes",
+    "reuse_port_ABC_without_modifying_contract": "yes",
+    "reuse_fake_port_seam_for_tests": "yes",
+    "reuse_transaction_CAS_idempotency_patterns_for_journal_store": "yes",
+    "avoid_cross_authority_transaction_claim": "yes",
+    "avoid_GitHub_import_in_core": "yes"
+  }
+}

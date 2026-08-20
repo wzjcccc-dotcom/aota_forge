@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_7_DURABLE_BACKEND": "abstract_storage_neutral_durable_journal_store_port_with_atomic_CAS_and_file_backed_close_reopen_durability",
+  "BACKEND_AUTHORITY_SOURCE": "Issue #9 M4-0 architecture freeze D5 storage_engine_prescribed=no + M4-5 journal contract e51141a + existing storage-neutral TransactionStore/GraphRepository pattern + M4-5 source evidence DURABLE_JOURNAL_PERSISTENCE_IMPLEMENTED=no",
+  "BACKEND_DURABILITY_MODEL": "per_journal_record_atomic_CAS_with_close_reopen_persistence_guarantee_no_cross_authority_transaction",
+  "DURABLE_BACKEND_REUSE_DECISION": "PASS",
+  "reuse_analysis": {
+    "existing_database_technology": "none_prescribed; TransactionStore and InMemoryGraphRepository are isolated in-memory proving storage-neutral discipline, not production persistence",
+    "shares_existing_storage_technology": "no_new_external_dependency_required_at_planning; journal store is storage-neutral port analogous to GraphRepository(TransactionStore), initial durable implementation is file-backed atomic KV with per-record revision CAS (not SQLite/Postgres prescription)",
+    "dedicated_table_collection": "yes_dedicated_journal_collection: journal_id primary key, correlation_id index, state index, candidate/observed/original digests, revision token",
+    "requires_new_storage_subsystem": "yes_new_journal_store_subsystem_with_port plus isolated file-backed implementation; no new Subject Graph storage needed",
+    "justification": "M4-0 D5 explicitly says storage_engine_prescribed=no; Issue does not mandate SQLite/PostgreSQL/JSONL/filesystem/S3; selecting one now without evidence would violate governance. Correct decision is abstract storage-neutral DurableJournalStore port with atomic CAS and close/reopen durability contract, consistent with prior B3/B6 repository pattern. Concrete engine selection is deferred to construction but port guarantees close_S1_reopen durability and per-record CAS semantics; cross-authority atomicity remains denied"
+  },
+  "backend_contract": {
+    "port_name": "DurableJournalStore",
+    "operations": ["create_prepared", "cas_transition", "get", "scan_requiring_recovery", "scan_nonterminal"],
+    "atomicity": "per_journal_record_compare_and_set_on_revision_and_state; subject and external authority transactions remain separate",
+    "durability_guarantee": "write PREPARED close_reopen persists; write APPLYING close_reopen persists; terminal persist failure is J10 nonterminal_after_terminal_persistence_failure",
+    "isolation": "per_journal locking; no global lock; duplicate executors serialize via CAS conflict",
+    "idempotency": "journal_id unique; correlation lineage preserved; history not overwritten"
+  },
+  "construction_guard": {
+    "construction_time_backend_choice_forbidden": "yes",
+    "planning_now_selects_port_not_engine": "yes_abstract_port_is_accepted_per_task_instruction_when_authority_says_not_yet_select_backend"
+  }
+}

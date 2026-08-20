@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "RECOVERY_DISCOVERY_PLAN": "PASS",
+  "TERMINAL_STATE_REPROCESSING_ALLOWED": "no",
+  "DISCOVERY_MECHANISM": {
+    "trigger": ["process_restart", "store_reopen", "explicit_recovery_scan_invocation"],
+    "not_a_daemon": "M4-7 authority excludes runtime lifecycle/deployment; discovery is explicit scanner invocation or store open, not background daemon",
+    "scan_method": "scan_requiring_recovery scans durable journal for nonterminal states only",
+    "eligible_states": ["PREPARED", "APPLYING", "OUTCOME_UNKNOWN", "RECONCILING"],
+    "terminal_states_never_scanned_for_reprocess": ["VERIFIED", "VERIFIED_RECOVERED", "FAILED_NO_EFFECT", "RETRYABLE_NO_EFFECT", "CONFLICT"],
+    "predicate": "state in eligible_states and journal_revision not stale and correlation lineage active",
+    "ordering": "deterministic by journal_id lexicographic then created_at; no newest/latest heuristic selection",
+    "idempotency_of_scan": "scan is read-only; repeated scans without state change return same set"
+  },
+  "HANDLING_PER_STATE": {
+    "PREPARED": "no durable APPLYING -> FAILED_NO_EFFECT via CAS (proves no external attempt); no external read required",
+    "APPLYING": "stranded -> CAS APPLYING->RECONCILING then authoritative read and M4-5 classify",
+    "OUTCOME_UNKNOWN": "CAS OUTCOME_UNKNOWN->RECONCILING then readback",
+    "RECONCILING": "re-entrant idempotent readback and classify (retry of verify is safe)"
+  },
+  "FORBIDDEN": ["repeated_reprocess_terminal_states", "heuristic selection among multiple eligible by recency", "automatic semantic successor selection"]
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_7_FAILURE_INJECTION_PLAN": "PASS",
+  "SEAM": "M4-5 fake_port (FixtureAuthority + FakePlanAuthorityAdapter + InjectionHooks) contract-compatible; no production external authority required",
+  "PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED": "no",
+  "PRODUCTION_GITHUB_TEST_WRITE_ALLOWED": "no",
+  "PRODUCTION_JOURNAL_TEST_WRITE_ALLOWED": "no",
+  "INJECTIONS": [
+    {"hook": "fail_before_prepared", "mechanism": "InjectionHooks.fail_before_prepared / before_persist_prepared raises", "expected_code": "JOURNAL_PERSISTENCE_FAILURE_BEFORE_EXTERNAL_WRITE", "recovery": "no_external_attempt"},
+    {"hook": "fail_before_applying", "mechanism": "InjectionHooks.fail_before_applying / before_persist_applying raises", "expected_code": "JOURNAL_PERSISTENCE_FAILURE_BEFORE_EXTERNAL_WRITE", "recovery": "J1 FAILED_NO_EFFECT"},
+    {"hook": "known_rejection_during_mutate", "mechanism": "InjectionHooks.known_rejection_during_mutate -> KNOWN_REJECTION response", "expected_code": "KNOWN_NO_EFFECT_AUTHORITATIVE_REJECTION", "recovery": "APPLYING->FAILED_NO_EFFECT"},
+    {"hook": "timeout_during_mutate", "mechanism": "InjectionHooks.timeout_during_mutate -> TIMEOUT OUTCOME_UNKNOWN", "expected_code": "OUTCOME_UNKNOWN_TRANSPORT_TIMEOUT", "recovery": "OUTCOME_UNKNOWN->RECONCILING before retry"},
+    {"hook": "crash_after_external_before_verify", "mechanism": "InjectionHooks.crash_after_external_before_verify raises after fixture write", "expected_code": "nonterminal_APPLYING stranded", "recovery": "J3/J10 RECONCILING->VERIFIED_RECOVERED via candidate readback"},
+    {"hook": "verify_fails", "mechanism": "InjectionHooks.verify_fails raises on verify read", "expected_code": "OUTCOME_UNKNOWN or RECONCILING pending", "recovery": "idempotent verify retry"},
+    {"hook": "verify_returns_candidate", "mechanism": "InjectionHooks.verify_returns_candidate returns candidate digest", "expected_code": "VERIFIED_RECOVERED", "recovery": "RECONCILING->VERIFIED_RECOVERED"},
+    {"hook": "verify_returns_original", "mechanism": "InjectionHooks.verify_returns_original returns original digest", "expected_code": "RETRYABLE_NO_EFFECT", "recovery": "requires fresh auth to retry"},
+    {"hook": "verify_returns_third", "mechanism": "InjectionHooks.verify_returns_third returns third state body", "expected_code": "CONFLICT_THIRD_STATE", "recovery": "needs semantic choice"},
+    {"hook": "terminal_persist_fails", "mechanism": "InjectionHooks.terminal_persist_fails / during_terminal_persist raises", "expected_code": "JOURNAL_PERSISTENCE_FAILURE_AFTER_TERMINAL", "recovery": "J10 nonterminal reconciles to VERIFIED_RECOVERED"},
+    {"hook": "CAS race", "mechanism": "two DurableJournalStore handles race CAS PREPARED->APPLYING; one wins, loser gets STALE_JOURNAL_REVISION", "expected_code": "STALE_JOURNAL_REVISION", "recovery": "loser observes current state"},
+    {"hook": "process death checkpoint", "mechanism": "kill process after PREPARED persist, after APPLYING persist, after external but before verify, during terminal persist; reopen store verifies durability", "expected_code": "per J1-J10 matrix", "recovery": "scan + reconcile"}
+  ],
+  "DETERMINISM": "all injections deterministic via hooks; no network, no GitHub, no flake; close/reopen proves persistence across process boundary"
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "RECONCILIATION_EXECUTION_PLAN": "PASS",
+  "HEURISTIC_RECONCILIATION_ALLOWED": "no",
+  "RECOVERY_EXECUTOR_IS_SEMANTIC_DECISION_MAKER": "no",
+  "EXECUTOR_CONTRACT": {
+    "inputs": ["durable JournalRecord (journal_id, candidate/original digests, state, revision)", "PlanAuthorityMutationPort typed read (read_raw_authority/verify)", "M4-5 pure classifier classify_three_way"],
+    "does_not_make_semantic_choices": "yes",
+    "does_not_issue_new_Decision": "yes",
+    "does_not_select_successor": "yes",
+    "does_not_guess_target": "yes"
+  },
+  "FLOW": [
+    "acquire eligible record via scan and CAS to RECONCILING (if not already)",
+    "perform authoritative read through port.verify(target) -> (observed_revision, observed_raw_digest, raw_body)",
+    "invoke M4-5 classify_three_way(original_raw_digest, candidate_raw_digest, observed_raw_digest, normalized_equal_supporting_only)",
+    "OBSERVED==CANDIDATE exact raw identity -> CAS RECONCILING->VERIFIED_RECOVERED with observed fields",
+    "OBSERVED==ORIGINAL exact raw identity -> evaluate fresh authorization requirement; if not met remain RETRYABLE pending; else CAS RECONCILING->RETRYABLE_NO_EFFECT (do not auto-advance to APPLYING)",
+    "third state -> CAS RECONCILING->CONFLICT with observed evidence and semantic choice surfaced",
+    "normalized equality alone never yields VERIFIED_RECOVERED; still CONFLICT per J8"
+  ],
+  "STATE_TABLE": {
+    "uses_exact_M4_5_transition_table": "yes",
+    "RECONCILING_to_VERIFIED_RECOVERED_when_candidate": "yes",
+    "RECONCILING_to_RETRYABLE_NO_EFFECT_when_original_plus_fresh_auth_domain_valid": "yes",
+    "RECONCILING_to_CONFLICT_when_third_or_normalized_only": "yes"
+  },
+  "OUTPUT": {
+    "terminal_or_reconciliation_state_persisted": "yes_via_CAS",
+    "evidence": "observed_raw_digest, observed_revision, last_observed_raw_authority_body, classification",
+    "caller_receives": "updated JournalRecord and canonical MutationResult mapping"
+  }
+}

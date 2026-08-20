@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_7_IMPLEMENTATION_DAG_DEFINED": "yes",
+  "IMPLEMENTATION_SLICE_COUNT": 7,
+  "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+  "BLOCKING_PLAN_GAP_COUNT": 0,
+  "slices": [
+    {
+      "SLICE_ID": "M4-7-S1",
+      "OBJECTIVE": "Define durable journal schema mapping and store port (DurableJournalStore ABC with create_prepared, cas_transition, get, scan_requiring_recovery, scan_nonterminal) reusing M4-5 JournalRecord invariants",
+      "PREREQUISITES": ["M4-5 JournalRecord + state machine + port contract accepted at e51141a"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/store.py", "aota_forge/core/journal/__init__.py"],
+      "OUTPUT": "storage-neutral port interface with journal_revision CAS fields and durable schema version",
+      "TESTS": ["POS-01 schema validation", "NEG-06 invalid transition", "NEG-10 opaque ID not authority"],
+      "NEGATIVE_SCOPE": "no GitHub import, no executor runtime, no Subject Graph write",
+      "ACCEPTANCE": "schema field mapping PASS, 9-state reuse, OPAQUE count 0"
+    },
+    {
+      "SLICE_ID": "M4-7-S2",
+      "OBJECTIVE": "Implement per-journal atomic CAS transition mechanics (per-record RLock + revision/token compare-and-set, fail closed on stale, forbid terminal outgoing)",
+      "PREREQUISITES": ["M4-7-S1"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/store.py"],
+      "OUTPUT": "atomic CAS implementation with STALE_JOURNAL_REVISION and INVALID_JOURNAL_TRANSITION",
+      "TESTS": ["POS-02 CAS one winner", "NEG-07 stale revision", "NEG-06 invalid transition"],
+      "NEGATIVE_SCOPE": "no cross-authority atomic transaction, no global lock",
+      "ACCEPTANCE": "DURABLE_JOURNAL_TRANSITION_CAS_PLAN PASS, CROSS_AUTHORITY_AVAILABLE=no"
+    },
+    {
+      "SLICE_ID": "M4-7-S3",
+      "OBJECTIVE": "Implement external-attempt reservation durability (PREPARED->APPLYING CAS eligibility before port.mutate, at-most-one winner, loser observes APPLYING)",
+      "PREREQUISITES": ["M4-7-S2"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/store.py", "aota_forge/core/journal/executor.py"],
+      "OUTPUT": "at-most-one enforcement with attempt_id reservation and can_perform_external_attempt guard",
+      "TESTS": ["NEG-01 two workers both attempt", "POS-02 CAS race"],
+      "NEGATIVE_SCOPE": "no in-memory-only lock as sole authority, no GitHub calls",
+      "ACCEPTANCE": "AT_MOST_ONE_ATTEMPT_DURABLE_PLAN PASS"
+    },
+    {
+      "SLICE_ID": "M4-7-S4",
+      "OBJECTIVE": "Implement recovery discovery scanner (scan_requiring_recovery for PREPARED/APPLYING/OUTCOME_UNKNOWN/RECONCILING, never terminals, close/reopen durability, J1-J4 handling)",
+      "PREREQUISITES": ["M4-7-S2"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/recovery.py"],
+      "OUTPUT": "scanner with eligible states, deterministic ordering, no terminal reprocess",
+      "TESTS": ["NEG-08 terminal not reprocessed", "POS-01 close/reopen", "FAIL-01/02 J1/J9"],
+      "NEGATIVE_SCOPE": "no daemon, no runtime lifecycle deployment",
+      "ACCEPTANCE": "RECOVERY_DISCOVERY_PLAN PASS, TERMINAL_REPROCESSING_ALLOWED=no"
+    },
+    {
+      "SLICE_ID": "M4-7-S5",
+      "OBJECTIVE": "Implement reconciliation execution (authoritative verify read via port, invoke M4-5 classify_three_way with raw precedence, persist VERIFIED_RECOVERED/RETRYABLE_NO_EFFECT/CONFLICT, J5-J8 handling, J10 dedicated row)",
+      "PREREQUISITES": ["M4-7-S3","M4-7-S4"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/executor.py"],
+      "OUTPUT": "deterministic executor that is not semantic decision maker, with readback-classify-persist",
+      "TESTS": ["POS-03 candidate->VERIFIED_RECOVERED","POS-04 original->RETRYABLE","NEG-05 third->CONFLICT","FAIL-03 stranded","FAIL-04 J10"],
+      "NEGATIVE_SCOPE": "no heuristic third-state resolution, no semantic rollback",
+      "ACCEPTANCE": "RECONCILIATION_EXECUTION_PLAN PASS, HEURISTIC=no"
+    },
+    {
+      "SLICE_ID": "M4-7-S6",
+      "OBJECTIVE": "Implement retry/fresh-authorization handoff (RETRYABLE requires fresh auth+Subject+raw+new lease, rebind preserves history via new journal_id with same correlation_id lineage, blind old lease reuse denied)",
+      "PREREQUISITES": ["M4-7-S5"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/executor.py","aota_forge/core/journal/retry_handoff.py"],
+      "OUTPUT": "retry handoff with correlation lineage and complete identity revalidation",
+      "TESTS": ["POS-05 fresh auth retry lineage","NEG-04 old lease reuse","NEG-09 same key auth drift"],
+      "NEGATIVE_SCOPE": "no overwrite of old authorization evidence, no auto APPLYING from RETRYABLE",
+      "ACCEPTANCE": "FRESH_AUTHORIZATION_REQUIRED=yes, RETRYABLE blind reuse no, REBIND PASS, IDEMPOTENCY PASS"
+    },
+    {
+      "SLICE_ID": "M4-7-S7",
+      "OBJECTIVE": "Wire durability across close/reopen and deterministic fault injection matrix (fake_port hooks for known failure/timeout/crash/verify states/journal CAS race/process death checkpoints) covering J1-J10",
+      "PREREQUISITES": ["M4-7-S1","M4-7-S3","M4-7-S4","M4-7-S5","M4-7-S6"],
+      "AUTHORIZED_PATHS": ["tests/test_m4_7_durable_journal.py","tests/test_m4_7_recovery.py","aota_forge/adapters/plan_authority/fake_port.py"],
+      "OUTPUT": "close/reopen durability proofs and J1-J10 fault matrix with 18 injection cases",
+      "TESTS": ["PROCESS_RESTART_DURABILITY_TESTS 3 cases","J1-J10 matrix 10 cases","duplicate executor matrix 7 cases","FAIL-01..04"],
+      "NEGATIVE_SCOPE": "no production GitHub/external/journal is mutated, no network",
+      "ACCEPTANCE": "PROCESS_RESTART_DURABILITY_TEST_PLAN PASS, FAILURE_INJECTION_PLAN PASS, 0 production writes"
+    }
+  ],
+  "parallel_safety_note": "All slices respect M4-6 exclusive github.py; shared journal/model and port remain read-only; slices are sequential where CAS required"
+}

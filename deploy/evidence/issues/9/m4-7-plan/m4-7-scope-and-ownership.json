@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "M4_7_PRIMARY_RESPONSIBILITY": "Implement durable journal persistence, deterministic transition persistence with CAS, external-attempt reservation durability guaranteeing at-most-one external write, recovery/restart scanning, reconciliation execution via M4-5 three-way classifier, and retry/no-effect workflow enforcement without defining semantic decisions or selecting GitHub-specific transport",
+  "M4_7_OWNS": [
+    "Durable journal persistence (schema mapping to M4-5 JournalRecord, atomic CAS transitions, journal store interface and file-backed close/reopen durability)",
+    "External-attempt reservation durability (at-most-one contract enforced via durable PREPARED->APPLYING CAS eligibility before port mutate)",
+    "Recovery discovery (restart scanner enumerating nonterminal states requiring mechanical attention without reprocessing terminals)",
+    "Reconciliation execution (authoritative read via PlanAuthorityMutationPort, invocation of M4-5 pure classify_three_way, persistence of VERIFIED_RECOVERED/RETRYABLE_NO_EFFECT/CONFLICT/FAILED_NO_EFFECT/OUTCOME_UNKNOWN with J10 handling)",
+    "Retry/fresh-authorization handoff (preserving historical authorization evidence, binding new attempt lineage)",
+    "Durable idempotency enforcement reusing M4-3 complete authorization-bound identity",
+    "Deterministic crash/recovery fault injection via fake_port seam"
+  ],
+  "M4_7_DOES_NOT_OWN": [
+    "Portable Plan Mutation Port contract definition, operation limitation, or revision/digest domain separation (M4-5)",
+    "Journal state vocabulary, transition table, crash window J1-J10 semantics, or pure three-way classifier definition (M4-5)",
+    "GitHub Issue number/comment ID/gh api/pagination/transport and control-comment role resolution (M4-6)",
+    "CLI/Core convergence, successor regression matrix, or operator trace surface (M4-8)",
+    "Executor/runtime lifecycle, Hermes adapter, task dispatch (M5)",
+    "Subject Graph production authority, cross-authority distributed transaction, semantic rollback/compensation"
+  ],
+  "M4_7_CAPABILITY_MATRIX": [
+    {"capability": "durable journal schema persistence", "M4_7_OWNERSHIP": "owned", "evidence": "M4-0 D4 required_fields + M4-5 JournalRecord; M4-7 maps to durable store without redefining fields"},
+    {"capability": "journal state machine", "M4_7_OWNERSHIP": "reuse", "evidence": "M4-5 9-state family PREPARED..CONFLICT is authoritative; M4-7 reuses verbatim"},
+    {"capability": "transition CAS", "M4_7_OWNERSHIP": "owned", "evidence": "M4-0 D3/CAS: per-record revision CAS before APPLYING eligibility; M4-7 implements durable CAS"},
+    {"capability": "at-most-one attempt", "M4_7_OWNERSHIP": "owned", "evidence": "M4-0 D3 at-most-one + M4-5 port contract; M4-7 enforces via durable APPLYING reservation"},
+    {"capability": "APPLYING restart handling", "M4_7_OWNERSHIP": "owned", "evidence": "J3/J10: stranded APPLYING reconciles before retry; blind retry denied"},
+    {"capability": "OUTCOME_UNKNOWN", "M4_7_OWNERSHIP": "owned", "evidence": "M4-0 D3 J4: OUTCOME_UNKNOWN -> RECONCILING with readback before retry"},
+    {"capability": "reconciliation classification", "M4_7_OWNERSHIP": "reuse_execution", "evidence": "M4-5 classify_three_way is pure; M4-7 invokes it after authoritative read"},
+    {"capability": "retry fresh authorization", "M4_7_OWNERSHIP": "owned", "evidence": "M4-0 D5 + M4-5 retry: RETRYABLE requires fresh auth+Subject+raw+new lease"},
+    {"capability": "idempotency linkage", "M4_7_OWNERSHIP": "reuse", "evidence": "M4-3 complete authorization-bound identity reused for external journal"},
+    {"capability": "GitHub transport", "M4_7_OWNERSHIP": "downstream_M4-6", "evidence": "M4-0 D10/D12: GitHub deferred to M4-6; GITHUB_API_PLANNED_CALL_COUNT=0"},
+    {"capability": "CLI exposure", "M4_7_OWNERSHIP": "downstream_M4-8", "evidence": "M4-8 owns CLI thin projection; CLI_IS_EXCLUSIVE_ENTRYPOINT=no"},
+    {"capability": "cross-authority atomic", "M4_7_OWNERSHIP": "denied", "evidence": "M4-0 D2 CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no"}
+  ]
+}

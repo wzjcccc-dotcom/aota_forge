@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "DURABLE_JOURNAL_TRANSITION_CAS_PLAN": "PASS",
+  "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+  "CAS_CONTRACT": {
+    "mechanism": "per_journal_record_compare_and_set_on_revision_and_state",
+    "fields_compared": ["journal_id", "journal_revision", "journal_state", "journal_revision_token"],
+    "atomic_unit": "single journal record update including state, revision increment, revision_token, observed fields, and timestamps",
+    "not_atomic_with": ["Subject Graph transaction", "external authority store mutation"],
+    "explicit_non_cross_authority": "yes_reaffirmed_CAS_is_local_journal_only"
+  },
+  "transition_validation": {
+    "uses_M4_5_is_valid_transition": "yes",
+    "forbidden_persisted": "yes_fail_closed_via_validate_transition",
+    "examples_forbidden": [["VERIFIED","APPLYING"],["CONFLICT","VERIFIED"],["FAILED_NO_EFFECT","APPLYING"]],
+    "allowed_examples": [["PREPARED","APPLYING"],["APPLYING","RECONCILING"],["RECONCILING","VERIFIED_RECOVERED"]]
+  },
+  "executor_race": {
+    "two_executors_see_PREPARED": "both read same journal_id revision N; only one CAS PREPARED->APPLYING with expected revision N succeeds; loser gets CAS conflict and observes current durable state",
+    "lost_update_prevention": "per_record RLock or atomic compare-and-swap in file-backed store; no global lock; independent journal_ids do not contend",
+    "stale_revision_transition": "stale journal_rev or stale state expected vs current fails closed with StaleJournalRevisionError; no overwrite"
+  },
+  "API": {
+    "store_methods": [
+      "create_prepared(record: JournalRecord) -> JournalRecord with revision=1 token",
+      "cas_transition(journal_id, expected_revision, expected_state, new_state, observed_digest, observed_revision, evidence) -> (success bool, current record)",
+      "get(journal_id) -> JournalRecord|null",
+      "scan_requiring_recovery() -> list[JournalRecord] where state in (PREPARED, APPLYING, OUTCOME_UNKNOWN, RECONCILING)"
+    ],
+    "error_codes": ["JOURNAL_NOT_FOUND","STALE_JOURNAL_REVISION","INVALID_JOURNAL_TRANSITION","JOURNAL_PERSISTENCE_FAILURE"]
+  },
+  "ordering_enforcement": {
+    "PREPARED_before_APPLYING_before_external": "cas_transition PREPARED->APPLYING must succeed durably before port mutate may be called; can_perform_external_attempt guard rechecked after CAS",
+    "terminal_no_outgoing": "VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT have no outgoing via is_valid_transition; store rejects CAS from terminal"
+  }
+}

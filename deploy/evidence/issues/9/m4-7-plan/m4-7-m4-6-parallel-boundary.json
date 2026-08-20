@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_DAG_VERIFIED": "PASS",
+  "M4_6_M4_7_PARALLEL_PLANNING_ALLOWED": "yes",
+  "M4_6_M4_7_PARALLEL_SOURCE_SAFETY_PLAN": "PASS",
+  "M4_7_DEPENDS_ON_M4_6_IMPLEMENTATION": "no",
+  "M4_7_CONSUMES_M4_5_PORT": "yes",
+  "M4_7_EXCLUSIVE_WRITE_PATHS": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/retry_handoff.py",
+    "tests/test_m4_7_durable_journal.py",
+    "tests/test_m4_7_recovery.py"
+  ],
+  "M4_6_EXCLUSIVE_WRITE_PATHS": [
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/github_comment.py",
+    "tests/test_m4_6_github_adapter.py"
+  ],
+  "M4_7_SHARED_READ_ONLY_PATHS": [
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/fake_port.py"
+  ],
+  "M4_7_INTEGRATION_ONLY_PATHS": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/authority.py"
+  ],
+  "M4_7_FORBIDDEN_PATHS": [
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/github_comment.py",
+    "aota_forge/cli/*",
+    "aota_forge/core/runtime/*",
+    "aota_forge/core/git/* generic write API",
+    "deploy/evidence/issues/9/m4-6-plan/*",
+    "deploy/evidence/issues/9/m4-5-plan/* modification",
+    ".aota-worktrees/*",
+    "aota_forge/core/graph/** production graph write",
+    "scripts/m4_6_github_guard.py",
+    "tests/test_m4_6_*",
+    "aota_forge/core/journal/model.py redefinition"
+  ],
+  "SHARED_HOT_FILE_POLICY": "Shared read-only files remain integration_only_writer=no; implementation must not modify them during parallel slices; integration via single owner per file serialized if conflict arises",
+  "DOWNSTREAM_CONTRACT": {
+    "M4_5_provides": "Port contract + journal state machine + classifier + retry policy",
+    "M4_6_consumes_port_implements_GitHub_transport": "yes",
+    "M4_7_consumes_port_and_journal_contract_implements_durable_recovery": "yes",
+    "M4_8_integrates_both": "M4-6 + M4-7 -> M4-8 CLI/Core convergence without inventing semantics"
+  },
+  "COMPLIANCE_CHECK": {
+    "M4_7_writes_only_its_exclusive_paths": "yes",
+    "M4_6_exclusive_not_claimed": "yes",
+    "shared_read_only_not_modified": "yes",
+    "cross_authority_atomic_not_claimed": "yes"
+  }
+}

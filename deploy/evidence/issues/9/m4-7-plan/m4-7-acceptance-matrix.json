@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_7_ACCEPTANCE_MATRIX": "PASS",
+  "PREMISE": "All cases use isolated durable journal store (file-backed close/reopen) + fake_port fixture authority; no production GitHub/external/journal is mutated",
+  "positive_cases": [
+    {"id": "POS-01", "name": "PREPARED persists across reopen", "given": "create PREPARED", "when": "close store, reopen", "then": "state preserved PREPARED readback equals written"},
+    {"id": "POS-02", "name": "PREPARED->APPLYING CAS one winner", "given": "PREPARED rev N", "when": "two workers CAS to APPLYING with expected rev N", "then": "exactly one wins APPLYING, loser gets STALE_JOURNAL_REVISION and observes current APPLYING"},
+    {"id": "POS-03", "name": "candidate observed -> VERIFIED_RECOVERED", "given": "APPLYING with candidate digest", "when": "recovery verify returns observed==candidate exact raw", "then": "RECONCILING->VERIFIED_RECOVERED with observed evidence persisted"},
+    {"id": "POS-04", "name": "original observed -> RETRYABLE_NO_EFFECT", "given": "APPLYING with original digest", "when": "verify returns observed==original", "then": "RECONCILING->RETRYABLE_NO_EFFECT (fresh auth required, no auto retry)"},
+    {"id": "POS-05", "name": "fresh authorization can create allowed retry lineage", "given": "RETRYABLE_NO_EFFECT", "when": "new PREPARED with fresh auth+Subject+raw+new lease and same correlation_id lineage", "then": "new attempt allowed, correlation chains original and retry"}
+  ],
+  "negative_cases": [
+    {"id": "NEG-01", "name": "two workers both attempt external write", "when": "two workers see PREPARED", "then": "only winner with durable APPLYING may call port mutate; loser never calls mutate (count mutate_call_count 1)"},
+    {"id": "NEG-02", "name": "APPLYING blindly retried after restart", "when": "APPLYING stranded on restart", "then": "must CAS to RECONCILING and readback before any new attempt; direct retry without reconcile is REJECTED"},
+    {"id": "NEG-03", "name": "UNKNOWN_OUTCOME blindly retried", "when": "OUTCOME_UNKNOWN", "then": "OUTCOME_UNKNOWN->RECONCILING required before any retry; blind retry REJECTED"},
+    {"id": "NEG-04", "name": "old lease reused after RETRYABLE", "when": "RETRYABLE_NO_EFFECT with old lease_reference", "then": "retry with old lease REJECTED; fresh lease required"},
+    {"id": "NEG-05", "name": "third state overwritten", "when": "recovery observes third state != original != candidate", "then": "must persist CONFLICT; silent overwrite/rebase/merge is REJECTED"},
+    {"id": "NEG-06", "name": "invalid journal transition persisted", "when": "attempt VERIFIED->APPLYING or CONFLICT->VERIFIED", "then": "INVALID_JOURNAL_TRANSITION fail closed; no persist"},
+    {"id": "NEG-07", "name": "stale journal revision transition", "when": "CAS with stale revision N-1 while current is N", "then": "STALE_JOURNAL_REVISION REJECTED"},
+    {"id": "NEG-08", "name": "terminal record reprocessed", "when": "scan_requiring_recovery after VERIFIED/VERIFIED_RECOVERED/CONFLICT/RETRYABLE_NO_EFFECT/FAILED_NO_EFFECT", "then": "terminal never returned by scan; reprocessing REJECTED"},
+    {"id": "NEG-09", "name": "same key + changed authorization collapsed as replay", "when": "same idempotency_key but changed principal/candidate/scope changes complete identity", "then": "must be CONFLICT not replay; collapsing is REJECTED"},
+    {"id": "NEG-10", "name": "journal ID used as semantic authority", "when": "caller supplies journal_id as authority proof", "then": "OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT=0; journal_id alone grants no authority, REJECTED"}
+  ],
+  "failure_cases": [
+    {"id": "FAIL-01", "name": "persistence failure before PREPARED", "when": "hook fail_before_prepared", "then": "J9 FAILED_NO_EFFECT fail closed; no external attempt; retry only after durability restored"},
+    {"id": "FAIL-02", "name": "persistence failure entering APPLYING", "when": "hook fail_before_applying", "then": "remains PREPARED; J1 treats as FAILED_NO_EFFECT; no external attempt; future retry needs fresh preconditions"},
+    {"id": "FAIL-03", "name": "process death after external effect before verification", "when": "hook crash_after_external_before_verify", "then": "stranded APPLYING -> RECONCILING -> VERIFIED_RECOVERED via J3/J10 without duplicate write"},
+    {"id": "FAIL-04", "name": "terminal persistence failure / J10", "when": "hook terminal_persist_fails after verified candidate readback but before terminal CAS", "then": "nonterminal_after_terminal persisted; future run J10 RECONCILING->VERIFIED_RECOVERED; blind reapply denied; no duplicate external effect"}
+  ],
+  "coverage": {
+    "positive_count": 5,
+    "negative_count": 10,
+    "failure_count": 4,
+    "state_reuse_verified": "yes_9_states",
+    "github_calls": 0,
+    "heuristic_allowed": "no",
+    "semantic_rollback_allowed": "no"
+  }
+}

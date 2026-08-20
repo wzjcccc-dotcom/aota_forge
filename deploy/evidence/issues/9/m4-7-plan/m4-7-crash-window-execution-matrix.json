@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "CRASH_WINDOW_COUNT": 10,
+  "CRASH_WINDOW_DURABLE_RECOVERY_MATRIX": "PASS",
+  "UNDEFINED_CRASH_WINDOW_COUNT": 0,
+  "J10_DEDICATED_EXECUTION_ROW": "yes",
+  "matrix": [
+    {"WINDOW_ID": "J1", "PRE_CRASH_DURABLE_STATE": "PREPARED persisted, APPLYING not yet durable", "EXTERNAL_EFFECT_POSSIBILITY": "no_effect_proven_by_write_order", "RESTART_OBSERVATION": "PREPARED without durable APPLYING", "NEXT_DURABLE_STATE": "FAILED_NO_EFFECT via CAS PREPARED->FAILED_NO_EFFECT or later fresh PREPARED with revalidated authorization", "EXTERNAL_READ_REQUIRED": "no_external_read_required_to_prove_no_attempt; re-read_before_write_before_any_later_resume", "FRESH_AUTH_REQUIRED": "yes_if_retry", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J2", "PRE_CRASH_DURABLE_STATE": "APPLYING durable", "EXTERNAL_EFFECT_POSSIBILITY": "known_no_effect_authoritative_rejection", "RESTART_OBSERVATION": "APPLYING with rejection evidence or verify original==observed", "NEXT_DURABLE_STATE": "FAILED_NO_EFFECT", "EXTERNAL_READ_REQUIRED": "read_or_rejection_evidence_proving_original_unchanged", "FRESH_AUTH_REQUIRED": "yes_for_any_new_attempt", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J3", "PRE_CRASH_DURABLE_STATE": "APPLYING durable, external mutation succeeded but VERIFIED not persisted", "EXTERNAL_EFFECT_POSSIBILITY": "effect_probably_applied", "RESTART_OBSERVATION": "APPLYING stranded (no terminal) on restart scan", "NEXT_DURABLE_STATE": "APPLYING->RECONCILING->VERIFIED_RECOVERED when verify returns candidate exact raw identity", "EXTERNAL_READ_REQUIRED": "yes_mandatory_reconciliation_read", "FRESH_AUTH_REQUIRED": "no_before_reconciliation", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J4", "PRE_CRASH_DURABLE_STATE": "APPLYING or OUTCOME_UNKNOWN after transport timeout/disconnect/process uncertainty", "EXTERNAL_EFFECT_POSSIBILITY": "unknown", "RESTART_OBSERVATION": "OUTCOME_UNKNOWN", "NEXT_DURABLE_STATE": "OUTCOME_UNKNOWN->RECONCILING with readback before retry", "EXTERNAL_READ_REQUIRED": "yes_before_any_retry", "FRESH_AUTH_REQUIRED": "yes_for_retry_after_reconciled", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J5", "PRE_CRASH_DURABLE_STATE": "RECONCILING in progress", "EXTERNAL_EFFECT_POSSIBILITY": "no_effect_observed_original", "RESTART_OBSERVATION": "RECONCILING with observed==original exact raw identity", "NEXT_DURABLE_STATE": "RETRYABLE_NO_EFFECT (fresh auth+Subject+raw+new lease required before new attempt)", "EXTERNAL_READ_REQUIRED": "yes_raw_read_with_revision_digest", "FRESH_AUTH_REQUIRED": "yes_for_new_attempt", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J6", "PRE_CRASH_DURABLE_STATE": "RECONCILING in progress", "EXTERNAL_EFFECT_POSSIBILITY": "success_observed_candidate", "RESTART_OBSERVATION": "RECONCILING with observed==candidate exact raw identity", "NEXT_DURABLE_STATE": "VERIFIED_RECOVERED", "EXTERNAL_READ_REQUIRED": "yes", "FRESH_AUTH_REQUIRED": "no", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J7", "PRE_CRASH_DURABLE_STATE": "RECONCILING in progress", "EXTERNAL_EFFECT_POSSIBILITY": "third_state_conflict", "RESTART_OBSERVATION": "RECONCILING with observed neither original nor candidate", "NEXT_DURABLE_STATE": "CONFLICT", "EXTERNAL_READ_REQUIRED": "yes", "FRESH_AUTH_REQUIRED": "no", "SEMANTIC_CHOICE_REQUIRED": "yes"},
+    {"WINDOW_ID": "J8", "PRE_CRASH_DURABLE_STATE": "RECONCILING in progress", "EXTERNAL_EFFECT_POSSIBILITY": "normalized_equality_only", "RESTART_OBSERVATION": "RECONCILING with normalized_equal true but raw digest differs", "NEXT_DURABLE_STATE": "CONFLICT (raw comparison precedence; normalized supporting-only)", "EXTERNAL_READ_REQUIRED": "yes_raw_identity_read", "FRESH_AUTH_REQUIRED": "no", "SEMANTIC_CHOICE_REQUIRED": "yes"},
+    {"WINDOW_ID": "J9", "PRE_CRASH_DURABLE_STATE": "PREPARED or APPLYING durability operation requested but persistence failed before external write", "EXTERNAL_EFFECT_POSSIBILITY": "no_effect_external_forbidden_until_durable", "RESTART_OBSERVATION": "no_durable_APPLYING or PREPARED persistence failure", "NEXT_DURABLE_STATE": "FAILED_NO_EFFECT (fail closed JOURNAL_PERSISTENCE_FAILURE_BEFORE_EXTERNAL_WRITE)", "EXTERNAL_READ_REQUIRED": "not_needed_to_prove_no_external_attempt_under_write_order_guard", "FRESH_AUTH_REQUIRED": "yes_if_retry_after_durability_restored", "SEMANTIC_CHOICE_REQUIRED": "no"},
+    {"WINDOW_ID": "J10", "PRE_CRASH_DURABLE_STATE": "nonterminal APPLYING or OUTCOME_UNKNOWN while external candidate already authoritative but terminal persist failed", "EXTERNAL_EFFECT_POSSIBILITY": "success_confirmed_external_but_local_terminal_not_persisted", "RESTART_OBSERVATION": "nonterminal journal (APPLYING/OUTCOME_UNKNOWN) with future verify returning candidate exact identity", "NEXT_DURABLE_STATE": "RECONCILING->VERIFIED_RECOVERED (future run reconciles nonterminal and exact candidate without duplicate write; dedicated execution row per M4-7)", "EXTERNAL_READ_REQUIRED": "yes_on_future_run", "FRESH_AUTH_REQUIRED": "no", "SEMANTIC_CHOICE_REQUIRED": "no"}
+  ],
+  "invariants": {
+    "APPLYING_RESTART_BLIND_RETRY_ALLOWED": "no",
+    "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED": "no",
+    "HEURISTIC_THIRD_STATE_SELECTION_ALLOWED": "no",
+    "NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT": "no",
+    "SEMANTIC_ROLLBACK_ALLOWED": "no"
+  }
+}

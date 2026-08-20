@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "FRESH_AUTHORIZATION_REQUIRED_FOR_RETRY": "yes",
+  "RETRYABLE_NO_EFFECT_BLIND_OLD_LEASE_REUSE": "no",
+  "FRESH_AUTHORIZATION_REBIND_PLAN": "PASS",
+  "SEMANTICS": {
+    "RETRYABLE_NO_EFFECT_means": "mechanically retryable condition, NOT authorization to retry",
+    "requires_fresh": ["fresh semantic authorization (principal, operation, typed_target, mutation_scope, contract_hash, intent/candidate fingerprint, approval/Decision basis, expiry)", "fresh Subject precondition (subject_expected_revision current)", "fresh raw authority precondition (authority_source_revision/observed_raw_digest current)", "new bounded lease/attempt with new attempt_id and lease_reference"],
+    "does_not_automatically": ["reuse previous CapabilityLease", "auto-transition to APPLYING merely because state is retryable", "overwrite old authorization evidence"]
+  },
+  "REBIND_PLAN": {
+    "new_journal_creation": "fresh retry creates new JournalRecord with new journal_id, new attempt_id, same correlation_id (lineage) plus new authorization_reference/lease_reference and new complete_external_identity; previous journal record preserved as history",
+    "distinction": "original attempt/journal history (journal_id lineage via correlation_id) vs new authorized attempt identity (new journal_id/attempt_id with fresh complete identity)",
+    "correlation_lineage": "correlation_id chains retries; correlation index allows audit of original vs retry",
+    "no_overwrite": "old evidence fields (authorization_reference, candidate_raw_digest of prior attempt) remain immutable",
+    "validation": "fresh authorization validated via AuthorityEngine before new PREPARED create; stale preconditions fail closed"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "DURABLE_JOURNAL_SCHEMA_PLAN": "PASS",
+  "OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT": 0,
+  "source_contract": "aota_forge/core/journal/model.py JournalRecord + M4-0 D4 required_fields",
+  "durable_schema": {
+    "table_or_collection": "durable_journal_records",
+    "primary_key": "journal_id (bounded safe identifier, opaque, not authority)",
+    "fields": [
+      {"name": "journal_id", "type": "bounded_safe_id", "source": "JournalRecord.journal_id", "semantic_authority": "no", "notes": "opaque local identity, never semantic authority"},
+      {"name": "correlation_id", "type": "bounded_safe_id", "source": "JournalRecord.correlation_id + PortablePlanMutationRequest.correlation_id", "semantic_authority": "no", "notes": "lineage across retry; indexed for discovery"},
+      {"name": "attempt_id", "type": "bounded_safe_id", "source": "JournalRecord.attempt_id / lease_reference / attempt_reference", "semantic_authority": "no", "notes": "reservation identity for at-most-one eligibility"},
+      {"name": "operation", "type": "enum(plan_init|plan_retirement)", "source": "JournalRecord.operation + D4 operation", "semantic_authority": "no_new", "notes": "limited to accepted descriptors"},
+      {"name": "typed_target", "type": "ObjectRef canonical serialization", "source": "JournalRecord.typed_target.to_canonical()", "notes": "typed target, not GitHub Issue number"},
+      {"name": "principal", "type": "bounded_string", "source": "JournalRecord.principal", "notes": "trusted principal from authorization"},
+      {"name": "contract_hash", "type": "sha256_hex", "source": "JournalRecord.contract_hash", "notes": "descriptor contract hash"},
+      {"name": "idempotency_key", "type": "bounded_string", "source": "JournalRecord.idempotency_key", "notes": "M4-3 complete identity linkage"},
+      {"name": "intent_fingerprint", "type": "sha256_hex", "source": "JournalRecord.intent_fingerprint", "notes": "semantic intent only; not complete identity"},
+      {"name": "complete_external_identity", "type": "sha256_hex computed", "source": "JournalRecord.complete_external_identity() / PortablePlanMutationRequest.complete_identity_fingerprint()", "notes": "M4-3 complete authorization-bound identity for durable replay/conflict"},
+      {"name": "subject_expected_revision", "type": "int_non_negative", "source": "JournalRecord.subject_expected_revision + RawAuthorityPrecondition.subject_expected_revision", "notes": "Subject CAS domain"},
+      {"name": "authority_source_revision", "type": "opaque_string|int|null", "source": "JournalRecord.authority_source_revision", "notes": "external CAS token domain"},
+      {"name": "authority_observed_raw_digest", "type": "sha256_hex|null", "source": "JournalRecord.authority_observed_raw_digest / original_raw_digest", "notes": "original_raw_digest at PREPARED time"},
+      {"name": "candidate_raw_digest", "type": "sha256_hex|null", "source": "JournalRecord.candidate_raw_digest", "notes": "exact intended candidate raw identity"},
+      {"name": "normalized_plan_digest", "type": "sha256_hex|null", "source": "JournalRecord.normalized_plan_digest", "notes": "semantic normalized digest, supporting evidence only, never external CAS"},
+      {"name": "authorization_reference", "type": "bounded_safe_id|null", "source": "JournalRecord.authorization_reference", "notes": "bounded reference to trusted semantic authorization; not the Decision itself"},
+      {"name": "lease_reference", "type": "bounded_safe_id|null", "source": "JournalRecord.lease_reference", "notes": "short-lived operation-scoped lease; not durable authority"},
+      {"name": "journal_state", "type": "enum_9_states", "source": "JournalRecord.journal_state", "values": ["PREPARED","APPLYING","FAILED_NO_EFFECT","VERIFIED","OUTCOME_UNKNOWN","RECONCILING","VERIFIED_RECOVERED","RETRYABLE_NO_EFFECT","CONFLICT"], "notes": "M4-5 authoritative 9-state vocabulary, redefinition denied"},
+      {"name": "journal_revision", "type": "int_monotonic_per_record", "source": "new per-journal CAS revision (not Subject revision)", "notes": "monotonic per journal_id for CAS; not reuse Subject revision number"},
+      {"name": "journal_revision_token", "type": "sha256_hex_or_opaque", "source": "computed from journal fields for CAS token", "notes": "analogous to TransactionStore revision_token"},
+      {"name": "attempt_identity", "type": "bounded_safe_id", "source": "JournalRecord.attempt_id", "notes": "reservation token for at-most-one winner"},
+      {"name": "original_raw_digest_alias", "type": "sha256_hex|null", "source": "JournalRecord.original_raw_digest or authority_observed_raw_digest at PREPARED", "notes": "preserved for J5/J6/J7 classification"},
+      {"name": "candidate_observation_raw_body", "type": "string_bounded|null", "source": "PortablePlanMutationRequest.candidate_raw_body", "notes": "bounded exact raw body for readback comparison"},
+      {"name": "observed_raw_digest", "type": "sha256_hex|null", "source": "JournalRecord.observed_raw_digest populated after verify", "notes": "last observed raw authority after verify"},
+      {"name": "observed_revision", "type": "opaque|null", "source": "JournalRecord.observed_revision", "notes": "observed external revision after verify"},
+      {"name": "last_observed_raw_authority_body", "type": "string_bounded|null", "source": "verify read body", "notes": "bounded last observed raw authority snapshot"},
+      {"name": "reconciliation_classification", "type": "enum(CANDIDATE_OBSERVED|ORIGINAL_OBSERVED|CONFLICT_THIRD)", "source": "ReconciliationClassification", "notes": "persisted evidence of classifier result"},
+      {"name": "failure_error_code", "type": "bounded_string|null", "source": "PortablePlanMutationResponse.error_code or stale/unknown code", "notes": "distinct from verification success"},
+      {"name": "failure_error_message", "type": "bounded_string|null", "source": "PortablePlanMutationResponse.error_message", "notes": "bounded, no secrets"},
+      {"name": "created_at", "type": "datetime_utc_iso", "source": "operational timestamp at PREPARED create", "notes": "operational only, not semantic authority"},
+      {"name": "updated_at", "type": "datetime_utc_iso", "source": "operational timestamp at each CAS transition", "notes": "operational only"},
+      {"name": "evidence", "type": "bounded_json_map", "source": "JournalRecord.evidence", "notes": "bounded audit evidence; no secrets or raw GitHub IDs"}
+    ],
+    "indexes": ["primary journal_id", "correlation_id lineage", "journal_state for recovery scan", "idempotency_key for replay lookup"],
+    "invariants": {
+      "opaque_id_not_authority": "journal_id/correlation_id/attempt_id never grant authority",
+      "raw_vs_normalized_separate": "authority_observed_raw_digest != normalized_plan_digest when both present",
+      "subject_revision_distinct_from_authority_revision": "subject_expected_revision int domain != authority_source_revision opaque domain",
+      "nine_state_only": "state machine forbids new states"
+    }
+  },
+  "schema_versioning": {
+    "JOURNAL_SCHEMA_VERSIONING_PLAN": "PASS",
+    "version_field": "durable_schema_version integer stored per record with default 1; migration_kind is explicit per-record when schema evolves; no runtime migration framework beyond explicit versioned read/convert at store open"
+  }
+}

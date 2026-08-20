@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "DURABLE_IDEMPOTENCY_PLAN": "PASS",
+  "SAME_KEY_CHANGED_AUTHORIZATION_DURABLE_REPLAY_ALLOWED": "no",
+  "PLAN": {
+    "preserves_M4_3_M4_5_complete_identity": "yes_operator_plus_target_plus_principal_plus_contract_hash_plus_intent_fingerprint_plus_subject_rev_plus_authority_source_rev_plus_observed_digest_plus_candidate_plus_normalized_plus_lease_attempt_refs",
+    "replay_rule": "same idempotency_key + same complete semantics (complete_external_identity identical) -> durable replay of committed terminal result, no duplicate external attempt",
+    "conflict_rule": "same idempotency_key + authorization drift (principal/operation/target/scope/contract/intent/subject_rev/authorities/candidate/lease drift changes complete identity) -> CONFLICT fail closed, no replay, no overwrite",
+    "durable_storage": "idempotency_key index in journal store with complete_external_identity comparison; before creating new PREPARED scan existing journal with same idempotency_key; if found with same complete identity and terminal success, return replayed result",
+    "opaque_id_not_authority": "journal_id/opaque token never decides replay; only complete identity does",
+    "operation_reuse": "plan_init and plan_retirement are closed operation set per D10; no generic external mutation API"
+  },
+  "TEST_DISTINCTION": {
+    "same_key_same_complete": "replay PASS",
+    "same_key_changed_authorization": "CONFLICT PASS with no second effect"
+  }
+}

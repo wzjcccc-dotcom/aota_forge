@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "DURABLE_ERROR_MODEL_PLAN": "PASS",
+  "JOURNAL_PERSISTENCE_FAILURE_PLAN": "PASS",
+  "J10_DEDICATED_EXECUTION_ROW": "yes",
+  "TERMINAL_PERSISTENCE_FAILURE_BLIND_REAPPLY_ALLOWED": "no",
+  "ERROR_TAXONOMY": [
+    {"code": "JOURNAL_NOT_FOUND", "category": "journal", "effect": "blocked", "retry": "no_until_existing_journal_resolved"},
+    {"code": "STALE_JOURNAL_REVISION", "category": "journal CAS conflict", "effect": "blocked", "retry": "retry_scan_with_current_revision"},
+    {"code": "INVALID_JOURNAL_TRANSITION", "category": "journal", "effect": "blocked", "retry": "no"},
+    {"code": "JOURNAL_PERSISTENCE_FAILURE_BEFORE_EXTERNAL_WRITE", "category": "journal persistence before PREPARED/APPLYING", "effect": "FAILED_NO_EFFECT", "retry": "only_after_durability_restored_and_preconditions_revalidated", "crash_window": "J9"},
+    {"code": "JOURNAL_PERSISTENCE_FAILURE_AFTER_TERMINAL", "category": "journal persistence after success", "effect": "nonterminal_after_terminal", "retry": "future_run_j10_reconciles_without_reapply", "crash_window": "J10"},
+    {"code": "KNOWN_NO_EFFECT_AUTHORITATIVE_REJECTION", "category": "external known no effect", "effect": "FAILED_NO_EFFECT", "retry": "only_fresh_authorized_attempt", "crash_window": "J2"},
+    {"code": "OUTCOME_UNKNOWN_TRANSPORT_TIMEOUT", "category": "unknown outcome", "effect": "OUTCOME_UNKNOWN", "retry": "only_after_reconciling", "crash_window": "J4"},
+    {"code": "STALE_EXTERNAL_AUTHORITY_PRECONDITION", "category": "external authority stale", "effect": "FAILED_NO_EFFECT", "retry": "only_fresh_preconditions"},
+    {"code": "AUTHORIZATION_MISSING_FOR_RETRY", "category": "authorization missing", "effect": "blocked", "retry": "requires_fresh_authorization"},
+    {"code": "RETRYABLE_NO_EFFECT_AWAITING_FRESH_AUTH", "category": "retryable but not yet authorized", "effect": "RETRYABLE_NO_EFFECT", "retry": "requires_fresh_auth_subject_raw_lease"},
+    {"code": "CONFLICT_THIRD_STATE", "category": "third-state conflict", "effect": "CONFLICT", "retry": "no_needs_semantic_choice", "crash_window": "J7"},
+    {"code": "CONFLICT_NORMALIZED_EQUALITY_ONLY", "category": "J8 normalized supporting-only", "effect": "CONFLICT", "retry": "no"},
+    {"code": "JOURNAL_CAS_CONFLICT_DURING_RECOVERY", "category": "journal CAS conflict", "effect": "blocked", "retry": "scan_again_observe_current_state"}
+  ],
+  "DO_NOT_COLLAPSE_TO_GENERIC_FAILED": "yes_distinct_codes_required_per_acceptance",
+  "PERSISTENCE_FAILURE_DETAILS": {
+    "before_PREPARED": "fail closed JOURNAL_PERSISTENCE_FAILURE_BEFORE_EXTERNAL_WRITE; external write forbidden; no durable record created; caller may retry after durability restored with fresh validation",
+    "PREPARED_to_APPLYING": "if CAS PREPARED->APPLYING fails persistently, journal remains PREPARED; future recovery will treat as J1 FAILED_NO_EFFECT; no external attempt until new successful CAS",
+    "terminal_state_after_external": "if VERIFIED/VERIFIED_RECOVERED persist fails, journal stays nonterminal (APPLYING/OUTCOME_UNKNOWN/RECONCILING); J10 future run reconciles by reading authoritative candidate and CAS to VERIFIED_RECOVERED without duplicate external write",
+    "nonterminal_after_terminal_persistence_failure": "explicit J10 row; blind reapply denied; proof via exact candidate readback"
+  }
+}

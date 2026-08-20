@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-7-PLANNING",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "ISSUE_9_CURRENT_AUTHORITY_READ": "PASS",
+  "M4_7_EXACT_AUTHORITY_RECOVERED": "yes",
+  "M4_7_EXACT_TITLE": "Durable External Mutation Journal + Reconciliation / Recovery",
+  "M4_7_PRIMARY_OBJECTIVE": "Implement durable journal persistence, deterministic transition persistence with CAS, external-attempt reservation durability guaranteeing at-most-one external write, recovery/restart scanning, reconciliation execution via M4-5 three-way classifier, and retry/no-effect workflow enforcement without defining semantic decisions or selecting GitHub-specific transport",
+  "M4_7_PREREQUISITES": ["M4-5 journal contract accepted (states, write order, crash windows J1-J10, three-way classifier, retry policy)", "M4-0 architecture freeze D2/D3/D4/D5/D6", "Accepted writable base e51141a"],
+  "M4_7_OWNS": [
+    "Durable journal store implementation (per-record atomic CAS, close/reopen durability, revision-guarded transitions)",
+    "External-attempt reservation durability (at-most-one external write via durable APPLYING eligibility)",
+    "Recovery/restart scanning (discovery of PREPARED/APPLYING/OUTCOME_UNKNOWN/RECONCILING requiring mechanical attention)",
+    "Reconciliation execution (authoritative read via port/adapter + M4-5 pure classifier invocation + terminal persist)",
+    "Retry/no-effect workflow enforcement (fresh authorization required before new attempt, no blind old lease reuse)",
+    "Deterministic fault-injection testability via fake_port seam"
+  ],
+  "M4_7_DOES_NOT_OWN": [
+    "Port contract definition (M4-5 owns Portable Plan Mutation Port)",
+    "Journal state vocabulary redefinition (M4-5 9-state family is authoritative)",
+    "Reconciliation classifier redefinition (M4-5 pure classifier is authoritative)",
+    "GitHub Issue/Control-Comment Authority Adapter implementation and GitHub API transport (M4-6)",
+    "CLI/Core convergence and successor regression closure (M4-8)",
+    "Executor/runtime lifecycle (M5)",
+    "Generic Git write, generic terminal, runtime activation, deployment"
+  ],
+  "M4_7_ACCEPTANCE_CRITERIA": [
+    "DURABLE_JOURNAL_SCHEMA_PLAN=PASS with 9-state reuse (redefinition 0)",
+    "DURABLE_JOURNAL_TRANSITION_CAS_PLAN=PASS with per-record CAS, CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no",
+    "AT_MOST_ONE_ATTEMPT_DURABLE_PLAN=PASS with no in-memory-only lock",
+    "CRASH_WINDOW_COUNT=10 with J1-J10 durable recovery matrix PASS including J10 dedicated row",
+    "RECOVERY_DISCOVERY_PLAN=PASS scanning only nonterminal states, terminal reprocessing denied",
+    "RECONCILIATION_EXECUTION_PLAN=PASS invoking M4-5 pure classifier with raw candidate/original/third precedence, heuristic denied",
+    "OUTCOME_UNKNOWN durable plan PASS with blind retry denied",
+    "RETRYABLE_NO_EFFECT requires fresh authorization, blind old lease reuse denied, rebind preserves history",
+    "DURABLE_IDEMPOTENCY preserves M4-3 complete authorization-bound identity; same key + auth drift -> CONFLICT not replay",
+    "Journal write order PREPARED before APPLYING before external attempt enforced durably",
+    "VERIFY_AFTER_WRITE required; transport success alone not VERIFIED",
+    "J10 nonterminal after terminal persistence failure reconciles deterministically without blind reapply or rollback",
+    "Process-restart durability proven across close/reopen, fault injection via fake_port covers known failure/timeout/verify states/journal CAS race",
+    "GITHUB_API_PLANNED_CALL_COUNT=0, parallel safety with M4-6 via explicit ownership partition"
+  ],
+  "M4_7_DOWNSTREAM_CONTRACT": {
+    "M4_6_provides_to_M4_8": "GitHub adapter consuming port",
+    "M4_7_provides_to_M4_8": "Durable journal + recovery engine consuming journal contract + port; M4-8 integrates both adapters into CLI/Core without claiming deployment",
+    "cross_authority_boundary": "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no; subject transaction and external authority store transaction remain separate"
+  },
+  "M4_7_SOURCE_OWNERSHIP_RULES": {
+    "shared_hot_files_are_read_only": "yes",
+    "journal_model_is_shared_read_only": "yes",
+    "port_is_shared_read_only": "yes",
+    "m4_7_exclusive_is_durable_store_and_recovery": "yes",
+    "m4_6_exclusive_is_github_adapter": "yes",
+    "cross_lane_write_forbidden": "yes"
+  },
+  "M4_7_PRIMARY_RESPONSIBILITY": "durable journal persistence + deterministic transition persistence + external-attempt reservation durability + recovery/restart scanning + reconciliation execution + M4-5 three-way classifier invocation + retry/no-effect workflow enforcement",
+  "GOVERNANCE_STATE_AT_PLANNING": {
+    "ACCEPTED_WRITABLE_BASE": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "M4_5_KNOWN_GOOD_CHECKPOINT": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+    "M4_5_FINAL_SOURCE_REVIEW_EVIDENCE": "383c70ebc5ada2c331d386c8ce3c5bc304c9799a",
+    "M4_7_PLANNING_READY": "yes",
+    "M4_6_M4_7_PARALLEL_PLANNING_ALLOWED": "yes",
+    "M4_8_PLANNING_READY": "no"
+  }
+}

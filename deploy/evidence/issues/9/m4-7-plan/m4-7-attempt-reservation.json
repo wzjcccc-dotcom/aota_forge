@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-7",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "AT_MOST_ONE_ATTEMPT_DURABLE_PLAN": "PASS",
+  "RESERVATION_SEMANTICS": {
+    "eligibility_rule": "only journal in state APPLYING with durable PREPARED and durable APPLYING may invoke PlanAuthorityMutationPort.mutate; checked via can_perform_external_attempt(prepared_durable=True, applying_durable=True, state==APPLYING)",
+    "claim_flow": ["read journal by journal_id", "CAS claim PREPARED->APPLYING with expected revision N and attempt_id reservation", "winner persists APPLYING durably and holds eligibility", "only winner may call port.mutate with its attempt_id/lease_reference", "loser observes AlreadyApplyingException and exits/reconciles without external call"],
+    "no_in_memory_only_lock_as_sole_authority": "yes_rejected",
+    "in_memory_lock_usage": "optional_local_per_journal_RLock_for_single_process_serialization_only; not sole authority; second process or reopened process sees durable CAS state",
+    "reservation_identity": "attempt_id bounded safe identifier per journal; attempt_id stored in journal record and in PortablePlanMutationRequest.attempt_reference"
+  },
+  "DUPLICATE_EXECUTOR_CASES_COVERED": ["two workers see PREPARED", "two workers race claim", "worker dies after claim", "worker timeout during external call", "second worker sees APPLYING", "second worker after OUTCOME_UNKNOWN", "recovery races recovery"],
+  "TIMEOUT_HANDLING": {
+    "worker_timeout_during_external": "transport returns OUTCOME_UNKNOWN; no CAS retry; reconciling path required",
+    "second_worker_sees_APPLYING": "must not blindly retry; must wait for recovery to reconcile or after timeout discover stranded APPLYING and reconcile itself via CAS APPLYING->RECONCILING"
+  },
+  "RECOVERY_TAKEOVER": {
+    "stranded_APPLYING": "recovery scanner discovers APPLYING older than threshold or on restart; CAS APPLYING->RECONCILING eligibility is per-record CAS; only one recovery worker wins; loser sees CAS conflict",
+    "outcome_unknown": "OUTCOME_UNKNOWN->RECONCILING requires CAS and readback before any new attempt"
+  }
+}
