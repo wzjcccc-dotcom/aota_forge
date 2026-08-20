@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "RAW_AUTHORITY_PRECONDITION_PLAN": "PASS",
+  "D4_prewrite_bindings": {
+    "required_fields": ["operation", "principal", "typed_target", "correlation_id", "contract_hash", "idempotency_key", "intent_fingerprint", "subject_expected_revision", "raw_source_revision", "observed_raw_digest", "candidate_raw_digest", "normalized_plan_digest", "authorization_basis", "lease_or_attempt_reference", "journal_state"],
+    "executor_private_secrets_exposed": "no",
+    "raw_github_ids_as_forge_ids": "no",
+    "secrets_excluded": true,
+    "raw_github_ids_excluded": true
+  },
+  "D6_revision_digest_domains": {
+    "domains": [
+      {"name": "subject lifecycle concurrency", "fields": ["subject_expected_revision"], "purpose": "Subject aggregate CAS"},
+      {"name": "external authority-store concurrency", "fields": ["raw_source_revision", "observed_raw_digest"], "purpose": "external optimistic write precondition (raw authority CAS)"},
+      {"name": "Portable Plan semantic identity", "fields": ["normalized_plan_digest"], "purpose": "semantic validation and drift comparison only"}
+    ],
+    "candidate_raw_digest": "exact intended external document identity (raw bytes + canonicalization, not normalized semantic digest)",
+    "invariants": {
+      "SUBJECT_REVISION_DIFFERS_FROM_AUTHORITY_SOURCE_REVISION": "yes",
+      "RAW_SOURCE_DIGEST_DIFFERS_FROM_NORMALIZED_PLAN_DIGEST": "yes",
+      "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+      "CANDIDATE_RAW_DIGEST_BINDS_EXACT_INTENT": "yes"
+    }
+  },
+  "pre_write_snapshot": {
+    "applicability": "required for any Portable Plan external mutation (plan_init / plan_retirement)",
+    "fields_to_capture": {
+      "authority_source_revision": "opaque source-provided revision at read time (e.g., Issue revision or etag); typed external CAS token",
+      "authority_observed_raw_digest": "digest of raw authoritative body at read time (observed_raw_digest)",
+      "candidate_raw_digest": "digest of exact intended candidate raw document (candidate_raw_digest)",
+      "normalized_plan_digest": "semantic normalized digest for drift evidence (supporting evidence only, not external CAS)",
+      "raw_source_body_content": "exact raw bytes to be written (candidate); buffered for readback comparison",
+      "write_target_identity": "typed_target as ObjectRef or canonical string (plan_ref or issue identifier, not raw GitHub ID as Forge ID)"
+    },
+    "distinct_from_subject_revision": "yes; subject revision is Subject aggregate CAS; do not substitute subject revision for external authority revision",
+    "capture_timing": "after validate Subject precondition and after read external authority, before constructing PREPARED journal record"
+  },
+  "READ_BEFORE_EXTERNAL_WRITE_REQUIRED": "yes",
+  "READ_BEFORE_SEQUENCE": [
+    "read current raw authority via PlanAuthorityReadAdapter (bounded snapshot: body, revision, digest, control projections)",
+    "verify expected authority revision/digest against authorized precondition (raw_source_revision + observed_raw_digest)",
+    "compare to authorized precondition stored in PREPARED record",
+    "only if exactly equal, proceed to external apply; otherwise fail closed STALE_AUTHORITY with no external write"
+  ],
+  "stale_precondition_rule": {
+    "STALE_EXTERNAL_AUTHORITY_PRECONDITION_FAILS_CLOSED": "yes",
+    "last_write_wins": "no",
+    "overwrite_after_stale_read": "no",
+    "adapter_CAS_mapping": "If adapter supports native CAS (etag/revision), map raw_source_revision to that token; otherwise enforce deterministic read-before-write + verify-after-write with no silent overwrites"
+  }
+}

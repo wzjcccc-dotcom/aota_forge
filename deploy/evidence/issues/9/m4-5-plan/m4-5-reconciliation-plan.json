@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "THREE_WAY_RECONCILIATION_PLAN": "PASS",
+  "RECOVERY_IS_SEMANTIC_DECISION_MAKER": "no",
+  "SEMANTIC_ROLLBACK_ALLOWED": "no",
+  "reconciliation_inputs": {
+    "ORIGINAL": "recorded original_raw_digest / authority_observed_raw_digest at PREPARED time (observed before candidate)",
+    "CANDIDATE": "recorded candidate_raw_digest (exact intended external effect)",
+    "OBSERVED": "fresh raw authority read after uncertain outcome (re-read via PlanAuthorityReadAdapter, exact raw identity)"
+  },
+  "classification": [
+    {"condition": "observed_raw_digest == candidate_raw_digest (exact raw identity)", "result": "VERIFIED_RECOVERED", "meaning": "intended effect happened (even if terminal persistence had failed); no duplicate write", "semantic_choice": "no", "retry": "no"},
+    {"condition": "observed_raw_digest == original_raw_digest (exact raw identity) and fresh authorization + Subject + raw preconditions are re-established", "result": "RETRYABLE_NO_EFFECT", "meaning": "no effect proven; retry allowed only via newly bounded attempt with fresh lease", "semantic_choice": "no", "retry": "only with fresh bounded attempt"},
+    {"condition": "observed_raw_digest == original_raw_digest but fresh authorization not re-established", "result": "RECONCILING remains; no automatic retry", "meaning": "original observed but retry preconditions not yet satisfied", "semantic_choice": "no", "retry": "no until fresh auth"},
+    {"condition": "observed_raw_digest != candidate and != original (third raw state)", "result": "CONFLICT", "meaning": "semantic intervention required; no silent rebase/overwrite/merge", "semantic_choice": "yes", "retry": "no"},
+    {"condition": "normalized_plan_digest equals candidate but raw digest differs", "result": "CONFLICT (per J8)", "meaning": "normalized equality is supporting evidence only; raw candidate identity is required for VERIFIED_RECOVERED", "semantic_choice": "yes", "retry": "no"}
+  ],
+  "precedence": ["exact candidate raw identity", "exact original raw identity", "third raw state"],
+  "forbidden": ["best effort merge", "heuristic selection", "silent overwrite", "semantic rollback", "automatic newest/latest selection", "guess of intended Project/Subject"],
+  "crash_recovery_matrix": [
+    {"id": "C1", "point": "after PREPARED before APPLYING", "durable_state": "PREPARED", "next_action": "Classify as FAILED_NO_EFFECT (mandatory ordering proves no external attempt occurred); retry only after revalidating authorization and all current preconditions; PREPARED read not required to prove no attempt but re-read before resume"},
+    {"id": "C2", "point": "after APPLYING before external call", "durable_state": "APPLYING", "next_action": "Stranded APPLYING is outcome-uncertain; enter RECONCILING before any retry; read authority store; do not blindly retry (STRANDED_APPLYING_BLIND_RETRY_ALLOWED=no)"},
+    {"id": "C3", "point": "external write returns known failure/no effect", "durable_state": "APPLYING", "next_action": "Persist FAILED_NO_EFFECT (authoritative rejection + unchanged raw identity); retry only via newly authorized bounded attempt after fresh preconditions"},
+    {"id": "C4", "point": "external write succeeds but process dies before verify", "durable_state": "APPLYING (nonterminal)", "next_action": "Future run observes nonterminal APPLYING → RECONCILING → read authority; exact candidate → VERIFIED_RECOVERED (J3/J10); no duplicate write"},
+    {"id": "C5", "point": "external write times out / connection drops", "durable_state": "OUTCOME_UNKNOWN", "next_action": "Persist OUTCOME_UNKNOWN; reconciliation must read authority before any retry; classify per three-way comparison"},
+    {"id": "C6", "point": "verify reads candidate (observed == candidate)", "durable_state": "RECONCILING", "next_action": "Persist VERIFIED_RECOVERED; no retry; success proven by exact candidate raw identity"},
+    {"id": "C7", "point": "verify reads original (observed == original)", "durable_state": "RECONCILING", "next_action": "If fresh auth + Subject + raw preconditions re-established → RETRYABLE_NO_EFFECT; otherwise remain RECONCILING until they are; retry only via new bounded attempt"},
+    {"id": "C8", "point": "verify reads third state", "durable_state": "RECONCILING", "next_action": "Persist CONFLICT; surface choices to LLM/user; no mechanical selection or overwrite"},
+    {"id": "C9", "point": "process restarts during RECONCILING", "durable_state": "RECONCILING", "next_action": "Resume deterministic reconciliation read; re-classify per three-way precedence (idempotent)"}
+  ],
+  "CRASH_RECOVERY_MATRIX": "PASS",
+  "RETRY_AFTER_UNCERTAIN_OUTCOME_REQUIRES_FRESH_AUTHORIZATION": "yes",
+  "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+  "stranded_applying_rule": "outcome_uncertain_until_reconciled; reconciles before retry",
+  "normalized_rule": "NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT=no; supporting evidence only"
+}

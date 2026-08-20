@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "EXTERNAL_IDEMPOTENCY_IDENTITY_PLAN": "PASS",
+  "m4_3_identity": {
+    "description": "M4-3 complete authorization-bound idempotency identity: same key + same complete semantics = replay; same key + changed authorization semantics = conflict; derived from actual mutation context driving request bindings, not lease-copied bindings",
+    "components": ["operation", "target", "idempotency_key", "intent_fingerprint", "authorization fingerprint (principal, contract_hash, Subject+raw preconditions, approval/Decision basis, expiry, mutation_scope)"],
+    "results": {"replay": "REPLAYED_VERIFIED", "conflict": "CONFLICT", "no duplicate effect": true}
+  },
+  "external_journal_identity": {
+    "description": "External mutation journal identity reuses M4-3 authorization-bound identity and extends it with deterministic external linkage fields",
+    "must_not_fall_back_to": "MutationIntent.intent_fingerprint only",
+    "components": [
+      "operation (plan_init or plan_retirement)",
+      "typed_target (ObjectRef canonical)",
+      "idempotency_key",
+      "intent_fingerprint (semantic inputs only, excluding trusted data)",
+      "contract_hash (descriptor contract_hash including mutation semantics)",
+      "authorization fingerprint (principal, lease/attempt reference, approval/Decision basis where required, expiry)",
+      "subject_expected_revision (Subject CAS precondition at PREPARED time)",
+      "authority_source_revision + authority_observed_raw_digest (external CAS precondition)",
+      "candidate_raw_digest",
+      "normalized_plan_digest (evidence only)",
+      "correlation_id"
+    ],
+    "derivation_rule": "AUTHORITY_REQUEST_DERIVED_FROM_ACTUAL_MUTATION_CONTEXT=yes; AUTHORITY_REQUEST_BINDINGS_COPIED_FROM_LEASE=no",
+    "lease_self_validation_path_denied": true
+  },
+  "linkage": {
+    "M4_3_idempotency_identity_vs_external_journal_identity": "M4-3 SubjectTransaction idempotency lookup key is (idempotency_key, operation, target, principal, intent_fingerprint) with authorization drift detection; external journal identity persists the same plus external preconditions and candidate digest so that a replayed journal entry and a replayed SubjectTransaction converge on the same conflict/replay classification",
+    "journal_attempt_identity": "One journal record may own at most one external attempt (APPLYING → at most one external call); duplicate executor attempts for same journal/idempotency identity are reservation-gated: single external apply eligibility, ownership/lease semantics enforce mutual exclusion; recovery takeover reads stranded APPLYING before any new attempt",
+    "fallback_denied": "MutationIntent.intent_fingerprint only is insufficient; full authorization-bound identity is required",
+    "same_key_changed_authorization": "must never become automatic replay; always CONFLICT with no effect"
+  },
+  "external_operation_attempt_identity": {
+    "description": "One APPLYING record corresponds to exactly one bounded lease/attempt; RETRYABLE_NO_EFFECT requires a new attempt identity with fresh authorization",
+    "blind_reuse_denied": "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no"
+  }
+}

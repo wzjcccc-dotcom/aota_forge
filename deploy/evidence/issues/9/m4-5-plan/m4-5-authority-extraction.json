@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "governing_plan_issue": 9,
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "work_item_title": "Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract",
+  "work_item_title_source": "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json:m4_work_items.M4-5 @ 5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "extraction_timestamp": "2026-08-20T00:00:00Z",
+  "accepted_writable_base": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "m4_3_known_good_checkpoint": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "m4_3_plan_known_good_checkpoint": "5842a51527c9941d8577efc157109f68b1ae0325",
+  "authority_read": {
+    "ISSUE_9_CURRENT_AUTHORITY_READ": "PASS",
+    "M4_5_EXACT_AUTHORITY_RECOVERED": "yes",
+    "read_method": "GH_CONFIG_DIR=/home/latios/.config/gh rtk gh issue view 9 --repo wzjcccc-dotcom/aota-hermes-tools --json body + architecture freeze @5a665cee",
+    "issue_body_verified": true,
+    "architecture_freeze_verified": true
+  },
+  "M4_5_EXACT_TITLE": "Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract",
+  "M4_5_PRIMARY_OBJECTIVE": "Define and freeze the executor-neutral Portable Plan Mutation Port, multi-domain precondition model (Subject CAS vs external authority CAS vs semantic normalized digest), and durable mutation journal contract that together establish the mechanical external mutation and recovery boundary without implementing the GitHub-specific adapter or durable recovery execution.",
+  "M4_5_PREREQUISITES": [
+    "M4-0 Architecture Freeze completed (5a665cee)",
+    "M4-1 Mutation Intent / Operation Descriptor / Canonical Mutation Result Contract completed (d74953be)",
+    "M4-2 Trusted Mutation Authorization + Capability Lease Issuance Protocol completed (16826b55)",
+    "M4-4 PLAN_INIT / Retirement Mechanical Lifecycle + Project Steward Mechanical Invocation Boundary completed (16826b55)",
+    "M4-3 Write-Capable Unified Ingress completed (26e61687) with received-lease-only, closed plan_init/plan_retirement, authorization-bound idempotency",
+    "M4-0 D1-D12 architecture decisions frozen, in particular D2 no cross-authority atomic transaction, D3 external mutation journal protocol, D4 pre-write bindings, D5 trusted auth/lease separation, D6 revision/digest domains"
+  ],
+  "M4_5_PREREQUISITES_SATISFIED": "yes",
+  "M4_DAG_VERIFIED": "PASS",
+  "M4_DAG": {
+    "nodes": ["M4-0", "M4-1", "M4-2", "M4-3", "M4-4", "M4-5", "M4-6", "M4-7", "M4-8", "M4-R"],
+    "edges": [["M4-0", "M4-1"], ["M4-1", "M4-2"], ["M4-1", "M4-4"], ["M4-2", "M4-3"], ["M4-4", "M4-3"], ["M4-3", "M4-5"], ["M4-5", "M4-6"], ["M4-5", "M4-7"], ["M4-6", "M4-8"], ["M4-7", "M4-8"], ["M4-8", "M4-R"]],
+    "acyclic": true,
+    "verified_against": "architecture freeze D1-D12 and Issue #9 M4 section"
+  },
+  "M4_5_ACCEPTANCE_CRITERIA": [
+    "Portable Plan Mutation Port contract frozen (executor-neutral, typed operation/target/correlation/contract/idempotency/intent, bounded authorization + lease reference, Subject and raw authority preconditions, candidate/normalized digests)",
+    "Multi-domain revision/digest model frozen: subject_expected_revision for Subject CAS, raw_source_revision + observed_raw_digest for external CAS, normalized_plan_digest as semantic evidence only; candidate_raw_digest binds exact intent; SUBJECT_REVISION != AUTHORITY_SOURCE_REVISION != NORMALIZED_PLAN_DIGEST",
+    "Mutation journal contract frozen with states PREPARED, APPLYING, OUTCOME_UNKNOWN, RECONCILING, VERIFIED, VERIFIED_RECOVERED, FAILED_NO_EFFECT, RETRYABLE_NO_EFFECT, CONFLICT and required write order (authorization→Subject precondition→external read→raw precondition→candidate→PREPARED durable→APPLYING durable→at most one external attempt→readback→classify→terminal/reconciliation persist)",
+    "Pre-write authority snapshot contract frozen (operation, principal, typed target, correlation, contract/idempotency/intent fingerprints, Subject and raw authority preconditions, normalized/candidate digests, authorization/lease reference, journal state; secrets and raw GitHub IDs excluded)",
+    "Read-before-write required, verify-after-write required; unknown outcome requires deterministic reconciliation; no semantic rollback; no heuristic reconciliation",
+    "Three-way reconciliation rule frozen (ORIGINAL vs CANDIDATE vs OBSERVED raw identity with precedence candidate > original > third-state=CONFLICT); normalized equality is supporting evidence only",
+    "Retry authorization rule frozen: UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no; stranded APPLYING reconciles before retry; RETRYABLE_NO_EFFECT requires fresh authorization + Subject + raw preconditions + bounded lease/attempt",
+    "Cross-authority atomic transaction explicitly denied; journal is not semantic decision maker; platform neutrality preserved (Core != GitHub transport)",
+    "Operation contract reuse: plan_init and plan_retirement remain the only external mutation operations; no generic mutation API",
+    "Canonical result reuse without adapter-specific semantics; materialized operations surface VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT/OUTCOME_UNKNOWN via existing MutationEffect",
+    "Downstream M4-6 (GitHub Issue/Control-Comment Authority Adapter) and M4-7 (Durable Journal + Reconciliation execution) contracts defined and left unimplemented",
+    "Source ownership, gap map, implementation DAG, acceptance matrix, failure injection plan, and downstream handoff produced; construction-time semantic decision count = 0"
+  ],
+  "M4_5_OWNS": [
+    "Portable Plan Mutation Port contract (executor-neutral, typed, bounded, authorization-bound)",
+    "Multi-domain precondition model (Subject CAS, external authority CAS, semantic normalized digest; read-before-write and verify-after-write contracts)",
+    "Mutation journal contract (states, required write order, journal fields, crash windows J1-J10, reconciliation precedence)",
+    "Raw authority precondition capture contract (authority_source_revision, authority_observed_raw_digest, candidate_raw_digest, normalized_plan_digest, raw body/content, write target identity)",
+    "Journal-is-not-semantic-authority invariant and three-way reconciliation rule",
+    "Retry authorization rule and idempotency linkage contract definition",
+    "Operation contract reuse definition for plan_init/plan_retirement external mutation operations",
+    "Canonical result extension/reuse plan for journal effect states",
+    "Platform-neutrality boundary definition (Core vs GitHub transport)"
+  ],
+  "M4_5_DOES_NOT_OWN": [
+    "GitHub Issue / Control-Comment Authority Adapter implementation (M4-6)",
+    "Durable external mutation journal persistence and deterministic reconciliation/recovery execution (M4-7)",
+    "Executor/runtime lifecycle (M5)",
+    "Generic Git write API or generic terminal expansion (out of scope)",
+    "Production deployment, reload, runtime activation, Hermes dispatch",
+    "M4-6/M4-7/M4-8/M4-R source implementation"
+  ],
+  "M4_5_DOWNSTREAM_DEPENDENCIES": [
+    "M4-6 GitHub Issue / Control-Comment Authority Adapter (consumes M4-5 port + precondition contracts)",
+    "M4-7 Durable External Mutation Journal + Reconciliation / Recovery (consumes M4-5 journal contract + reconciliation plan)",
+    "M4-8 CLI/Core Convergence + M4-Owned Successor Regression Closure (consumes M4-6+M4-7 integrated boundary)",
+    "M4-R Serial integration / independent review / Project Steward reconciliation / known-good checkpoint"
+  ],
+  "M4_5_NEGATIVE_SCOPE": [
+    "No generic Git write API (GENERIC_GIT_WRITE_API_ALLOWED=no)",
+    "No generic terminal expansion (GENERIC_TERMINAL_ALLOWED=no)",
+    "No generic external mutate-anything API (GENERIC_EXTERNAL_MUTATION_API_ALLOWED=no)",
+    "No GitHub-specific write implementation in Core (GITHUB_IS_FORGE_CORE_ONTOLOGY=no, RAW_GH_OPERATION_IN_CORE=no)",
+    "No durable external journal persistence implementation in M4-5 (contract only; implementation is M4-7)",
+    "No reconciliation execution engine in M4-5 (plan only; execution is M4-7)",
+    "No CLI write exposure in M4-5 beyond thin mutation projection contract (CLI is M4-8)",
+    "No cross-authority atomic transaction claim (CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no)",
+    "No semantic rollback or heuristic reconciliation (SEMANTIC_ROLLBACK_ALLOWED=no)",
+    "No blind lease reuse after unknown outcome (UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no)",
+    "No runtime activation or deployment",
+    "No M4-6/M4-7 source implementation authorization"
+  ],
+  "M4_5_REQUIRED_REVIEWS": [
+    "Independent M4-5 plan review against Issue #9 authority, M4-0 cross-authority mutation architecture, and accepted source base 26e616872aa4063e6ecade2f43d258d27c23e188",
+    "Project Steward reconciliation of M4-5 planning package (read-only planning, no production mutation)"
+  ],
+  "governance_gates": {
+    "M4_5_PLANNING_READY": "yes",
+    "M4_5_EXECUTION_AUTHORIZED": "no",
+    "M4_5_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_5_PLAN_ACCEPTED": "no",
+    "CURRENT_WORK_ITEM": "M4-5",
+    "CURRENT_STATUS": "m4_5_ready_for_planning",
+    "ACCEPTED_WRITABLE_BASE": "26e616872aa4063e6ecade2f43d258d27c23e188",
+    "ACCEPTED_WRITABLE_BASE_VERIFIED": "yes"
+  }
+}

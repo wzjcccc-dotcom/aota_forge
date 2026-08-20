@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "DETERMINISTIC_FAILURE_INJECTION_PLAN": "PASS",
+  "PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED": "no",
+  "PRODUCTION_GITHUB_TEST_WRITE_ALLOWED": "no",
+  "test_mechanism": {
+    "adapter": "fake adapter (executor-neutral in-memory FakePlanAuthorityAdapter implementing PlanAuthorityMutationPort + readback)",
+    "authority": "fixture authority (disposable raw document bodies with deterministic revisions/digests; no production Issue writes)",
+    "store": "disposable local store (in-memory TransactionStore + journal table; no production DB)",
+    "controller": "controllable fault-injection adapter with deterministic hooks"
+  },
+  "injection_points": [
+    {"point": "before apply", "fault": "journal persistence fails before PREPARED", "expected": "FAILED_NO_EFFECT; no external attempt allowed; classification J9"},
+    {"point": "before apply", "fault": "APPLYING persistence fails after PREPARED", "expected": "PREPARED → FAILED_NO_EFFECT (no APPLYING means no attempt); retry only with fresh preconditions"},
+    {"point": "during apply", "fault": "external adapter returns known definitive rejection (stale raw revision, invalid successor, protected target)", "expected": "APPLYING → FAILED_NO_EFFECT with rejection evidence + unchanged observed raw"},
+    {"point": "during apply", "fault": "external adapter times out / drops connection", "expected": "APPLYING → OUTCOME_UNKNOWN; mandatory reconciliation before retry"},
+    {"point": "known failure", "fault": "authority store definitively rejects mutation with proven no effect (authorization denied, predecessor invalid)", "expected": "APPLYING → FAILED_NO_EFFECT; influx of RETRYABLE only after fresh auth"},
+    {"point": "timeout/unknown", "fault": "transport returns no status; process killed before response is durably classified", "expected": "Stranded APPLYING → RECONCILING on restart; three-way comparison"},
+    {"point": "after external effect before verify", "fault": "process crash after external success but before verify readback is durably persisted", "expected": "Future run reconciles nonterminal APPLYING/OUTCOME_UNKNOWN via authority read → VERIFIED_RECOVERED if candidate observed (J3/J10)"},
+    {"point": "verify failure", "fault": "verify read fails (transient read error)", "expected": "Remain OUTCOME_UNKNOWN or RECONCILING; no blind retry; surface failure deterministically; next run retries read"},
+    {"point": "restart/recovery", "fault": "restart during RECONCILING after one read", "expected": "Idempotent re-entry: re-read observed, re-classify per precedence; duplicate reconciliation does not duplicate external effect"}
+  ],
+  "adapter_hooks": {
+    "before_persist_prepared": "inject durability failure",
+    "before_persist_applying": "inject durability failure",
+    "during_external_mutation": "inject rejection | timeout | success-then-crash",
+    "after_external_before_verify": "inject process crash / persistence failure",
+    "during_verify_read": "inject read error | return candidate | return original | return third",
+    "during_terminal_persist": "inject failure to drive J10 path"
+  },
+  "determinism": "Do not depend on random network failures; all faults are deterministically triggered via fake adapter hooks and fixture revision/digest control",
+  "external_mutation_test_isolation": "All construction/review tests use fake/fixture boundaries; production GitHub and production authority store are never written during planning or source acceptance"
+}

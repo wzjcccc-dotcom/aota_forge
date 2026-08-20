@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "SOURCE_OWNERSHIP_PLAN": "PASS",
+  "SOURCE_RECONNAISSANCE": "PASS",
+  "M4_3_LAST_INTERNAL_MUTATION_BOUNDARY": "execute_mutation(MutationIngressRequest for plan_init/plan_retirement) → SubjectTransaction (revision/CAS + idempotency + lease consumed) → TransactionStore → lifecycle_result (APPLIED_VERIFIED/REPLAYED_VERIFIED/CONFLICT/FAILED_NO_EFFECT etc.); no external side effect; external mutation count = 0",
+  "M4_3_RESULT_ENVELOPE": "lifecycle_result envelope (ok/data/evidence/blockers/next_action/semantic_choices) via success()/lifecycle_result() normalized at ingress; handler result validated as Mapping with bounded codes",
+  "M4_3_EXTERNAL_SIDE_EFFECT_COUNT": 0,
+  "M4_3_REUSE_BOUNDARY_REVIEW": "PASS",
+  "reconnaissance": [
+    {"path": "aota_forge/core/ingress.py", "status": "EXISTS_AND_REUSE", "role": "M4-3 closed write ingress; M4-5 reuses but does not duplicate ingress lifecycle semantics; M4-5 will extend via Port delegation without modifying ingress routing/validation"},
+    {"path": "aota_forge/core/transitions.py", "status": "EXISTS_AND_REUSE", "role": "PlanInit/Retirement handlers (mechanical lifecycle); M4-5 reuses request models (PlanInitRequest/PlanRetirementRequest) and SubjectTransaction integration"},
+    {"path": "aota_forge/core/transaction.py", "status": "EXISTS_AND_REUSE", "role": "SubjectTransaction isolation + idempotency + CAS; M4-5 adds journal alongside, not inside same transaction"},
+    {"path": "aota_forge/core/idempotency.py", "status": "EXISTS_AND_REUSE", "role": "Authorization-bound idempotency semantics reused for external journal identity"},
+    {"path": "aota_forge/core/contracts/mutation.py", "status": "EXISTS_AND_REUSE", "role": "MutationIntent/Preconditions/Result contracts reused (M4-1); M4-5 adds Port-typed bindings without replacing"},
+    {"path": "aota_forge/core/contracts/descriptor.py", "status": "EXISTS_AND_REUSE", "role": "Operation descriptors plan_init/plan_retirement reused; no new generic descriptor"},
+    {"path": "aota_forge/adapters/plan_authority/__init__.py", "status": "EXISTS_AND_REUSE", "role": "Read-only PlanAuthorityReadAdapter boundary reused; write port will extend without coupling Core to GitHub"},
+    {"path": "aota_forge/core/authority.py", "status": "EXISTS_AND_REUSE", "role": "Authority engine semantics reused; M4-5 consumes validated authorization basis"},
+    {"path": "aota_forge/core/capability_lease.py", "status": "EXISTS_AND_REUSE", "role": "CapabilityLease issuance/consumption reused; M4-5 enforces blind reuse denial"},
+    {"path": "aota_forge/core/graph/*", "status": "EXISTS_AND_REUSE", "role": "Subject Graph records/ids; no new identity policy"},
+    {"path": "aota_forge/adapters/plan_authority/port.py", "status": "MISSING_M4_5", "role": "New file owned by M4-5: executor-neutral mutation Port interface"},
+    {"path": "aota_forge/core/journal/model.py", "status": "MISSING_M4_5", "role": "New file owned by M4-5: journal record model + fields"},
+    {"path": "aota_forge/core/journal/state_machine.py", "status": "MISSING_M4_5", "role": "New file owned by M4-5: state machine transitions/invariants"},
+    {"path": "aota_forge/core/journal/reconcile.py", "status": "MISSING_M4_5", "role": "New file owned by M4-5: three-way comparison + classification"},
+    {"path": "aota_forge/adapters/plan_authority/github.py", "status": "DOWNSTREAM", "role": "M4-6 owns GitHub-specific adapter; not in M4-5"},
+    {"path": "aota_forge/core/journal/store.py", "status": "DOWNSTREAM", "role": "M4-7 owns durable store implementation"},
+    {"path": "aota_forge/cli/*", "status": "OUT_OF_SCOPE", "role": "CLI thin projection is M4-8; no M4-5 CLI writes"},
+    {"path": "aota_forge/core/git/*", "status": "OUT_OF_SCOPE", "role": "Generic Git helpers are ALREADY_SATISFIED; generic Git write denied"}
+  ],
+  "M4_5_EXCLUSIVE_WRITE_PATHS": [
+    {"path": "aota_forge/adapters/plan_authority/port.py", "rationale": "New executor-neutral Mutation Port contract: defines typed external mutation interface without GitHub coupling"},
+    {"path": "aota_forge/core/journal/model.py", "rationale": "Journal record model: D4 snapshot fields + D3 states + journal_is_not_authority invariants"},
+    {"path": "aota_forge/core/journal/state_machine.py", "rationale": "State machine contract: PREPARED/APPLYING/OUTCOME_UNKNOWN/RECONCILING/VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT + transitions + mandatory ordering"},
+    {"path": "aota_forge/core/journal/reconcile.py", "rationale": "Three-way reconciliation precedence + J5-J8 rules + normalized-evidence-only rule"},
+    {"path": "aota_forge/core/journal/retry.py", "rationale": "Retry authorization rule: fresh auth required, blind lease reuse denied"}
+  ],
+  "M4_5_SHARED_READ_ONLY_PATHS": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/adapters/plan_authority/__init__.py",
+    "aota_forge/core/transaction.py"
+  ],
+  "M4_5_INTEGRATION_ONLY_PATHS": [
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authority.py"
+  ],
+  "M4_5_FORBIDDEN_PATHS": [
+    "aota_forge/adapters/plan_authority/github.py (M4-6)",
+    "aota_forge/core/journal/store.py (M4-7 durable store)",
+    "aota_forge/core/journal/executor.py (M4-7 engine)",
+    "aota_forge/cli/* (M4-8)",
+    "aota_forge/core/git/* (generic Git write out of scope)",
+    "deploy/evidence/issues/9/m4-3/**/* (frozen M4-3 evidence)",
+    "aota_forge/core/runtime/* (M5)",
+    "scripts/* (except m4_5_plan_guard.py planning guard)",
+    "tests/test_m4_6_* (M4-6 tests)",
+    "tests/test_m4_7_* (M4-7 tests)",
+    ".aota-worktrees/*",
+    "deploy/evidence/issues/9/m4-6-plan/*"
+  ],
+  "hot_file_analysis": {
+    "M4_6_M4_7_PARALLEL_SAFETY_PLAN": "PASS",
+    "shared_hot_files": ["aota_forge/adapters/plan_authority/port.py", "aota_forge/core/journal/model.py"],
+    "parallel_safety": "conditional_parallel",
+    "policy": "Port contract is defined in M4-5; downstream M4-6 and M4-7 may read it but not concurrently write the same file during implementation; shared hot files are integration_only for downstream lanes; separate branches/worktrees required; serialization or single integration owner required if overlap detected"
+  },
+  "M4_3_NBF_DISPOSITION_PLAN": "PASS",
+  "m4_3_carry_forward": [
+    {"id": "i5 fixture debt", "disposition": "NON_BLOCKING_CARRY_FORWARD", "relevance_to_M4_5": "NON_BLOCKING_CARRY_FORWARD - fixture-made leases remain test-only; M4-5 plan does not pull them; M4-5 acceptance requires genuine lease from M4-2 issuer in tests (GENUINE_LEASE_REQUIRED_FOR_MUTATION_ACCEPTANCE_TESTS=yes)"},
+    {"id": "i8 fixture debt", "disposition": "NON_BLOCKING_CARRY_FORWARD", "relevance_to_M4_5": "NON_BLOCKING_CARRY_FORWARD"},
+    {"id": "i9 fixture debt", "disposition": "NON_BLOCKING_CARRY_FORWARD", "relevance_to_M4_5": "NON_BLOCKING_CARRY_FORWARD"},
+    {"id": "i12 fixture debt", "disposition": "NON_BLOCKING_CARRY_FORWARD", "relevance_to_M4_5": "NON_BLOCKING_CARRY_FORWARD"},
+    {"id": "guard evidence-prefix narrowness (m4-3-source vs m4-3-source-r1-repair)", "disposition": "NON_BLOCKING_CARRY_FORWARD", "relevance_to_M4_5": "NON_BLOCKING_CARRY_FORWARD - guard prefix expectation is hardening debt; M4-5 guard covers m4-5-plan/* only and does not expand scope to fix historical guard"}
+  ]
+}

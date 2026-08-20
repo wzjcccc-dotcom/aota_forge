@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+  "CROSS_AUTHORITY_BOUNDARY_PLAN": "PASS",
+  "boundary_definition": {
+    "internal_accepted_mutation": "Subject Graph mutation committed via SubjectTransaction (CAS on subject_expected_revision, idempotency, CapabilityLease atomically consumed, Event Log evidence) in its own DB transaction",
+    "external_authority_effect": "Portable Plan authority-store mutation (Issue body or Plan document) applied via Plan Authority Adapter (GitHub or future store) with optimistic raw preconditions, at-most-one attempt, readback, deterministic reconciliation",
+    "atomicity_claim": "No transaction spans both stores; distributed atomic transaction is denied",
+    "strategy_per_D2": ["durable mutation intent", "bounded authorization", "external mutation journal", "optimistic external preconditions", "readback verification", "deterministic reconciliation"]
+  },
+  "mechanical_boundary_sequence": [
+    "validate existing semantic authorization (D5 trusted auth differs from lease; lease issuer is not semantic decision maker)",
+    "validate Subject precondition (subject_expected_revision CAS)",
+    "read current external raw authority (load via PlanAuthorityReadAdapter)",
+    "validate expected authority revision/digest against authorized precondition (raw_source_revision + observed_raw_digest)",
+    "compare to authorized precondition; stale raw precondition fails closed (no last-write-wins)",
+    "construct exact intended candidate and compute candidate_raw_digest and normalized_plan_digest",
+    "persist PREPARED journal record durably (mandatory; fail closed if persistence fails → no external write)",
+    "persist APPLYING attempt-start durably (mandatory; external write forbidden until durably persisted)",
+    "perform at most one external mutation attempt via Plan Authority Mutation Port (generic, executor-neutral)",
+    "read authority store after mutation where result permits (mandatory verify-after-write)",
+    "classify exact observed state (three-way raw identity comparison)",
+    "persist terminal (VERIFIED / FAILED_NO_EFFECT) or reconciliation state (OUTCOME_UNKNOWN → RECONCILING → VERIFIED_RECOVERED / RETRYABLE_NO_EFFECT / CONFLICT)"
+  ],
+  "invariants": {
+    "EXTERNAL_WRITE_BEFORE_PREPARED_DURABLE": "no",
+    "EXTERNAL_WRITE_BEFORE_APPLYING_DURABLE": "no",
+    "NO_EXTERNAL_WRITE_ALLOWED_IF_MANDATORY_JOURNAL_PERSISTENCE_FAILS": "yes",
+    "STRANDED_APPLYING_BLIND_RETRY_ALLOWED": "no",
+    "RECOVERY_DIFFERS_FROM_ROLLBACK": "yes",
+    "SILENT_ROLLBACK_ALLOWED": "no",
+    "SILENT_REBASE_ALLOWED": "no",
+    "READ_BEFORE_EXTERNAL_WRITE_REQUIRED": "yes",
+    "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED": "yes"
+  },
+  "raw_vs_normalized": {
+    "SUBJECT_REVISION_DIFFERS_FROM_AUTHORITY_SOURCE_REVISION": "yes",
+    "RAW_SOURCE_DIGEST_DIFFERS_FROM_NORMALIZED_PLAN_DIGEST": "yes",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+    "CANDIDATE_RAW_DIGEST_BINDS_EXACT_INTENT": "yes",
+    "NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT": "no"
+  }
+}

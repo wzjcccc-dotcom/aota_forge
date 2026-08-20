@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "work_item_title": "Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract",
+  "accepted_writable_base": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "accepted_writable_base_verified": "yes",
+  "m4_3_known_good_checkpoint": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "m4_3_plan_known_good_checkpoint": "5842a51527c9941d8577efc157109f68b1ae0325",
+  "m4_0_known_good_checkpoint": "5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "planning_branch": "aota/m4/m4-5-plan",
+  "planning_worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-5-plan",
+  "M4_DAG_VERIFIED": "PASS",
+  "M4_5_PREREQUISITES_SATISFIED": "yes",
+  "M4_0_EXTERNAL_MUTATION_ARCHITECTURE_READ": "PASS",
+  "M4_3_REUSE_BOUNDARY_REVIEW": "PASS",
+  "M4_5_PRIMARY_RESPONSIBILITY": "Freeze the executor-neutral Portable Plan Mutation Port, multi-domain precondition model, and durable mutation journal contract that together define the mechanical external mutation and recovery boundary without implementing the GitHub-specific adapter or durable recovery execution.",
+  "cross_authority": {
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+    "CROSS_AUTHORITY_BOUNDARY_PLAN": "PASS",
+    "subject_graph_mutation_and_external_write_atomic": "no",
+    "mechanical_boundary": "Internal accepted Subject Graph mutation (SubjectTransaction with CAS/idempotency/lease) is committed in its own DB transaction; external Portable Plan authority effect is a separate optimistic attempt guarded by durable PREPARED/APPLYING journal records, read-before-write, and verify-after-write with deterministic reconciliation. No distributed transaction is claimed."
+  },
+  "mutation_journal": {
+    "MUTATION_JOURNAL_OWNERSHIP": "owned",
+    "ownership_meaning": "M4-5 owns the journal contract (states, write order, fields, precedence, crash windows); M4-7 owns durable persistence and reconciliation execution",
+    "JOURNAL_STATE_MACHINE_PLAN": "PASS",
+    "JOURNAL_IS_SEMANTIC_DECISION_MAKER": "no"
+  },
+  "pre_write": {
+    "RAW_AUTHORITY_PRECONDITION_PLAN": "PASS",
+    "READ_BEFORE_EXTERNAL_WRITE_REQUIRED": "yes",
+    "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED": "yes",
+    "THREE_WAY_RECONCILIATION_PLAN": "PASS"
+  },
+  "M4_5_EXTERNAL_APPLY_ROLE": "M4-5 owns generic executor-neutral Plan Authority Adapter mutation port mechanics (typed operation/target/correlation/contract/idempotency/intent + bounded authorization/lease + preconditions + candidate digest) and the at-most-one external attempt contract; GitHub-specific transport mechanics are deferred to M4-6",
+  "retry": {
+    "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+    "RETRY_AFTER_UNCERTAIN_OUTCOME_REQUIRES_FRESH_AUTHORIZATION": "yes",
+    "SEMANTIC_ROLLBACK_ALLOWED": "no",
+    "RECOVERY_IS_SEMANTIC_DECISION_MAKER": "no"
+  },
+  "idempotency": {
+    "EXTERNAL_IDEMPOTENCY_IDENTITY_PLAN": "PASS",
+    "OPERATION_CONTRACT_REUSE_PLAN": "PASS",
+    "CANONICAL_RESULT_EXTENSION_OR_REUSE_PLAN": "PASS"
+  },
+  "platform": {
+    "PLATFORM_NEUTRALITY_PLAN": "PASS",
+    "GITHUB_ADAPTER_IMPLEMENTATION_IN_M4_5": "no",
+    "GITHUB_AUTHORITY_WRITE_IN_M4_5": "no",
+    "CLI_WRITE_EXPOSURE_IN_M4_5": "no",
+    "CLI_IS_EXCLUSIVE_ENTRYPOINT": "no",
+    "GENERIC_GIT_WRITE_API_ALLOWED": "no",
+    "GENERIC_EXTERNAL_MUTATION_API_ALLOWED": "no"
+  },
+  "crash": {
+    "CRASH_RECOVERY_MATRIX": "PASS",
+    "STALE_EXTERNAL_AUTHORITY_PRECONDITION_FAILS_CLOSED": "yes",
+    "DUPLICATE_EXECUTOR_PLAN": "PASS",
+    "DETERMINISTIC_FAILURE_INJECTION_PLAN": "PASS"
+  },
+  "ownership_summary": {
+    "M4_5_EXCLUSIVE_WRITE_PATH_COUNT": 5,
+    "M4_5_SHARED_READ_ONLY_PATH_COUNT": 6,
+    "M4_5_INTEGRATION_ONLY_PATH_COUNT": 3,
+    "M4_5_FORBIDDEN_PATH_COUNT": 12
+  },
+  "planning_gates": {
+    "M4_3_NBF_DISPOSITION_PLAN": "PASS",
+    "SOURCE_RECONNAISSANCE": "PASS",
+    "SOURCE_OWNERSHIP_PLAN": "PASS",
+    "M4_6_M4_7_PARALLEL_SAFETY_PLAN": "PASS",
+    "M4_5_IMPLEMENTATION_DAG_DEFINED": "yes",
+    "IMPLEMENTATION_SLICE_COUNT": 6,
+    "PLAN_ARTIFACT_COUNT": 16,
+    "GAP_MAP_ENTRY_COUNT": 18,
+    "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+    "BLOCKING_PLAN_GAP_COUNT": 0,
+    "PLAN_IMPLEMENTABILITY_REVIEW": "PASS",
+    "PLAN_GUARD": "PASS",
+    "PLANNING_NEGATIVE_CASE_COUNT": 15,
+    "PLAN_ARTIFACT_SELF_CONSISTENCY": "PASS",
+    "GIT_DIFF_CHECK": "PASS",
+    "PRODUCTION_SOURCE_MUTATION_COUNT": 0,
+    "M4_5_IMPLEMENTATION_PERFORMED": "no",
+    "CHANGED_FILES": [
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-extraction.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-scope-and-ownership.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-gap-map.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-external-mutation-boundary.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-journal-state-machine.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-precondition-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-reconciliation-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-idempotency-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-result-error-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-failure-injection-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-acceptance-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-implementation-dag.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-downstream-m4-6-m4-7-contract.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-negative-scope.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-source-ownership.json",
+      "scripts/m4_5_plan_guard.py"
+    ],
+    "PLAN_COMMIT_CREATED": "PENDING",
+    "PUSH_PERFORMED": "PENDING",
+    "M4_5_PLAN_ACCEPTED": "no",
+    "M4_5_EXECUTION_AUTHORIZED": "no",
+    "M4_5_SOURCE_IMPLEMENTATION_AUTHORIZED": "no"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "OPERATION_CONTRACT_REUSE_PLAN": "PASS",
+  "CANONICAL_RESULT_EXTENSION_OR_REUSE_PLAN": "PASS",
+  "operation_contract_reuse": {
+    "registered_operations": ["plan_init", "plan_retirement"],
+    "are_external_mutation_operations": "yes; plan_init and plan_retirement are the exact external mutation operations M4-5 handles via the Portable Plan Mutation Port; M4-5 does not create a parallel external operation meaning",
+    "consumes_canonical_intent": "yes: consumes canonical MutationIntent + MutationPreconditions and trusted context/lease as typed runtime values",
+    "generic_mutation_api_allowed": "no",
+    "parallel_meaning_denied": true
+  },
+  "canonical_result_reuse": {
+    "existing_statuses": ["NO_EFFECT", "APPLIED_VERIFIED", "REPLAYED_VERIFIED", "BLOCKED", "CONFLICT", "NEEDS_SEMANTIC_CHOICE", "OUTCOME_UNKNOWN", "FAILED_NO_EFFECT"],
+    "existing_confirmation": {"YES": ["APPLIED_VERIFIED", "REPLAYED_VERIFIED"], "NO": ["NO_EFFECT", "BLOCKED", "CONFLICT", "FAILED_NO_EFFECT"], "UNKNOWN": ["OUTCOME_UNKNOWN"]},
+    "external_effect_mapping": {
+      "VERIFIED": "APPLIED_VERIFIED with AuthoritativeEffectConfirmation.YES (known success path via at-most-one attempt + verify)",
+      "VERIFIED_RECOVERED": "APPLIED_VERIFIED or REPLAYED_VERIFIED with evidence RECONCILING→candidate observed (authoritative read proves exact candidate)",
+      "FAILED_NO_EFFECT": "FAILED_NO_EFFECT with AuthoritativeEffectConfirmation.NO (definitive rejection or PREPARED without APPLYING)",
+      "RETRYABLE_NO_EFFECT": "FAILED_NO_EFFECT variant surfaced as no-effect but retryable only after fresh authorization (detail in evidence; status remains FAILED_NO_EFFECT class)",
+      "CONFLICT": "CONFLICT with AuthoritativeEffectConfirmation.NO (third observed state or authorization drift)",
+      "OUTCOME_UNKNOWN": "OUTCOME_UNKNOWN with AuthoritativeEffectConfirmation.UNKNOWN (stranded APPLYING / timeout before reconciliation)",
+      "NEEDS_SEMANTIC_CHOICE": "NEEDS_SEMANTIC_CHOICE with AuthoritativeEffectConfirmation.NO (multiple valid successors under retirement selection or ambiguous Project choice)"
+    },
+    "extension_required": "no; current canonical result contract already supports required external effect states via MutationEffect + AuthoritativeEffectConfirmation and effect_evidence fields; add external verification evidence (observed_raw_digest, raw_source_revision, journal_state) to effect_evidence without inventing adapter-specific result semantics",
+    "adapter_specific_semantics_unnecessary": true
+  }
+}

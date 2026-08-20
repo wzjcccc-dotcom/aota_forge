@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "M4_5_IMPLEMENTATION_DAG_DEFINED": "yes",
+  "IMPLEMENTATION_SLICE_COUNT": 6,
+  "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+  "slices": [
+    {
+      "SLICE_ID": "M4-5-S1",
+      "OBJECTIVE": "Freeze Portable Plan Mutation Port interface and multi-domain revision/digest model (contract-only, no durable persistence yet)",
+      "PREREQUISITES": ["M4-3 accepted ingress + MutationIntent/MutationResult contracts", "M4-0 D4/D6 frozen decisions"],
+      "AUTHORIZED_PATHS": ["aota_forge/adapters/plan_authority/port.py", "aota_forge/core/contracts/mutation_port.py"],
+      "READ_ONLY_DEPENDENCIES": ["aota_forge/core/contracts/mutation.py", "aota_forge/core/contracts/descriptor.py", "aota_forge/core/contracts/results.py", "aota_forge/adapters/plan_authority/__init__.py"],
+      "OUTPUT": "Executor-neutral PlanAuthorityMutationPort ABC, typed snapshot fields (operation/principal/typed_target/correlation/contract_hash/idempotency_key/intent_fingerprint/subject_expected_revision/authority_source_revision/authority_observed_raw_digest/candidate_raw_digest/normalized_plan_digest/authorization_basis/lease_or_attempt_reference/journal_state), three-domain revision/digest invariants with canonical error codes",
+      "TESTS": ["POS-01 precondition validation, NEG-01/NEG-02 stale precondition fail-closed, NEG-03 authorization drift CONFLICT"],
+      "NEGATIVE_CONSTRAINTS": ["No GitHub-specific code in Core", "No normalized_plan_digest used as external CAS", "No generic mutation API"],
+      "ACCEPTANCE": "Contract compiles; read-before-write comparison proven; stale external precondition fails closed; GITHUB_IS_FORGE_CORE_ONTOLOGY=no preserved"
+    },
+    {
+      "SLICE_ID": "M4-5-S2",
+      "OBJECTIVE": "Freeze durable mutation journal contract (states, write order, journal fields, invariants - no DB execution yet)",
+      "PREREQUISITES": ["M4-5-S1"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/__init__.py", "aota_forge/core/journal/model.py", "aota_forge/core/journal/state_machine.py"],
+      "READ_ONLY_DEPENDENCIES": ["aota_forge/core/transaction.py", "aota_forge/core/revision.py", "aota_forge/core/idempotency.py"],
+      "OUTPUT": "Journal fields D4/D3, states PREPARED/APPLYING/OUTCOME_UNKNOWN/RECONCILING/VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT, required write order with mandatory PREPARED→APPLYING before external write, journal-is-not-semantic-authority invariant, stranded APPLYING rule",
+      "TESTS": ["POS-02 idempotency replay no duplicate effect, NEG-04 known failure path, crash C1 (PREPARED without APPLYING → FAILED_NO_EFFECT)"],
+      "NEGATIVE_CONSTRAINTS": ["Journal does not invent intent/choice/Decision", "No blind lease reuse", "No semantic rollback", "No external write before PREPARED/APPLYING durable"],
+      "ACCEPTANCE": "State machine diagram matches D3 transitions; journal fields required for reconciliation are materialized; G5/G6/G14 invariants hold"
+    },
+    {
+      "SLICE_ID": "M4-5-S3",
+      "OBJECTIVE": "Freeze external apply + verify-after-write contracts via generic Port (no GitHub implementation)",
+      "PREREQUISITES": ["M4-5-S1", "M4-5-S2"],
+      "AUTHORIZED_PATHS": ["aota_forge/adapters/plan_authority/port.py", "aota_forge/core/journal/apply.py"],
+      "READ_ONLY_DEPENDENCIES": ["aota_forge/core/ingress.py", "aota_forge/core/authorization.py", "aota_forge/core/capability_lease.py"],
+      "OUTPUT": "At-most-one external attempt contract (persist PREPARED then APPLYING durably, then call Port.mutate once), verify-after-write mandatory readback contract (re-read authoritative raw source; classify observed), AUTHORITY_REQUEST_DERIVED_FROM_ACTUAL_MUTATION_CONTEXT=yes",
+      "TESTS": ["NEG-05 unknown outcome path, REC-01 observed candidate, REC-02 observed original"],
+      "NEGATIVE_CONSTRAINTS": ["No adapter success return substitutes for readback", "No generic Git write API", "No RAW_GH_OPERATION_IN_CORE"],
+      "ACCEPTANCE": "Apply boundary proven: external write forbidden until APPLYING durable; verify is mandatory; single attempt enforced"
+    },
+    {
+      "SLICE_ID": "M4-5-S4",
+      "OBJECTIVE": "Freeze three-way reconciliation and retry authorization contracts",
+      "PREREQUISITES": ["M4-5-S2", "M4-5-S3"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/journal/reconcile.py", "aota_forge/core/journal/retry.py"],
+      "READ_ONLY_DEPENDENCIES": ["aota_forge/core/plan/normalize.py", "aota_forge/core/contracts/mutation.py"],
+      "OUTPUT": "Reconciliation precedence [candidate identity, original identity, third-state], J5-J8 classification rules, normalized equality supporting-evidence-only rule, retry rule (RETRYABLE requires fresh authorization + Subject + raw preconditions + new bounded lease), UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no",
+      "TESTS": ["REC-03 third state → CONFLICT, REC-04 retry fresh auth, REC-05 semantic choice boundary, crash C2-C9 matrix, J1-J10 coverage"],
+      "NEGATIVE_CONSTRAINTS": ["No heuristic selection of third state", "No blind lease reuse", "No semantic rollback", "Recovery is not semantic decision maker"],
+      "ACCEPTANCE": "Three-way comparison deterministic; third state always CONFLICT; RETRYABLE requires fresh auth; recovery never chooses Project/Subject/successor"
+    },
+    {
+      "SLICE_ID": "M4-5-S5",
+      "OBJECTIVE": "Wire idempotency linkage and canonical result reuse; freeze platform-neutrality and downstream contracts",
+      "PREREQUISITES": ["M4-5-S1", "M4-5-S2", "M4-5-S4"],
+      "AUTHORIZED_PATHS": ["aota_forge/core/idempotency.py", "aota_forge/core/contracts/results.py"],
+      "READ_ONLY_DEPENDENCIES": ["aota_forge/core/transaction.py", "aota_forge/core/revision.py", "aota_forge/adapters/plan_authority/__init__.py"],
+      "OUTPUT": "External journal identity linkage definition (complete authorization-bound, not intent_fingerprint alone), operation contract reuse (plan_init/plan_retirement only), canonical result reuse (VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT/OUTCOME_UNKNOWN mapped to existing MutationEffect + evidence), downstream M4-6/M4-7 contract boundaries",
+      "TESTS": ["POS-02 linkage replay, NEG-03 drift conflict, CON-01 duplicate executor reservation, CON-02 stale writer CAS"],
+      "NEGATIVE_CONSTRAINTS": ["No intent_fingerprint-only fallback", "No generic external mutation API", "No GitHub ontology in Core", "M4-6/M4-7 not implemented"],
+      "ACCEPTANCE": "External identity reuses M4-3 authorization-bound semantics; same key + changed auth = conflict; GitHub adapter explicitly deferred"
+    },
+    {
+      "SLICE_ID": "M4-5-S6",
+      "OBJECTIVE": "Materialize deterministic failure injection harness and M4-5-owned regression closure (fake adapter + fixture authority + disposable store)",
+      "PREREQUISITES": ["M4-5-S3", "M4-5-S4", "M4-5-S5"],
+      "AUTHORIZED_PATHS": ["tests/test_m4_5_journal_contract.py", "aota_forge/adapters/plan_authority/fake_port.py"],
+      "READ_ONLY_DEPENDENCIES": ["tests/*", "aota_forge/core/regression/matrix.py"],
+      "OUTPUT": "FakePlanAuthorityAdapter with hooks at before-PREPARED, before-APPLYING, during mutation, after external before verify, during verify, during terminal persist; fixture revision/digest control; acceptance matrix POS/NEG/REC/CON executable",
+      "TESTS": ["All acceptance matrix cases (POS-01..CON-02) green via fake adapter; C1-C9 crash matrix; J1-J10 windows; no production authority writes"],
+      "NEGATIVE_CONSTRAINTS": ["PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED=no", "No random network flakiness dependence"],
+      "ACCEPTANCE": "Deterministic injection covers before/during/known failure/timeout/after external before verify/verify failure/restart; no production GitHub writes"
+    }
+  ],
+  "slice_order_resolves_semantics_first": true,
+  "all_slices_resolve_semantic_questions_before_construction": true
+}

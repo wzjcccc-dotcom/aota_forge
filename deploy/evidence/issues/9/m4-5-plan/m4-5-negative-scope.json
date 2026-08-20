@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "negative_scope": [
+    {"item": "Generic Git write API", "allowed": "no", "evidence": "M4-0 D11 GENERIC_GIT_WRITE_API_ALLOWED=no"},
+    {"item": "Generic terminal expansion", "allowed": "no", "evidence": "M4-0 D11 GENERIC_TERMINAL_EXPANSION_ALLOWED=no"},
+    {"item": "Generic external mutate-anything API", "allowed": "no", "evidence": "M4-5 is bounded to exact registered plan_init/plan_retirement only"},
+    {"item": "GitHub-specific write implementation in Core", "allowed": "no", "evidence": "GITHUB_IS_FORGE_CORE_ONTOLOGY=no, RAW_GH_OPERATION_IN_CORE=no, GITHUB_API_IS_CORE_CONTRACT=no"},
+    {"item": "Durable journal persistence implementation", "allowed": "no, contract only", "evidence": "M4-5 owns contract; durable execution is M4-7"},
+    {"item": "Deterministic reconciliation execution engine", "allowed": "no, plan only", "evidence": "M4-5 freezes reconciliation rules; execution is M4-7"},
+    {"item": "CLI write exposure beyond thin projection contract", "allowed": "no", "evidence": "CLI_IS_EXCLUSIVE_ENTRYPOINT=no, CLI is adapter; M4-8 owns convergence"},
+    {"item": "Cross-authority atomic transaction", "allowed": "no", "evidence": "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no"},
+    {"item": "Semantic rollback", "allowed": "no", "evidence": "SEMANTIC_ROLLBACK_ALLOWED=no"},
+    {"item": "Heuristic reconciliation or third-state selection", "allowed": "no", "evidence": "M4-0 D3 J7/J8 third state → CONFLICT"},
+    {"item": "Blind lease reuse after unknown outcome", "allowed": "no", "evidence": "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no"},
+    {"item": "Executor/runtime lifecycle (M5)", "allowed": "no", "evidence": "M4/M5 boundary D10"},
+    {"item": "Runtime activation / deployment / reload / Hermes dispatch", "allowed": "no", "evidence": "M4_0 D12 M4_HERMES_RUNTIME_MUTATION_ACTIVATION_REQUIRED=no"},
+    {"item": "M4-6/M4-7/M4-8 source implementation authorization", "allowed": "no", "evidence": "M4-5 planning only; M4_5_EXECUTION_AUTHORIZED=no, M4_5_SOURCE_IMPLEMENTATION_AUTHORIZED=no"},
+    {"item": "Production external authority writes in tests", "allowed": "no", "evidence": "PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED=no, PRODUCTION_GITHUB_TEST_WRITE_ALLOWED=no"}
+  ],
+  "enforcement": "All negative scope items are enforced by planning guard G1-G15; any plan claiming these is rejected"
+}

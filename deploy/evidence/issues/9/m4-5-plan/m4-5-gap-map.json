@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "accepted_writable_base": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "gap_entries": [
+    {
+      "item": "external mutation boundary",
+      "status": "MISSING_M4_5",
+      "evidence": "M4-3 provides closed write-capable Unified Ingress for plan_init/plan_retirement but no Portable Plan Mutation Port abstraction; adapters/plan_authority/__init__.py is read-only only",
+      "m4_5_action": "Define executor-neutral PlanAuthorityMutationPort interface (typed target, operation, correlation, contract/idempotency/intent, Subject+raw preconditions, candidate/normalized digests, authorization/lease ref) with at-most-one attempt contract"
+    },
+    {
+      "item": "authority precondition capture",
+      "status": "MISSING_M4_5",
+      "evidence": "MutationPreconditions at M4-3 covers subject_expected_revision + authority_source_revision/observed_raw_digest/candidate_raw_digest but lacks full D4 pre-write snapshot contract (operation, principal, typed target, correlation, contract_hash, idempotency_key, intent_fingerprint, normalized_plan_digest, authorization_basis, lease_or_attempt_reference, journal_state)",
+      "m4_5_action": "Freeze D4 snapshot fields as journal contract; exclude secrets and raw GitHub IDs"
+    },
+    {
+      "item": "journal/reservation",
+      "status": "MISSING_M4_5",
+      "evidence": "No durable journal store, no PREPARED/APPLYING persistence, no TransactionStore extension for journal; M4-1 CanonicalMutationResult defines effect statuses but no journal table",
+      "m4_5_action": "Contract journal schema and required write order; durable implementation deferred to M4-7"
+    },
+    {
+      "item": "apply",
+      "status": "MISSING_M4_5",
+      "evidence": "No PlanAuthorityMutationPort.apply() or Port execution path; ingress execute_mutation delegates to SubjectTransaction only (internal), no external authority invocation",
+      "m4_5_action": "Define generic Port apply contract (validates lease bindings from actual mutation context, not copied from lease) and delegates to authority-store adapter; GitHub-specific write is M4-6"
+    },
+    {
+      "item": "read-back verification",
+      "status": "MISSING_M4_5",
+      "evidence": "No verify-after-write readback path; M4-3 ingress normalizes handler result but does not re-read external authority raw source after external write",
+      "m4_5_action": "Contract mandatory readback: re-read authoritative raw source via PlanAuthorityReadAdapter after mutation where result permits; classify observed vs candidate vs original"
+    },
+    {
+      "item": "unknown outcome",
+      "status": "MISSING_M4_5",
+      "evidence": "No OUTCOME_UNKNOWN journal state handling beyond CanonicalMutationResult enum; no stranded APPLYING detection",
+      "m4_5_action": "Contract OUTCOME_UNKNOWN → RECONCILING transition and stranded APPLYING reconciliation rule (no blind retry)"
+    },
+    {
+      "item": "reconciliation",
+      "status": "MISSING_M4_5",
+      "evidence": "No three-way comparison engine; no RECONCILING → VERIFIED_RECOVERED / RETRYABLE_NO_EFFECT / CONFLICT rules",
+      "m4_5_action": "Freeze reconciliation precedence [candidate identity, original identity, third-state] with deterministic classification; normalized equality is supporting evidence only"
+    },
+    {
+      "item": "retry",
+      "status": "MISSING_M4_5",
+      "evidence": "M4-3 idempotency replay is internal only; no RETRYABLE_NO_EFFECT fresh-authorization rule",
+      "m4_5_action": "Contract RETRYABLE requires fresh semantic authorization + Subject precondition + raw authority precondition + new bounded lease/attempt; UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no"
+    },
+    {
+      "item": "conflict",
+      "status": "EXISTS_AND_REUSE",
+      "evidence": "M4-3 idempotency conflict (same key + changed authorization) and M4-1 CONFLICT effect exist; M4-0 D3 third-state → CONFLICT",
+      "m4_5_action": "Reuse M4-3 conflict semantics for external journal: same key + changed authorization semantics = conflict; third observed state = CONFLICT needing semantic intervention"
+    },
+    {
+      "item": "idempotency linkage",
+      "status": "EXISTS_BUT_NEEDS_WIRING",
+      "evidence": "M4-3 complete authorization-bound idempotency identity exists (SubjectTransaction + lifecycle_idempotency_lookup); external journal identity not yet linked",
+      "m4_5_action": "Contract external journal identity as (operation + typed target + idempotency_key + intent_fingerprint + authorization fingerprint + contract_hash + Subject+raw preconditions); fallback to intent_fingerprint alone denied"
+    },
+    {
+      "item": "platform adapter",
+      "status": "DEFER_TO_M4_6",
+      "evidence": "PlanAuthorityReadAdapter exists (read-only M2); no PlanAuthorityMutationPort write adapter; GitHub specifics would violate GITHUB_IS_FORGE_CORE_ONTOLOGY=no if added in Core",
+      "m4_5_action": "M4-6 implements GitHub Issue/control-comment adapter as one platform implementation of the generic port"
+    },
+    {
+      "item": "GitHub implementation",
+      "status": "DEFER_TO_M4_6",
+      "evidence": "No GitHub write path in accepted base; adapters/plan_authority is read-only",
+      "m4_5_action": "M4-6 owns Issue number, comment ID, gh api, pagination, GitHub-specific optimistic concurrency plumbing"
+    },
+    {
+      "item": "CLI exposure",
+      "status": "DEFER_TO_LATER",
+      "evidence": "CLI commands exist for project/host/runtime but no plan mutation CLI; M4-8 owns CLI/Core convergence",
+      "m4_5_action": "Thin CLI projection deferred; CLI remains machine adapter, not semantic authority (CLI_IS_EXCLUSIVE_ENTRYPOINT=no)"
+    },
+    {
+      "item": "runtime/deploy",
+      "status": "OUT_OF_SCOPE",
+      "evidence": "No runtime activation in M4-3; M4-0 D12 M4_HERMES_RUNTIME_MUTATION_ACTIVATION_REQUIRED=no",
+      "m4_5_action": "No deployment, reload, Hermes dispatch, or live smoke"
+    },
+    {
+      "item": "M4-6 dependencies",
+      "status": "DEFER_TO_M4_6",
+      "evidence": "M4-5 is prerequisite for M4-6 and M4-7 per DAG",
+      "m4_5_action": "M4-6 consumes M4-5 port + precondition + journal contracts to implement GitHub authority adapter"
+    },
+    {
+      "item": "M4-7 dependencies",
+      "status": "DEFER_TO_M4_7",
+      "evidence": "M4-5 journal contract is prerequisite for M4-7 durable execution",
+      "m4_5_action": "M4-7 consumes M4-5 journal contract to implement durable journal store and deterministic recovery engine (J1-J10)"
+    },
+    {
+      "item": "generic writes / terminal",
+      "status": "OUT_OF_SCOPE",
+      "evidence": "D11 denies generic Git write and generic terminal expansion",
+      "m4_5_action": "No broad write glob; only exact registered plan_init/plan_retirement external operations"
+    },
+    {
+      "item": "canonical result / error model",
+      "status": "EXISTS_AND_REUSE",
+      "evidence": "M4-1 CanonicalMutationResult with NO_EFFECT/APPLIED_VERIFIED/REPLAYED_VERIFIED/BLOCKED/CONFLICT/NEEDS_SEMANTIC_CHOICE/OUTCOME_UNKNOWN/FAILED_NO_EFFECT exists; does not need extension for M4-5",
+      "m4_5_action": "Reuse canonical result; add evidence fields for external verification (observed_raw_digest, raw_source_revision) without inventing adapter-specific semantics"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5 downstream handoff",
+  "M4_5_provides_to_M4_6": {
+    "work_item": "M4-6 GitHub Issue / Control-Comment Authority Adapter",
+    "receives_from_M4_5": [
+      "Portable Plan Mutation Port contract (typed operation/target/correlation/contract/idempotency/intent + Subject+raw preconditions + candidate/normalized digests + authorization/lease ref)",
+      "Multi-domain precondition model (raw_source_revision + observed_raw_digest as external CAS distinct from Subject CAS and normalized digest)",
+      "Read-before-write contract and stale precondition fail-closed rule",
+      "At-most-one external attempt contract (PREPARED→APPLYING before write)",
+      "Verify-after-write mandatory readback contract"
+    ],
+    "M4_6_owns": [
+      "GitHub Issue number, comment ID, gh api / pagination / request plumbing",
+      "GitHub-specific optimistic concurrency mapping (raw_source_revision → etag/revision or Issue body revision)",
+      "Control-comment role resolution (required/optional roles, zero→missing fail closed, one→exact, many→duplicate fail closed; no first/newest selection)",
+      "GitHub-specific error/rate-limit/permission to FAILED_NO_EFFECT mapping where authoritative rejection is proven no-effect",
+      "No invention of Project/Subject/Decision/successor (mechanical only)"
+    ],
+    "M4_6_does_not_own": ["Port contract definition (already frozen in M4-5)", "Journal state machine definition", "Reconciliation execution (M4-7)"],
+    "parallel_safety": "M4-6 and M4-7 can proceed in parallel after M4-5 plan acceptance, subject to source ownership reconnaissance on shared hot files (e.g., adapters/plan_authority/port.py is integration_only for downstream consumers; M4-6 writes only adapters/plan_authority/github.py and tests)"
+  },
+  "M4_5_provides_to_M4_7": {
+    "work_item": "M4-7 Durable External Mutation Journal + Reconciliation / Recovery",
+    "receives_from_M4_5": [
+      "Mutation journal contract (states PREPARED..CONFLICT, required write order, journal fields, mandatory durability before external write)",
+      "Crash windows J1-J10 and stranded APPLYING reconciliation rule",
+      "Three-way reconciliation precedence and classification rules (candidate → VERIFIED_RECOVERED, original → RETRYABLE_NO_EFFECT with fresh auth, third → CONFLICT, normalized equality supporting-only)",
+      "Retry authorization rule (UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no, RETRYABLE requires fresh auth+Subject+raw+new lease)",
+      "External idempotency identity linkage contract"
+    ],
+    "M4_7_owns": [
+      "Durable journal store implementation (isolation, persistence, transaction boundary, ownership/lease for duplicate executor guard)",
+      "Deterministic reconciliation/recovery execution engine (read authority, classify observed, persist terminal state, surface CONFLICT/NEEDS_SEMANTIC_CHOICE)",
+      "Retry eligibility enforcement (fresh authorization validation before new attempt)",
+      "Duplicate executor reservation and recovery takeover rules"
+    ],
+    "M4_7_does_not_own": ["Port contract definition", "GitHub transport plumbing (M4-6)", "Semantic Project/Subject/Choice invention"],
+    "parallel_safety": "M4-7 writes core/journal/store.py and engine; reads port contract; shared journal/model files are integration_only - serialization required if both M4-6/M4-7 attempt to modify the same shared hot file"
+  },
+  "downstream_m4_8": {
+    "work_item": "M4-8 CLI/Core Convergence + M4-Owned Successor Regression Closure",
+    "depends_on": ["M4-6", "M4-7"],
+    "receives": "Integrated M4-5 port + M4-6 GitHub adapter + M4-7 durable recovery",
+    "thin_cli_projection": "CLI is machine adapter, not semantic authority; CLI_IS_EXCLUSIVE_ENTRYPOINT=no"
+  },
+  "parallel_safety_plan": {
+    "M4_6_M4_7_PARALLEL_SAFETY": "conditional_parallel",
+    "hot_files": ["aota_forge/adapters/plan_authority/port.py", "aota_forge/core/journal/model.py"],
+    "policy": "Shared hot files remain integration_only; M4-6 and M4-7 may design interfaces in parallel (planning) but must not concurrently write the same hot file during implementation; integration via single owner per file, serialize or integration_only"
+  }
+}

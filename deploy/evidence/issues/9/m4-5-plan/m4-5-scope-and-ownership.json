@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "M4_5_PRIMARY_RESPONSIBILITY": "Freeze the executor-neutral Portable Plan Mutation Port, multi-domain precondition model, and durable mutation journal contract that together define the mechanical external mutation and recovery boundary without implementing the GitHub-specific adapter or durable recovery execution.",
+  "M4_5_OWNS": [
+    "Portable Plan Mutation Port contract (typed operation, principal, typed target, correlation, contract/idempotency/intent fingerprints, Subject and raw authority preconditions, candidate/normalized digests, authorization/lease reference, journal state)",
+    "Multi-domain revision/digest model and raw authority precondition capture contract",
+    "Mutation journal contract (states, write order, fields, crash windows, reconciliation precedence)",
+    "Read-before-write and verify-after-write contracts",
+    "Three-way reconciliation (ORIGINAL/CANDIDATE/OBSERVED) classification contract",
+    "Retry authorization rule (fresh authorization after RETRYABLE_NO_EFFECT; blind lease reuse denied)",
+    "Idempotency linkage contract (M4-3 authorization-bound identity reuse for external journal)",
+    "Operation contract reuse (plan_init / plan_retirement) and canonical result reuse/extension plan",
+    "Platform-neutrality boundary (Core != GitHub transport)"
+  ],
+  "M4_5_DOES_NOT_OWN": [
+    "GitHub Issue / Control-Comment Authority Adapter implementation (M4-6)",
+    "Durable journal persistence and reconciliation/recovery execution engine (M4-7)",
+    "CLI/Core convergence and successor regression closure (M4-8)",
+    "Executor/runtime lifecycle (M5)",
+    "Generic Git write, generic terminal, runtime activation, deployment"
+  ],
+  "capability_ownership": [
+    {
+      "capability": "external Portable Plan mutation orchestration",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D2/D3/D10: M4-5 owns Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract; at-most-one external attempt contract; architecture freeze m4_work_items.M4-5",
+      "notes": "M4-5 owns generic, executor-neutral port mechanics; GitHub-specific transport is M4-6"
+    },
+    {
+      "capability": "durable mutation journal",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3/D4: journal contract owned by M4-5; durable execution deferred to M4-7; architecture freeze m4_work_items.M4-5 (Mutation Journal Contract)",
+      "notes": "Contract definition in M4-5; durable persistence engine in M4-7"
+    },
+    {
+      "capability": "journal state machine",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 freeze: states PREPARED/APPLYING/OUTCOME_UNKNOWN/RECONCILING/VERIFIED/VERIFIED_RECOVERED/FAILED_NO_EFFECT/RETRYABLE_NO_EFFECT/CONFLICT and transitions/crash windows J1-J10",
+      "notes": "States and transitions frozen in M4-0 and contracted in M4-5; execution in M4-7"
+    },
+    {
+      "capability": "raw authority precondition capture",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D4/D6: required journal fields include authority_source_revision, authority_observed_raw_digest, candidate_raw_digest, normalized_plan_digest, observed_raw_digest, original_raw_digest, raw_source_revision, subject_expected_revision",
+      "notes": "M4-5 freezes pre-write snapshot fields; raw authority revision/digest distinct from Subject revision and normalized digest"
+    },
+    {
+      "capability": "read-before-write",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 required_write_order: read external authority state → validate raw precondition → only then external apply; M4 acceptance READ_BEFORE_WRITE=PASS",
+      "notes": "No blind overwrite; stale raw precondition fails closed"
+    },
+    {
+      "capability": "external apply",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3: persist PREPARED then APPLYING durably, then at most one external mutation attempt; M4-0 D2 no cross-authority atomic transaction",
+      "notes": "M4-5 owns the at-most-one generic apply contract via Plan Authority Adapter port; GitHub-specific write belongs to M4-6"
+    },
+    {
+      "capability": "verify-after-write",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 required_write_order: read authority store after mutation where result permits → classify exact observed state → persist terminal/reconciliation state; VERIFY_AFTER_WRITE=PASS",
+      "notes": "Process exit 0 / HTTP 2xx is not sufficient; must re-read authoritative raw source"
+    },
+    {
+      "capability": "OUTCOME_UNKNOWN",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 states include OUTCOME_UNKNOWN; crash windows J4/J1-J10 define uncertain outcome handling; M4-1 CanonicalMutationResult includes OUTCOME_UNKNOWN",
+      "notes": "OUTCOME_UNKNOWN is not failure and not success; blind retry denied"
+    },
+    {
+      "capability": "deterministic reconciliation",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 recovery J1-J10; reconciliation_comparison_precedence [candidate, original, third-state]; M4 acceptance deterministic recovery",
+      "notes": "M4-5 freezes reconciliation contract; deterministic execution engine is M4-7"
+    },
+    {
+      "capability": "candidate/original/third-state comparison",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D3 reconciliation_comparison_precedence and J5-J8: candidate → VERIFIED_RECOVERED, original → RETRYABLE_NO_EFFECT (with fresh auth), third → CONFLICT",
+      "notes": "Raw identity comparison; normalized equality is supporting evidence only"
+    },
+    {
+      "capability": "retry authorization",
+      "M4_5_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D5 UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no; J5 RETRYABLE requires fresh authorization + Subject + raw preconditions + bounded lease/attempt",
+      "notes": "No blind lease reuse; reconciled RETRYABLE only"
+    },
+    {
+      "capability": "GitHub-specific adapter",
+      "M4_5_OWNERSHIP": "downstream",
+      "AUTHORITY_EVIDENCE": "M4-0 D10/D12 and m4_work_items.M4-6 = GitHub Issue / Control-Comment Authority Adapter; GITHUB_IS_FORGE_CORE_ONTOLOGY=no",
+      "notes": "M4-6 owns GitHub-specific mechanics (Issue number, comment ID, gh api plumbing); M4-5 remains platform-neutral"
+    },
+    {
+      "capability": "CLI exposure",
+      "M4_5_OWNERSHIP": "downstream",
+      "AUTHORITY_EVIDENCE": "M4-0 D10: M4 owns CLI thin mutation projection; m4_work_items.M4-8 = CLI/Core Convergence; Issue #9 §14 CLI families",
+      "notes": "M4-8 owns CLI/Core convergence; M4-5 exposes no write CLI beyond building the port contract; CLI_IS_EXCLUSIVE_ENTRYPOINT=no"
+    },
+    {
+      "capability": "generic Git writes",
+      "M4_5_OWNERSHIP": "out_of_scope",
+      "AUTHORITY_EVIDENCE": "M4-0 D11 GENERIC_GIT_WRITE_API_ALLOWED=no; M4-3 generic mutation API denied; Issue #9 §12 managed deployment framework",
+      "notes": "Any external operation must be exact, registered, typed, authorized, contract-bound (plan_init/plan_retirement only)"
+    },
+    {
+      "capability": "runtime activation",
+      "M4_5_OWNERSHIP": "out_of_scope",
+      "AUTHORITY_EVIDENCE": "M4-0 D12 M4_source_pass_claims_deployment_runtime_live=no; Issue #9 §18 validation expectations",
+      "notes": "No deploy, reload, Hermes dispatch, or live smoke in M4-5"
+    }
+  ]
+}

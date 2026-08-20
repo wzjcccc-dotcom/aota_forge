@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-5",
+  "MUTATION_JOURNAL_OWNERSHIP": "owned",
+  "JOURNAL_STATE_MACHINE_PLAN": "PASS",
+  "JOURNAL_IS_SEMANTIC_DECISION_MAKER": "no",
+  "states": ["PREPARED", "APPLYING", "OUTCOME_UNKNOWN", "RECONCILING", "VERIFIED", "VERIFIED_RECOVERED", "FAILED_NO_EFFECT", "RETRYABLE_NO_EFFECT", "CONFLICT"],
+  "required_write_order": [
+    "validate existing semantic authorization",
+    "validate Subject precondition",
+    "read external authority state",
+    "validate raw external precondition",
+    "construct exact candidate",
+    "compute candidate_raw_digest",
+    "persist PREPARED journal record durably",
+    "persist APPLYING attempt-start state durably",
+    "perform at most one external mutation attempt",
+    "read authority store after mutation where result permits",
+    "classify exact observed state",
+    "persist terminal or reconciliation state"
+  ],
+  "transitions": [
+    {"from": "PREPARED", "to": "APPLYING", "when": "APPLYING attempt-start is durably persisted after PREPARED"},
+    {"from": "PREPARED", "to": "FAILED_NO_EFFECT", "when": "durability fails before an external attempt (J1/J9)"},
+    {"from": "APPLYING", "to": "VERIFIED", "when": "external authoritative effect is confirmed and terminal state persists (known success path)"},
+    {"from": "APPLYING", "to": "FAILED_NO_EFFECT", "when": "authority store definitively rejects mutation with proven no effect (J2)"},
+    {"from": "APPLYING", "to": "OUTCOME_UNKNOWN", "when": "transport timeout, disconnect, or process failure leaves effect uncertain (J4)"},
+    {"from": "APPLYING", "to": "RECONCILING", "when": "a stranded APPLYING record is found after restart (J3)"},
+    {"from": "OUTCOME_UNKNOWN", "to": "RECONCILING", "when": "authority store readback starts"},
+    {"from": "RECONCILING", "to": "VERIFIED_RECOVERED", "when": "raw authority exactly equals candidate_raw_digest (J6)"},
+    {"from": "RECONCILING", "to": "RETRYABLE_NO_EFFECT", "when": "raw authority exactly equals recorded original and fresh authorization, Subject, and raw preconditions are re-established (J5)"},
+    {"from": "RECONCILING", "to": "CONFLICT", "when": "raw authority is neither exact original nor exact candidate (J7); normalized equality alone also → CONFLICT (J8)"},
+    {"from": "NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE", "to": "RECONCILING", "when": "future run observes nonterminal journal and reads authority (J10)"}
+  ],
+  "terminal_semantics": {
+    "success": ["VERIFIED", "VERIFIED_RECOVERED"],
+    "no_effect": ["FAILED_NO_EFFECT", "RETRYABLE_NO_EFFECT"],
+    "conflict": ["CONFLICT"],
+    "OUTCOME_UNKNOWN_IS_FAILURE": "no"
+  },
+  "invariants": {
+    "EXTERNAL_WRITE_BEFORE_PREPARED_DURABLE": "no",
+    "EXTERNAL_WRITE_BEFORE_APPLYING_DURABLE": "no",
+    "NO_EXTERNAL_WRITE_ALLOWED_IF_MANDATORY_JOURNAL_PERSISTENCE_FAILS": "yes",
+    "STRANDED_APPLYING_BLIND_RETRY_ALLOWED": "no",
+    "OUTCOME_UNKNOWN_BLIND_RETRY_ALLOWED": "no",
+    "NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT": "no",
+    "SILENT_REBASE_ALLOWED": "no",
+    "SILENT_ROLLBACK_ALLOWED": "no",
+    "RECOVERY_DIFFERS_FROM_ROLLBACK": "yes",
+    "JOURNAL_IS_SEMANTIC_DECISION_MAKER": "no"
+  },
+  "journal_fields_required_for_reconciliation": [
+    "candidate_raw_digest",
+    "observed_raw_digest",
+    "original_raw_digest",
+    "normalized_plan_digest",
+    "raw_source_revision",
+    "subject_expected_revision",
+    "journal_state",
+    "operation",
+    "principal",
+    "typed_target",
+    "correlation_id",
+    "contract_hash",
+    "idempotency_key",
+    "intent_fingerprint",
+    "authorization_basis",
+    "lease_or_attempt_reference"
+  ],
+  "journal_may_record": [
+    "operation",
+    "target",
+    "authorization fingerprint",
+    "contract",
+    "raw authority preconditions",
+    "intended candidate digest",
+    "observed outcome",
+    "reconciliation state"
+  ],
+  "journal_may_not_invent": [
+    "user intent",
+    "Project choice",
+    "Subject choice",
+    "successor",
+    "Decision",
+    "Approval"
+  ],
+  "crash_windows": "see D3 J1-J10; summarized in reconciliation plan",
+  "reconciliation_precedence": ["exact candidate raw identity", "exact original raw identity", "third raw state"]
+}
