@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 write request envelope contract",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "envelope_type": "MutationIngressRequest",
+  "representation": "internal typed request; not a model-facing JSON payload",
+  "request_reuse_rule": "Reuse PlanInitRequest and PlanRetirementRequest as operation-specific payloads; do not create duplicate intent, precondition, lease, project binding, snapshot, or result models.",
+  "common_fields": [
+    {"name": "operation", "type": "literal plan_init|plan_retirement", "source": "canonical descriptor lookup; caller value must agree"},
+    {"name": "store", "type": "TransactionStore fixture dependency", "source": "trusted internal construction only; never model input"},
+    {"name": "request", "type": "PlanInitRequest|PlanRetirementRequest", "source": "existing M4-4 typed request"}
+  ],
+  "operation_payloads": [
+    {
+      "operation": "plan_init",
+      "request_type": "PlanInitRequest",
+      "trusted_fields": ["trusted_context", "plan_ref", "preconditions", "trusted_time", "project_evidence", "project_binding", "lease", "external_authority_precondition", "normalized_plan_digest"],
+      "semantic_fields": ["intent.operation", "intent.semantic_inputs", "intent.logical_target", "intent.mutation_scope", "intent.idempotency_key", "intent.correlation_id"],
+      "required_exact_decision": "Project Binding must already be selected and validated; relationship evidence alone is not a binding."
+    },
+    {
+      "operation": "plan_retirement",
+      "request_type": "PlanRetirementRequest",
+      "trusted_fields": ["trusted_context", "plan_ref", "snapshot", "preconditions", "trusted_time", "successor_ref", "lease", "external_authority_precondition", "normalized_plan_digest"],
+      "semantic_fields": ["intent.operation", "intent.semantic_inputs", "intent.logical_target", "intent.mutation_scope", "intent.idempotency_key", "intent.correlation_id", "retirement_kind"],
+      "required_exact_decision": "The exact candidate snapshot, explicit retirement kind, and any exact successor must be supplied; ingress never selects them."
+    }
+  ],
+  "field_partition": {
+    "semantic_intent_owned_by_external_actor": [
+      "MutationIntent.semantic_inputs",
+      "MutationIntent.logical_target",
+      "MutationIntent.mutation_scope",
+      "MutationIntent.idempotency_key",
+      "retirement_kind",
+      "successor selection represented by exact successor_ref"
+    ],
+    "trusted_or_mechanical_core_inputs": [
+      "TrustedContext",
+      "typed ObjectRef target",
+      "CapabilityLease",
+      "MutationPreconditions",
+      "ProjectBinding",
+      "RetirementCandidateSnapshot",
+      "trusted_time",
+      "isolated TransactionStore"
+    ],
+    "derived_by_ingress": [
+      "descriptor and contract_hash from DEFAULT_REGISTRY",
+      "intent_fingerprint from the actual MutationIntent",
+      "actual authority source and digest bindings from request preconditions",
+      "correlation id bounded by the existing ingress helper"
+    ],
+    "never_model_asserted": [
+      "trusted principal",
+      "CapabilityLease",
+      "internal IDs and typed ObjectRef values",
+      "Subject revision",
+      "authority source revision or raw digest",
+      "contract hash",
+      "authorization basis",
+      "lease consumption or outcome state"
+    ]
+  },
+  "construction_rules": [
+    "Reject a plain dict on the write entry point; adapters must construct the typed envelope through a trusted boundary.",
+    "Reject any request whose payload operation, intent operation, descriptor operation, or lease operation differs.",
+    "Use actual request fields to build validation inputs; never copy request bindings from the lease.",
+    "Do not permit MutationIntent semantic_inputs to contain trusted keys already blocked by M4-1.",
+    "Do not infer a typed target from a string, candidate list, current pointer, or resolver ordering.",
+    "Do not accept a lease reference that has not been resolved to the typed CapabilityLease before dispatch."
+  ]
+}

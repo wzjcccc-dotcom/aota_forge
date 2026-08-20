@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 to M4-5 planning handoff",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "handoff_state": "design-only; downstream M4-5 is not authorized",
+  "M4_3_outputs": [
+    "closed write operation registry for plan_init and plan_retirement",
+    "typed ingress envelope reusing M4-4 request models",
+    "received-lease-only authorization composition",
+    "mechanical lifecycle dispatch and canonical result projection contract",
+    "adapter and source ownership boundaries",
+    "regression and negative-scope handoff"
+  ],
+  "M4_5_consumes_later": [
+    "write ingress seam without external authority writes",
+    "separate Subject and external authority precondition fields",
+    "lease/attempt identity boundary",
+    "read-before-write, one-write, verify-after-write, and journal ordering requirements"
+  ],
+  "M4_3_does_not_provide": [
+    "Portable Plan mutation port",
+    "external authority adapter",
+    "durable journal",
+    "reconciliation runtime",
+    "GitHub write adapter",
+    "production graph authority"
+  ],
+  "downstream_authorization": {
+    "M4_5_STATUS": "pending_not_ready",
+    "M4_5_EXECUTION_AUTHORIZED": false,
+    "M4_3_ACCEPTANCE_AUTO_AUTHORIZES_M4_5": false,
+    "M4_3_ACCEPTANCE_AUTO_AUTHORIZES_RUNTIME": false
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 source ownership partition",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "M4_3_EXCLUSIVE_WRITE_PATHS": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/catalog.py",
+    "aota_forge/core/handlers.py"
+  ],
+  "M4_3_SHARED_READ_ONLY_PATHS": [
+    "aota_forge/core/contracts/canonical.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/operations.py",
+    "aota_forge/core/contracts/registry.py",
+    "aota_forge/core/contracts/version.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/graph/repository.py"
+  ],
+  "M4_3_INTEGRATION_ONLY_PATHS": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "aota_forge/core/__init__.py",
+    "aota_forge/cli/__main__.py",
+    "aota_forge/adapters/hermes/invoke.py",
+    "tests/**"
+  ],
+  "M4_3_FORBIDDEN_PATHS": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py",
+    "aota_forge/core/context.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/validation.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/project/resolver.py",
+    "aota_forge/adapters/plan_authority/**",
+    "aota_forge/adapters/github/**",
+    "aota_forge/core/journal.py",
+    "aota_forge/core/recovery.py",
+    "aota_forge/core/graph/** production writers",
+    "any unlisted aota_forge/** functional source path"
+  ],
+  "path_roles": {
+    "aota_forge/core/ingress.py": "Add execute_mutation and typed envelope handling only; preserve execute read-only behavior and do not add a generic mutation API.",
+    "aota_forge/core/catalog.py": "Register the two accepted lifecycle descriptors exactly once.",
+    "aota_forge/core/handlers.py": "Add two thin lifecycle bindings; preserve existing read handlers and bootstrap behavior.",
+    "shared_paths": "Consume accepted contracts without changing semantics.",
+    "integration_paths": "Only serial export, adapter, and end-to-end regression convergence after exclusive source review.",
+    "forbidden_paths": "No authority, lifecycle, transaction, external adapter, journal, graph-authority, or runtime activation changes."
+  },
+  "partition_rules": [
+    "The exclusive list and integration list are disjoint.",
+    "No M4-3 source change may modify an M4-2 or M4-4 exclusive path.",
+    "A shared read-only path is a consumer boundary, not an M4-3 write target.",
+    "CLI and Hermes adapters are non-exclusive and must route through the same ingress.",
+    "Tests may mutate only isolated fixtures and must be integration-owned when they cross M4-2/M4-4 seams."
+  ],
+  "provenance": {
+    "M4_2_M4_4_SOURCE_OWNERSHIP_RECONCILIATION": "PASS",
+    "M4_2_EXCLUSIVE_REFERENCE": ["aota_forge/core/authority.py", "aota_forge/core/capability_lease.py", "aota_forge/core/authorization.py"],
+    "M4_4_EXCLUSIVE_REFERENCE": ["aota_forge/core/context.py", "aota_forge/core/contracts/descriptor.py", "aota_forge/core/contracts/results.py", "aota_forge/core/contracts/validation.py", "aota_forge/core/transaction.py", "aota_forge/core/transitions.py", "aota_forge/core/project/resolver.py"]
+  }
+}

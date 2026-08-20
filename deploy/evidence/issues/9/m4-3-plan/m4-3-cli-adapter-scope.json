@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 CLI adapter scope",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "current_cli": {
+    "path": "aota_forge/cli/__main__.py",
+    "implemented_commands": ["project resolve", "git inspect", "runtime status", "host status", "operations list"],
+    "all_current_commands_are_read_only": true,
+    "current_route": "CLI -> aota_forge.core.ingress.execute"
+  },
+  "write_command_surface": {
+    "currently_exposed": [],
+    "future_allowed_commands": [
+      {"command": "aota plan init", "operation": "plan_init", "route": "execute_mutation", "semantic_boundary": "requires exact external Project Binding"},
+      {"command": "aota plan retire", "operation": "plan_retirement", "route": "execute_mutation", "semantic_boundary": "requires exact snapshot, retirement_kind, and exact successor when superseded"}
+    ],
+    "candidate_discovery": "read-only Core lifecycle evidence; never bundled with an implicit write or used to select a candidate",
+    "generic_mutate_command": false,
+    "direct_transition_calls": false
+  },
+  "m4_3_scope": {
+    "cli_source_changes_in_this_plan": false,
+    "cli_is_exclusive_entrypoint": false,
+    "cli_is_plan_authority": false,
+    "cli_semantic_reasoning": false,
+    "cli_must_call_same_internal_write_ingress": true,
+    "cli_may_project_exit_codes": true,
+    "cli_may_project_human_or_json_output": true
+  },
+  "input_boundary": {
+    "model_facing_flags_may_contain": ["semantic intent values", "explicit retirement kind", "bounded logical resource references where an accepted descriptor permits them"],
+    "model_facing_flags_may_not_contain": ["CapabilityLease", "TrustedContext assertion", "raw internal IDs", "raw filesystem paths", "contract hash assertion", "Subject revision assertion", "authority evidence"],
+    "typed_internal_request_construction": "trusted adapter/runtime boundary only"
+  },
+  "downstream_note": "CLI write exposure is a thin adapter/integration concern and remains unimplemented until the M4-3 plan is accepted and the later CLI/Core convergence lane is authorized."
+}

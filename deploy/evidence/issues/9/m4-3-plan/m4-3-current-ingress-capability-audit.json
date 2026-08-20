@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 current ingress capability audit",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "current_status": "m4_3_ready_for_planning",
+  "current_capabilities": [
+    {
+      "component": "aota_forge/core/ingress.py:execute",
+      "capability": "Canonical read-only routing through descriptor lookup, read-only gate, input validation, ContextResolver, handler invocation, and result normalization.",
+      "limit": "WRITE_ONLY descriptors are rejected before validation or handler execution.",
+      "classification": "EXTEND_IN_M4_3",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/catalog.py",
+      "capability": "Registers five M2 read-only descriptors through the canonical registry compatibility shim.",
+      "limit": "PLAN_INIT_DESCRIPTOR and PLAN_RETIREMENT_DESCRIPTOR exist but are not registered as executable ingress operations.",
+      "classification": "EXTEND_IN_M4_3",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/handlers.py",
+      "capability": "Binds the five read-only handlers lazily and deterministically.",
+      "limit": "No lifecycle handler is bound to the canonical registry.",
+      "classification": "EXTEND_IN_M4_3",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/authorization.py:CapabilityLeaseIssuer",
+      "capability": "Validates already-materialized trusted authorization and issues exact bounded leases without semantic decisions or writes.",
+      "limit": "M4-3 must consume the issued lease; it must not reimplement or relocate issuance.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/transitions.py:plan_init and retire_plan",
+      "capability": "Provides typed lifecycle requests, Project Binding checks, bounded retirement snapshots, predecessor checks, and isolated SubjectTransaction dispatch.",
+      "limit": "The functions are directly callable only and explicitly state that M4-4 consumes a lease but does not issue one.",
+      "classification": "CONSUME_AS_IS",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/transaction.py:TransactionStore",
+      "capability": "Provides an isolated in-memory transaction fixture with Subject CAS, idempotency, and transaction-local lease consumption.",
+      "limit": "It is non-authoritative test storage and cannot be presented as a production graph writer.",
+      "classification": "CONSUME_AS_FIXTURE_ONLY",
+      "production_behavior_claimed": false
+    },
+    {
+      "component": "aota_forge/core/contracts/results.py",
+      "capability": "Projects LifecycleResult and MutationResult into canonical envelopes while preserving effect and confirmation state.",
+      "limit": "No ingress dispatch currently calls the lifecycle result projection.",
+      "classification": "REUSE_AS_IS",
+      "production_behavior_claimed": false
+    }
+  ],
+  "exact_gaps": [
+    "Register the two accepted lifecycle descriptors without changing their contract semantics.",
+    "Bind exactly one ingress handler for each accepted lifecycle operation.",
+    "Add a typed internal write ingress request boundary that does not duplicate the existing lifecycle request models.",
+    "Verify the received CapabilityLease against actual request bindings before the lifecycle handler runs.",
+    "Dispatch only plan_init and plan_retirement to the existing M4-4 transition functions.",
+    "Project authorization and lifecycle failures through the existing canonical result/error envelope.",
+    "Preserve the read-only execute path and keep all external authority and durable journal work downstream."
+  ],
+  "accepted_inputs": [
+    "M4-1 MutationIntent, OperationContractDescriptor, and CanonicalMutationResult contracts",
+    "M4-2 TrustedMutationAuthorization and CapabilityLease issuance/validation protocol",
+    "M4-4 PlanInitRequest, PlanRetirementRequest, Project Binding, and retirement snapshot contracts",
+    "M4-2/M4-4 integrated repaired source checkpoint 16826b551b62f4874bfc6ec734cb571cb3d9dc6d"
+  ],
+  "invariants_to_preserve": [
+    "M4_3_EXECUTION_AUTHORIZED=no",
+    "M4_3_SOURCE_IMPLEMENTATION_AUTHORIZED=no",
+    "LEASE_ISSUER_IS_SEMANTIC_DECISION_MAKER=no",
+    "CAPABILITY_LEASE_IS_DURABLE_SEMANTIC_AUTHORITY=no",
+    "CORE_SELECTS_PROJECT_UNDER_AMBIGUITY=no",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no",
+    "PRODUCTION_GRAPH_AUTHORITY_ACTIVE=no",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED=no"
+  ]
+}

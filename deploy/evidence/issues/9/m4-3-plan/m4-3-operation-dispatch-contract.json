@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 operation registration and dispatch contract",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "canonical_operations": [
+    {
+      "operation": "plan_init",
+      "descriptor_source": "aota_forge/core/contracts/descriptor.py:PLAN_INIT_DESCRIPTOR",
+      "read_write": "write",
+      "contract_hash_source": "PLAN_INIT_DESCRIPTOR.contract_hash()",
+      "current_contract_hash": "4c23e2ca954773f33f5f9fc4ef119e8bfba8108c3ca5424a11337d707aade981",
+      "handler_symbol": "aota_forge/core/handlers.py:_handle_plan_init_mutation",
+      "dispatch_target": "aota_forge/core/transitions.py:plan_init"
+    },
+    {
+      "operation": "plan_retirement",
+      "descriptor_source": "aota_forge/core/contracts/descriptor.py:PLAN_RETIREMENT_DESCRIPTOR",
+      "read_write": "write",
+      "contract_hash_source": "PLAN_RETIREMENT_DESCRIPTOR.contract_hash()",
+      "current_contract_hash": "ff8c7a76237c5fe15631fd73b6900a292278ccac9c5cac23af82a5b88538252a",
+      "handler_symbol": "aota_forge/core/handlers.py:_handle_plan_retirement_mutation",
+      "dispatch_target": "aota_forge/core/transitions.py:retire_plan"
+    }
+  ],
+  "registration_owner": {
+    "path": "aota_forge/core/catalog.py",
+    "rule": "Register LIFECYCLE_DESCRIPTORS in the canonical HandlerRegistry exactly once; preserve the five existing read descriptors and avoid the legacy read-only OperationContract conversion for lifecycle descriptors.",
+    "descriptor_registration_executes_handler": false,
+    "duplicate_registration": "fail closed"
+  },
+  "handler_owner": {
+    "path": "aota_forge/core/handlers.py",
+    "rule": "Add only thin lifecycle handler bindings and keep all existing read-only handlers unchanged.",
+    "handler_binding": "lazy, deterministic, and idempotent through ensure_handlers_bound",
+    "handler_receives": "typed MutationIngressRequest",
+    "handler_may_not": ["select a project", "select a Subject", "issue a lease", "write an external authority", "interpret semantic intent"]
+  },
+  "write_entry_point": {
+    "path": "aota_forge/core/ingress.py",
+    "symbol": "execute_mutation",
+    "relationship_to_read_path": "The existing execute function remains read-only and unchanged in routing semantics; execute_mutation is the write-capable variant of the same canonical ingress boundary.",
+    "lookup_order": [
+      "resolve descriptor by operation",
+      "reject missing descriptor",
+      "reject read-only descriptor on the write entry point",
+      "validate typed envelope and operation-specific payload",
+      "verify trusted principal and exact lease bindings",
+      "invoke the registered lifecycle handler",
+      "project LifecycleResult or canonical failure"
+    ]
+  },
+  "adapter_rule": "CLI, Hermes, and future adapters may construct an internal typed request but must call execute_mutation; none may call plan_init or retire_plan directly.",
+  "generic_mutation_api": "forbidden; the dispatch set is an explicit closed set of accepted lifecycle operations"
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 retirement ingress path",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLANNING",
+  "expected_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "planning_only": true,
+  "production_behavior_claimed": false,
+  "source_implementation_authorized": false,
+  "operation": "plan_retirement",
+  "request_type": "PlanRetirementRequest",
+  "transition": "initialized -> cancelled|superseded",
+  "two_stage_boundary": {
+    "stage_one": "resolve_retirement_candidates or capture_retirement_snapshot; read-only bounded candidate evidence; no lease issuance and no mutation",
+    "stage_two": "exact snapshot plus explicit retirement_kind and optional exact successor enters execute_mutation",
+    "candidate_discovery_is_write": false,
+    "ingress_selects_candidate": false
+  },
+  "pre_dispatch_checks": [
+    "operation is exactly plan_retirement",
+    "descriptor is PLAN_RETIREMENT_DESCRIPTOR and read_write is write",
+    "payload is PlanRetirementRequest",
+    "plan_ref and snapshot identify the same exact Plan Subject",
+    "intent operation and logical target match plan_retirement and plan_ref",
+    "retirement_kind is explicit and is abandoned or superseded",
+    "successor_ref is exact, non-self, and present in the selected snapshot when superseded",
+    "trusted_context, MutationPreconditions, and CapabilityLease are present",
+    "CapabilityLease validates against the actual request before the transition"
+  ],
+  "dispatch_steps": [
+    "derive the descriptor contract hash and intent fingerprint",
+    "validate the lease using the actual snapshot revision and authority preconditions",
+    "invoke retire_plan(store, request) without refreshing or replacing the selected snapshot",
+    "return lifecycle_envelope(result)"
+  ],
+  "selection_rules": {
+    "zero_candidates": "RETIREMENT_NO_CANDIDATE; no effect",
+    "one_candidate": "present exact candidate but still require explicit retirement_kind",
+    "many_candidates": "RETIREMENT_NEEDS_SEMANTIC_CHOICE; no effect",
+    "forbidden_selection": ["newest", "latest", "first", "similarity", "timestamp proximity", "path proximity", "stale current pointer"],
+    "silent_snapshot_refresh": false
+  },
+  "retirement_rules": {
+    "abandoned": {"resulting_state": "cancelled", "successor_required": false, "deletion": false},
+    "superseded": {"resulting_state": "superseded", "successor_required": true, "successor_must_not_equal_target": true, "heuristic_successor": false},
+    "active_current_protection": "fail closed",
+    "running_task_protection": "fail closed",
+    "stale_snapshot": "RETIREMENT_STALE_SNAPSHOT with no effect",
+    "changed_authority_precondition": "RETIREMENT_STALE_AUTHORITY_PRECONDITION with no effect",
+    "implicit_resurrection": false
+  },
+  "forbidden_shortcuts": [
+    "choose a candidate in ingress",
+    "invent retirement_kind",
+    "invent successor_ref",
+    "reuse a lease after unknown outcome",
+    "call a Portable Plan writer",
+    "route around the ingress to retire_plan"
+  ]
+}
