@@ -1,0 +1,24 @@
+{
+  "atomicity": "per_journal_record_compare_and_set_on_revision_and_state",
+  "backend_authority_source": "Issue #9 M4-0 D5 storage_engine_prescribed=no + M4-5 journal contract",
+  "durability_guarantee": "write PREPARED close_reopen persists; write APPLYING close_reopen persists; J10 nonterminal_after_terminal",
+  "durable_storage_contract": "storage_neutral_port_with_atomic_CAS_and_required_durability_semantics",
+  "file_backed_reference_adapter_global_runtime_wiring_count": 0,
+  "file_backed_reference_adapter_implemented": "yes",
+  "file_backed_reference_adapter_is_production_default": "no",
+  "file_backed_reference_adapter_role": "reference/test durability implementation only",
+  "isolation": "per_journal locking; no global lock",
+  "m4_7_production_storage_engine_frozen": "no",
+  "operations": [
+    "create_prepared",
+    "cas_transition",
+    "get",
+    "scan_requiring_recovery",
+    "scan_nonterminal"
+  ],
+  "production_storage_engine_frozen_by_m4_7_source": "no",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "storage_neutral_port": "DurableJournalStore",
+  "verification": "PASS"
+}

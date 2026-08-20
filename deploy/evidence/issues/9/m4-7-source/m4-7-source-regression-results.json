@@ -1,0 +1,35 @@
+{
+  "current_full_suite_pass_count": 88,
+  "current_full_suite_total_count": 92,
+  "current_semantic_invariant_failure_count": 0,
+  "historical_debt_preserved": [
+    "i5 NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i8 NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i9 NON_ACCEPTANCE_FIXTURE_DEBT",
+    "i12 NON_ACCEPTANCE_FIXTURE_DEBT"
+  ],
+  "m4_2_current_semantic_regression": "PASS",
+  "m4_2_m4_4_integration_regression": "PASS - 4 known fixture debt i5/i8/i9/i12 non-blocking remains",
+  "m4_3_current_semantic_regression": "PASS",
+  "m4_3_tests": {
+    "passed": 17,
+    "result": "PASS",
+    "total": 17
+  },
+  "m4_4_current_semantic_regression": "PASS",
+  "m4_5_current_semantic_regression": "PASS",
+  "m4_5_tests": {
+    "passed": 23,
+    "result": "PASS",
+    "total": 23
+  },
+  "m4_7_tests": {
+    "passed": 33,
+    "result": "PASS",
+    "total": 33
+  },
+  "new_full_suite_failure_count": 0,
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "verification": "PASS"
+}

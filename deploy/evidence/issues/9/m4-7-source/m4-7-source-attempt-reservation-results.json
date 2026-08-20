@@ -1,0 +1,24 @@
+{
+  "at_most_one_attempt_durable_implementation": "PASS",
+  "duplicate_executor_cases": [
+    "two workers see PREPARED - one wins",
+    "loser performs zero external attempts",
+    "winner dies after APPLYING - second observes APPLYING",
+    "two recovery workers race - CAS conflict deterministic"
+  ],
+  "in_memory_lock_is_sole_attempt_authority": "no",
+  "project_id": "aota_forge",
+  "reservation_semantics": {
+    "claim_flow": [
+      "read journal",
+      "CAS PREPARED->APPLYING",
+      "winner persists APPLYING",
+      "only winner calls mutate",
+      "loser observes AlreadyApplying and exits"
+    ],
+    "eligibility_rule": "only APPLYING with durable PREPARED and durable APPLYING may invoke port.mutate",
+    "reservation_identity": "attempt_id bounded safe identifier"
+  },
+  "schema_version": 1,
+  "verification": "PASS"
+}

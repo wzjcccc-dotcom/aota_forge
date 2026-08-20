@@ -1,0 +1,42 @@
+{
+  "deterministic_close_reopen_adapter": "FileBackedDurableJournalStore with atomic JSON persist and per-record CAS",
+  "file_backed_reference_adapter_global_runtime_wiring_count": 0,
+  "file_backed_reference_adapter_implemented": "yes",
+  "file_backed_reference_adapter_is_production_default": "no",
+  "in_memory_only_durability_test": "no",
+  "process_restart_durability_test": "PASS",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "tests": [
+    {
+      "given": "create PREPARED",
+      "name": "PREPARED survives reopen",
+      "result": "PASS",
+      "then": "state preserved PREPARED",
+      "when": "close store, reopen"
+    },
+    {
+      "given": "create APPLYING",
+      "name": "APPLYING survives reopen",
+      "result": "PASS",
+      "then": "state preserved APPLYING",
+      "when": "close reopen"
+    },
+    {
+      "given": "create terminal VERIFIED_RECOVERED",
+      "name": "terminal survives reopen",
+      "result": "PASS",
+      "then": "terminal preserved",
+      "when": "close reopen"
+    },
+    {
+      "given": "terminal record",
+      "name": "terminal not rediscovered after reopen",
+      "result": "PASS",
+      "then": "not returned",
+      "when": "scan after reopen"
+    }
+  ],
+  "use_isolated_temporary_test_paths": true,
+  "verification": "PASS"
+}

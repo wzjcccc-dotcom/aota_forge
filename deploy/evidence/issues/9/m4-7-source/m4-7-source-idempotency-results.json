@@ -1,0 +1,18 @@
+{
+  "conflict_rule": "same idempotency_key + authorization drift -> CONFLICT fail closed",
+  "durable_idempotency_implementation": "PASS",
+  "idempotency_key_alone_is_durable_semantic_identity": "no",
+  "opaque_identifier_semantic_authority_count": 0,
+  "preserves_m4_3_complete_identity": "yes",
+  "project_id": "aota_forge",
+  "replay_rule": "same idempotency_key + same complete semantics -> replay committed terminal",
+  "same_key_changed_authorization_durable_replay_allowed": "no",
+  "schema_version": 1,
+  "test_results": {
+    "journal_id_not_authority": "PASS",
+    "opaque_not_authority": "PASS",
+    "same_key_changed_principal_conflict": "PASS",
+    "same_key_same_identity_stable": "PASS"
+  },
+  "verification": "PASS"
+}

@@ -1,0 +1,99 @@
+{
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "blocking_finding_count": 0,
+  "construction_time_semantic_decision_count": 0,
+  "contracts_implemented": [
+    "DURABLE_JOURNAL_STORE_PORT_IMPLEMENTED",
+    "DURABLE_JOURNAL_TRANSITION_CAS_IMPLEMENTED",
+    "AT_MOST_ONE_ATTEMPT_DURABLE_IMPLEMENTATION",
+    "RECOVERY_DISCOVERY_IMPLEMENTED",
+    "RECONCILIATION_EXECUTION_IMPLEMENTED",
+    "FRESH_AUTHORIZATION_REBIND_IMPLEMENTED",
+    "J10_DEDICATED_EXECUTION_IMPLEMENTED"
+  ],
+  "durable_journal_store_port_implemented": "yes",
+  "file_backed_implementation_role": "reference_adapter",
+  "file_backed_reference_adapter_global_runtime_wiring_count": 0,
+  "file_backed_reference_adapter_implemented": "yes",
+  "file_backed_reference_adapter_is_production_default": "no",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "implementation_dag_followed": "yes",
+  "implementation_slice_count": 7,
+  "implementation_slice_pass_count": 7,
+  "journal_state_redefinition_count": 0,
+  "m4_5_journal_state_reuse_implemented": "yes",
+  "milestone": "M4",
+  "non_blocking_finding_count": 0,
+  "plan_known_good_checkpoint": "fc9b26f9c93768c8a430773668ae1ae61619af49",
+  "plan_review_evidence_sha": "0c66371e74d62133f54adc3df3ddef358cc3d8cf",
+  "plan_sha_used_as_source_base": "no",
+  "production_storage_engine_frozen_by_m4_7_source": "no",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "slices": [
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/store.py",
+        "aota_forge/core/journal/__init__.py"
+      ],
+      "objective": "Define durable journal schema mapping and store port",
+      "result": "PASS",
+      "slice_id": "M4-7-S1"
+    },
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/store.py"
+      ],
+      "objective": "Implement per-journal atomic CAS",
+      "result": "PASS",
+      "slice_id": "M4-7-S2"
+    },
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/store.py",
+        "aota_forge/core/journal/executor.py"
+      ],
+      "objective": "Implement external-attempt reservation durability",
+      "result": "PASS",
+      "slice_id": "M4-7-S3"
+    },
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/recovery.py"
+      ],
+      "objective": "Implement recovery discovery scanner",
+      "result": "PASS",
+      "slice_id": "M4-7-S4"
+    },
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/executor.py"
+      ],
+      "objective": "Implement reconciliation execution",
+      "result": "PASS",
+      "slice_id": "M4-7-S5"
+    },
+    {
+      "authorized_paths": [
+        "aota_forge/core/journal/executor.py",
+        "aota_forge/core/journal/retry_handoff.py"
+      ],
+      "objective": "Implement retry/fresh-authorization handoff",
+      "result": "PASS",
+      "slice_id": "M4-7-S6"
+    },
+    {
+      "authorized_paths": [
+        "tests/test_m4_7_durable_journal.py",
+        "tests/test_m4_7_recovery.py",
+        "aota_forge/adapters/plan_authority/fake_port.py"
+      ],
+      "objective": "Wire durability across close/reopen and failure injection",
+      "result": "PASS",
+      "slice_id": "M4-7-S7"
+    }
+  ],
+  "source_base_sha_verified": "yes",
+  "title": "Durable External Mutation Journal + Reconciliation / Recovery",
+  "work_item": "M4-7-SOURCE-IMPLEMENTATION"
+}

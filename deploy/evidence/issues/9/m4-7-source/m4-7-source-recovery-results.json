@@ -1,0 +1,44 @@
+{
+  "classification_paths": {
+    "candidate_observed": "VERIFIED_RECOVERED",
+    "original_observed": "RETRYABLE_NO_EFFECT",
+    "third_state": "CONFLICT"
+  },
+  "classifier_reuse": "M4-5 classify_three_way invoked via port verify",
+  "discovery_trigger": [
+    "process_restart",
+    "store_reopen",
+    "explicit_scan"
+  ],
+  "eligible_states": [
+    "PREPARED",
+    "APPLYING",
+    "OUTCOME_UNKNOWN",
+    "RECONCILING"
+  ],
+  "heuristic_reconciliation_allowed": "no",
+  "is_daemon": false,
+  "ordering": "deterministic by journal_id lexicographic then created_at",
+  "project_id": "aota_forge",
+  "reconciliation_execution_implemented": "PASS",
+  "recovery_discovery_implemented": "PASS",
+  "recovery_executor_implemented": "yes",
+  "recovery_executor_is_semantic_decision_maker": "no",
+  "schema_version": 1,
+  "terminal_state_reprocessing_allowed": "no",
+  "terminal_states_never_scanned": [
+    "VERIFIED",
+    "VERIFIED_RECOVERED",
+    "FAILED_NO_EFFECT",
+    "RETRYABLE_NO_EFFECT",
+    "CONFLICT"
+  ],
+  "test_results": {
+    "candidate_observed_verifies": "PASS",
+    "original_observed_retryable": "PASS",
+    "recover_one_idempotent": "PASS",
+    "terminal_not_rediscovered": "PASS",
+    "third_state_conflict": "PASS"
+  },
+  "verification": "PASS"
+}

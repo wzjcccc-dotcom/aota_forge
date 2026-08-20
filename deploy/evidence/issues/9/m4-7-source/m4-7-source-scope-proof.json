@@ -1,0 +1,58 @@
+{
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "all_production_source_writes_within_accepted_m4_7_scope": "yes",
+  "changed_files": [
+    "aota_forge/core/journal/__init__.py",
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/retry_handoff.py",
+    "tests/test_m4_7_durable_journal.py",
+    "tests/test_m4_7_recovery.py",
+    "scripts/m4_7_source_guard.py"
+  ],
+  "m4_6_exclusive_path_write_count": 0,
+  "m4_7_exact_source_ownership_list_read": "yes",
+  "m4_7_exclusive_write_paths": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/retry_handoff.py",
+    "tests/test_m4_7_durable_journal.py",
+    "tests/test_m4_7_recovery.py"
+  ],
+  "m4_7_forbidden_path_write_count": 0,
+  "m4_7_forbidden_paths": [
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/github_comment.py",
+    "aota_forge/cli/*",
+    "aota_forge/core/runtime/*",
+    "aota_forge/core/git/* generic write API",
+    "deploy/evidence/issues/9/m4-6-plan/*",
+    "deploy/evidence/issues/9/m4-5-plan/* modification",
+    ".aota-worktrees/*",
+    "aota_forge/core/graph/** production graph write",
+    "scripts/m4_6_github_guard.py",
+    "tests/test_m4_6_*",
+    "aota_forge/core/journal/model.py redefinition"
+  ],
+  "m4_7_integration_only_paths": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/authority.py"
+  ],
+  "m4_7_shared_read_only_path_write_count": 0,
+  "m4_7_shared_read_only_paths": [
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/retry.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/fake_port.py"
+  ],
+  "m4_7_source_ownership_ambiguity": "no",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "verification": "PASS"
+}
