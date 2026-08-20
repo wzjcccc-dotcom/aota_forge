@@ -1,0 +1,77 @@
+{
+  "accepted_writable_base": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "artifact": "Issue #9 M4-3 R1 bounded repair: authorization-bound idempotency identity",
+  "complete_identity": {
+    "ARBITRARY_AUTHORIZATION_IDENTIFIER_IS_SEMANTIC_AUTHORITY": "no",
+    "ARBITRARY_RESERVATION_IDENTIFIER_IS_SEMANTIC_AUTHORITY": "no",
+    "IDEMPOTENCY_IDENTITY_BINDINGS_COPIED_FROM_LEASE": "no",
+    "IDEMPOTENCY_IDENTITY_DERIVED_FROM_ACTUAL_MUTATION_CONTEXT": "yes",
+    "derived_from": "actual typed MutationIngressRequest and its PlanInitRequest/PlanRetirementRequest fields validated against lease, not copied from lease",
+    "implementation_location": "aota_forge/core/handlers.py:_plan_init_complete_identity and _retirement_complete_identity, with per-store auxiliary map _m43_complete_idempotency",
+    "preserves_lifecycle_fingerprint_semantics": true
+  },
+  "design_rule": {
+    "MUTATION_INTENT_SEMANTICS_PRESERVED": "yes",
+    "canonical_helper": "aota_forge/core/idempotency.py:canonical_fingerprint",
+    "intent_fingerprint_stuffed_with_authorization": false,
+    "preferred_architecture": "idempotency_key + canonical mutation semantic fingerprint / binding identity derived from actual mutation context and accepted authorization bindings",
+    "terminology_source": "M4-3 authorization composition contract exact_binding_fields"
+  },
+  "exact_m4_3_source_ownership_read": "yes",
+  "failed_r1_idempotency_authorization_drift_reproduced": "yes",
+  "failed_review_evidence_read": "PASS",
+  "failed_review_evidence_sha": "ecb40824879b5c91331a24357db4da92080e9a95",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "plan_checkpoint": "5842a51527c9941d8577efc157109f68b1ae0325",
+  "project_id": "aota_forge",
+  "read_before_write": "PASS",
+  "repair_action": {
+    "M4_2_AUTHORITY_VALIDATION_WEAKENED": "no",
+    "M4_2_LEASE_BINDING_CHECK_REMOVED": "no",
+    "M4_2_SOURCE_NEW_EDIT_COUNT": 0,
+    "exclusive_paths_modified": [
+      "aota_forge/core/handlers.py",
+      "scripts/m4_3_source_guard.py",
+      "tests/test_m4_3_write_ingress.py"
+    ],
+    "forbidden_paths_modified": 0
+  },
+  "repair_base_sha": "88c07fbe45901c974c81eb2313459dc23e307de6",
+  "reproduction": {
+    "changed_binding": "external_authority_precondition",
+    "first_result": "PLAN_INIT_APPLIED",
+    "idempotency_key": "repro-key-drift",
+    "second_effect_after": "CONFLICT",
+    "second_effect_before": "REPLAYED_VERIFIED",
+    "second_result_after_fix": "CONFLICT",
+    "second_result_before_fix": "PLAN_INIT_REPLAYED",
+    "used_genuine_lease": true
+  },
+  "root_cause_audit": {
+    "AUTHORIZATION_BINDINGS_INCLUDED_IN_CURRENT_IDENTITY": "no - before fix only operation, target, principal, intent_fingerprint were checked",
+    "CURRENT_INTENT_FINGERPRINT_ROLE": "Hashes only semantic intent (operation, semantic_inputs, logical_target, mutation_scope) excluding all authorization-bound fields",
+    "IDEMPOTENCY_ROOT_CAUSE_AUDIT": "PASS",
+    "INGRESS_IDEMPOTENCY_KEY_SOURCE": "MutationIntent.idempotency_key via MutationIngressRequest.intent.idempotency_key",
+    "INTENT_FINGERPRINT_EQUALS_COMPLETE_IDEMPOTENCY_IDENTITY": "no",
+    "LIFECYCLE_REPLAY_COMPARISON_SITE": "aota_forge/core/transitions.py:_request_identity_result (plan_init:534, retire_plan:1441) calling store.lifecycle_idempotency_lookup with fingerprint=intent_fingerprint()",
+    "MUTATION_SEMANTIC_IDENTITY_SOURCE": "MutationIntent.intent_fingerprint() (semantic_inputs, logical_target, mutation_scope, operation) + descriptor contract_hash + MutationPreconditions + external_authority_precondition + normalized_plan_digest",
+    "SUBJECT_TRANSACTION_IDEMPOTENCY_IDENTITY": "aota_forge/core/transaction.py:TransactionStore.lifecycle_idempotency_lookup and SubjectTransaction._check_idempotency using IdempotencyRecord.fingerprint==intent_fingerprint"
+  },
+  "schema_version": 1,
+  "verification": {
+    "AUTHORIZATION_DRIFT_IDEMPOTENCY_MATRIX": "PASS",
+    "CONFLICT_SECOND_EFFECT_COUNT": 0,
+    "IDEMPOTENCY_REPLAY_BYPASSES_AUTHORIZATION": "no",
+    "INTENT_DRIFT_CONFLICT": "PASS",
+    "OPERATION_DRIFT_CONFLICT": "PASS",
+    "PLAN_INIT_IDEMPOTENCY_BINDING": "PASS",
+    "PLAN_RETIREMENT_IDEMPOTENCY_BINDING": "PASS",
+    "REPLAY_DUPLICATE_EFFECT_COUNT": 0,
+    "SAME_KEY_CHANGED_AUTHORIZATION_BINDING_CONFLICT": "PASS",
+    "SAME_KEY_SAME_SEMANTICS_REPLAY": "PASS",
+    "SCOPE_DRIFT_CONFLICT": "PASS",
+    "TARGET_DRIFT_CONFLICT": "PASS"
+  },
+  "work_item": "M4-3-SOURCE-R1-REPAIR"
+}

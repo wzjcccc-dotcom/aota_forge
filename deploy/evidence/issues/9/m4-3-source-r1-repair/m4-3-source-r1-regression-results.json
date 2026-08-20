@@ -1,0 +1,70 @@
+{
+  "CURRENT_SEMANTIC_INVARIANT_FAILURE_COUNT": 0,
+  "CURRENT_SEMANTIC_SUITE": {
+    "classification": "NON_ACCEPTANCE_FIXTURE_DEBT",
+    "command": "python3 -m unittest discover -s tests",
+    "fail_count": 4,
+    "known_failures": [
+      "test_i5_valid_authorization_and_plan_init_are_compatible",
+      "test_i8_abandoned_retirement_preserves_cancelled_semantics",
+      "test_i9_exact_successor_retirement_is_valid",
+      "test_i12_changed_intent_conflicts_on_same_idempotency_identity"
+    ],
+    "new_failures": 0,
+    "pass_count": 32,
+    "total_count": 36
+  },
+  "INDEPENDENT_REVIEW_PROBE": {
+    "idempotency_variants": {
+      "changed_authorization_binding": "CONFLICT (was PLAN_INIT_REPLAYED)",
+      "changed_intent": "CONFLICT",
+      "changed_operation": "CONFLICT",
+      "changed_target": "CONFLICT"
+    },
+    "lease_binding_rejection": "10/10 PASS",
+    "negative_cases": "20/20 PASS (previously 19/20, now fixed)",
+    "positive_cases": "3/3 PASS"
+  },
+  "M3_AUTHORITY_REGRESSION": "PASS_WITH_HISTORICAL_EXACT_BASE_GUARD_FINDING",
+  "M3_IDEMPOTENCY_REGRESSION": "PASS",
+  "M4_1_CONTRACT_REGRESSION": "PASS",
+  "M4_2_CURRENT_SEMANTIC_REGRESSION": "PASS_WITH_HISTORICAL_SCOPE_GUARD_FINDING",
+  "M4_2_M4_4_INTEGRATION_REGRESSION": "PASS",
+  "M4_3_FOCUSED_TESTS": {
+    "command": "python3 -m unittest tests.test_m4_3_write_ingress",
+    "new_tests": [
+      "test_plan_init_authorization_drift_same_key_conflicts",
+      "test_plan_init_same_key_same_semantics_replay_is_idempotent",
+      "test_plan_retirement_same_key_same_semantics_replay",
+      "test_plan_retirement_same_key_changed_authorization_conflicts",
+      "test_same_key_changed_target_and_operation_and_scope_conflict",
+      "test_conflict_and_replay_produce_no_duplicate_effects"
+    ],
+    "pass_count": 17,
+    "result": "PASS",
+    "test_count": 17
+  },
+  "M4_3_SOURCE_GUARD": {
+    "authorization_drift_case": true,
+    "check_count": 21,
+    "command": "python3 scripts/m4_3_source_guard.py",
+    "evidence_self_validation": false,
+    "pass_count": 21,
+    "real_behavioral_case": true,
+    "result": "PASS",
+    "tautological_validation": false,
+    "test_case_name_special_casing": false
+  },
+  "M4_4_CURRENT_SEMANTIC_REGRESSION": "PASS_WITH_SERIAL_SCOPE_GUARD_FINDING",
+  "NEW_FULL_SUITE_FAILURE_COUNT": 0,
+  "artifact": "Issue #9 M4-3 R1 regression results",
+  "candidate_sha_after_repair": "pending_commit",
+  "compile": "PASS",
+  "git_diff_check": "PASS",
+  "json_validation": "PASS",
+  "milestone": "M4",
+  "project_id": "aota_forge",
+  "repair_base": "88c07fbe45901c974c81eb2313459dc23e307de6",
+  "schema_version": 1,
+  "work_item": "M4-3-SOURCE-R1-REPAIR"
+}

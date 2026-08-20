@@ -1,0 +1,181 @@
+{
+  "IDEMPOTENCY_BINDING_MATRIX": "PASS",
+  "artifact": "Issue #9 M4-3 R1 idempotency binding matrix",
+  "canonical_helper": "aota_forge/core/idempotency.py:canonical_fingerprint",
+  "complete_identity_composition": "operation + target + principal + mutation_scope + contract_hash + intent_fingerprint + subject_expected_revision + external_authority_precondition + authority_source_revision + authority_observed_raw_digest + candidate_raw_digest + normalized_plan_digest (+ retirement extras)",
+  "fields": [
+    {
+      "CANONICAL_NORMALIZATION": "exact string literal plan_init|plan_retirement",
+      "CURRENTLY_INCLUDED": "yes via IdempotencyRecord.operation and composite",
+      "FIELD": "operation",
+      "REPAIR_ACTION": "retained, included in composite",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationIntent.operation + descriptor operation"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "ObjectRef.serialize() canonical",
+      "CURRENTLY_INCLUDED": "yes via IdempotencyRecord.target and composite",
+      "FIELD": "typed target",
+      "REPAIR_ACTION": "retained",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanInitRequest.plan_ref / PlanRetirementRequest.plan_ref as ObjectRef"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "canonicalize dict",
+      "CURRENTLY_INCLUDED": "yes via composite (mutation_scope dict)",
+      "FIELD": "scope",
+      "REPAIR_ACTION": "added to composite",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationIntent.mutation_scope"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "SHA-256 of canonical semantic dict",
+      "CURRENTLY_INCLUDED": "yes via IdempotencyRecord.fingerprint and composite",
+      "FIELD": "intent_fingerprint",
+      "REPAIR_ACTION": "retained",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationIntent.intent_fingerprint()"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "SHA-256 hex digest",
+      "CURRENTLY_INCLUDED": "no before, yes after via composite",
+      "FIELD": "contract_hash",
+      "REPAIR_ACTION": "added to composite",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PLAN_INIT_DESCRIPTOR.contract_hash() / PLAN_RETIREMENT_DESCRIPTOR.contract_hash()"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "int",
+      "CURRENTLY_INCLUDED": "no before, yes after via composite",
+      "FIELD": "subject_expected_revision",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationPreconditions.subject_expected_revision"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "bounded string",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "external_authority_precondition",
+      "REPAIR_ACTION": "added - primary blocker",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanInitRequest.external_authority_precondition"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "string|int",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "authority_source_revision",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationPreconditions.authority_source_revision"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "SHA-256 hex",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "authority_observed_raw_digest",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationPreconditions.authority_observed_raw_digest"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "SHA-256 hex",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "candidate_raw_digest",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "MutationPreconditions.candidate_raw_digest"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "SHA-256 hex",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "normalized_plan_digest",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanInitRequest.normalized_plan_digest"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "not used as opaque id; actual bindings above are used",
+      "CURRENTLY_INCLUDED": "no (opaque ids not used)",
+      "FIELD": "semantic authorization identity / Decision binding",
+      "REPAIR_ACTION": "not added as opaque id; bindings above cover semantics",
+      "SEMANTIC_IDENTITY_REQUIRED": false,
+      "SOURCE": "TrustedMutationAuthorization decision_basis/approval_basis digest (via lease)"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "string",
+      "CURRENTLY_INCLUDED": "yes via IdempotencyRecord.principal and composite",
+      "FIELD": "principal",
+      "REPAIR_ACTION": "retained",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "TrustedContext.principal.id"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "canonical dict",
+      "CURRENTLY_INCLUDED": "no before, yes after (for plan_init)",
+      "FIELD": "project_binding",
+      "REPAIR_ACTION": "added for completeness",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanInitRequest.project_binding.to_dict()"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "canonical_fingerprint",
+      "CURRENTLY_INCLUDED": "no before, yes after (for retirement)",
+      "FIELD": "snapshot_identity",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "RetirementCandidateSnapshot.snapshot_identity"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "literal abandoned|superseded",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "retirement_kind",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanRetirementRequest.retirement_kind"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "canonical ObjectRef",
+      "CURRENTLY_INCLUDED": "no before, yes after",
+      "FIELD": "successor_ref",
+      "REPAIR_ACTION": "added",
+      "SEMANTIC_IDENTITY_REQUIRED": true,
+      "SOURCE": "PlanRetirementRequest.successor_ref.serialize()"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "excluded (transient)",
+      "CURRENTLY_INCLUDED": "no",
+      "FIELD": "correlation_id",
+      "REPAIR_ACTION": "correctly excluded",
+      "SEMANTIC_IDENTITY_REQUIRED": false,
+      "SOURCE": "MutationIntent.correlation_id"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "excluded (transient)",
+      "CURRENTLY_INCLUDED": "no",
+      "FIELD": "trusted_time",
+      "REPAIR_ACTION": "correctly excluded",
+      "SEMANTIC_IDENTITY_REQUIRED": false,
+      "SOURCE": "PlanInitRequest.trusted_time"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "excluded (opaque id)",
+      "CURRENTLY_INCLUDED": "no",
+      "FIELD": "authorization_id",
+      "REPAIR_ACTION": "correctly excluded per ARBITRARY_AUTHORIZATION_IDENTIFIER_IS_SEMANTIC_AUTHORITY=no",
+      "SEMANTIC_IDENTITY_REQUIRED": false,
+      "SOURCE": "TrustedMutationAuthorization.authorization_id"
+    },
+    {
+      "CANONICAL_NORMALIZATION": "excluded (opaque id)",
+      "CURRENTLY_INCLUDED": "no",
+      "FIELD": "reservation_id",
+      "REPAIR_ACTION": "correctly excluded",
+      "SEMANTIC_IDENTITY_REQUIRED": false,
+      "SOURCE": "TrustedMutationAuthorization.reservation_ref"
+    }
+  ],
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "plan_checkpoint": "5842a51527c9941d8577efc157109f68b1ae0325",
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "transient_exclusions_verified": true
+}

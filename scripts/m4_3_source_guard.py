@@ -266,6 +266,157 @@ def _behavior_checks() -> None:
             not result["ok"] and result["error"]["code"] == "LEASE_TARGET_MISMATCH",
         )
 
+    with _lifecycle_fixture("m43-guard-auth-drift") as fixture:
+        from dataclasses import replace
+        from aota_forge.core.regression.fixtures import fixture_time
+
+        NOW = fixture_time()
+        authorization = _issue_authorization(fixture)
+        request = _bound_request(
+            _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+            authorization,
+        )
+        first = _run(fixture, request)
+        before_revision = fixture.store.current_revision(fixture.plan_ref).revision_number
+        changed_authorization = replace(
+            authorization.authorization,
+            external_authority_precondition="changed-authorization-binding",
+        )
+        changed_lease = authorization.issuer.issue(
+            changed_authorization,
+            PLAN_INIT_DESCRIPTOR,
+            intent=authorization.intent,
+            trusted_context=fixture.context,
+            now=NOW,
+            lease_id="m43-guard-auth-drift-lease",
+            attempt_id="m43-guard-auth-drift-attempt",
+        )
+        second_request = replace(
+            request,
+            lease=changed_lease,
+            external_authority_precondition=changed_authorization.external_authority_precondition,
+        )
+        second = _run(fixture, second_request)
+        after_revision = fixture.store.current_revision(fixture.plan_ref).revision_number
+        check(
+            "T5_SAME_KEY_CHANGED_AUTHORIZATION_CONFLICT",
+            first["ok"]
+            and first["lifecycle_code"] == "PLAN_INIT_APPLIED"
+            and first["mutation_effect"] == MutationEffect.APPLIED_VERIFIED.value
+            and not second["ok"]
+            and second["lifecycle_code"] == "CONFLICT"
+            and second["mutation_effect"] == MutationEffect.CONFLICT.value
+            and before_revision == 2
+            and after_revision == 2,
+            f"first={first.get('lifecycle_code')} second={second.get('lifecycle_code')} rev={after_revision}",
+        )
+        check(
+            "T5_NO_SECOND_EFFECT_ON_CONFLICT",
+            after_revision == 2,
+            f"revision={after_revision}",
+        )
+
+    with _lifecycle_fixture("m43-guard-replay") as fixture:
+        authorization = _issue_authorization(fixture)
+        request = _bound_request(
+            _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+            authorization,
+        )
+        first = _run(fixture, request)
+        second = _run(fixture, request)
+        check(
+            "T6_SAME_KEY_SAME_SEMANTICS_REPLAY",
+            first["lifecycle_code"] == "PLAN_INIT_APPLIED"
+            and second["lifecycle_code"] == "PLAN_INIT_REPLAYED"
+            and second["mutation_effect"] == MutationEffect.REPLAYED_VERIFIED.value
+            and fixture.store.current_revision(fixture.plan_ref).revision_number == 2,
+        )
+
+    with _lifecycle_fixture("m43-guard-retirement-replay", state="initialized") as fixture:
+        snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
+        intent = _make_intent(
+            "plan_retirement",
+            fixture.plan_ref,
+            "m43-guard-retirement-replay",
+            retirement_kind="abandoned",
+        )
+        authorization = _issue_authorization(
+            fixture,
+            descriptor=PLAN_RETIREMENT_DESCRIPTOR,
+            intent=intent,
+        )
+        req = _bound_request(
+            _retirement_request(
+                fixture,
+                snapshot,
+                intent=intent,
+                lease=authorization.lease,
+            ),
+            authorization,
+        )
+        first = _run(fixture, req)
+        second = _run(fixture, req)
+        check(
+            "T7_RETIREMENT_SAME_KEY_SAME_SEMANTICS_REPLAY",
+            first["lifecycle_code"] == "RETIREMENT_APPLIED"
+            and second["lifecycle_code"] == "RETIREMENT_REPLAYED"
+            and second["mutation_effect"] == MutationEffect.REPLAYED_VERIFIED.value,
+        )
+
+    with _lifecycle_fixture("m43-guard-retirement-auth-drift", state="initialized") as fixture:
+        from dataclasses import replace
+        from aota_forge.core.regression.fixtures import fixture_time
+
+        NOW = fixture_time()
+        snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
+        intent = _make_intent(
+            "plan_retirement",
+            fixture.plan_ref,
+            "m43-guard-retirement-auth-drift",
+            retirement_kind="abandoned",
+        )
+        authorization = _issue_authorization(
+            fixture,
+            descriptor=PLAN_RETIREMENT_DESCRIPTOR,
+            intent=intent,
+        )
+        req = _bound_request(
+            _retirement_request(
+                fixture,
+                snapshot,
+                intent=intent,
+                lease=authorization.lease,
+            ),
+            authorization,
+        )
+        first = _run(fixture, req)
+        changed_authorization = replace(
+            authorization.authorization,
+            external_authority_precondition="changed-retirement-auth",
+        )
+        changed_lease = authorization.issuer.issue(
+            changed_authorization,
+            PLAN_RETIREMENT_DESCRIPTOR,
+            intent=intent,
+            trusted_context=fixture.context,
+            now=NOW,
+            lease_id="m43-guard-retirement-drift-lease",
+            attempt_id="m43-guard-retirement-drift-attempt",
+        )
+        second_req = replace(
+            req,
+            lease=changed_lease,
+            external_authority_precondition=changed_authorization.external_authority_precondition,
+        )
+        second = _run(fixture, second_req)
+        check(
+            "T8_RETIREMENT_SAME_KEY_CHANGED_AUTHORIZATION_CONFLICT",
+            first["lifecycle_code"] == "RETIREMENT_APPLIED"
+            and second["lifecycle_code"] == "CONFLICT"
+            and second["mutation_effect"] == MutationEffect.CONFLICT.value,
+            f"first={first.get('lifecycle_code')} second={second.get('lifecycle_code')}",
+        )
+
     check(
         "M4_3_INVALID_ENVELOPE_FAILS_CLOSED",
         execute_mutation({})["error"]["code"] == "INPUT_TYPE_INVALID",

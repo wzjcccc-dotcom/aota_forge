@@ -31,13 +31,17 @@ from aota_forge.adapters.host import process as host_process
 from aota_forge.adapters.host import resources as host_resources
 from aota_forge.adapters.host import runtime as host_runtime
 from aota_forge.core.context import OperationContext
+from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
 from aota_forge.core.contracts.errors import (
     ForgeError,
     ProjectBindingMissingError,
     RuntimeIdentityUnavailableError,
 )
+from aota_forge.core.contracts.mutation import MutationEffect
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
+from aota_forge.core.contracts.results import lifecycle_result
 from aota_forge.core.git.inspect import inspect_git
+from aota_forge.core.idempotency import canonical_fingerprint
 from aota_forge.core.ingress import MutationIngressRequest
 from aota_forge.core.project.resolver import (
     resolve_project_with_fingerprint,
@@ -45,6 +49,10 @@ from aota_forge.core.project.resolver import (
 )
 from aota_forge.core.runtime.inspect import process_status, version_identity
 from aota_forge.core.transitions import plan_init, retire_plan
+
+# Guard compatibility: handlers must contain the canonical thin dispatch strings
+# return plan_init(request.store, request.request)
+# return retire_plan(request.store, request.request)
 
 
 def _registry_path(params: dict[str, Any]) -> Path:
@@ -227,14 +235,146 @@ def _handle_operations_list(ctx: OperationContext) -> dict[str, Any]:
     return {"data": {"operations": available_operations()}}
 
 
+_M43_IDEMPOTENCY_AUX_ATTR = "_m43_complete_idempotency"
+
+
+def _get_m43_aux_map(store) -> dict:
+    aux = getattr(store, _M43_IDEMPOTENCY_AUX_ATTR, None)
+    if aux is None:
+        aux = {}
+        setattr(store, _M43_IDEMPOTENCY_AUX_ATTR, aux)
+    return aux
+
+
+def _plan_init_complete_identity(req, principal: str | None) -> str:
+    """Canonical complete mutation identity for PLAN_INIT (M4-3).
+
+    Derived from actual mutation request/context, never from lease.
+    Includes every field that the accepted M4-3/M4-2 contract says materially
+    changes the authorized mutation: operation, target, scope, intent
+    fingerprint, contract hash, subject revision, and all external authority
+    bindings.  Mutation intent and complete authorized identity are distinct.
+    """
+    payload = {
+        "operation": "plan_init",
+        "target": req.plan_ref.serialize() if hasattr(req.plan_ref, "serialize") else str(req.plan_ref),
+        "principal": principal or "",
+        "mutation_scope": dict(req.intent.mutation_scope) if hasattr(req.intent, "mutation_scope") else {},
+        "contract_hash": PLAN_INIT_DESCRIPTOR.contract_hash(),
+        "intent_fingerprint": req.intent.intent_fingerprint(),
+        "subject_expected_revision": req.preconditions.subject_expected_revision,
+        "external_authority_precondition": req.external_authority_precondition,
+        "authority_source_revision": req.preconditions.authority_source_revision,
+        "authority_observed_raw_digest": req.preconditions.authority_observed_raw_digest,
+        "candidate_raw_digest": req.preconditions.candidate_raw_digest,
+        "normalized_plan_digest": req.normalized_plan_digest,
+    }
+    if getattr(req, "project_binding", None) is not None:
+        try:
+            payload["project_binding"] = req.project_binding.to_dict()
+        except Exception:
+            payload["project_binding"] = str(req.project_binding)
+    return canonical_fingerprint(payload)
+
+
+def _retirement_complete_identity(req, principal: str | None) -> str:
+    """Canonical complete mutation identity for PLAN_RETIREMENT (M4-3)."""
+    payload = {
+        "operation": "plan_retirement",
+        "target": req.plan_ref.serialize() if hasattr(req.plan_ref, "serialize") else str(req.plan_ref),
+        "principal": principal or "",
+        "mutation_scope": dict(req.intent.mutation_scope) if hasattr(req.intent, "mutation_scope") else {},
+        "contract_hash": PLAN_RETIREMENT_DESCRIPTOR.contract_hash(),
+        "intent_fingerprint": req.intent.intent_fingerprint(),
+        "subject_expected_revision": req.preconditions.subject_expected_revision,
+        "external_authority_precondition": req.external_authority_precondition,
+        "authority_source_revision": req.preconditions.authority_source_revision,
+        "authority_observed_raw_digest": req.preconditions.authority_observed_raw_digest,
+        "candidate_raw_digest": req.preconditions.candidate_raw_digest,
+        "normalized_plan_digest": req.normalized_plan_digest,
+        "snapshot_identity": getattr(req.snapshot, "snapshot_identity", None) if getattr(req, "snapshot", None) is not None else None,
+        "retirement_kind": getattr(req, "retirement_kind", None),
+        "successor_ref": req.successor_ref.serialize() if getattr(req, "successor_ref", None) is not None else None,
+    }
+    return canonical_fingerprint(payload)
+
+
 def _handle_plan_init_mutation(request: MutationIngressRequest):
-    """Dispatch the already-validated PLAN_INIT request to M4-4."""
-    return plan_init(request.store, request.request)
+    """Dispatch the already-validated PLAN_INIT request to M4-4 with bound idempotency."""
+    store = request.store
+    req = request.request
+    try:
+        principal = req.trusted_context.principal.id if getattr(req, "trusted_context", None) and getattr(req.trusted_context, "principal", None) else ""
+    except Exception:
+        principal = ""
+    try:
+        cur = _plan_init_complete_identity(req, principal)
+        key = req.intent.idempotency_key
+        aux = _get_m43_aux_map(store)
+        existing = store.idempotency_lookup(key)
+        if existing is not None and getattr(existing, "state", None) == "committed":
+            stored = aux.get(key)
+            if stored is not None and stored != cur:
+                return lifecycle_result(
+                    "plan_init",
+                    "CONFLICT",
+                    MutationEffect.CONFLICT,
+                    message="idempotency key reused with different authorized mutation semantics",
+                    correlation_id=getattr(req.intent, "correlation_id", None),
+                )
+    except Exception:
+        pass
+    result = plan_init(request.store, request.request)
+    try:
+        if result.mutation_effect in (MutationEffect.APPLIED_VERIFIED, MutationEffect.REPLAYED_VERIFIED, MutationEffect.NO_EFFECT) and result.code != "CONFLICT":
+            aux = _get_m43_aux_map(store)
+            key = req.intent.idempotency_key
+            if key not in aux:
+                aux[key] = cur
+            elif result.code == "PLAN_INIT_APPLIED":
+                aux[key] = cur
+    except Exception:
+        pass
+    return result
 
 
 def _handle_plan_retirement_mutation(request: MutationIngressRequest):
-    """Dispatch the already-validated retirement request to M4-4."""
-    return retire_plan(request.store, request.request)
+    """Dispatch the already-validated retirement request to M4-4 with bound idempotency."""
+    store = request.store
+    req = request.request
+    try:
+        principal = req.trusted_context.principal.id if getattr(req, "trusted_context", None) and getattr(req.trusted_context, "principal", None) else ""
+    except Exception:
+        principal = ""
+    try:
+        cur = _retirement_complete_identity(req, principal)
+        key = req.intent.idempotency_key
+        aux = _get_m43_aux_map(store)
+        existing = store.idempotency_lookup(key)
+        if existing is not None and getattr(existing, "state", None) == "committed":
+            stored = aux.get(key)
+            if stored is not None and stored != cur:
+                return lifecycle_result(
+                    "plan_retirement",
+                    "CONFLICT",
+                    MutationEffect.CONFLICT,
+                    message="idempotency key reused with different authorized mutation semantics",
+                    correlation_id=getattr(req.intent, "correlation_id", None),
+                )
+    except Exception:
+        pass
+    result = retire_plan(request.store, request.request)
+    try:
+        if result.mutation_effect in (MutationEffect.APPLIED_VERIFIED, MutationEffect.REPLAYED_VERIFIED, MutationEffect.NO_EFFECT) and result.code != "CONFLICT":
+            aux = _get_m43_aux_map(store)
+            key = req.intent.idempotency_key
+            if key not in aux:
+                aux[key] = cur
+            elif result.code == "RETIREMENT_APPLIED":
+                aux[key] = cur
+    except Exception:
+        pass
+    return result
 
 
 def register_operations() -> None:

@@ -152,6 +152,206 @@ class M43WriteIngressTests(unittest.TestCase):
             self.assertEqual(conflict["mutation_effect"], MutationEffect.CONFLICT.value)
             self.assertEqual(fixture.store.current_revision(fixture.plan_ref).revision_number, 2)
 
+    def test_plan_init_authorization_drift_same_key_conflicts(self):
+        # Same idempotency key + changed authorization binding must CONFLICT (not REPLAY)
+        from aota_forge.core.regression.fixtures import fixture_time
+
+        NOW = fixture_time()
+        drifts = (
+            ("external", lambda auth, pre: (replace(auth, external_authority_precondition="changed-external"), pre)),
+            ("source", lambda auth, pre: (replace(auth, authority_source_revision="8"), replace(pre, authority_source_revision="8"))),
+            ("observed", lambda auth, pre: (replace(auth, authority_observed_raw_digest="d" * 64), replace(pre, authority_observed_raw_digest="d" * 64))),
+            ("candidate", lambda auth, pre: (replace(auth, candidate_raw_digest="e" * 64), replace(pre, candidate_raw_digest="e" * 64))),
+            ("normalized", lambda auth, pre: (replace(auth, normalized_plan_digest="d" * 64), pre)),
+        )
+        for name, mutate in drifts:
+            with self.subTest(drift=name), _lifecycle_fixture(f"m43-auth-drift-{name}") as fixture:
+                authorization = _issue_authorization(fixture)
+                pre = authorization.lease  # placeholder
+                # Use the actual preconditions from _plan_init_request helper via fixture's default
+                from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR
+
+                request = _bound_request(
+                    _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                    authorization,
+                )
+                first = _run(fixture, request)
+                self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+                # Prepare drifted second request with same key but changed binding
+                base_pre = request.preconditions
+                changed_auth, changed_pre = mutate(authorization.authorization, base_pre)
+                changed_lease = authorization.issuer.issue(
+                    changed_auth,
+                    PLAN_INIT_DESCRIPTOR,
+                    intent=authorization.intent,
+                    trusted_context=fixture.context,
+                    now=NOW,
+                    lease_id=f"m43-drift-{name}-lease",
+                    attempt_id=f"m43-drift-{name}-attempt",
+                )
+                second_request = replace(
+                    request,
+                    preconditions=changed_pre,
+                    lease=changed_lease,
+                    external_authority_precondition=changed_auth.external_authority_precondition,
+                    normalized_plan_digest=changed_auth.normalized_plan_digest,
+                )
+                second = _run(fixture, second_request)
+                self.assertEqual(second["lifecycle_code"], "CONFLICT", f"drift {name} should conflict, got {second}")
+                self.assertEqual(second["mutation_effect"], MutationEffect.CONFLICT.value)
+                self.assertEqual(fixture.store.current_revision(fixture.plan_ref).revision_number, 2, "no second effect on conflict")
+
+    def test_plan_init_same_key_same_semantics_replay_is_idempotent(self):
+        with _lifecycle_fixture("m43-replay-same") as fixture:
+            authorization = _issue_authorization(fixture)
+            request = _bound_request(
+                _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            second = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+            self.assertEqual(second["lifecycle_code"], "PLAN_INIT_REPLAYED")
+            self.assertEqual(second["mutation_effect"], MutationEffect.REPLAYED_VERIFIED.value)
+            self.assertEqual(fixture.store.current_revision(fixture.plan_ref).revision_number, 2)
+
+    def test_plan_retirement_same_key_same_semantics_replay(self):
+        with _lifecycle_fixture("m43-retire-replay", state="initialized") as fixture:
+            snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
+            intent = _make_intent("plan_retirement", fixture.plan_ref, "m43-retire-replay-key", retirement_kind="abandoned")
+            authorization = _issue_authorization(fixture, descriptor=PLAN_RETIREMENT_DESCRIPTOR, intent=intent)
+            request = _bound_request(
+                _retirement_request(fixture, snapshot, intent=intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            second = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "RETIREMENT_APPLIED")
+            self.assertEqual(second["lifecycle_code"], "RETIREMENT_REPLAYED")
+            self.assertEqual(second["mutation_effect"], MutationEffect.REPLAYED_VERIFIED.value)
+
+    def test_plan_retirement_same_key_changed_authorization_conflicts(self):
+        from dataclasses import replace
+        from aota_forge.core.regression.fixtures import fixture_time
+
+        NOW = fixture_time()
+        with _lifecycle_fixture("m43-retire-drift", state="initialized") as fixture:
+            snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
+            intent = _make_intent("plan_retirement", fixture.plan_ref, "m43-retire-drift-key", retirement_kind="abandoned")
+            authorization = _issue_authorization(fixture, descriptor=PLAN_RETIREMENT_DESCRIPTOR, intent=intent)
+            request = _bound_request(
+                _retirement_request(fixture, snapshot, intent=intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "RETIREMENT_APPLIED")
+            changed_auth = replace(authorization.authorization, external_authority_precondition="changed-retire-auth")
+            changed_lease = authorization.issuer.issue(
+                changed_auth,
+                PLAN_RETIREMENT_DESCRIPTOR,
+                intent=intent,
+                trusted_context=fixture.context,
+                now=NOW,
+                lease_id="m43-retire-drift-lease",
+                attempt_id="m43-retire-drift-attempt",
+            )
+            second_request = replace(
+                request,
+                lease=changed_lease,
+                external_authority_precondition=changed_auth.external_authority_precondition,
+            )
+            second = _run(fixture, second_request)
+            self.assertEqual(second["lifecycle_code"], "CONFLICT")
+            self.assertEqual(second["mutation_effect"], MutationEffect.CONFLICT.value)
+            self.assertEqual(fixture.store.read_subject(fixture.plan_ref).mechanical_state["state"], "cancelled")
+
+    def test_same_key_changed_target_and_operation_and_scope_conflict(self):
+        # Target drift
+        with _lifecycle_fixture("m43-target-drift") as fixture:
+            authorization = _issue_authorization(fixture)
+            request = _bound_request(
+                _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+            other = _make_plan(fixture.store, "m43-target-drift-other")
+            changed_intent = _make_intent("plan_init", other, authorization.intent.idempotency_key, project_id="p1", requested_state="initialized")
+            changed_auth = _issue_authorization(fixture, intent=changed_intent, target=other)
+            second_req = _bound_request(
+                replace(request, plan_ref=other, intent=changed_intent, lease=changed_auth.lease),
+                changed_auth,
+            )
+            # Need to construct proper request with new target
+            second_req = replace(
+                _plan_init_request(fixture, intent=changed_intent, lease=changed_auth.lease),
+                plan_ref=other,
+            )
+            second_req = _bound_request(second_req, changed_auth)
+            # Use direct execute with other target
+            second = _run(fixture, second_req)
+            self.assertEqual(second["lifecycle_code"], "CONFLICT")
+
+        # Operation drift: same key but different operation (plan_retirement vs plan_init)
+        with _lifecycle_fixture("m43-op-drift") as fixture:
+            authorization = _issue_authorization(fixture)
+            request = _bound_request(
+                _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+            snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
+            retire_intent = _make_intent("plan_retirement", fixture.plan_ref, authorization.intent.idempotency_key, retirement_kind="abandoned")
+            retire_auth = _issue_authorization(fixture, descriptor=PLAN_RETIREMENT_DESCRIPTOR, intent=retire_intent)
+            retire_req = _bound_request(
+                _retirement_request(fixture, snapshot, intent=retire_intent, lease=retire_auth.lease),
+                retire_auth,
+            )
+            second = _run(fixture, retire_req)
+            self.assertEqual(second["lifecycle_code"], "CONFLICT")
+
+        # Scope drift
+        with _lifecycle_fixture("m43-scope-drift") as fixture:
+            authorization = _issue_authorization(fixture)
+            request = _bound_request(
+                _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+            changed_intent = replace(authorization.intent, mutation_scope={"mode": "different"})
+            # Same key, changed scope, reuse same lease (will fail scope validation, not replay)
+            second_req = replace(request, intent=changed_intent)
+            second = _run(fixture, second_req)
+            # Changed scope should be CONFLICT via idempotency or at least not replay
+            code = second.get("lifecycle_code") or second.get("error", {}).get("code")
+            self.assertIn(code, ("CONFLICT", "LEASE_SCOPE_MISMATCH", "AUTHORIZATION_SCOPE_MISMATCH"))
+            self.assertNotEqual(code, "PLAN_INIT_REPLAYED")
+
+    def test_conflict_and_replay_produce_no_duplicate_effects(self):
+        with _lifecycle_fixture("m43-no-dup") as fixture:
+            authorization = _issue_authorization(fixture)
+            request = _bound_request(
+                _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),
+                authorization,
+            )
+            first = _run(fixture, request)
+            replay = _run(fixture, request)
+            self.assertEqual(first["lifecycle_code"], "PLAN_INIT_APPLIED")
+            self.assertEqual(replay["lifecycle_code"], "PLAN_INIT_REPLAYED")
+            self.assertEqual(fixture.store.current_revision(fixture.plan_ref).revision_number, 2)
+            # Conflict should not advance revision
+            changed_intent = _make_intent("plan_init", fixture.plan_ref, authorization.intent.idempotency_key, project_id="other")
+            changed_auth = _issue_authorization(fixture, intent=changed_intent)
+            conflict_req = _bound_request(
+                replace(request, intent=changed_intent, lease=changed_auth.lease),
+                changed_auth,
+            )
+            conflict = _run(fixture, conflict_req)
+            self.assertEqual(conflict["lifecycle_code"], "CONFLICT")
+            self.assertEqual(fixture.store.current_revision(fixture.plan_ref).revision_number, 2)
+
     def test_wrong_intent_contract_target_and_authority_bindings_fail_before_mutation(self):
         cases = ("intent", "contract", "external", "source", "observed", "candidate", "normalized", "target", "scope")
         for case in cases:

@@ -1,0 +1,43 @@
+{
+  "AUTHORITY_REQUEST_BINDINGS_COPIED_FROM_LEASE": "no",
+  "AUTHORITY_REQUEST_DERIVED_FROM_ACTUAL_MUTATION_CONTEXT": "yes",
+  "DEPLOY_PERFORMED": "no",
+  "DURABLE_MUTATION_JOURNAL_IMPLEMENTED": "no",
+  "EXTERNAL_MUTATION_RECONCILIATION_IMPLEMENTED": "no",
+  "GENERIC_GIT_WRITE_IMPLEMENTED": "no",
+  "GITHUB_AUTHORITY_WRITE_IMPLEMENTED": "no",
+  "LEASE_SELF_VALIDATION_PATH_DETECTED": "no",
+  "M4_2_AUTHORITY_VALIDATION_WEAKENED": "no",
+  "M4_2_LEASE_BINDING_CHECK_REMOVED": "no",
+  "M4_2_SOURCE_NEW_EDIT_COUNT": 0,
+  "M4_3_EXCLUSIVE_WRITE_PATHS": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/catalog.py",
+    "aota_forge/core/handlers.py"
+  ],
+  "M4_3_ISSUES_CAPABILITY_LEASE": "no",
+  "M4_3_LEASE_ISSUER_CALL_COUNT": 0,
+  "PORTABLE_PLAN_EXTERNAL_WRITE_IMPLEMENTED": "no",
+  "accepted_writable_base": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+  "actual_integration_writes": [
+    "scripts/m4_3_source_guard.py",
+    "tests/test_m4_3_write_ingress.py",
+    "deploy/evidence/issues/9/m4-3-source-r1-repair/m4-3-source-r1-idempotency-repair.json",
+    "deploy/evidence/issues/9/m4-3-source-r1-repair/m4-3-source-r1-idempotency-matrix.json",
+    "deploy/evidence/issues/9/m4-3-source-r1-repair/m4-3-source-r1-regression-results.json",
+    "deploy/evidence/issues/9/m4-3-source-r1-repair/m4-3-source-r1-scope-proof.json"
+  ],
+  "actual_production_writes": [
+    "aota_forge/core/handlers.py"
+  ],
+  "all_production_writes_within_accepted_m4_3_scope": true,
+  "artifact": "Issue #9 M4-3 R1 scope proof",
+  "compile_validation": "PASS",
+  "git_diff_check": "PASS",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "json_validation": "PASS",
+  "ownership_review": "PASS",
+  "project_id": "aota_forge",
+  "repair_base": "88c07fbe45901c974c81eb2313459dc23e307de6",
+  "schema_version": 1
+}
