@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6/M4-7 parallel planning boundary",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_6_M4_7_PARALLEL_SOURCE_SAFETY_PLAN": "PASS",
+  "M4_DAG_REVERIFIED": "PASS",
+  "M4_DAG_EXPECTED": "M4-5 -> M4-6; M4-5 -> M4-7; M4-6 + M4-7 -> M4-8",
+  "M4_6_M4_7_PARALLEL_PLANNING_ALLOWED": "yes",
+  "planning_parallel_note": "M4-6 and M4-7 planning may proceed in parallel from same base e51141a because they consume distinct contracts and planning artifacts are distinct files under deploy/evidence/issues/9/m4-6-plan/ vs m4-7-plan/.",
+  "M4_6_EXCLUSIVE_WRITE_PATHS": [
+    {
+      "path": "aota_forge/adapters/plan_authority/github.py",
+      "ownership": "M4-6 exclusive",
+      "rationale": "GitHub-specific typed adapter implementing PlanAuthorityMutationPort; no Core journal persistence",
+      "collision_risk_with_M4_7": "none if M4-7 does not touch this path"
+    },
+    {
+      "path": "aota_forge/adapters/plan_authority/fake_github.py",
+      "ownership": "M4-6 exclusive (test seam)",
+      "rationale": "Deterministic fixture GitHub store for M4-6 acceptance; pattern reused from fake_port.py but isolated",
+      "collision_risk_with_M4_7": "none"
+    },
+    {
+      "path": "tests/test_m4_6_github_adapter.py",
+      "ownership": "M4-6 exclusive",
+      "rationale": "Deterministic acceptance tests via fixture GitHub store; never writes production Issue #9",
+      "collision_risk_with_M4_7": "none"
+    }
+  ],
+  "M4_6_SHARED_READ_ONLY_PATHS": [
+    {
+      "path": "aota_forge/adapters/plan_authority/port.py",
+      "access": "read-only for M4-6",
+      "rationale": "Port is M4-5 frozen executor-neutral contract; M4-6 consumes ABC but must not redefine",
+      "integration_required": "integration_only read reference"
+    },
+    {
+      "path": "aota_forge/adapters/plan_authority/__init__.py",
+      "access": "read-only + integration_only re-export if needed",
+      "rationale": "Read-side snapshot contract reused; any re-export is additive and integration-owned"
+    },
+    {
+      "path": "aota_forge/core/journal/model.py",
+      "access": "read-only",
+      "rationale": "JournalState enum and outcome semantics consumed for error/outcome contract types only"
+    },
+    {
+      "path": "aota_forge/core/journal/reconcile.py",
+      "access": "read-only",
+      "rationale": "Three-way classifier contract consumed for observation classification contract types"
+    },
+    {
+      "path": "aota_forge/core/journal/state_machine.py",
+      "access": "read-only",
+      "rationale": "Write order and transition invariants referenced for protocol ordering"
+    },
+    {
+      "path": "aota_forge/core/journal/retry.py",
+      "access": "read-only",
+      "rationale": "Retry authorization invariants referenced (M4-6 must not blindly retry)"
+    }
+  ],
+  "M4_6_INTEGRATION_ONLY_PATHS": [
+    {
+      "path": "aota_forge/adapters/plan_authority/__init__.py",
+      "integration": "re-export of read snapshot or adapter registration; owned by integration if both lanes touch",
+      "note": "shared hot file policy: integration_only"
+    },
+    {
+      "path": "aota_forge/core/contracts/errors.py",
+      "integration": "error mapping may add GitHub-aware canonical codes but must not collapse root causes; integration_only review"
+    }
+  ],
+  "M4_6_FORBIDDEN_PATHS": [
+    {
+      "path": "aota_forge/core/journal/store.py",
+      "reason": "Durable journal persistence is M4-7 exclusive; M4-6 must not own"
+    },
+    {
+      "path": "aota_forge/core/journal/executor.py",
+      "reason": "Reconciliation/recovery executor is M4-7 exclusive; M4-7 owns deterministic RECONCILING engine"
+    },
+    {
+      "path": "aota_forge/core/journal/recovery.py",
+      "reason": "Recovery execution is M4-7; M4-6 must hand off observations only"
+    },
+    {
+      "path": "aota_forge/core/journal/persistence.py",
+      "reason": "Durable persistence is M4-7"
+    },
+    {
+      "path": "aota_forge/core/transaction.py",
+      "reason": "Core transaction boundary is not M4-6 scope (M4-7 may extend if needed but M4-6 is transport only)"
+    },
+    {
+      "path": "aota_forge/cli/commands/project.py",
+      "reason": "CLI write exposure is M4-8; M4-6 has no CLI mutation"
+    },
+    {
+      "path": "aota_forge/core/git/__init__.py",
+      "reason": "Generic Git write API is out_of_scope per D11; M4-6 is authority-store adapter, not Git"
+    },
+    {
+      "path": "aota_forge/core/cutover/**",
+      "reason": "Cutover mechanics are not M4-6"
+    },
+    {
+      "path": "aota_forge/adapters/host/**",
+      "reason": "Host mechanical adapter is not M4-6"
+    },
+    {
+      "path": "deploy/evidence/issues/9/m4-7-plan/**",
+      "reason": "M4-6 must not create or modify M4-7 planning artifacts"
+    },
+    {
+      "path": "deploy/evidence/issues/9/m4-8-plan/**",
+      "reason": "M4-8 is blocked until M4-6+M4-7"
+    },
+    {
+      "path": "scripts/m4_7_plan_guard.py",
+      "reason": "M4-7 guard exclusive"
+    }
+  ],
+  "M4_7_EXCLUSIVE_WRITE_PATHS_FOR_REFERENCE": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/persistence.py",
+    "tests/test_m4_7_journal_recovery.py",
+    "scripts/m4_7_plan_guard.py"
+  ],
+  "NO_OVERLAP_WITH_M4_7_EXCLUSIVE_WRITES": true,
+  "SHARED_HOT_FILE_POLICY": "Shared hot files remain integration_only; M4-6 and M4-7 may design interfaces in parallel (planning) but must not concurrently write the same hot file during implementation; integration via single owner per file, serialize or integration_only",
+  "IMPLEMENTATION_PARALLELISM": "M4-6 and M4-7 planning is parallel; implementation would serialize on shared hot files (port.py, journal model) if both attempted to modify same file, but planning defines they remain read-only or integration_only, so no conflict.",
+  "M4_8_BLOCKED_UNTIL_BOTH": true
+}

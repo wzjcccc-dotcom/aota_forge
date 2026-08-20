@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "GITHUB_AUTHORITY_OBJECT_MODEL": "PASS",
+  "authority_principle": "Issue body is Portable Plan semantic authority. Control comments are operational projections/indexes, not independent semantic authority. Event Log is append-only historical evidence.",
+  "objects": [
+    {
+      "OBJECT": "Issue body",
+      "AUTHORITY_ROLE": "Portable Plan semantic authority (sole authority for plan state; body wins over projections)",
+      "SEMANTIC_AUTHORITY": "yes",
+      "PROJECTION_ONLY": "no",
+      "WRITE_METHOD": "typed Issue body mutation: mutate(PortablePlanMutationRequest with typed_target=plan_ref, operation=plan_init|plan_retirement, candidate_raw_body + candidate_raw_digest + authority_source_revision + authority_observed_raw_digest) -> verifyAfterWrite via readRawAuthority; only via GitHub adapter typed operation, not generic update_issue(number, arbitrary_body)",
+      "READBACK_METHOD": "readRawAuthority(TargetRef) -> (authority_source_revision, authority_observed_raw_digest, raw_body) via GitHub read Issue adapter (deterministic bounded snapshot: body + revision + digest)",
+      "RAW_PRECONDITION_MODEL": "authority_source_revision = opaque GitHub raw revision token (e.g., Issue updated_at/etag/ revision-like string or revision integer; observed as read-time token) + authority_observed_raw_digest = SHA-256 of raw body bytes; both must match authorized precondition else STALE_AUTHORITY fail closed; candidate_raw_digest = SHA-256 of exact intended candidate raw bytes; normalized_plan_digest = semantic evidence only, never CAS"
+    },
+    {
+      "OBJECT": "milestone_progress_index (control comment)",
+      "AUTHORITY_ROLE": "operational projection/index: materialized view of milestone progress derived from Issue body authority",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "update canonical control comment in place (update exact comment by ID after role resolution count==1); never append a new canonical role comment every write; duplicate creation is forbidden; creation only via bounded authorized write when role missing and Issue body deterministically defines projection",
+      "READBACK_METHOD": "list Issue comments via GitHub (bounded pagination) -> role resolution (exact label extraction) -> read exact comment by ID for raw revision/digest inspection; binding counts drive missing/duplicate/unique classification",
+      "RAW_PRECONDITION_MODEL": "per-comment raw revision token (e.g., comment updated_at or opaque revision) + raw body digest; precondition is observed raw revision/digest at read time; stale fails closed before mutate"
+    },
+    {
+      "OBJECT": "development_notes (control comment)",
+      "AUTHORITY_ROLE": "operational projection: development evidence index",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "same as milestone_progress_index: update-in-place for canonical role; duplicate not allowed",
+      "READBACK_METHOD": "same as milestone_progress_index",
+      "RAW_PRECONDITION_MODEL": "same per-comment raw revision + digest"
+    },
+    {
+      "OBJECT": "defect_register (control comment)",
+      "AUTHORITY_ROLE": "operational projection: defect ledger index",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "same: update-in-place; duplicate not allowed",
+      "READBACK_METHOD": "same",
+      "RAW_PRECONDITION_MODEL": "same"
+    },
+    {
+      "OBJECT": "runtime_activation_record (control comment, optional)",
+      "AUTHORITY_ROLE": "operational projection: runtime activation evidence index; only where real runtime/deploy activity explicitly requires it (M4 does not activate runtime per D10)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "absent unless explicitly authorized runtime/deployment lifecycle requires it; otherwise M4-6 must not create/update; if required, same update-in-place + duplicate fail closed",
+      "READBACK_METHOD": "same role resolution plumbing; zero absent is not missing failure for this optional role outside activation context",
+      "RAW_PRECONDITION_MODEL": "same"
+    },
+    {
+      "OBJECT": "Event Log (append-only comment)",
+      "AUTHORITY_ROLE": "append-only historical evidence; not semantic authority; grows monotonically",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "append-only typed operation: appendEventLog(typed_target, correlation, candidate evidence, journal state) -> new comment; never edit/rewrite historical event semantics; never mutate or delete prior Event Log entries",
+      "READBACK_METHOD": "list comments + filter Event Log marker -> read newest for monotonic verification; no authoritative rewrite check beyond append confirmation via readback",
+      "RAW_PRECONDITION_MODEL": "append-only has no CAS on existing rows; precondition is at-most-one append of evidence per journal attempt; idempotency via correlation/attempt prevents duplicate evidence from replay"
+    },
+    {
+      "OBJECT": "other exact Issue-governance projections",
+      "AUTHORITY_ROLE": "reserved for future projections derived deterministically from body; any new projection must be shown derivable from body; never competes as authority",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "bounded typed projection write if future operation requires it; must obey same role-cardinality and update-in-place rules",
+      "READBACK_METHOD": "same plumbing",
+      "RAW_PRECONDITION_MODEL": "same per-comment raw revision/digest"
+    }
+  ],
+  "critical_governance_rule_verified": "Issue body / Portable Plan is authority. Control comments are operational projections/indexes, not independent semantic authority. Issue body wins; CONTROL_COMMENTS_PLAN_AUTHORITY=no; EVENT_LOG_PLAN_AUTHORITY=no; per M4-0 D9 and Issue #9 Governance / Authority Model.",
+  "read_before_write_summary": "Every GitHub authority mutation requires read exact current raw object -> derive current raw revision/digest -> compare with M4-5 external authority precondition -> only then external apply eligibility; no blind overwrite.",
+  "verify_after_write_summary": "gh/API call success is not verification; must re-read exact authoritative GitHub object -> compare raw result to candidate/original -> return typed observation for journal/recovery handling."
+}

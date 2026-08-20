@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "GITHUB_ERROR_PROJECTION_PLAN": "PASS",
+  "canonical_mapping": [
+    {
+      "github_specific_failure": "not found (Issue missing or comment ID missing or role zero vs expected)",
+      "canonical_category": "CONTROL_ROLE_MISSING or PLAN_MISSING or NOT_FOUND -> mapped to FAILED_NO_EFFECT or BLOCKED / NEEDS_SEMANTIC_CHOICE depending on whether missing is precondition or operation scope; no mutation attempted; read-before-write fails closed",
+      "collapsing_denied": true,
+      "notes": "Missing required control role (count 0) -> CONTROL_ROLE_MISSING fail closed; Issue missing -> PLAN_MISSING; never invents body"
+    },
+    {
+      "github_specific_failure": "duplicate control role (>1 binding for canonical role)",
+      "canonical_category": "CONTROL_ROLE_DUPLICATE -> CONFLICT / FAILED_NO_EFFECT (no heuristic selection); deterministic fail closed",
+      "collapsing_denied": true,
+      "notes": "Count>1 must not silently select newest/latest; surface CONFLICT for M4-7 reconciliation"
+    },
+    {
+      "github_specific_failure": "stale raw authority precondition (revision or digest mismatch at pre-read or mutate-time rejection)",
+      "canonical_category": "STALE_AUTHORITY -> FAILED_NO_EFFECT (stale fails closed; no last-write-wins; no blind overwrite)",
+      "collapsing_denied": true,
+      "notes": "Preserves SUBJECT_REVISION != RAW twist; normalized digest not involved"
+    },
+    {
+      "github_specific_failure": "authorization mismatch (principal lacks permission for Issue/comment; token lacks repo scope)",
+      "canonical_category": "UNAUTHORIZED / FORBIDDEN -> FAILED_NO_EFFECT or BLOCKED with explicit AUTHORIZATION_MISMATCH; no retry without fresh authorization and new lease",
+      "collapsing_denied": true,
+      "notes": "Different from transient; not retried automatically; fresh semantic authorization required"
+    },
+    {
+      "github_specific_failure": "known transport no-effect (explicit API rejection proving no effect, e.g., 422 with stale precondition error body)",
+      "canonical_category": "FAILED_NO_EFFECT (known no-effect failure, proven no side effect)",
+      "collapsing_denied": true,
+      "notes": "Distinguishable from OUTCOME_UNKNOWN; adapter must inspect error body to prove no effect before claiming no-effect"
+    },
+    {
+      "github_specific_failure": "unknown outcome (request timeout, connection reset, API response lost, write may have happened but unavailable, post-write readback unavailable)",
+      "canonical_category": "OUTCOME_UNKNOWN -> RECONCILING handoff to M4-7; is not success, not failure, not retry permission; no blind retry, no old lease reuse",
+      "collapsing_denied": true,
+      "notes": "Must surface typed observation with OUTCOME_UNKNOWN outcome enum; verification readback will reconcile"
+    },
+    {
+      "github_specific_failure": "verify mismatch (transport success but readback original observed or third-state observed)",
+      "canonical_category": "If original -> RETRYABLE_NO_EFFECT (with fresh auth); if third -> CONFLICT (needs semantic choice); transport success alone never VERIFIED",
+      "collapsing_denied": true,
+      "notes": "VERIFY_AFTER_WRITE distinguishes; candidate original third mapped via three-way classifier"
+    },
+    {
+      "github_specific_failure": "third-state conflict (readback third raw digest differing from both original and candidate)",
+      "canonical_category": "CONFLICT -> RECONCILING -> CONFLICT terminal (needs semantic choice; no heuristic overwrite or silent rebase)",
+      "collapsing_denied": true,
+      "notes": "Preserves M4-0 D3 J7; normalized equality supporting-only"
+    },
+    {
+      "github_specific_failure": "permission/auth failure (401/403 with missing scopes / expired token)",
+      "canonical_category": "AUTH_FAILURE -> FAILED_NO_EFFECT / BLOCKED with distinct error code; preflight gh api user check should catch before mutate where possible",
+      "collapsing_denied": true,
+      "notes": "Separate from rate-limit transient; never retried without credential fix"
+    },
+    {
+      "github_specific_failure": "rate-limit / transient transport condition (429 / 5xx / network transient where no authority effect can be proven)",
+      "canonical_category": "TRANSIENT_TRANSPORT -> OUTCOME_UNKNOWN or RETRYABLE_NO_EFFECT depending on whether readback proves original; must distinguish from known no-effect; no blind reuse",
+      "collapsing_denied": true,
+      "notes": "Rate-limit that provably had no effect may map to FAILED_NO_EFFECT; otherwise OUTCOME_UNKNOWN if uncertainty remains"
+    }
+  ],
+  "projection_invariants": {
+    "distinct_root_causes_must_not_collapse": true,
+    "stale_vs_unknown_vs_conflict_must_remain_distinct": true,
+    "transport_success_collapsed_to_verified_denied": true,
+    "heuristic_third_state_merge_denied": true,
+    "semantic_rollback_denied": true
+  }
+}

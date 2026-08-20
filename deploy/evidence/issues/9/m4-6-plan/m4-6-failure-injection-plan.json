@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_6_FAILURE_INJECTION_PLAN": "PASS",
+  "deterministic_seam": "Reuse and extend M4-5 fake_port.py pattern via a deterministic FakeGitHubAuthorityAdapter (fixture GitHub store) with bounded failure hooks; no production failure injector; deterministic only; never writes production Issue #9.",
+  "injection_points": [
+    {
+      "injection": "pre-read failure (readRawAuthority throws / transient before any precondition check)",
+      "expected_behavior": "No PREPARED read validation succeeds; request fails before external attempt; journal remains absent or FAILED_NO_EFFECT before attempt; M4-7 not involved; adapter returns typed failure with FAILED_NO_EFFECT or OUTCOME_UNKNOWN depending on whether read proves anything"
+    },
+    {
+      "injection": "stale precondition (read returns current revision/digest mismatching authorized precondition)",
+      "expected_behavior": "Read-before-write detects stale (revision mismatch or digest mismatch) -> STALE_AUTHORITY fail closed; no external GitHub mutate invoked; no duplicate semantic effect"
+    },
+    {
+      "injection": "known write failure (mutate returns deterministic known rejection with proven no effect, e.g., STALE detected server-side or permission 403)",
+      "expected_behavior": "Adapter returns adapter_success=False + error_code STALE_AUTHORITY/KNOWN_REJECTION + observed original digest/revision; caller classifies as FAILED_NO_EFFECT; no verify readback needed beyond proving original"
+    },
+    {
+      "injection": "write timeout (transport timeout/connection reset/response lost; write may have happened but response unavailable)",
+      "expected_behavior": "Adapter returns OUTCOME_UNKNOWN with no proven effect; mandatory verify readback follows; M4-7 handoff is OUTCOME_UNKNOWN -> RECONCILING"
+    },
+    {
+      "injection": "write success + lost response (transport reports success but caller crashes before persisting terminal)",
+      "expected_behavior": "Stranded APPLYING / J3 window; future run re-reads authoritative raw store and classifies via three-way candidate/original/third; J10 mapped if terminal persist failed after candidate proven"
+    },
+    {
+      "injection": "verify read failure (verify readback throws / unavailable after apparent mutate)",
+      "expected_behavior": "Surface OUTCOME_UNKNOWN for that object; partial-effect classification; M4-7 RECONCILING retries read idempotently before any retry authorization check"
+    },
+    {
+      "injection": "candidate readback (verify returns observed == candidate_raw_digest)",
+      "expected_behavior": "Three-way classifier -> CANDIDATE_OBSERVED -> VERIFIED_RECOVERED (or direct VERIFIED if first-attempt success path); no retry needed; Event Log append may still reconcile"
+    },
+    {
+      "injection": "original readback (verify returns observed == original_raw_digest)",
+      "expected_behavior": "ORIGINAL_OBSERVED -> RETRYABLE_NO_EFFECT only with fresh authorization + fresh Subject + fresh raw precondition + new bounded lease; otherwise stays RETRYABLE until those fresh bindings arrive"
+    },
+    {
+      "injection": "third-state readback (verify returns observed third-state raw digest != original != candidate; includes normalized equality but raw mismatch)",
+      "expected_behavior": "CONFLICT_THIRD -> CONFLICT terminal (needs semantic choice); no heuristic overwrite; normalized equality supporting-only does not flip to VERIFIED"
+    },
+    {
+      "injection": "projection partial failure (Issue body candidate observed but one projection comment stale/permission fail, or Event Log append fails)",
+      "expected_behavior": "Partial-effect classified per multi-object model; authority effect handed to M4-7 as candidate observed; projection failure as per-object outcome; Event Log append retry only via fresh journal observation; no cross-object atomic claim"
+    }
+  ],
+  "fixture_expectations": {
+    "fixture_github_store": "In-memory Issue body store (body string + opaque revision token + digest + comment map keyed by role with per-comment revision/digest) isolated per test; deterministic revision bump on successful write; no network; no gh CLI",
+    "production_github_write_in_tests": "not allowed; tests use fixture; PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED=no; no test may mutate Issue #9",
+    "coverage": "All 10 injection points above map to acceptance matrix POS/NEG cases and J1-J10 crash windows (J1 pre-prepared, J2 known failure, J3 stranded applying, J4 unknown, J5 retryable, J6 candidate, J7 third, J8 normalized, J9 durability fail, J10 nonterminal after terminal)"
+  },
+  "invariants": {
+    "PRODUCTION_FAILURE_INJECTOR_IMPLEMENTED": "no",
+    "DETERMINISTIC_FAILURE_INJECTION_SEAM": "PASS",
+    "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED": "no"
+  }
+}

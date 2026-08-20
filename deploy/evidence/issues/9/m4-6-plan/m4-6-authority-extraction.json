@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "governing_plan_issue": 9,
+  "governing_plan_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_5_known_good_checkpoint": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_5_plan_known_good_checkpoint": "4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91",
+  "m4_5_final_source_review_evidence": "383c70ebc5ada2c331d386c8ce3c5bc304c9799a",
+  "authority_read": {
+    "ISSUE_9_CURRENT_AUTHORITY_READ": "PASS",
+    "M4_6_EXACT_AUTHORITY_RECOVERED": "yes",
+    "read_method": "GH_CONFIG_DIR=/home/latios/.config/gh rtk gh api user --jq '.login' + GH_CONFIG_DIR=/home/latios/.config/gh rtk gh issue view 9 --repo wzjcccc-dotcom/aota-hermes-tools --json body",
+    "issue_body_verified": true,
+    "m4_0_freeze_verified": true,
+    "m4_5_handoff_verified": true,
+    "login_verified": "wzjcccc-dotcom"
+  },
+  "M4_6_EXACT_TITLE": "GitHub Issue / Control-Comment Authority Adapter",
+  "M4_6_EXACT_TITLE_SOURCE": "deploy/evidence/issues/9/m4-0/m4-0-architecture-freeze.json:m4_work_items.M4-6 @ 5a665cee791692b3ccad0ded331cb2d771fc7362",
+  "M4_6_PRIMARY_OBJECTIVE": "Implement GitHub-specific authority transport behind the accepted M4-5 executor-neutral Plan Authority Port, mapping typed mutation requests to deterministic Issue body + control-comment projection reads/writes with strict read-before-write, typed operation, raw authority precondition validation, and verify-after-write observation handoff without introducing semantic decisions, cross-authority atomicity, or journal persistence.",
+  "M4_6_PREREQUISITES": [
+    "M4-0 Architecture Freeze completed (5a665cee) with D1-D12 frozen, D2 no cross-authority atomic transaction, D9 control role contract",
+    "M4-1 Mutation Intent / Operation Descriptor / Canonical Mutation Result Contract completed (d74953be)",
+    "M4-2 Trusted Mutation Authorization + Capability Lease completed (16826b55)",
+    "M4-4 PLAN_INIT / Retirement Mechanical Lifecycle completed (16826b55)",
+    "M4-3 Write-Capable Unified Ingress completed (26e61687) with M4-3 authorization-bound idempotency",
+    "M4-5 Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract completed (e51141a) with accepted port, raw precondition, journal state family, at-most-one + verify-after-write, M4-3 idempotency reuse"
+  ],
+  "M4_6_PREREQUISITES_SATISFIED": "yes",
+  "M4_DAG_VERIFIED": "PASS",
+  "M4_DAG": {
+    "expected": "M4-5 -> M4-6; M4-5 -> M4-7; M4-6+M4-7 -> M4-8",
+    "verified": [
+      "M4-5->M4-6",
+      "M4-5->M4-7",
+      "M4-6+M4-7->M4-8"
+    ],
+    "M4_6_M4_7_PARALLEL_PLANNING_ALLOWED": "yes",
+    "M4_6_planning_must_not_depend_on_M4_7_implementation": true
+  },
+  "M4_6_OWNS": [
+    "GitHub Issue body authority transport for Portable Plan semantic authority (read raw body + raw revision + digest, typed Issue body mutation with raw precondition, verify-after-write readback)",
+    "Control-comment projection transport for required roles milestone_progress_index, development_notes, defect_register and optional runtime_activation_record (bounded list, exact role resolution, update-in-place; no heuristic latest-comment selection)",
+    "Event Log append-only transport if typed operation requires evidence append (owned per D9 Event Log append-only; never rewrite history)",
+    "GitHub-specific optimistic concurrency mapping: authority_source_revision as opaque GitHub raw revision (e.g., Issue updated_at/etag/node-like revision or body hash) plus authority_observed_raw_digest as raw body SHA-256; raw precondition comparison against current raw authority",
+    "GitHub-specific error/transport mapping into canonical FAILED_NO_EFFECT / OUTCOME_UNKNOWN / CONFLICT with preservation of stale vs unknown semantics",
+    "GitHub authentication preflight plumbing (executor/runtime concern; not semantic authority)"
+  ],
+  "M4_6_DOES_NOT_OWN": [
+    "Portable Plan Mutation Port contract definition (M4-5 frozen; M4-6 consumes via PlanAuthorityMutationPort ABC)",
+    "Multi-domain revision/digest separation (M4-5 D6; M4-6 maps but does not redefine)",
+    "Journal state machine / persistence / state transitions (M4-7)",
+    "Deterministic reconciliation execution / retry authorization enforcement (M4-7 consumes M4-6 observations)",
+    "Semantic decisions: which Project, which Subject, which successor, which control role to prefer under duplicate, whether third-state should overwrite, which Plan to choose under ambiguity",
+    "Durable recovery scanner / background worker / restart reconciliation (M4-7)",
+    "Generic Git write API, generic terminal, runtime activation, deployment, Hermes dispatch",
+    "M4-8 CLI/Core convergence"
+  ],
+  "M4_6_ACCEPTANCE_CRITERIA": [
+    "Read Issue authority via typed adapter with raw revision + raw digest bounded snapshot; stale raw precondition fails closed before any external write",
+    "Typed Issue body mutation only via strongly typed operation with external authority precondition (authority_source_revision + authority_observed_raw_digest), candidate_raw_digest, normalized_plan_digest, correlation/idempotency identity; no generic update_issue(number, arbitrary_body)",
+    "Control comments: per canonical role binding count 0 -> missing fail closed, 1 -> deterministic target, >1 -> conflict; update-in-place for existing canonical role target; no append-a-new-canonical-role-comment-every-write; no latest-comment wins",
+    "At-most-one external attempt contract preserved (PREPARED->APPLYING before mutate) with read-before-write and verify-after-write; transport success alone does not mean VERIFIED",
+    "Deterministic outcome contract for M4-7: candidate observed / original observed / third state / unknown-transport-outcome / known no-effect with typed observation/digest/revision",
+    "Unknown outcome surfaces exact observation, does not blindly retry or reuse old lease, hands off to M4-7 reconciliation",
+    "Idempotency preserves M4-5/M4-3 complete authorization-bound external mutation identity; GitHub replay identity is not issue number only / comment ID only / idempotency key alone / intent_fingerprint alone; same key + changed authorization -> replay denied (CONFLICT)",
+    "Multi-object atomicity not assumed: Issue body plus projections are ordered authority-then-projections, partial-effect classified, handed to journal/reconciliation",
+    "Portability: GitHub concepts isolated in adapter package; Core M4-5 contracts remain transport-neutral; no generic gh api passthrough",
+    "Auth preflight via rtk gh api user --jq '.login' before mutating; no automatic login / token rewriting / hosts.yml rewriting / keyring mutation"
+  ],
+  "M4_6_DOWNSTREAM_CONTRACT": {
+    "M4_6_provides_to_M4_7": [
+      "Typed read-before-write observation (current raw authority revision/digest/body)",
+      "Typed mutate response with adapter_success bool plus authoritative readback observation (observed revision/digest/body) for three-way classifier",
+      "Deterministic outcome enum: CANDIDATE_OBSERVED / ORIGINAL_OBSERVED / THIRD_STATE / OUTCOME_UNKNOWN / FAILED_NO_EFFECT with error-code classification",
+      "Journal linkage fields: correlation_id, attempt_reference, candidate_raw_digest, original observed digest, normalized digest, authorization/lease references"
+    ],
+    "M4_6_requires_from_M4_5": [
+      "PlanAuthorityMutationPort ABC + RawAuthorityPrecondition + PortablePlanMutationRequest/Response contract",
+      "Read-before-write / verify-after-write / at-most-one invariants",
+      "Three-domain separation (subject_expected_revision != authority_source_revision != normalized_plan_digest)",
+      "M4-3 complete authorization-bound idempotency identity"
+    ],
+    "M4_7_consumes_M4_6": "M4-7 reconciliation engine consumes M4-6 typed observations to drive JournalState transitions and retry authorization (fresh authorization gating)"
+  },
+  "M4_6_SOURCE_OWNERSHIP_RULES": [
+    "Every proposed M4-6 production write path must have exact PATH, OWNERSHIP_CLASS, RATIONALE, CONSUMED_M4_5_CONTRACT, DOWNSTREAM_COLLISION_RISK",
+    "No repository-wide glob (e.g., aota_forge/**/*)",
+    "Shared hot files remain integration_only for planning; no concurrent writer claims M4-7 exclusive paths"
+  ],
+  "M4_6_PLANNING_READY": "yes",
+  "M4_6_PLAN_ACCEPTED": "no",
+  "M4_6_EXECUTION_AUTHORIZED": "no",
+  "M4_6_SOURCE_IMPLEMENTATION_AUTHORIZED": "no"
+}

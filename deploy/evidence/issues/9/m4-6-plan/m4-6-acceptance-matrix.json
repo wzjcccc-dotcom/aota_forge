@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_6_ACCEPTANCE_MATRIX": "PASS",
+  "positives": [
+    {
+      "id": "POS-01",
+      "title": "read Issue authority",
+      "given": "Portable Plan mutation requested with operation plan_init and typed target",
+      "when": "adapter executes readRawAuthority(target)",
+      "then": "returns bounded snapshot: current raw revision token, observed_raw_digest (SHA-256 of raw body), raw_body string, and control projection map with deterministic role extraction; no mutation; no GitHub leak to Core",
+      "asserts": [
+        "snapshot contains digest",
+        "revision is opaque token",
+        "snapshot is deterministic"
+      ]
+    },
+    {
+      "id": "POS-02",
+      "title": "exact Issue body write with matching raw precondition",
+      "given": "read observed (revision R1, digest D1) exactly equals authorized precondition (authority_source_revision=R1, authority_observed_raw_digest=D1)",
+      "when": "mutate(request with candidate_raw_body/digest and matching precondition)",
+      "then": "single typed GitHub Issue body update attempted; adapter success bool returned; no duplicate writes; stale not injected",
+      "asserts": [
+        "at-most-one attempt",
+        "read-before-write passed"
+      ]
+    },
+    {
+      "id": "POS-03",
+      "title": "verify-after-write candidate observed",
+      "given": "Issue body mutation attempted with candidate digest DC and original DO",
+      "when": "verify(target) re-reads authoritative Issue body",
+      "then": "observed == DC -> classification CANDIDATE_OBSERVED -> adapter returns typed observation for M4-7 to map to VERIFIED_RECOVERED; transport success alone not VERIFIED",
+      "asserts": [
+        "verify mandatory",
+        "candidate precedence"
+      ]
+    },
+    {
+      "id": "POS-04",
+      "title": "exact control role resolution count=1",
+      "given": "Issue comment list contains exactly one comment whose body contains the deterministic marker for each required role (milestone_progress_index, development_notes, defect_register)",
+      "when": "resolveControlRole(role)",
+      "then": "returns exactly that comment ID + current raw revision + digest as deterministic target; no heuristic",
+      "asserts": [
+        "binding_count==1 -> unique target"
+      ]
+    },
+    {
+      "id": "POS-05",
+      "title": "update canonical control comment in place",
+      "given": "canonical role target count==1 with current revision RC and body BC",
+      "when": "updateProjection(role, candidate_body, expected precondition RC+digest(BC))",
+      "then": "single bounded authorized write to that exact comment ID; no new canonical role comment appended; verify readback proves candidate observed",
+      "asserts": [
+        "update in place",
+        "no duplicate creation"
+      ]
+    },
+    {
+      "id": "POS-06",
+      "title": "append-only Event Log if M4-6-owned",
+      "given": "typed append-only operation requires Event Log evidence",
+      "when": "appendEventLog(target, evidence, correlation/attempt)",
+      "then": "appends exactly one new Event Log comment with evidence; never edits or deletes historical entries; readback confirms appended body digest",
+      "asserts": [
+        "append-only",
+        "no history rewrite"
+      ]
+    }
+  ],
+  "negatives": [
+    {
+      "id": "NEG-01",
+      "title": "stale Issue body precondition",
+      "given": "authorized precondition revision R1+digest D1 but current read returns R2 != R1 or D2 != D1",
+      "when": "mutate(request)",
+      "then": "no external GitHub write invoked; response error_code=STALE_AUTHORITY; FAILED_NO_EFFECT; stale fails closed; no last-write-wins",
+      "outcome": "FAILED_NO_EFFECT"
+    },
+    {
+      "id": "NEG-02",
+      "title": "stale comment precondition",
+      "given": "canonical comment current revision/digest differs from authorized precondition",
+      "when": "updateProjection(role)",
+      "then": "no comment write; STALE_AUTHORITY fail closed; control comment not blindly overwritten",
+      "outcome": "FAILED_NO_EFFECT"
+    },
+    {
+      "id": "NEG-03",
+      "title": "duplicate control role >1",
+      "given": "Issue contains two comments both matching canonical role milestone_progress_index",
+      "when": "resolveControlRole(role)",
+      "then": "CONTROL_ROLE_DUPLICATE -> CONFLICT fail closed; no write; no latest/newest selection; surfaces for reconciliation",
+      "outcome": "CONFLICT"
+    },
+    {
+      "id": "NEG-04",
+      "title": "missing required control role",
+      "given": "required role defect_register has binding count 0",
+      "when": "resolveControlRole(role) or any mutation requiring that projection",
+      "then": "CONTROL_ROLE_MISSING fail closed; no mutation; bounded error",
+      "outcome": "FAILED_NO_EFFECT/BLOCKED"
+    },
+    {
+      "id": "NEG-05",
+      "title": "authorization drift",
+      "given": "principal/authorization_reference requires trusted authorization that is not valid for this typed mutation",
+      "when": "mutate(request)",
+      "then": "authorization mismatch -> UNAUTHORIZED/BLOCKED -> FAILED_NO_EFFECT; no external write; fresh authorization required",
+      "outcome": "FAILED_NO_EFFECT"
+    },
+    {
+      "id": "NEG-06",
+      "title": "same key + changed authorization",
+      "given": "idempotency_key K1 previously committed with complete identity I1 (principal P1, auth ref A1, contract C1) now replayed with same key K1 but changed authorization I2 (different principal/auth/contract)",
+      "when": "adapter mutate with replayed request",
+      "then": "SAME_KEY_DIFFERENT_REQUEST -> CONFLICT; GitHub replay denied; no duplicate semantic effect; not silent overwrite",
+      "outcome": "CONFLICT"
+    },
+    {
+      "id": "NEG-07",
+      "title": "transport success + readback original",
+      "given": "mutate returned adapter_success=True but verify readback returns observed == original DO (no authority effect)",
+      "when": "verify-after-write classification",
+      "then": "ORIGINAL_OBSERVED -> RETRYABLE_NO_EFFECT only with fresh authorization+Subject+raw+new lease; not VERIFIED; transport success alone not VERIFIED",
+      "outcome": "RETRYABLE_NO_EFFECT"
+    },
+    {
+      "id": "NEG-08",
+      "title": "transport success + third-state readback",
+      "given": "mutate transport success but verify returns third raw digest DT != DO and != DC (including normalized equality case)",
+      "when": "verify-after-write classification",
+      "then": "CONFLICT_THIRD -> CONFLICT; needs semantic choice; no heuristic third-state merge or normalized equality => CONFLICT",
+      "outcome": "CONFLICT"
+    },
+    {
+      "id": "NEG-09",
+      "title": "timeout/unknown result",
+      "given": "GitHub request timeout / connection reset / response lost; write may have happened but unavailable; or post-write readback unavailable",
+      "when": "mutate + verify sequence",
+      "then": "OUTCOME_UNKNOWN -> RECONCILING handoff; adapter surfaces typed OUTCOME_UNKNOWN observation; no blind retry; no old lease reuse; no guess",
+      "outcome": "OUTCOME_UNKNOWN -> RECONCILING"
+    },
+    {
+      "id": "NEG-10",
+      "title": "generic GitHub operation",
+      "given": "caller attempts gh api <arbitrary path> or generic mutation endpoint or raw GitHub REST/GraphQL passthrough",
+      "when": "adapter receives untyped operation",
+      "then": "rejected; GENERIC_GITHUB_API_ALLOWED=no; only typed operations allowed",
+      "outcome": "BLOCKED"
+    },
+    {
+      "id": "NEG-11",
+      "title": "latest-comment heuristic",
+      "given": "duplicate roles exist and caller expects latest comment wins / newest selection",
+      "when": "resolveControlRole(role)",
+      "then": "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED=no; rejected; must fail closed as duplicate",
+      "outcome": "CONFLICT"
+    },
+    {
+      "id": "NEG-12",
+      "title": "projection partial failure",
+      "given": "Issue body verified candidate observed but one or more control projection updates failed (stale, permission, network)",
+      "when": "multi-object ordered write (body then projections then Event Log)",
+      "then": "PARTIAL_PROJECTION_FAILURE classified; Issue body effect persists; projections remain inconsistent; handed to M4-7 journal as RECONCILING with per-object observations; no cross-object atomic claim",
+      "outcome": "RECONCILING/CONFLICT"
+    }
+  ],
+  "required_case_coverage": "6 positives + 12 negatives (18 cases) plus unknown/timeout/partial-effect variants; all deterministic via fixture GitHub store; no production Issue #9 mutation",
+  "production_write_rule": "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED=no; all acceptance uses deterministic fixture/fake transport stub"
+}

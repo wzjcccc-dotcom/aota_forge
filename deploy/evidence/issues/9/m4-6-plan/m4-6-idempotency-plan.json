@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "GITHUB_EXTERNAL_IDEMPOTENCY_PLAN": "PASS",
+  "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED": "no",
+  "external_idempotency_model": {
+    "preserves_M4_5_M4_3_complete_identity": true,
+    "M4_5_reference": "PortablePlanMutationRequest.complete_identity_fingerprint() / JournalRecord.complete_external_identity() — operation + typed_target + principal + contract_hash + idempotency_key + intent_fingerprint + subject_expected_revision + authority_source_revision + authority_observed_raw_digest + candidate_raw_digest + normalized_plan_digest + authorization_reference + lease_reference",
+    "M4_3_authorization_bound_identity_reused": true,
+    "not_issue_number_only": true,
+    "not_comment_ID_only": true,
+    "not_idempotency_key_only": true,
+    "not_intent_fingerprint_only": true,
+    "complete_identity_required": "Same idempotency_key with changed authorization (different authorization_reference/lease_reference/principal/contract_hash/typed_target/subject revision/raw precondition/candidate digest) is a different complete identity -> must not replay prior GitHub effect; must surface CONFLICT / BLOCKED, not silently reuse prior write",
+    "same_key_same_complete_identity_replay": "REPLAYED_VERIFIED or VERIFIED_RECOVERED (deterministic replay with no duplicate semantic effect if observation already equals candidate)",
+    "same_key_changed_authorization_replay": "CONFLICT fail closed (M4-3/M4-5 same-key-different-request = conflict); GitHub replay denied"
+  },
+  "github_replay_identity_details": {
+    "GITHUB_REPLAY_IDENTITY_IS_STRONG": "complete authorization-bound identity, not GitHub-native idempotency key",
+    "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED": "no",
+    "github_idempotency_mechanics": "GitHub itself does not provide cross-attempt idempotency for Issue body updates; adapter therefore relies on Core's journal idempotencyKey + complete identity + correlation_id + attempt_reference per M4-5/M4-3; duplicate GitHub calls with same key but drifted authorization are conflicts and must not blindly rewrite",
+    "correlation_id": "bounded safe identifier (OperationContext correlation_id) linking journal attempt to GitHub transport for dedupe observation",
+    "attempt_reference": "bounded lease_or_attempt_reference tying this external attempt to the specific APPLYING journal attempt (at-most-one contract)",
+    "retry_rule": "Retryable only after M4-7 reconciliation to RETRYABLE_NO_EFFECT with fresh authorization + fresh Subject precondition + fresh raw authority precondition + new bounded lease/attempt; UNKNOWN_OUTCOME blind retry denied; UNKNOWN_OUTCOME blind lease reuse denied"
+  },
+  "invariants": {
+    "IDEMPOTENCY_IS_NOT_AUTHORITY": true,
+    "LEASE_IS_NOT_AUTHORITY": true,
+    "OPAQUE_IDS_ARE_NOT_AUTHORITY": true,
+    "COMPLETE_IDENTITY_BINDS_AUTHORIZATION": true
+  }
+}

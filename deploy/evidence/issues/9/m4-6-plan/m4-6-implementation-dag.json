@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_6_IMPLEMENTATION_DAG_DEFINED": "yes",
+  "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+  "IMPLEMENTATION_SLICE_COUNT": 5,
+  "slices": [
+    {
+      "SLICE_ID": "M4-6-S1",
+      "OBJECTIVE": "GitHub Issue authority transport: typed Issue read + raw precondition capture + typed Issue body mutate + verify readback (authority plane)",
+      "PREREQUISITES": [
+        "M4-5 Port contract accepted (e51141a)",
+        "Operation registry allowlist for plan_init/plan_retirement",
+        "Fake port fixture pattern"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py",
+        "aota_forge/adapters/plan_authority/__init__.py (integration_only re-export if needed)"
+      ],
+      "READ_ONLY_DEPENDENCIES": [
+        "aota_forge/adapters/plan_authority/port.py",
+        "aota_forge/core/contracts/registry.py",
+        "aota_forge/core/journal/model.py (outcome types)"
+      ],
+      "OUTPUT": "Typed GitHub Issue authority methods: readRawAuthority(target)->(revision,digest,body); mutateIssueBody(request)->PortablePlanMutationResponse (at-most-one); verify(target)->(revision,digest,body); error projection for not-found/stale/auth/timeout/unknown",
+      "TESTS": [
+        "POS-01",
+        "POS-02",
+        "POS-03",
+        "NEG-01",
+        "NEG-05",
+        "NEG-07",
+        "NEG-08",
+        "NEG-09",
+        "NEG-10"
+      ],
+      "NEGATIVE_CONSTRAINTS": [
+        "no generic gh api passthrough",
+        "no subject revision as GitHub CAS",
+        "no normalized digest as CAS",
+        "no blind overwrite",
+        "no transport-success==VERIFIED"
+      ],
+      "ACCEPTANCE": "Read-before-write + stale fail closed + single typed mutate + verify-after-write observation handoff; Core import of github.py forbidden"
+    },
+    {
+      "SLICE_ID": "M4-6-S2",
+      "OBJECTIVE": "Control-comment projection transport: bounded list + deterministic role resolution (0/1/>1) + update-in-place + verify readback per role",
+      "PREREQUISITES": [
+        "M4-6-S1 (Issue transport plumbing)"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "READ_ONLY_DEPENDENCIES": [
+        "aota_forge/adapters/plan_authority/port.py",
+        "aota_forge/core/journal/reconcile.py (for outcome contract)"
+      ],
+      "OUTPUT": "Typed projection methods: listControlComments -> bounded snapshots; resolveControlRole(role)->{count, targetId?}; updateControlCommentInPlace(roleTargetId, candidateBody, expectedRevision+digest)->response + verify readback; duplicate/missing fail closed",
+      "TESTS": [
+        "POS-04",
+        "POS-05",
+        "NEG-02",
+        "NEG-03",
+        "NEG-04",
+        "NEG-11"
+      ],
+      "NEGATIVE_CONSTRAINTS": [
+        "no latest-comment heuristic",
+        "no duplicate role creation",
+        "no generic control-comment update that creates missing role",
+        "no heuristic third-state selection"
+      ],
+      "ACCEPTANCE": "Control role cardinality 0->missing,1->unique target,>1->conflict; update-in-place only; no heuristic selection"
+    },
+    {
+      "SLICE_ID": "M4-6-S3",
+      "OBJECTIVE": "Event Log append-only transport + multi-object partial-effect ordering + typed observation contract for M4-7",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "READ_ONLY_DEPENDENCIES": [
+        "aota_forge/adapters/plan_authority/port.py",
+        "aota_forge/core/journal/model.py",
+        "aota_forge/core/journal/state_machine.py"
+      ],
+      "OUTPUT": "Typed Event Log append: appendEventLog(typed_target, evidence)->new comment (append-only); multi-object write order: authority then projections then Event Log; readback order per object; partial-effect typed observations (per-object observed revision/digest + error_code) for M4-7 RECONCILING",
+      "TESTS": [
+        "POS-06",
+        "NEG-12"
+      ],
+      "NEGATIVE_CONSTRAINTS": [
+        "no Event Log history rewrite",
+        "no multi-object atomicity claim",
+        "no durable journal persistence inside adapter"
+      ],
+      "ACCEPTANCE": "Event Log append-only; multi-object atomicity not assumed; partial-effect classified and handed off"
+    },
+    {
+      "SLICE_ID": "M4-6-S4",
+      "OBJECTIVE": "Auth preflight + idempotency preservation + error projection + deterministic fake transport seam",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2",
+        "M4-6-S3"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py",
+        "aota_forge/adapters/plan_authority/fake_github.py (test seam)",
+        "tests/test_m4_6_github_adapter.py"
+      ],
+      "READ_ONLY_DEPENDENCIES": [
+        "aota_forge/adapters/plan_authority/fake_port.py (pattern)",
+        "aota_forge/core/idempotency.py",
+        "aota_forge/core/contracts/errors.py"
+      ],
+      "OUTPUT": "Auth preflight: verify rtk gh api user before mutating; idempotency: complete authorization-bound identity preserved (same key+changed auth -> CONFLICT); error projection: not-found/duplicate/stale/auth/unknown/third-state/verify-mismatch/permission/rate-limit mapped canonically without collapse; deterministic failure injection seam (pre-read, stale, known failure, timeout, success+lost response, verify fail, candidate/original/third, partial projection failure)",
+      "TESTS": [
+        "NEG-06",
+        "NEG-09 (+ timeout/unknown)",
+        "all failure injection points (10 types)"
+      ],
+      "NEGATIVE_CONSTRAINTS": [
+        "no old lease reuse after unknown",
+        "no blind retry after unknown",
+        "no GitHub replay identity as issue number only / comment ID only / key only / intent only"
+      ],
+      "ACCEPTANCE": "Auth preflight PASS; idempotency SAME_KEY_CHANGED_AUTHORIZATION denied; error projection distinct; failure injection seam covers 10 cases"
+    },
+    {
+      "SLICE_ID": "M4-6-S5",
+      "OBJECTIVE": "Integration + regression hardening: enforce CORE_GITHUB_SEMANTIC_LEAK_COUNT=0, verify portability boundary, and close acceptance matrix",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2",
+        "M4-6-S3",
+        "M4-6-S4"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "READ_ONLY_DEPENDENCIES": [
+        "aota_forge/adapters/plan_authority/port.py",
+        "aota_forge/core/journal/*",
+        "aota_forge/core/ingress.py"
+      ],
+      "OUTPUT": "Final guard: no GitHub imports in Core; Core M4-5 contracts remain transport-neutral; all POS-01..06 + NEG-01..12 green via fixture; guard self-consistency validated; git diff --check clean; production source mutation count 0",
+      "TESTS": [
+        "full acceptance matrix 18 cases",
+        "crash windows J1-J10 interaction",
+        "source ownership checks"
+      ],
+      "NEGATIVE_CONSTRAINTS": [
+        "no M4-7 exclusive path claimed",
+        "no durable journal persistence in M4-6",
+        "no reconciliation executor in M4-6",
+        "no semantic TODO unresolved"
+      ],
+      "ACCEPTANCE": "G1-G16 guard PASS; self-consistency PASS; implementability review PASS; git diff --check PASS"
+    }
+  ],
+  "dag_order": [
+    "M4-6-S1 -> M4-6-S2 -> M4-6-S3 -> M4-6-S4 -> M4-6-S5",
+    "S2 depends on S1; S3 depends on S1+S2; S4 depends on S1+S2+S3; S5 depends on all"
+  ],
+  "concurrency_note": "Slices are sequential due to single exclusive write path aota_forge/adapters/plan_authority/github.py; parallel writers would serialize or integration_only for shared hot file."
+}

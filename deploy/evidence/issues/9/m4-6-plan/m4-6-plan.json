@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "governing_plan_issue": 9,
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "work_item_title": "GitHub Issue / Control-Comment Authority Adapter",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "accepted_writable_base_verified": "yes",
+  "m4_5_known_good_checkpoint": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_5_plan_known_good_checkpoint": "4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91",
+  "m4_5_final_source_review_evidence": "383c70ebc5ada2c331d386c8ce3c5bc304c9799a",
+  "M4_DAG_VERIFIED": "PASS",
+  "M4_DAG": {
+    "nodes": [
+      "M4-0",
+      "M4-1",
+      "M4-2",
+      "M4-3",
+      "M4-4",
+      "M4-5",
+      "M4-6",
+      "M4-7",
+      "M4-8",
+      "M4-R"
+    ],
+    "edges": [
+      [
+        "M4-0",
+        "M4-1"
+      ],
+      [
+        "M4-1",
+        "M4-2"
+      ],
+      [
+        "M4-1",
+        "M4-4"
+      ],
+      [
+        "M4-2",
+        "M4-3"
+      ],
+      [
+        "M4-4",
+        "M4-3"
+      ],
+      [
+        "M4-3",
+        "M4-5"
+      ],
+      [
+        "M4-5",
+        "M4-6"
+      ],
+      [
+        "M4-5",
+        "M4-7"
+      ],
+      [
+        "M4-6",
+        "M4-8"
+      ],
+      [
+        "M4-7",
+        "M4-8"
+      ],
+      [
+        "M4-8",
+        "M4-R"
+      ]
+    ],
+    "acyclic": true,
+    "verified_against": "wzjcccc-dotcom/aota-hermes-tools#9 Issue body §17 Milestones amended + M4-0 freeze dependency_dag + M4-5 handoff"
+  },
+  "M4_6_PREREQUISITES_SATISFIED": "yes",
+  "M4_6_M4_7_PARALLEL_PLANNING_ALLOWED": "yes",
+  "M4_6_PLANNING_READY": "yes",
+  "M4_6_PLAN_ACCEPTED": "no",
+  "M4_6_EXECUTION_AUTHORIZED": "no",
+  "M4_6_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+  "M4_5_PORT_CONTRACT_READ": "PASS",
+  "GITHUB_AUTHORITY_OBJECT_MODEL": "PASS",
+  "CONTROL_ROLE_CARDINALITY_MODEL": "PASS",
+  "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED": "no",
+  "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+  "ISSUE_BODY_TYPED_MUTATION_PLAN": "PASS",
+  "GITHUB_READ_BEFORE_WRITE_REQUIRED": "yes",
+  "GITHUB_RAW_PRECONDITION_MODEL": "PASS",
+  "GITHUB_NATIVE_CAS_CAPABILITY_REVIEW": "PASS",
+  "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+  "GITHUB_VERIFY_AFTER_WRITE_REQUIRED": "yes",
+  "TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED": "no",
+  "MULTI_GITHUB_OBJECT_ATOMICITY_ASSUMED": "no",
+  "PARTIAL_PROJECTION_FAILURE_PLAN": "PASS",
+  "M4_6_TO_M4_7_OUTCOME_CONTRACT": "PASS",
+  "GITHUB_UNKNOWN_OUTCOME_PLAN": "PASS",
+  "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED": "no",
+  "GITHUB_EXTERNAL_IDEMPOTENCY_PLAN": "PASS",
+  "SAME_KEY_CHANGED_AUTHORIZATION_GITHUB_REPLAY_ALLOWED": "no",
+  "EVENT_LOG_ADAPTER_OWNERSHIP": "owned",
+  "CORE_GITHUB_SEMANTIC_LEAK_PLANNED_COUNT": 0,
+  "M4_5_CORE_CONTRACT_MODIFICATION_REQUIRED": "no",
+  "GENERIC_GITHUB_API_ALLOWED": "no",
+  "GITHUB_AUTH_PREFLIGHT_PLAN": "PASS",
+  "GITHUB_ERROR_PROJECTION_PLAN": "PASS",
+  "GITHUB_ADAPTER_IS_SEMANTIC_DECISION_MAKER": "no",
+  "M4_6_SOURCE_RECONNAISSANCE": "PASS",
+  "LEGACY_GITHUB_ADAPTER_COMPATIBILITY_AUDIT": "PASS",
+  "M4_6_M4_7_PARALLEL_SOURCE_SAFETY_PLAN": "PASS",
+  "M4_6_SOURCE_OWNERSHIP_PLAN": "PASS",
+  "M4_6_IMPLEMENTATION_DAG_DEFINED": "yes",
+  "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+  "M4_6_ACCEPTANCE_MATRIX": "PASS",
+  "M4_6_FAILURE_INJECTION_PLAN": "PASS",
+  "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED": "no",
+  "M4_6_PRIMARY_RESPONSIBILITY": "Implement GitHub-specific authority transport behind the accepted M4-5 executor-neutral Plan Authority Port, mapping typed mutation requests to deterministic Issue body + control-comment projection reads/writes with strict read-before-write, typed operation, raw authority precondition validation, and verify-after-write observation handoff without introducing semantic decisions, cross-authority atomicity, or journal persistence.",
+  "planning_branch": "aota/m4/m4-6-plan",
+  "planning_worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-6-plan",
+  "M4_6_M4_7_PARALLEL_SAFETY_REVIEW": "PASS",
+  "M4_6_EXCLUSIVE_WRITE_PATH_COUNT": 3,
+  "M4_6_SHARED_READ_ONLY_PATH_COUNT": 6,
+  "M4_6_INTEGRATION_ONLY_PATH_COUNT": 2,
+  "M4_6_FORBIDDEN_PATH_COUNT": 12,
+  "IMPLEMENTATION_SLICE_COUNT": 5,
+  "PLAN_ARTIFACT_COUNT": 16,
+  "PLANNING_NEGATIVE_CASE_COUNT": 16,
+  "PLANNING_NEGATIVE_CASE_REJECT_COUNT": 16,
+  "PLAN_ARTIFACT_SELF_CONSISTENCY": "PASS",
+  "PLAN_IMPLEMENTABILITY_REVIEW": "PASS",
+  "GIT_DIFF_CHECK": "PASS",
+  "PRODUCTION_SOURCE_MUTATION_COUNT": 0,
+  "M4_6_IMPLEMENTATION_PERFORMED": "no",
+  "PLAN_GUARD": "PASS",
+  "M4_6_COMPLETED": "no",
+  "M4_8_PLANNING_READY": "no",
+  "BLOCKING_PLAN_GAP_COUNT": 0
+}

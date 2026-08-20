@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "GITHUB_RAW_PRECONDITION_MODEL": "PASS",
+  "model_summary": "GitHub raw authority CAS/precondition is represented as (authority_source_revision, authority_observed_raw_digest) pair, distinct from Subject CAS and normalized semantic digest. Subject revision never used as GitHub CAS; normalized digest never used as raw CAS.",
+  "domains": [
+    {
+      "domain": "Subject lifecycle concurrency",
+      "fields": [
+        "subject_expected_revision"
+      ],
+      "type": "int ≥0",
+      "purpose": "Subject aggregate CAS (M4-5/M3-B6 durable subject graph)"
+    },
+    {
+      "domain": "GitHub raw authority concurrency (external CAS)",
+      "fields": [
+        "authority_source_revision",
+        "authority_observed_raw_digest"
+      ],
+      "type": "authority_source_revision: str|int opaque GitHub revision token; authority_observed_raw_digest: SHA-256 hex of raw body bytes",
+      "purpose": "GitHub optimistic write precondition (external authority CAS)"
+    },
+    {
+      "domain": "Portable Plan semantic identity",
+      "fields": [
+        "normalized_plan_digest"
+      ],
+      "type": "SHA-256 hex (semantic normalized plan)",
+      "purpose": "semantic validation and drift comparison only; supporting evidence, never external CAS"
+    }
+  ],
+  "invariants": {
+    "SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS": "no",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+    "RAW_SOURCE_DIGEST_DIFFERS_FROM_NORMALIZED_PLAN_DIGEST": "yes",
+    "GITHUB_RAW_AUTHORITY_REVISION_NE_NORMALIZED_DIGEST": true,
+    "MUST_PRESERVE_SUBJECT_REVISION_NE_GITHUB_RAW_REVISION_NE_NORMALIZED_DIGEST": true
+  },
+  "GITHUB_RAW_AUTHORITY_REVISION_SOURCE": {
+    "description": "Opaque GitHub raw authority revision/source token observed at read time, not derived or fabricated by adapter. Must be treated as opaque by Core; adapter plumbing may obtain it from the authoritative GitHub Issue read path.",
+    "candidates_considered": [
+      "updated_at (Issue/comment updated_at timestamp)",
+      "ETag / response ETag header",
+      "node ID (GraphQL node ID)",
+      "comment ID as monotonic ID",
+      "body hash alone"
+    ],
+    "chosen_model": "Opaque external revision token + observed_raw_digest pair — adapter captures whatever authoritative revision the GitHub read provides as an opaque string/int (e.g., updated_at ISO-8601 as string, or ETag-like opaque token, or monotonic revision if the store exposes one). Adapter MUST NOT assume ETag validity without source evidence; MUST NOT substitute comment ID for revision; MUST NOT synthesize updated_at if not provided. The pair (revision_token, observed_raw_digest) together form the CAS precondition; comparison requires both (revision equality and digest equality) to disambiguate concurrent races.",
+    "why_not_single_assumption_without_evidence": "Plan forbids assuming one of updated_at/ETag/node ID/comment ID/body hash without authority/source evidence. GitHub Issue API does not document a native conditional write ETag for Issue body updates in the REST shape the adapter uses; the adapter therefore must NOT claim native CAS; it must perform read-before-write with explicit raw precondition compare and verify-after-write, documenting revision source as observed opaque token.",
+    "normalized_digest_must_not_be_used_as_cas": true,
+    "subject_revision_must_not_be_used_as_cas": true
+  },
+  "GITHUB_RAW_AUTHORITY_DIGEST_SOURCE": {
+    "description": "SHA-256 hex of exact raw authoritative body bytes as observed at read time (authority_observed_raw_digest) and of exact intended candidate raw bytes (candidate_raw_digest). For Issue body, digest is over raw body string bytes; for comments, over comment body bytes.",
+    "computation": "canonical source bytes as returned by GitHub read (preserving exact bytes modulo bounded normalization), hashed via SHA-256 hex; candidate digest computed from exact candidate_raw_body string supplied in PortablePlanMutationRequest; comparison is exact raw identity (byte-level exact, not semantic normalized equality)",
+    "candidate_vs_normalized_distinct": "candidate_raw_digest (exact external document identity) vs normalized_plan_digest (semantic normalized digest) are separate domains; normalized equality alone never proves exact external effect (J8/CONFLICT)"
+  },
+  "RAW_PRECONDITION_COMPARISON_ALGORITHM": {
+    "algorithm": "stale_if_any_mismatch",
+    "steps": [
+      "read exact current raw authority via readRawAuthority (returns current_raw_revision, current_raw_digest, raw_body)",
+      "retrieve authorized precondition stored in PortablePlanMutationRequest / JournalRecord PREPARED (authority_source_revision, authority_observed_raw_digest, candidate_raw_digest)",
+      "compare current_raw_revision == expected authority_source_revision (if expected is not None)",
+      "compare current_raw_digest == expected authority_observed_raw_digest (if expected is not None)",
+      "if either mismatch (revision mismatch OR digest mismatch) -> stale raw authority -> fail closed with STALE_AUTHORITY; no external write",
+      "only if both match (or expected None intentionally omitted with explicit bounded rule) -> eligible to proceed to external attempt after journal PREPARED->APPLYING durability"
+    ],
+    "fail_closed": true,
+    "heuristic_third_state_selection_allowed": "no"
+  },
+  "subject_vs_github_vs_normalized_separation": {
+    "SUBJECT_REVISION_NE_GITHUB_RAW_AUTHORITY_REVISION": true,
+    "GITHUB_RAW_AUTHORITY_REVISION_NE_NORMALIZED_PLAN_DIGEST": true,
+    "SUBJECT_REVISION_NE_NORMALIZED_PLAN_DIGEST": true,
+    "verified": "yes"
+  },
+  "native_cas_note": "Even with correct (revision+digest) CAS mapping, the underlying GitHub API operation today provides no usable native conditional write primitive that can atomically guard the raw precondition without a race window. Therefore read-before-write does not eliminate all race windows; mechanical pre-read validation + single external attempt + mandatory readback verification + OUTCOME_UNKNOWN/CONFLICT handoff is required (see read-write-verify protocol)."
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "GITHUB_READ_BEFORE_WRITE_REQUIRED": "yes",
+  "GITHUB_VERIFY_AFTER_WRITE_REQUIRED": "yes",
+  "TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED": "no",
+  "GITHUB_NATIVE_CAS_CAPABILITY_REVIEW": "PASS",
+  "read_before_write": {
+    "required": "yes",
+    "no_blind_overwrite": true,
+    "sequence": [
+      "read exact current raw object (Issue body via readRawAuthority; control comment via list+resolve+readExact for that role)",
+      "derive current raw revision/digest (authority_source_revision, authority_observed_raw_digest) from authoritative read",
+      "compare with M4-5 external authority precondition (authority_source_revision + authority_observed_raw_digest bound in PortablePlanMutationRequest / JournalRecord PREPARED)",
+      "only then external apply eligibility: if any mismatch -> STALE_AUTHORITY fail closed, no external write; else proceed to journal APPLYING persistence then at most one external attempt"
+    ],
+    "adapter_must_not": [
+      "blind overwrite",
+      "use subject revision as GitHub CAS",
+      "use normalized digest as raw CAS"
+    ]
+  },
+  "github_raw_revision_model": {
+    "GITHUB_RAW_AUTHORITY_REVISION_SOURCE": "opaque GitHub raw revision token (e.g., Issue updated_at/etag-like token as observed string) + authority_observed_raw_digest SHA-256; see raw-precondition-model.json for full rationale",
+    "GITHUB_RAW_AUTHORITY_DIGEST_SOURCE": "SHA-256 of exact raw body bytes (observed at read time; candidate computed from exact candidate_raw_body)",
+    "RAW_PRECONDITION_COMPARISON_ALGORITHM": "stale_if_any_mismatch (any revision or digest mismatch -> stale fail closed)"
+  },
+  "github_native_cas_capability_review": {
+    "GITHUB_NATIVE_CAS_CAPABILITY_REVIEW": "PASS",
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+    "actual_github_api_conditional_write_available": "no (for Issue body mutation via REST; no documented usable If-Match/ETag CAS that the adapter could atomically guard under all transports)",
+    "do_not_pretend_read_before_write_eliminates_race": true,
+    "mechanical_behavior_when_no_native_cas": {
+      "pre_read_validation": "read exact current raw authority; compare to authorized raw precondition; fail closed if stale before any write",
+      "external_attempt": "perform at most one typed GitHub mutation (update Issue body or update comment in place) with exact candidate_raw_body/candidate_raw_digest; do not attempt second write regardless of apparent idempotency",
+      "readback_verification": "re-read exact authoritative GitHub object (readRawAuthority / readExactComment) to obtain observed revision/digest/body; classify via three-way candidate/original/third vs OUTCOME_UNKNOWN",
+      "outcome_handoff": "OUTCOME_UNKNOWN / CONFLICT surfaces to M4-7 journal reconciliation; no blind retry; no old lease reuse; no heuristic third-state merge"
+    },
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE_flag": "no"
+  },
+  "verify_after_write": {
+    "required": "yes",
+    "transport_success_alone_means_verified": "no",
+    "sequence": [
+      "write attempt (GitHub API returns transport result / HTTP status)",
+      "re-read exact authoritative GitHub object (mandatory readback regardless of prior transport success)",
+      "compare raw result to candidate/original: observed_raw_digest == candidate_raw_digest -> candidate observed; == original (authority_observed_raw_digest at PREPARED) -> original observed (no effect); else -> third state or CONFLICT unless supporting evidence distinguishes",
+      "return typed observation (observed_raw_digest, observed_revision, raw_body, error_code, adapter_success bool) for journal/recovery handling (M4-7 consumes)"
+    ],
+    "unknown_handling": "if timeout/connection reset/response lost/readback unavailable -> surface OUTCOME_UNKNOWN with exact observation semantics (unknown means not success, not failure, not retry permission)"
+  },
+  "typed_issue_body_mutation_plan": {
+    "ISSUE_BODY_TYPED_MUTATION_PLAN": "PASS",
+    "generic_update_issue_arbitrary_body_allowed": "no",
+    "operation": "M4-6 consumes M4-5 typed target (ObjectRef canonical) + operation (plan_init|plan_retirement) + external authority precondition (authority_source_revision + authority_observed_raw_digest) + candidate_raw_digest + normalized_plan_digest + correlation/idempotency identity; the hidden transport is strongly typed and its semantic operation is already authorized via the operation descriptor registry",
+    "port_consumption": "PortablePlanMutationRequest {operation, typed_target, correlation_id, contract_hash, idempotency_key, intent_fingerprint, subject_expected_revision, authority_source_revision, authority_observed_raw_digest, candidate_raw_digest, normalized_plan_digest, principal, authorization_reference, lease_reference, attempt_reference, candidate_raw_body} -> PlanAuthorityMutationPort.mutate -> PortablePlanMutationResponse -> verify -> typed observation"
+  },
+  "portability_core_boundary": {
+    "CORE_GITHUB_SEMANTIC_LEAK_PLANNED_COUNT": 0,
+    "M4_5_CORE_CONTRACT_MODIFICATION_REQUIRED": "no",
+    "github_concepts_belong_in_adapter_package": true,
+    "core_remains_transport_neutral": true
+  }
+}

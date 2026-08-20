@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "work_item_title": "GitHub Issue / Control-Comment Authority Adapter",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "M4_6_PRIMARY_RESPONSIBILITY": "Implement GitHub-specific authority transport behind the accepted M4-5 executor-neutral Plan Authority Port, mapping typed mutation requests to deterministic Issue body + control-comment projection reads/writes with strict read-before-write, typed operation, raw authority precondition validation, and verify-after-write observation handoff without introducing semantic decisions, cross-authority atomicity, or journal persistence.",
+  "M4_6_OWNS": [
+    "GitHub Issue body authority transport (typed read + typed mutate + verify readback)",
+    "Control-comment projection transport with role-cardinality enforcement (0/1/>1) and update-in-place",
+    "Event Log append-only adapter mechanics (typed append-only operation; never edit history)",
+    "GitHub-specific raw authority mapping (raw revision + raw digest) and read-before-write/verify-after-write plumbing",
+    "GitHub-specific error/transport mapping to canonical categories",
+    "Auth preflight mechanics (rtk gh api user verification; no credential semantics)"
+  ],
+  "M4_6_DOES_NOT_OWN": [
+    "M4-5 Portable Plan Mutation Port contract (consumed; not redefined)",
+    "Multi-domain precondition model / digest separation (consumed)",
+    "Journal state family / state machine / persistence (M4-7)",
+    "Reconciliation classifier execution / retry authorization engine (M4-7)",
+    "Semantic decisions (Project/Subject/successor/role preference/third-state overwrite)",
+    "Generic GitHub API passthrough or generic mutation endpoint",
+    "Durable recovery / restart scanner / background worker",
+    "M4-8 CLI/Core convergence"
+  ],
+  "capability_ownership": [
+    {
+      "capability": "Issue body authority transport",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D9 Issue body is Portable Plan semantic authority; M4-5 Port provides raw precondition; M4-6 downstream handoff from M4-5 source reconciliation"
+    },
+    {
+      "capability": "control-comment projection transport",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D9 required_roles milestone_progress_index/development_notes/defect_register + optional runtime_activation_record; zero/many fail closed"
+    },
+    {
+      "capability": "Event Log adapter transport",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-0 D9 Event Log append-only evidence; M4-5 downstream handoff states Event Log mechanics are M4-6-owned as transport"
+    },
+    {
+      "capability": "raw authority precondition mapping",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-5 D6 raw_source_revision + observed_raw_digest vs normalized digest separation; M4-5 port RawAuthorityPrecondition"
+    },
+    {
+      "capability": "read-before-write",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-5 required_write_order: read external authority state → validate raw precondition → only then external apply; M4-0 D3 required_write_order"
+    },
+    {
+      "capability": "verify-after-write",
+      "M4_6_OWNERSHIP": "owned",
+      "AUTHORITY_EVIDENCE": "M4-5 VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED=yes; ADAPTER_SUCCESS_ALONE_MEANS_VERIFIED=no; M4-0 D3 required_write_order read authority store after mutation"
+    },
+    {
+      "capability": "journal persistence",
+      "M4_6_OWNERSHIP": "downstream (M4-7)",
+      "AUTHORITY_EVIDENCE": "M4-5 downstream handoff: journal persistence owned by M4-7; M4-5 owns contract only"
+    },
+    {
+      "capability": "reconciliation execution",
+      "M4_6_OWNERSHIP": "downstream (M4-7)",
+      "AUTHORITY_EVIDENCE": "M4-5 M4_7 owns deterministic reconciliation/recovery execution engine"
+    },
+    {
+      "capability": "semantic project selection",
+      "M4_6_OWNERSHIP": "out_of_scope",
+      "AUTHORITY_EVIDENCE": "M4-0 D11 CORE_SELECTS_PROJECT_UNDER_AMBIGUITY=no; adapter is not semantic decision maker"
+    },
+    {
+      "capability": "generic GitHub API",
+      "M4_6_OWNERSHIP": "out_of_scope",
+      "AUTHORITY_EVIDENCE": "M4-0 D12 RAW_GH_OPERATION_IN_CORE=no; GENERIC_GITHUB_API_ALLOWED=no"
+    },
+    {
+      "capability": "cross-authority atomic transaction",
+      "M4_6_OWNERSHIP": "out_of_scope",
+      "AUTHORITY_EVIDENCE": "M4-0 D2 CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no; M4-5 port confirms"
+    }
+  ],
+  "ownership_summary": {
+    "M4_6_EXCLUSIVE_WRITE_PATH_COUNT": 3,
+    "M4_6_SHARED_READ_ONLY_PATH_COUNT": 6,
+    "M4_6_INTEGRATION_ONLY_PATH_COUNT": 2,
+    "M4_6_FORBIDDEN_PATH_COUNT": 12
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "CONTROL_ROLE_CARDINALITY_MODEL": "PASS",
+  "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED": "no",
+  "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+  "role_resolution_model": {
+    "principle": "Canonical control role identity is resolved deterministically by counting all bindings of that role among listed Issue comments. Role identity is independent from comment recency. No latest/newest/first/ID heuristic.",
+    "cardinality_rules": [
+      {
+        "binding_count": 0,
+        "meaning": "required role: not found / missing role -> CONTROL_ROLE_MISSING fail closed, no mutation; optional runtime_activation_record: absent unless explicitly authorized (not a failure outside activation context)"
+      },
+      {
+        "binding_count": 1,
+        "meaning": "deterministic target -> exact resolved comment ID + revision + digest is the single mutation target; update in place"
+      },
+      {
+        "binding_count": ">1",
+        "meaning": "conflict / reconciliation required -> CONTROL_ROLE_DUPLICATE fail closed; no mutation; no silent preference selection among duplicates; must reconcile deterministically or surface CONFLICT for LLM/user"
+      }
+    ],
+    "forbidden_heuristics": [
+      "latest comment wins",
+      "EFFECTIVE_PLAN",
+      "latest control comment heuristic",
+      "first match",
+      "newest",
+      "lowest ID",
+      "highest ID",
+      "nearest timestamp",
+      "title similarity",
+      "text similarity"
+    ],
+    "heuristic_selection_allowed": "no"
+  },
+  "canonical_roles": [
+    {
+      "role": "milestone_progress_index",
+      "required": true,
+      "zero_behavior": "CONTROL_ROLE_MISSING fail closed; no Issue body or control comment mutation until reconciled",
+      "one_behavior": "update canonical control comment in place (strict: read exact current raw object -> validate precondition -> update exact comment ID -> readback verify)",
+      "many_behavior": "CONTROL_ROLE_DUPLICATE fail closed; surface CONFLICT; no newest/latest selection; no duplicate creation",
+      "role_identity_source": "deterministic marker extracted from comment body (e.g., fixed header token), not comment recency"
+    },
+    {
+      "role": "development_notes",
+      "required": true,
+      "zero_behavior": "CONTROL_ROLE_MISSING fail closed",
+      "one_behavior": "update in place",
+      "many_behavior": "CONTROL_ROLE_DUPLICATE fail closed",
+      "role_identity_source": "deterministic marker"
+    },
+    {
+      "role": "defect_register",
+      "required": true,
+      "zero_behavior": "CONTROL_ROLE_MISSING fail closed",
+      "one_behavior": "update in place",
+      "many_behavior": "CONTROL_ROLE_DUPLICATE fail closed",
+      "role_identity_source": "deterministic marker"
+    },
+    {
+      "role": "runtime_activation_record",
+      "required": false,
+      "zero_behavior": "absent unless explicitly authorized runtime/deployment lifecycle requires it; M4 source does not activate runtime (D10) so creation is generally not required",
+      "one_behavior": "resolve when authorized operation requires it; update in place",
+      "many_behavior": "duplicate-role failure; no selection",
+      "role_identity_source": "deterministic marker"
+    },
+    {
+      "role": "Event Log (append-only)",
+      "required": false,
+      "zero_behavior": "empty log is valid; append first evidence comment on authorized append-only operation",
+      "one_behavior": "not applicable (append-only grows; read for monotonicity only)",
+      "many_behavior": "many entries expected historically; append-only does not use role-cardinality duplicate rule; duplicate detection is via idempotent correlation/attempt, not count heuristic",
+      "role_identity_source": "Event Log marker prefix"
+    }
+  ],
+  "update_in_place_rule": {
+    "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED": "no",
+    "existing_canonical_role_target_behavior": "update in place (single bounded authorized write to the exact resolved comment ID)",
+    "new_canonical_comment_per_write_allowed": "no",
+    "role_identity_independent_from_recency": true,
+    "implementation_note": "GitHub adapter must read current role target before any write; if binding count==1, mutate that exact comment ID with its current raw revision precondition; if count 0 or >1, fail closed before any external write."
+  },
+  "no_latest_comment_heuristic_guarantee": {
+    "HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED": "no",
+    "adapter_must_not_resurrect": [
+      "latest comment wins",
+      "EFFECTIVE_PLAN",
+      "latest control comment heuristic"
+    ],
+    "verification": "M4-6 tests will assert duplicate role surfaces CONFLICT, not silently prefers latest"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "MULTI_GITHUB_OBJECT_ATOMICITY_ASSUMED": "no",
+  "PARTIAL_PROJECTION_FAILURE_PLAN": "PASS",
+  "multi_object_write_model": {
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+    "github_cannot_atomically_mutate_multiple_objects": true,
+    "operations_requiring_multiple_objects": [
+      "Issue body mutation + one or more control-comment projection updates (milestone_progress_index, development_notes, defect_register)",
+      "Issue body mutation + Event Log append",
+      "Issue body + multiple projections + Event Log"
+    ],
+    "atomicity_assumption": "M4-6 must NOT assume cross-object writes are atomic; unless actual API capability proves otherwise (none proven for GitHub Issue + comments), each object mutation is independent and may partially succeed"
+  },
+  "authority_vs_projection_order": {
+    "authority_order": "1) Issue body authority mutation (Portable Plan semantic authority) — read-before-write verified, single typed mutate, verify-after-write readback and classification",
+    "projection_order": "2) Projection updates ordered deterministically: milestone_progress_index, development_notes, defect_register, then runtime_activation_record if required, then Event Log append as last evidence step",
+    "readback_order": "3) Readback verification per object: after each write, re-read that exact object (Issue body verify; per-comment verify); after full sequence, re-read all for combined classification; any failure enters partial-effect classification",
+    "rationale": "Authority defines projection; projections never drive authority; Event Log is append-only evidence last so it can record partial-effect signals without corrupting authority"
+  },
+  "partial_effect_classification": {
+    "partial_effect_scenarios": [
+      {
+        "scenario": "Issue body verified CANDIDATE_OBSERVED but one control projection update failed (stale, network, permission)",
+        "classification": "PARTIAL_PROJECTION_FAILURE: Issue body effect is externally visible and may be VERIFIED or need RECONCILING verification; projections are stale wrt body; journal RECONCILING with CONFLICT/third-state classification unless readback proves candidate for body and original for projections"
+      },
+      {
+        "scenario": "Issue body OUTCOME_UNKNOWN (timeout/response lost) then projection writes not attempted",
+        "classification": "OUTCOME_UNKNOWN handoff to M4-7; no projection writes until authority reconciliation resolves candidate vs original vs third; no blind retry"
+      },
+      {
+        "scenario": "Issue body FAILED_NO_EFFECT (stale precondition or known rejection) -> projections must not be mutated",
+        "classification": "FAILED_NO_EFFECT terminal; no projection mutation; no second attempt without fresh authorization"
+      },
+      {
+        "scenario": "Issue body VERIFIED but Event Log append failed (J10-like)",
+        "classification": "Issue body remains candidate observed; journal stranded APPLYING/RECONCILING -> future run reconciles with candidate identity -> VERIFIED_RECOVERED; Event Log append is retried only via fresh journal observation, never by guessing history rewrite"
+      }
+    ],
+    "handoff_to_journal_reconciliation": "Every partial-effect case surfaces a typed observation per object (observed_raw_digest, observed_revision, error_code) and a combined journal state for M4-7 to reconcile deterministically: candidate->VERIFIED_RECOVERED, original->RETRYABLE_NO_EFFECT (with fresh auth), third->CONFLICT, unknown->OUTCOME_UNKNOWN->RECONCILING",
+    "no_heuristic_merge": true
+  },
+  "recovery_contract": {
+    "M4_6_must_not_implement_durable_reconciliation": true,
+    "M4_6_durable_recovery_executor_planned": "no",
+    "M4_7_recovery_executor": "M4-7 consumes M4-6 per-object observations + journal RECORD and drives deterministic RECONCILING -> terminal transitions (candidate/original/third), respecting fresh authorization and bounded lease for retryable case"
+  }
+}

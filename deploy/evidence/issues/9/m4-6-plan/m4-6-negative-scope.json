@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "negative_scope": [
+    {
+      "item": "Generic GitHub API passthrough (gh api <arbitrary path> / unrestricted REST/GraphQL)",
+      "allowed": "no",
+      "rationale": "M4-0 D12 RAW_GH_OPERATION_IN_CORE=no; M4-6 allows only typed read/mutate/verify; generic passthrough would collapse adapter boundary"
+    },
+    {
+      "item": "Subject revision used as GitHub CAS",
+      "allowed": "no",
+      "rationale": "M4-5 D6 SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS=no; GitHub raw precondition must use authority_source_revision + observed_raw_digest, never subject_expected_revision"
+    },
+    {
+      "item": "Normalized digest used as raw CAS",
+      "allowed": "no",
+      "rationale": "M4-5 D6 NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no; normalized digest is semantic evidence only"
+    },
+    {
+      "item": "Latest-comment heuristic (latest comment wins / EFFECTIVE_PLAN)",
+      "allowed": "no",
+      "rationale": "M4-0 D9 CONTROL_ROLE_DUPLICATE fail closed; no first/latest/ID selection; binding count >1 -> conflict"
+    },
+    {
+      "item": "Duplicate control role append on every write",
+      "allowed": "no",
+      "rationale": "DUPLICATE_CONTROL_ROLE_CREATION_ALLOWED=no; existing canonical role target must be updated in place"
+    },
+    {
+      "item": "GitHub success == VERIFIED without readback",
+      "allowed": "no",
+      "rationale": "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED=yes; TRANSPORT_SUCCESS_ALONE_MEANS_VERIFIED=no; readback classification required"
+    },
+    {
+      "item": "Blind overwrite without read-before-write",
+      "allowed": "no",
+      "rationale": "GITHUB_READ_BEFORE_WRITE_REQUIRED=yes; stale fails closed"
+    },
+    {
+      "item": "Blind retry after unknown outcome",
+      "allowed": "no",
+      "rationale": "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED=no; OUTCOME_UNKNOWN -> RECONCILING handoff to M4-7"
+    },
+    {
+      "item": "Old lease reuse after unknown",
+      "allowed": "no",
+      "rationale": "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no; retry requires fresh authorization + new bounded lease"
+    },
+    {
+      "item": "GitHub semantic leak into Core",
+      "allowed": "no",
+      "rationale": "CORE_GITHUB_SEMANTIC_LEAK_PLANNED_COUNT=0; M4_5_CORE_CONTRACT_MODIFICATION_REQUIRED=no; GitHub concepts belong in adapter package"
+    },
+    {
+      "item": "Durable journal persistence in M4-6",
+      "allowed": "no",
+      "rationale": "Journal persistence is M4-7; M4-6 produces observations for journal classifier but does not persist terminal state"
+    },
+    {
+      "item": "Reconciliation executor in M4-6",
+      "allowed": "no",
+      "rationale": "M4-6_RECOVERY_EXECUTOR_PLANNED=no; M4-7 owns deterministic reconciliation execution"
+    },
+    {
+      "item": "M4-7 exclusive paths claimed by M4-6 (journal store/executor/persistence/recovery)",
+      "allowed": "no",
+      "rationale": "Parallel safety: no overlap with M4-7 exclusive writes; see parallel-boundary.json"
+    },
+    {
+      "item": "Production Issue #9 write used for acceptance",
+      "allowed": "no",
+      "rationale": "PRODUCTION_GITHUB_ACCEPTANCE_WRITE_ALLOWED=no; all acceptance uses deterministic fixture/fake transport stub; no test may mutate Issue #9 governance state"
+    },
+    {
+      "item": "Construction-time semantic decision invented by adapter (choose Project/Subject/successor/role preference/third-state overwrite)",
+      "allowed": "no",
+      "rationale": "GITHUB_ADAPTER_IS_SEMANTIC_DECISION_MAKER=no; adapter is mechanical only"
+    },
+    {
+      "item": "Construction semantic TODO unresolved",
+      "allowed": "no",
+      "rationale": "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT=0; implementation DAG slices define closed outputs with verified tests"
+    }
+  ],
+  "negative_scope_size": 16
+}
