@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-3 independent planning review",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-3-PLAN-R1",
+  "review_mode": "independent review only; no candidate, production source, tests, Issue, runtime, or external authority changes",
+  "candidate": {
+    "sha": "5842a51527c9941d8577efc157109f68b1ae0325",
+    "branch": "aota/m4/m4-3-plan",
+    "remote_ref": "refs/remotes/origin/aota/m4/m4-3-plan",
+    "accepted_base_sha": "16826b551b62f4874bfc6ec734cb571cb3d9dc6d",
+    "parent_is_exact_base": true,
+    "base_is_ancestor": true,
+    "candidate_worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-3-plan"
+  },
+  "review": {
+    "branch": "aota/m4/m4-3-plan-independent-review",
+    "worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/m4/m4-3-plan-independent-review",
+    "independent_guard": "scripts/m4_3_independent_review_guard.py",
+    "review_artifact": "deploy/evidence/issues/9/m4-3-plan-review/m4-3-plan-independent-review.json",
+    "candidate_unchanged": true,
+    "functional_source_changes": 0,
+    "test_changes": 0,
+    "blocking_finding_count": 0,
+    "status": "PASS"
+  },
+  "governance_readback": {
+    "CURRENT_MILESTONE": "M4",
+    "CURRENT_WORK_ITEM": "M4-3",
+    "CURRENT_STATUS": "m4_3_ready_for_planning",
+    "M4_3_PLANNING_READY": "yes",
+    "M4_3_EXECUTION_AUTHORIZED": "no",
+    "M4_3_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "next_governance_step": "Project Steward acceptance after independent review"
+  },
+  "candidate_scope": {
+    "planning_artifact_count": 14,
+    "guard_script_count": 1,
+    "changed_path_count": 15,
+    "production_source_changed": false,
+    "tests_changed": false,
+    "git_diff_check": "PASS",
+    "candidate_guard_command": "python3 scripts/m4_3_plan_guard.py",
+    "candidate_guard_result": "PASS",
+    "candidate_guard_counts": {
+      "json_parse_count": 71,
+      "negative_case_count": 12,
+      "negative_case_reject_count": 12,
+      "unexpected_accept_count": 0
+    }
+  },
+  "independent_review_scope": [
+    "latest Issue #9 authority appendix and current governance fields",
+    "accepted M4-0 architecture freeze",
+    "accepted M4-1 MutationIntent, descriptor, and canonical result contracts",
+    "accepted M4-2 authorization and CapabilityLease contracts",
+    "accepted M4-4 lifecycle, snapshot, Project Binding, CAS, and idempotency contracts",
+    "accepted M4-2/M4-4 repaired common base and integration evidence",
+    "candidate source ownership and current read-only source flags"
+  ],
+  "seam_verdicts": [
+    {"seam": "lineage and accepted base", "status": "PASS", "evidence": "candidate parent and remote/local refs resolve exactly; base is an ancestor"},
+    {"seam": "planning-only scope", "status": "PASS", "evidence": "14 JSON artifacts plus guard only; no aota_forge or tests diff"},
+    {"seam": "M4-1 contract reuse", "status": "PASS", "evidence": "typed MutationIntent, one descriptor registry, canonical mutation effects, semantic/mechanical partition preserved"},
+    {"seam": "M4-2 lease composition", "status": "PASS", "evidence": "variant A; M4-2 issuer remains sole issuer; exact request bindings are independently enumerated"},
+    {"seam": "M4-4 lifecycle composition", "status": "PASS", "evidence": "PLAN_INIT and retirement use existing typed requests, exact Project Binding/snapshot, CAS, and lifecycle handlers"},
+    {"seam": "closed ingress dispatch", "status": "PASS", "evidence": "only plan_init and plan_retirement; execute_mutation; no generic mutate or direct adapter transition"},
+    {"seam": "semantic choice boundary", "status": "PASS", "evidence": "no project/candidate/successor heuristic; zero/many and missing exact choices fail closed"},
+    {"seam": "revision and digest domains", "status": "PASS", "evidence": "Subject revision, raw authority revision/digests, and normalized digest remain separate"},
+    {"seam": "result and error projection", "status": "PASS", "evidence": "all eight MutationEffect classes remain distinct; unknown cannot report success or blind retry"},
+    {"seam": "ownership and downstream boundary", "status": "PASS", "evidence": "ingress/catalog/handlers exclusive; M4-2/M4-4 authority/lifecycle paths forbidden; M4-5/runtime/external writes unauthorized"}
+  ],
+  "independent_adversarial_review": {
+    "command": "python3 scripts/m4_3_independent_review_guard.py",
+    "check_count": 14,
+    "reject_count": 14,
+    "unexpected_accept_count": 0,
+    "cases": [
+      {"id": "NEG-IR-01", "mutation": "change lease issuance variant A to B", "expected": "reject"},
+      {"id": "NEG-IR-02", "mutation": "allow ingress to issue leases", "expected": "reject"},
+      {"id": "NEG-IR-03", "mutation": "add generic mutate operation", "expected": "reject"},
+      {"id": "NEG-IR-04", "mutation": "allow CapabilityLease as a model assertion", "expected": "reject"},
+      {"id": "NEG-IR-05", "mutation": "remove normalized_plan_digest from exact bindings", "expected": "reject"},
+      {"id": "NEG-IR-06", "mutation": "allow Core to select a project under ambiguity", "expected": "reject"},
+      {"id": "NEG-IR-07", "mutation": "remove newest from forbidden retirement heuristics", "expected": "reject"},
+      {"id": "NEG-IR-08", "mutation": "mark OUTCOME_UNKNOWN as successful", "expected": "reject"},
+      {"id": "NEG-IR-09", "mutation": "expose a CLI write command now", "expected": "reject"},
+      {"id": "NEG-IR-10", "mutation": "overlap ingress with shared read-only ownership", "expected": "reject"},
+      {"id": "NEG-IR-11", "mutation": "mark the dependency DAG acyclic flag false", "expected": "reject"},
+      {"id": "NEG-IR-12", "mutation": "activate production graph authority", "expected": "reject"},
+      {"id": "NEG-IR-13", "mutation": "authorize source implementation", "expected": "reject"},
+      {"id": "NEG-IR-14", "mutation": "reclassify fixture positives as a blocking semantic regression", "expected": "reject"}
+    ]
+  },
+  "current_regression_disposition": {
+    "real_lease_repair_guard": {
+      "command": "python3 scripts/m4_4_post_integration_repair_guard.py",
+      "status": "PASS",
+      "real_lease_positive_cases": 2,
+      "real_lease_positive_passes": 2,
+      "real_lease_negative_cases": 12,
+      "real_lease_negative_passes": 12
+    },
+    "fixture_cases": [
+      {"id": "i5", "test": "test_i5_valid_authorization_and_plan_init_are_compatible", "classification": "NON_ACCEPTANCE_FIXTURE_DEBT"},
+      {"id": "i8", "test": "test_i8_abandoned_retirement_preserves_cancelled_semantics", "classification": "NON_ACCEPTANCE_FIXTURE_DEBT"},
+      {"id": "i9", "test": "test_i9_exact_successor_retirement_is_valid", "classification": "NON_ACCEPTANCE_FIXTURE_DEBT"},
+      {"id": "i12", "test": "test_i12_changed_intent_conflicts_on_same_idempotency_identity", "classification": "NON_ACCEPTANCE_FIXTURE_DEBT"}
+    ],
+    "fixture_disposition": "The four existing positives construct make_test_lease fixtures; accepted exact-binding behavior correctly denies them. They are not repaired in M4-3 planning. Future ingress-positive cases must preserve CapabilityLeaseIssuer-issued leases.",
+    "inherited_integration_guard": {
+      "command": "python3 scripts/m4_2_m4_4_integration_guard.py",
+      "status": "FAIL_EXPECTED_CARRY_FORWARD_DEBT",
+      "failures": ["NEW_INTEGRATION_EDITS_WITHIN_AUTHORIZED_SET", "CROSS_LANE_TESTS"],
+      "interpretation": "The first failure is a historical guard allowlist that does not include this later M4-3 evidence lane; the second is the four fixture positives. Neither changes current source semantics."
+    },
+    "historical_provenance": {
+      "accepted_integration_evidence": "deploy/evidence/issues/9/m4-2-m4-4-integration/m4-2-m4-4-integration-regression-results.json",
+      "disposition": "PASS_WITH_HISTORICAL_PROVENANCE_FINDINGS",
+      "current_semantic_invariant_failure_count": 0,
+      "historical_findings_are_current_semantic_regressions": false
+    },
+    "current_semantic_blocker_count": 0
+  },
+  "activation_boundary": {
+    "M4_3_PLAN_REVIEW_ACCEPTED": "yes",
+    "M4_3_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "PRODUCTION_GRAPH_AUTHORITY_ACTIVE": "no",
+    "AUTHORITATIVE_GRAPH_WRITES_ALLOWED": "no",
+    "EXTERNAL_AUTHORITY_WRITE": "no",
+    "CLI_WRITE_EXPOSED": "no",
+    "M4_5_EXECUTION_AUTHORIZED": "no",
+    "next_step": "Project Steward acceptance; any source implementation requires new explicit authorization and base reconciliation"
+  }
+}
