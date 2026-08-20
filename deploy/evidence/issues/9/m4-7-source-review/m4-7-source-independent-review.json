@@ -1,0 +1,427 @@
+{
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-7-SOURCE-R1",
+  "review_target_sha": "00bdc8e8fdaf13755149039956024a124bba68ce",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_7_plan_known_good_checkpoint": "fc9b26f9c93768c8a430773668ae1ae61619af49",
+  "m4_7_plan_review_evidence_sha": "0c66371e74d62133f54adc3df3ddef358cc3d8cf",
+  "target_sha_verified": "yes",
+  "target_remote_ref_verified": "yes",
+  "target_ancestry_verified": "yes",
+  "plan_sha_used_as_source_base": "no",
+  "implementation_slice_count": 7,
+  "plan_to_source_traceability_review": "PASS",
+  "unplanned_semantic_implementation_count": 0,
+  "construction_time_unplanned_semantic_decision_count": 0,
+  "m4_7_detailed_source_ownership_review": "PASS",
+  "all_production_source_writes_within_accepted_m4_7_scope": "yes",
+  "m4_7_shared_read_only_path_write_count": 0,
+  "m4_7_forbidden_path_write_count": 0,
+  "m4_6_exclusive_path_write_count": 0,
+  "production_storage_engine_frozen_by_m4_7_source": "no",
+  "file_backed_implementation_role": "reference_adapter",
+  "file_backed_reference_adapter_production_default": "no",
+  "file_backed_reference_adapter_global_runtime_wiring_count": 0,
+  "durable_journal_store_port_review": "PASS",
+  "store_port_storage_neutral": "yes",
+  "file_backed_reference_role_review": "PASS",
+  "process_restart_durability_review": "PASS",
+  "in_memory_only_durability_test": "no",
+  "m4_5_journal_state_reuse_source_review": "PASS",
+  "journal_state_redefinition_count": 0,
+  "journal_state_count": 9,
+  "crash_window_count": 10,
+  "durable_journal_schema_source_review": "PASS",
+  "required_durable_field_missing_count": 0,
+  "opaque_identifier_semantic_authority_count": 0,
+  "durable_journal_transition_cas_source_review": "PASS",
+  "double_applying_cas_win_count": 0,
+  "cross_authority_atomic_transaction_available": "no",
+  "journal_cas_implies_external_write_atomicity": "no",
+  "at_most_one_attempt_durable_source_review": "PASS",
+  "duplicate_external_attempt_count": 0,
+  "in_memory_lock_is_sole_attempt_authority": "no",
+  "executor_write_order_review": "PASS",
+  "external_apply_before_durable_prepared_allowed": "no",
+  "apply_without_durable_applying_allowed": "no",
+  "executor_is_semantic_decision_maker": "no",
+  "applying_restart_blind_retry_allowed": "no",
+  "applying_restart_enters_accepted_recovery_path": "yes",
+  "external_reattempt_count_before_reconciliation": 0,
+  "recovery_module_source_review": "PASS",
+  "terminal_state_reprocessing_allowed": "no",
+  "recovery_executor_is_semantic_decision_maker": "no",
+  "m4_7_depends_on_m4_6_implementation": "no",
+  "github_api_call_count": 0,
+  "github_adapter_import_count": 0,
+  "control_comment_adapter_import_count": 0,
+  "m4_5_classifier_reimplemented_in_m4_7": "no",
+  "m4_5_classifier_reused": "yes",
+  "reconciliation_execution_source_review": "PASS",
+  "heuristic_reconciliation_allowed": "no",
+  "third_state_auto_merge_allowed": "no",
+  "outcome_unknown_durable_source_review": "PASS",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "unknown_outcome_blind_old_lease_reuse": "no",
+  "retry_handoff_source_review": "PASS",
+  "fresh_authorization_required_for_retry": "yes",
+  "old_authorization_evidence_overwrite_allowed": "no",
+  "retryable_no_effect_grants_automatic_authorization": "no",
+  "retryable_no_effect_blind_old_lease_reuse": "no",
+  "auto_retry_without_fresh_auth_count": 0,
+  "durable_idempotency_source_review": "PASS",
+  "idempotency_key_alone_is_durable_semantic_identity": "no",
+  "intent_fingerprint_alone_is_durable_semantic_identity": "no",
+  "same_key_changed_authorization_durable_replay_allowed": "no",
+  "fresh_authorization_rebind_source_review": "PASS",
+  "old_authorization_history_mutation_count": 0,
+  "journal_persistence_failure_source_review": "PASS",
+  "crash_window_implementation_coverage_count": 10,
+  "crash_window_independent_review": "PASS",
+  "undefined_crash_window_count": 0,
+  "j10_dedicated_execution_source_review": "PASS",
+  "j10_blind_reapply_allowed": "no",
+  "terminal_persistence_failure_blind_reapply_allowed": "no",
+  "terminal_state_recovery_scan_hit_count": 0,
+  "semantic_rollback_allowed": "no",
+  "recovery_compensating_mutation_implemented": "no",
+  "journal_schema_versioning_source_review": "PASS",
+  "focused_test_count": 33,
+  "focused_test_pass_count": 33,
+  "focused_tests_real_source_path": "yes",
+  "m4_7_source_guard": "PASS",
+  "source_guard_check_count": 78,
+  "source_guard_check_pass_count": 78,
+  "source_guard_real_source_path": "yes",
+  "tautological_guard_validation_detected": "no",
+  "independent_positive_case_count": 10,
+  "independent_positive_case_pass_count": 10,
+  "independent_positive_cases": [
+    {
+      "id": "P01",
+      "name": "PREPARED close/reopen",
+      "result": "PASS",
+      "detail": "FileBacked survives PREPARED revision 1"
+    },
+    {
+      "id": "P02",
+      "name": "APPLYING close/reopen",
+      "result": "PASS",
+      "detail": "FileBacked survives APPLYING revision 2"
+    },
+    {
+      "id": "P03",
+      "name": "single CAS winner",
+      "result": "PASS",
+      "detail": "only one PREPARED->APPLYING winner, stale raises StaleJournalRevisionError"
+    },
+    {
+      "id": "P04",
+      "name": "candidate observed -> VERIFIED_RECOVERED",
+      "result": "PASS",
+      "detail": "APPLYING->RECONCILING->VERIFIED_RECOVERED when verify returns candidate digest"
+    },
+    {
+      "id": "P05",
+      "name": "original observed -> RETRYABLE_NO_EFFECT",
+      "result": "PASS",
+      "detail": "verify returns original digest -> RETRYABLE"
+    },
+    {
+      "id": "P06",
+      "name": "terminal not rediscovered",
+      "result": "PASS",
+      "detail": "VERIFIED_RECOVERED not in scan_requiring_recovery"
+    },
+    {
+      "id": "P07",
+      "name": "fresh auth retry lineage",
+      "result": "PASS",
+      "detail": "create_retry_journal preserves old evidence, new journal_id same correlation_id"
+    },
+    {
+      "id": "P08",
+      "name": "same complete identity durable replay",
+      "result": "PASS",
+      "detail": "check_idempotency returns terminal for same complete_external_identity"
+    },
+    {
+      "id": "P09",
+      "name": "J10 reconciliation",
+      "result": "PASS",
+      "detail": "terminal persist fail leaves RECONCILING, future reconcile succeeds without blind reapply"
+    },
+    {
+      "id": "P10",
+      "name": "recovery through abstract M4-5 port without GitHub",
+      "result": "PASS",
+      "detail": "RecoveryExecutor uses PlanAuthorityMutationPort fake, no github imports"
+    }
+  ],
+  "independent_negative_case_count": 30,
+  "independent_negative_case_reject_count": 30,
+  "independent_negative_case_unexpected_accept_count": 0,
+  "independent_negative_cases": [
+    {
+      "id": "N01",
+      "name": "file adapter wired as production default",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "FILE_BACKED_REFERENCE_ADAPTER_IS_PRODUCTION_DEFAULT false"
+    },
+    {
+      "id": "N02",
+      "name": "in-memory-only durability",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "FileBacked PREPARED survives close/reopen"
+    },
+    {
+      "id": "N03",
+      "name": "state redefinition",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "JOURNAL_STATE_COUNT 9, no class redefinition in store"
+    },
+    {
+      "id": "N04",
+      "name": "missing durable semantic field",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "all required fields present in DurableJournalEntry.to_dict"
+    },
+    {
+      "id": "N05",
+      "name": "two APPLYING CAS winners",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "second CAS raises StaleJournalRevisionError, no double win"
+    },
+    {
+      "id": "N06",
+      "name": "in-memory lock sole attempt protection",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "IN_MEMORY_LOCK_IS_SOLE_ATTEMPT_AUTHORITY false, per-record RLock"
+    },
+    {
+      "id": "N07",
+      "name": "journal CAS claimed as external atomicity",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "JOURNAL_CAS_IMPLIES_EXTERNAL_WRITE_ATOMICITY false, CROSS_AUTHORITY no"
+    },
+    {
+      "id": "N08",
+      "name": "external apply before PREPARED",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "EXTERNAL_APPLY_BEFORE_DURABLE_PREPARED_ALLOWED false, can_perform false"
+    },
+    {
+      "id": "N09",
+      "name": "external apply before APPLYING",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "APPLY_WITHOUT_DURABLE_APPLYING_ALLOWED false"
+    },
+    {
+      "id": "N10",
+      "name": "APPLYING restart blind retry",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "recover_one does not mutate, enters RECONCILING"
+    },
+    {
+      "id": "N11",
+      "name": "terminal state rediscovered",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "TERMINAL_STATE_REPROCESSING_ALLOWED false, scan excludes terminals"
+    },
+    {
+      "id": "N12",
+      "name": "recovery selects semantic winner",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "RECOVERY_EXECUTOR_IS_SEMANTIC_DECISION_MAKER false"
+    },
+    {
+      "id": "N13",
+      "name": "GitHub adapter dependency",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "GITHUB_API_CALL_COUNT 0, no github imports"
+    },
+    {
+      "id": "N14",
+      "name": "classifier duplicated",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "M4_5_CLASSIFIER_REIMPLEMENTED_IN_M4_7 false"
+    },
+    {
+      "id": "N15",
+      "name": "candidate misclassified",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "classifier returns VERIFIED_RECOVERED for candidate"
+    },
+    {
+      "id": "N16",
+      "name": "original misclassified",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "classifier returns RETRYABLE_NO_EFFECT for original"
+    },
+    {
+      "id": "N17",
+      "name": "third state merged",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "classifier returns CONFLICT, HEURISTIC false"
+    },
+    {
+      "id": "N18",
+      "name": "UNKNOWN_OUTCOME blind retry",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "UNKNOWN_OUTCOME_BLIND_RETRY_ALLOWED false"
+    },
+    {
+      "id": "N19",
+      "name": "old lease reused",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "create_retry_journal rejects reuse of old lease"
+    },
+    {
+      "id": "N20",
+      "name": "RETRYABLE_NO_EFFECT auto-authorizes",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "RETRYABLE_NO_EFFECT_GRANTS_AUTOMATIC_AUTHORIZATION false"
+    },
+    {
+      "id": "N21",
+      "name": "fresh authorization overwrites old evidence",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "old record unchanged after create_retry_journal"
+    },
+    {
+      "id": "N22",
+      "name": "same key + auth drift replay",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "same key changed auth -> is_same_key_changed_auth_conflict true, replay denied"
+    },
+    {
+      "id": "N23",
+      "name": "journal ID as semantic authority",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT 0"
+    },
+    {
+      "id": "N24",
+      "name": "failure before PREPARED silently proceeds",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "inject_fail_next_create raises JournalPersistenceFailureError, no record"
+    },
+    {
+      "id": "N25",
+      "name": "failure entering APPLYING still external-writes",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "inject_fail_next_cas leaves PREPARED, cannot mutate"
+    },
+    {
+      "id": "N26",
+      "name": "terminal persistence failure blind reapply",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "inject_fail_next_persist leaves RECONCILING, mutate count 0"
+    },
+    {
+      "id": "N27",
+      "name": "J10 missing",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "CRASH_WINDOW_COUNT 10, J10 explicit"
+    },
+    {
+      "id": "N28",
+      "name": "semantic rollback",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "SEMANTIC_ROLLBACK_ALLOWED false"
+    },
+    {
+      "id": "N29",
+      "name": "M4-6 exclusive path modified",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "git diff shows 0 github files"
+    },
+    {
+      "id": "N30",
+      "name": "production journal used for tests",
+      "expected": "REJECT",
+      "result": "REJECT",
+      "detail": "FILE_BACKED_REFERENCE_ADAPTER_GLOBAL_RUNTIME_WIRING_COUNT 0, tests use TemporaryDirectory"
+    }
+  ],
+  "m4_5_current_semantic_regression": "PASS",
+  "m4_3_current_semantic_regression": "PASS",
+  "m4_2_current_semantic_regression": "PASS",
+  "m4_4_current_semantic_regression": "PASS",
+  "m4_2_m4_4_integration_regression": "PASS",
+  "current_full_suite_total_count": 92,
+  "current_full_suite_pass_count": 88,
+  "current_failure_set_exactly": "i5,i8,i9,i12",
+  "new_full_suite_failure_count": 0,
+  "current_semantic_invariant_failure_count": 0,
+  "production_journal_mutated": "no",
+  "production_external_authority_write_count": 0,
+  "production_github_write_count": 0,
+  "production_graph_mutated": "no",
+  "production_authority_mutated": "no",
+  "deploy_performed": "no",
+  "runtime_activation_performed": "no",
+  "blocking_finding_count": 0,
+  "non_blocking_finding_count": 0,
+  "blocking_findings": [],
+  "non_blocking_findings": [],
+  "read_before_write": "PASS",
+  "review_commit_created": "yes",
+  "review_push_performed": "yes",
+  "m4_7_source_review_accepted": "yes",
+  "m4_7_completed": "no",
+  "m4_7_is_known_good_checkpoint": "no",
+  "m4_8_planning_ready": "no",
+  "next_ready_set": "m4_7_source_governance_reconciliation",
+  "next_action": "m4_7_source_governance_reconciliation",
+  "governance_preflight": {
+    "m4_7_plan_accepted": "yes",
+    "m4_7_execution_authorized": "yes",
+    "m4_7_source_implementation_authorized": "yes",
+    "m4_7_completed": "no"
+  },
+  "evidence_provenance": {
+    "review_target_branch": "refs/heads/aota/m4/m4-7-source",
+    "review_target_sha_verified": "00bdc8e8fdaf13755149039956024a124bba68ce",
+    "plan_checkpoint_verified": "fc9b26f9c93768c8a430773668ae1ae61619af49",
+    "plan_review_evidence_verified": "0c66371e74d62133f54adc3df3ddef358cc3d8cf",
+    "focused_tests_command": "pytest tests/test_m4_7_durable_journal.py tests/test_m4_7_recovery.py -v (33/33)",
+    "source_guard_command": "python scripts/m4_7_source_guard.py (78/78)",
+    "full_suite_command": "pytest tests/ -q (92 total 88 pass 4 known debts i5,i8,i9,i12)",
+    "independent_probes": "file-backed close/reopen, CAS race, reconciliation classification, idempotency lineage, J10 nonterminal"
+  },
+  "review_commit_sha": "aeaf47622a9213bfcf177cca2146a6b3ea642eb9",
+  "m4_7_source_review_evidence_sha": "aeaf47622a9213bfcf177cca2146a6b3ea642eb9",
+  "review_remote_ref": "refs/heads/aota/m4/m4-7-source-independent-review"
+}
