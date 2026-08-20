@@ -293,8 +293,8 @@
     "The existing integration guard's changed-path allowlist predates the bounded repair guard/evidence paths; this is a guard-scope/provenance limitation, not a product semantic failure.",
     "Historical descendant-sensitive B2/B5/B9/B89/M2-I/M4-1/M4-2 and propagated B12/B13/BG2 assertions remain non-blocking; current semantic probes pass."
   ],
-  "REVIEW_COMMIT_CREATED": "no",
-  "R2_INTEGRATION_REVIEW_EVIDENCE_SHA": "pending-review-commit",
+  "REVIEW_COMMIT_CREATED": "yes",
+  "R2_INTEGRATION_REVIEW_EVIDENCE_SHA": "bfc8a810a92613b9a09ecf0d8a11e506bea6bcb1",
   "REVIEW_PUSH_PERFORMED": "no",
   "REVIEW_REMOTE_REF": "refs/heads/aota/m4/m4-2-m4-4-integration-r2-review",
   "M4_2_M4_4_INTEGRATION_REVIEW_ACCEPTED": "yes",
