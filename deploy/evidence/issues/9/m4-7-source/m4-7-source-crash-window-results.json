@@ -1,0 +1,88 @@
+{
+  "crash_window_count": 10,
+  "crash_window_implementation_coverage_count": 10,
+  "invariants": {
+    "applying_restart_blind_retry_allowed": "no",
+    "heuristic_third_state_selection_allowed": "no",
+    "semantic_rollback_allowed": "no",
+    "unknown_outcome_blind_retry_allowed": "no"
+  },
+  "j10_blind_reapply_allowed": "no",
+  "j10_dedicated_execution_implemented": "yes",
+  "matrix": [
+    {
+      "effect": "no_effect",
+      "next": "FAILED_NO_EFFECT",
+      "result": "PASS",
+      "state": "PREPARED persisted, APPLYING not durable",
+      "window": "J1"
+    },
+    {
+      "effect": "known_no_effect",
+      "next": "FAILED_NO_EFFECT",
+      "result": "PASS",
+      "state": "APPLYING durable, known no effect",
+      "window": "J2"
+    },
+    {
+      "effect": "effect_probably_applied",
+      "next": "RECONCILING->VERIFIED_RECOVERED",
+      "result": "PASS",
+      "state": "APPLYING durable, external succeeded but VERIFIED not persisted",
+      "window": "J3"
+    },
+    {
+      "effect": "unknown",
+      "next": "OUTCOME_UNKNOWN->RECONCILING",
+      "result": "PASS",
+      "state": "APPLYING or OUTCOME_UNKNOWN timeout",
+      "window": "J4"
+    },
+    {
+      "effect": "no_effect_observed_original",
+      "next": "RETRYABLE_NO_EFFECT",
+      "result": "PASS",
+      "state": "RECONCILING original observed",
+      "window": "J5"
+    },
+    {
+      "effect": "success_observed_candidate",
+      "next": "VERIFIED_RECOVERED",
+      "result": "PASS",
+      "state": "RECONCILING candidate observed",
+      "window": "J6"
+    },
+    {
+      "effect": "third_state_conflict",
+      "next": "CONFLICT",
+      "result": "PASS",
+      "state": "RECONCILING third state",
+      "window": "J7"
+    },
+    {
+      "effect": "normalized_equality_only",
+      "next": "CONFLICT",
+      "result": "PASS",
+      "state": "RECONCILING normalized equality only",
+      "window": "J8"
+    },
+    {
+      "effect": "no_effect",
+      "next": "FAILED_NO_EFFECT",
+      "result": "PASS",
+      "state": "PREPARED/APPLYING persistence failure before external",
+      "window": "J9"
+    },
+    {
+      "effect": "success_confirmed_but_terminal_not_persisted",
+      "next": "RECONCILING->VERIFIED_RECOVERED",
+      "result": "PASS",
+      "state": "nonterminal after terminal persistence failure",
+      "window": "J10"
+    }
+  ],
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "undefined_crash_window_count": 0,
+  "verification": "PASS"
+}

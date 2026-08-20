@@ -1,4 +1,4 @@
-"""M4-5 journal contract package — contract only, no durable persistence."""
+"""M4-5 journal contract package — contract only, plus M4-7 durable store re-export (read-only)."""
 
 from aota_forge.core.journal.model import (
     JOURNAL_STATE_COUNT,
@@ -18,6 +18,26 @@ from aota_forge.core.journal.retry import (
     is_retry_allowed,
 )
 
+# M4-7 durable store re-exports (authorized helpers per plan: journal/__init__.py is allowed test helper)
+try:
+    from aota_forge.core.journal.store import (
+        DurableJournalStore,
+        DurableJournalEntry,
+        InMemoryDurableJournalStore,
+        FileBackedDurableJournalStore,
+        DURABLE_JOURNAL_STORE_PORT_IMPLEMENTED,
+    )
+    from aota_forge.core.journal.recovery import RecoveryScanner
+    from aota_forge.core.journal.executor import RecoveryExecutor
+except ImportError:
+    DurableJournalStore = None  # type: ignore
+    DurableJournalEntry = None  # type: ignore
+    InMemoryDurableJournalStore = None  # type: ignore
+    FileBackedDurableJournalStore = None  # type: ignore
+    RecoveryScanner = None  # type: ignore
+    RecoveryExecutor = None  # type: ignore
+    DURABLE_JOURNAL_STORE_PORT_IMPLEMENTED = False  # type: ignore
+
 __all__ = [
     "JournalState",
     "JournalRecord",
@@ -28,4 +48,10 @@ __all__ = [
     "ReconciliationClassification",
     "classify_three_way",
     "is_retry_allowed",
+    "DurableJournalStore",
+    "DurableJournalEntry",
+    "InMemoryDurableJournalStore",
+    "FileBackedDurableJournalStore",
+    "RecoveryScanner",
+    "RecoveryExecutor",
 ]

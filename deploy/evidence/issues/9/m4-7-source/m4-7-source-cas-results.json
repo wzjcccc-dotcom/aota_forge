@@ -1,0 +1,28 @@
+{
+  "atomic_unit": "single journal record update including state, revision increment, token, observed fields",
+  "cas_mechanism": "per_journal_record_compare_and_set_on_revision_and_state",
+  "cross_authority_atomic_transaction_available": "no",
+  "double_applying_cas_win_allowed": "no",
+  "durable_journal_transition_cas_implemented": "yes",
+  "fields_compared": [
+    "journal_id",
+    "journal_revision",
+    "journal_state",
+    "journal_revision_token"
+  ],
+  "journal_cas_implies_external_write_atomicity": "no",
+  "not_atomic_with": [
+    "Subject Graph transaction",
+    "external authority store mutation"
+  ],
+  "project_id": "aota_forge",
+  "schema_version": 1,
+  "test_results": {
+    "invalid_transition_rejected": "PASS",
+    "per_record_lock_not_global": "PASS",
+    "stale_revision_rejected": "PASS",
+    "terminal_no_outgoing": "PASS",
+    "two_workers_race_prepared_claim": "PASS - only one winner"
+  },
+  "verification": "PASS"
+}

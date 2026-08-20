@@ -1,0 +1,27 @@
+{
+  "fresh_authorization_rebind_implemented": "PASS",
+  "fresh_authorization_required_for_retry": "yes",
+  "old_authorization_evidence_overwrite_allowed": "no",
+  "project_id": "aota_forge",
+  "retryable_no_effect_blind_old_lease_reuse": "no",
+  "retryable_no_effect_grants_automatic_authorization": "no",
+  "schema_version": 1,
+  "semantics": {
+    "new_journal_creation": "new journal_id, same correlation_id lineage, new attempt_id, new complete identity",
+    "no_overwrite": "old evidence fields remain immutable",
+    "requires_fresh": [
+      "fresh semantic authorization",
+      "fresh Subject precondition",
+      "fresh raw authority precondition",
+      "new bounded lease"
+    ],
+    "retryable_means": "mechanically retryable condition, NOT authorization to retry"
+  },
+  "test_results": {
+    "fresh_auth_creates_lineage": "PASS",
+    "old_auth_preserved": "PASS",
+    "old_lease_reuse_denied": "PASS",
+    "same_correlation_lineage": "PASS"
+  },
+  "verification": "PASS"
+}
