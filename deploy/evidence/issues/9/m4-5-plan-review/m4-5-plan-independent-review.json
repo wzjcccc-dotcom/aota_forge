@@ -1,0 +1,735 @@
+{
+  "schema_version": 1,
+  "review_id": "M4-5-PLAN-R1",
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-5-PLAN-R1",
+  "review_target_sha": "4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91",
+  "accepted_writable_base": "26e616872aa4063e6ecade2f43d258d27c23e188",
+  "review_branch": "aota/m4/m4-5-plan-independent-review",
+  "review_base": "4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91",
+  "review_timestamp": "2026-08-20T19:45:00Z",
+  "reviewer": "Codex independent planning reviewer",
+  "governance_preflight": {
+    "GH_LOGIN": "wzjcccc-dotcom",
+    "CURRENT_MILESTONE": "M4",
+    "CURRENT_WORK_ITEM": "M4-5",
+    "M4_5_PLANNING_READY": "yes",
+    "M4_5_EXECUTION_AUTHORIZED": "no",
+    "M4_5_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "ACCEPTED_WRITABLE_BASE_VERIFIED": "yes",
+    "NO_NEWER_M4_5_PLAN": "yes"
+  },
+  "target_verification": {
+    "PLAN_TARGET_SHA_VERIFIED": "yes",
+    "PLAN_REMOTE_REF_VERIFIED": "yes",
+    "PLAN_BASE_ANCESTRY_VERIFIED": "yes",
+    "remote_ref": "refs/heads/aota/m4/m4-5-plan",
+    "remote_sha": "4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91",
+    "is_ancestor": true
+  },
+  "diff_review": {
+    "PRODUCTION_SOURCE_MUTATION_COUNT": 0,
+    "TEST_PRODUCT_BEHAVIOR_MUTATION_COUNT": 0,
+    "M4_5_IMPLEMENTATION_PERFORMED": "no",
+    "changed_files": [
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-extraction.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-scope-and-ownership.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-gap-map.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-external-mutation-boundary.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-journal-state-machine.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-precondition-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-reconciliation-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-idempotency-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-result-error-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-failure-injection-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-acceptance-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-implementation-dag.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-downstream-m4-6-m4-7-contract.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-negative-scope.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-source-ownership.json",
+      "scripts/m4_5_plan_guard.py"
+    ],
+    "changed_file_count": 17,
+    "planning_only": true
+  },
+  "plan_artifact_inventory": {
+    "PLAN_ARTIFACT_COUNT": 16,
+    "PLAN_ARTIFACT_INVENTORY_REVIEW": "PASS",
+    "artifacts": [
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-extraction.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-scope-and-ownership.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-gap-map.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-external-mutation-boundary.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-journal-state-machine.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-precondition-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-reconciliation-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-idempotency-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-result-error-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-failure-injection-plan.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-acceptance-matrix.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-implementation-dag.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-downstream-m4-6-m4-7-contract.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-negative-scope.json",
+      "deploy/evidence/issues/9/m4-5-plan/m4-5-source-ownership.json"
+    ],
+    "guard": "scripts/m4_5_plan_guard.py"
+  },
+  "scope_authority": {
+    "M4_5_SCOPE_AUTHORITY_REVIEW": "PASS",
+    "PLAN_CREATED_NEW_M4_5_AUTHORITY": "no",
+    "M4_5_EXACT_TITLE": "Portable Plan Mutation Port + Multi-Domain Precondition Model + Mutation Journal Contract",
+    "M4_5_PRIMARY_OBJECTIVE": "Define and freeze the executor-neutral Portable Plan Mutation Port, multi-domain precondition model (Subject CAS vs external authority CAS vs semantic normalized digest), and durable mutation journal contract that together establish the mechanical external mutation and recovery boundary without implementing the GitHub-specific adapter or durable recovery execution.",
+    "M4_5_OWNS_VERIFIED": true,
+    "M4_5_DOES_NOT_OWN_VERIFIED": true,
+    "M4_5_DOWNSTREAM_DEPENDENCIES_VERIFIED": true,
+    "authority_source": "deploy/evidence/issues/9/m4-5-plan/m4-5-authority-extraction.json + .aota/m4-0 architecture freeze @5a665cee"
+  },
+  "ownership_distinction": {
+    "MUTATION_JOURNAL_OWNERSHIP": "owned",
+    "JOURNAL_CONTRACT_OWNED_BY_M4_5": "yes",
+    "JOURNAL_DURABLE_PERSISTENCE_IMPLEMENTATION_IN_M4_5": "no",
+    "JOURNAL_RECOVERY_EXECUTION_IN_M4_5": "no",
+    "JOURNAL_RECONCILIATION_EXECUTION_IN_M4_5": "no",
+    "evidence": "M4-5 owns journal contract (states, write order, fields, precedence, crash windows J1-J10, reconciliation precedence, downstream interface); M4-7 owns durable persistence and reconciliation execution per m4-5-scope-and-ownership.json and m4-5-downstream-m4-6-m4-7-contract.json",
+    "review": "PASS"
+  },
+  "port_boundary": {
+    "PORTABLE_PLAN_MUTATION_PORT_REVIEW": "PASS",
+    "GENERIC_EXTERNAL_MUTATION_API_ALLOWED": "no",
+    "port_contract": "executor-neutral typed operation/principal/typed_target/correlation/contract_hash/idempotency_key/intent_fingerprint/Subject+raw preconditions/candidate/normalized digests/authorization/lease_or_attempt_reference/journal_state + at-most-one external attempt + read-before-write + verify-after-write",
+    "not_generic_write": true,
+    "evidence": "m4-5-external-mutation-boundary.json mechanical_boundary_sequence, m4-5-authority-precondition-plan.json D4 fields, m4-5-plan.json M4_5_EXTERNAL_APPLY_ROLE"
+  },
+  "platform_neutrality": {
+    "PLATFORM_NEUTRALITY_REVIEW": "PASS",
+    "CORE_GITHUB_SEMANTIC_LEAK_COUNT": 0,
+    "GITHUB_IS_FORGE_CORE_ONTOLOGY": "no",
+    "RAW_GH_OPERATION_IN_CORE": "no",
+    "GITHUB_API_IS_CORE_CONTRACT": "no",
+    "evidence": "Port remains executor-neutral; GitHub-specific Issue number/comment ID/gh api/pagination mapped only in M4-6 per downstream contract; no issue_number as universal Core target"
+  },
+  "multi_domain_precondition": {
+    "MULTI_DOMAIN_PRECONDITION_REVIEW": "PASS",
+    "SUBJECT_REVISION": "subject_expected_revision (Subject aggregate CAS)",
+    "AUTHORITY_SOURCE_REVISION": "raw_source_revision (external authority CAS, e.g., Issue etag/revision)",
+    "NORMALIZED_PLAN_DIGEST": "semantic normalized digest (supporting evidence only, not CAS token)",
+    "invariant": "SUBJECT_REVISION != AUTHORITY_SOURCE_REVISION != NORMALIZED_PLAN_DIGEST",
+    "NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN": "no",
+    "SUBJECT_REVISION_IS_EXTERNAL_AUTHORITY_CAS": "no",
+    "CANDIDATE_RAW_DIGEST_BINDS_EXACT_INTENT": "yes",
+    "NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT": "no",
+    "evidence": "m4-5-authority-precondition-plan.json D6_revision_digest_domains, m4-5-external-mutation-boundary.json raw_vs_normalized"
+  },
+  "raw_authority": {
+    "RAW_AUTHORITY_PRECONDITION_REVIEW": "PASS",
+    "STALE_EXTERNAL_AUTHORITY_FAILS_CLOSED": "yes",
+    "required_fields": [
+      "authority_source_revision",
+      "authority_observed_raw_digest",
+      "candidate_raw_digest",
+      "normalized_plan_digest"
+    ],
+    "capture_timing": "after validate Subject precondition and after read external authority, before PREPARED",
+    "last_write_wins": "no",
+    "evidence": "m4-5-authority-precondition-plan.json stale_precondition_rule + READ_BEFORE_SEQUENCE"
+  },
+  "cross_authority": {
+    "CROSS_AUTHORITY_BOUNDARY_REVIEW": "PASS",
+    "CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE": "no",
+    "CROSS_AUTHORITY_ATOMICITY_CLAIM_COUNT": 0,
+    "mechanical_boundary": "Subject Graph mutation committed in own DB transaction; external Portable Plan authority effect is separate optimistic attempt guarded by durable PREPARED/APPLYING + read-before-write + verify-after-write + reconciliation; no distributed transaction",
+    "evidence": "m4-5-plan.json cross_authority + m4-5-external-mutation-boundary.json boundary_definition"
+  },
+  "journal_state_machine": {
+    "JOURNAL_STATE_MACHINE_REVIEW": "PASS",
+    "INVALID_STATE_TRANSITION_COUNT": 0,
+    "states": [
+      "PREPARED",
+      "APPLYING",
+      "OUTCOME_UNKNOWN",
+      "RECONCILING",
+      "VERIFIED",
+      "VERIFIED_RECOVERED",
+      "FAILED_NO_EFFECT",
+      "RETRYABLE_NO_EFFECT",
+      "CONFLICT"
+    ],
+    "transitions": [
+      "PREPARED->APPLYING (APPLYING durably persisted after PREPARED)",
+      "PREPARED->FAILED_NO_EFFECT (durability fails before external attempt J1/J9)",
+      "APPLYING->VERIFIED (known success)",
+      "APPLYING->FAILED_NO_EFFECT (definitive rejection J2)",
+      "APPLYING->OUTCOME_UNKNOWN (timeout J4)",
+      "APPLYING->RECONCILING (stranded APPLYING J3)",
+      "OUTCOME_UNKNOWN->RECONCILING (readback starts)",
+      "RECONCILING->VERIFIED_RECOVERED (observed==candidate J6)",
+      "RECONCILING->RETRYABLE_NO_EFFECT (observed==original + fresh auth J5)",
+      "RECONCILING->CONFLICT (third state J7/J8)",
+      "NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE->RECONCILING (J10)"
+    ],
+    "terminal_semantics": {
+      "success": [
+        "VERIFIED",
+        "VERIFIED_RECOVERED"
+      ],
+      "no_effect": [
+        "FAILED_NO_EFFECT",
+        "RETRYABLE_NO_EFFECT"
+      ],
+      "conflict": [
+        "CONFLICT"
+      ]
+    },
+    "invariants": {
+      "JOURNAL_IS_SEMANTIC_DECISION_MAKER": "no",
+      "OUTCOME_UNKNOWN_IS_FAILURE": "no"
+    }
+  },
+  "write_order": {
+    "JOURNAL_WRITE_ORDER_REVIEW": "PASS",
+    "EXTERNAL_APPLY_BEFORE_PREPARED_ALLOWED": "no",
+    "required_write_order": [
+      "validate existing semantic authorization",
+      "validate Subject precondition",
+      "read external authority state",
+      "validate raw external precondition",
+      "construct exact candidate",
+      "compute candidate_raw_digest",
+      "persist PREPARED journal record durably",
+      "persist APPLYING attempt-start state durably",
+      "perform at most one external mutation attempt",
+      "read authority store after mutation where result permits",
+      "classify exact observed state",
+      "persist terminal or reconciliation state"
+    ],
+    "external_write_before_prepared": "no",
+    "external_write_before_applying": "no"
+  },
+  "at_most_one": {
+    "AT_MOST_ONE_EXTERNAL_ATTEMPT_CONTRACT_REVIEW": "PASS",
+    "semantics": "One journal record owns at most one external attempt (APPLYING->at most one call); duplicate executors reservation-gated via ownership/lease; recovery takeover reads stranded APPLYING before any new attempt; does not require M4-5 to implement distributed persistence — contract only, durable enforcement is M4-7",
+    "blind_retry_allowed": "no"
+  },
+  "read_before_write": {
+    "READ_BEFORE_WRITE_CONTRACT_REVIEW": "PASS",
+    "READ_BEFORE_EXTERNAL_WRITE_REQUIRED": "yes",
+    "sequence": [
+      "read current raw authority via PlanAuthorityReadAdapter",
+      "verify expected authority revision/digest against authorized precondition (raw_source_revision+observed_raw_digest)",
+      "compare to authorized precondition stored in PREPARED",
+      "only if exactly equal proceed to external apply; otherwise STALE_AUTHORITY fail closed"
+    ],
+    "blind_overwrite_allowed": "no"
+  },
+  "verify_after_write": {
+    "VERIFY_AFTER_WRITE_CONTRACT_REVIEW": "PASS",
+    "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED": "yes",
+    "adapter_success_equals_verified": "no",
+    "mandatory": "re-read authoritative raw source after mutation where result permits and classify observed state; HTTP 2xx / exit 0 insufficient"
+  },
+  "three_way": {
+    "THREE_WAY_RECONCILIATION_REVIEW": "PASS",
+    "HEURISTIC_THIRD_STATE_SELECTION_ALLOWED": "no",
+    "THIRD_STATE_AUTO_MERGE_ALLOWED": "no",
+    "inputs": {
+      "ORIGINAL": "recorded original_raw_digest at PREPARED time",
+      "CANDIDATE": "recorded candidate_raw_digest (exact intended effect)",
+      "OBSERVED": "fresh raw authority read after uncertain outcome"
+    },
+    "classification": {
+      "OBSERVED==CANDIDATE": "VERIFIED_RECOVERED (intended effect present, no duplicate write)",
+      "OBSERVED==ORIGINAL": "RETRYABLE_NO_EFFECT only after fresh authorization+Subject+raw preconditions re-established; else remain RECONCILING",
+      "OBSERVED!=CANDIDATE and !=ORIGINAL": "CONFLICT (semantic intervention required)"
+    },
+    "normalized_rule": "normalized equality supporting evidence only; raw candidate identity required for VERIFIED_RECOVERED; normalized equals candidate but raw differs -> CONFLICT per J8",
+    "forbidden": [
+      "best effort merge",
+      "heuristic selection",
+      "silent overwrite",
+      "semantic rollback",
+      "automatic newest/latest selection"
+    ]
+  },
+  "semantic_rollback": {
+    "SEMANTIC_ROLLBACK_REVIEW": "PASS",
+    "SEMANTIC_ROLLBACK_ALLOWED": "no",
+    "evidence": "Recovery differs from rollback; reconciled CONFLICT/OUTCOME_UNKNOWN never authorizes compensating semantic mutation"
+  },
+  "unknown_outcome": {
+    "UNKNOWN_OUTCOME_CONTRACT_REVIEW": "PASS",
+    "UNKNOWN_OUTCOME_BLIND_LEASE_REUSE": "no",
+    "semantics": "external effect cannot yet be deterministically classified; not automatic failure, not automatic success, not permission to retry immediately; mandatory RECONCILING read before any new attempt"
+  },
+  "retry_authorization": {
+    "RETRY_AUTHORIZATION_REVIEW": "PASS",
+    "RETRYABLE_NO_EFFECT_BLIND_OLD_LEASE_REUSE": "no",
+    "FRESH_AUTHORIZATION_RULE_EXPLICIT": "yes",
+    "rule": "observed original/no-effect after reconciliation may become RETRYABLE_NO_EFFECT only when exact accepted rules satisfied: fresh semantic authorization + Subject precondition + raw authority precondition + new bounded lease/attempt; old lease never automatically authorizes next attempt",
+    "evidence": "m4-5-reconciliation-plan.json RETRYABLE classification + m4-5-journal-state-machine.json RECONCILING->RETRYABLE transition"
+  },
+  "idempotency_linkage": {
+    "EXTERNAL_IDEMPOTENCY_IDENTITY_REVIEW": "PASS",
+    "INTENT_FINGERPRINT_USED_AS_COMPLETE_EXTERNAL_IDENTITY": "no",
+    "SAME_KEY_CHANGED_AUTHORIZATION_EXTERNAL_REPLAY_ALLOWED": "no",
+    "m4_3_identity": "operation+target+idempotency_key+intent_fingerprint+authorization fingerprint (principal, contract_hash, Subject+raw preconditions, approval/Decision basis, expiry, mutation_scope)",
+    "external_journal_identity": "operation+typed_target+idempotency_key+intent_fingerprint+contract_hash+authorization fingerprint+subject_expected_revision+authority_source_revision+authority_observed_raw_digest+candidate_raw_digest+normalized_plan_digest(correlation_id) — complete authorization-bound, not intent_fingerprint only",
+    "linkage": "M4-3 SubjectTransaction idempotency lookup reused and extended with external preconditions/candidate digest; same key + changed authorization = CONFLICT, never replay",
+    "fallback_denied": "MutationIntent.intent_fingerprint only insufficient"
+  },
+  "opaque_identifiers": {
+    "OPAQUE_IDENTIFIER_SEMANTIC_AUTHORITY_COUNT": 0,
+    "identifiers": [
+      "authorization_id",
+      "reservation_id",
+      "journal_id",
+      "correlation_id"
+    ],
+    "semantic_authority": "no",
+    "approval_vs_decision": "Approval != Decision; lease issuer != semantic decision maker",
+    "evidence": "journal_may_not_invent excludes user intent/Project choice/Subject choice/successor/Decision/Approval; journal_is_not_semantic_authority invariant"
+  },
+  "operation_contract_reuse": {
+    "OPERATION_CONTRACT_REUSE_REVIEW": "PASS",
+    "DUPLICATE_OPERATION_SEMANTICS_PLANNED": "no",
+    "registered_operations": [
+      "plan_init",
+      "plan_retirement"
+    ],
+    "are_external_mutation_operations": "yes; M4-5 does not create parallel semantic operation definitions; consumes canonical MutationIntent+MutationPreconditions",
+    "generic_mutation_api_allowed": "no"
+  },
+  "result_model": {
+    "CANONICAL_RESULT_MODEL_REVIEW": "PASS",
+    "INTERNAL_LIFECYCLE_RESULT_EQUALS_EXTERNAL_VERIFICATION_RESULT": "no",
+    "mapping": {
+      "VERIFIED": "APPLIED_VERIFIED/Y (at-most-one attempt + verify)",
+      "VERIFIED_RECOVERED": "APPLIED_VERIFIED or REPLAYED_VERIFIED (reconciling candidate observed)",
+      "FAILED_NO_EFFECT": "FAILED_NO_EFFECT/NO (definitive rejection or PREPARED without APPLYING)",
+      "RETRYABLE_NO_EFFECT": "FAILED_NO_EFFECT variant retryable only after fresh auth",
+      "CONFLICT": "CONFLICT/NO (third state or drift)",
+      "OUTCOME_UNKNOWN": "OUTCOME_UNKNOWN/UNKNOWN (stranded APPLYING / timeout before reconciliation)"
+    },
+    "extension_required": "no; existing CanonicalMutationResult + AuthoritativeEffectConfirmation + effect_evidence supports external verification fields (observed_raw_digest, raw_source_revision, journal_state) without adapter-specific semantics"
+  },
+  "github_boundary": {
+    "GITHUB_ADAPTER_IMPLEMENTATION_IN_M4_5": "no",
+    "GITHUB_AUTHORITY_WRITE_IN_M4_5": "no",
+    "M4_6_CONSUMES_M4_5_PORT_CONTRACT": "yes",
+    "evidence": "Downstream M4-6 receives Port contract + precondition model; GitHub specifics (Issue number/comment ID/gh api/pagination/CAS mapping) deferred; no hidden GitHub slice",
+    "review": "PASS"
+  },
+  "durable_recovery_boundary": {
+    "DURABLE_JOURNAL_PERSISTENCE_IN_M4_5": "no",
+    "RECOVERY_EXECUTOR_IN_M4_5": "no",
+    "RECONCILIATION_EXECUTOR_IN_M4_5": "no",
+    "M4_7_CONSUMES_M4_5_JOURNAL_CONTRACT": "yes",
+    "evidence": "M4-7 receives journal contract + crash windows J1-J10 + reconciliation precedence + retry rule; M4-5 contract only",
+    "review": "PASS"
+  },
+  "parallel_contract": {
+    "M4_6_M4_7_PARALLEL_SAFETY_REVIEW": "PASS",
+    "DOWNSTREAM_WRITE_OWNERSHIP_AMBIGUITY_COUNT": 0,
+    "hot_files": [
+      "aota_forge/adapters/plan_authority/port.py",
+      "aota_forge/core/journal/model.py"
+    ],
+    "policy": "Port contract defined in M4-5; downstream M4-6 and M4-7 may read it but not concurrently write same hot file during implementation; shared hot files remain integration_only for downstream; conditional_parallel with serialization/integration_only",
+    "evidence": "m4-5-downstream-m4-6-m4-7-contract.json parallel_safety_plan + m4-5-source-ownership.json hot_file_analysis"
+  },
+  "crash_windows": {
+    "CRASH_WINDOW_COUNT": 10,
+    "CRASH_RECOVERY_MATRIX_REVIEW": "PASS",
+    "UNDEFINED_CRASH_WINDOW_RECOVERY_COUNT": 0,
+    "windows": {
+      "J1": "durability fails before external attempt (PREPARED without APPLYING -> FAILED_NO_EFFECT)",
+      "J2": "authority definitively rejects with proven no effect (APPLYING -> FAILED_NO_EFFECT)",
+      "J3": "stranded APPLYING after restart (APPLYING -> RECONCILING)",
+      "J4": "timeout/disconnect outcome uncertain (APPLYING -> OUTCOME_UNKNOWN -> RECONCILING)",
+      "J5": "observed==original -> RETRYABLE_NO_EFFECT only with fresh auth",
+      "J6": "observed==candidate -> VERIFIED_RECOVERED",
+      "J7": "third state -> CONFLICT",
+      "J8": "normalized equals candidate but raw differs -> CONFLICT",
+      "J9": "PREPARED persistence fails before APPLYING (FAILED_NO_EFFECT, no attempt)",
+      "J10": "nonterminal after terminal persistence failure -> RECONCILING (future run reads authority)"
+    },
+    "coverage": "All 10 windows have durable_state + external effect + restart classification + allowed next action + fresh auth / semantic choice flag per m4-5-reconciliation-plan.json C1-C9 + m4-5-journal-state-machine.json J1-J10 transitions + m4-5-failure-injection-plan.json hooks"
+  },
+  "failure_injection": {
+    "DETERMINISTIC_FAILURE_INJECTION_REVIEW": "PASS",
+    "PRODUCTION_FAILURE_INJECTION_REQUIRED": "no",
+    "mechanism": "FakePlanAuthorityAdapter + fixture authority (disposable raw bodies with deterministic revisions/digests) + disposable local store + controllable fault-injection adapter; no production GitHub writes",
+    "injection_points": [
+      "before-PREPARED (J9)",
+      "before-APPLYING",
+      "during mutation (known rejection/timeout/success-then-crash)",
+      "after external before verify (crash)",
+      "during verify (read error/candidate/original/third)",
+      "restart during reconciliation",
+      "during terminal persist (J10)"
+    ],
+    "determinism": "All faults deterministically triggered via fake adapter hooks and fixture revision/digest control; no random network dependence",
+    "evidence": "m4-5-failure-injection-plan.json"
+  },
+  "duplicate_executor": {
+    "DUPLICATE_EXECUTOR_CONTRACT_REVIEW": "PASS",
+    "SAME_KEY_CHANGED_AUTHORIZATION_TREATED_AS_DUPLICATE_REPLAY": "no",
+    "semantics": "same semantic identity / same journal record -> replay (REPLAYED_VERIFIED, no duplicate effect); different semantic identity using same user idempotency key (changed authorization semantics / intent) -> CONFLICT, not replay",
+    "duplicate_eligibility": "reservation/lease enforces single external apply eligibility; winner moves PREPARED->APPLYING; loser sees APPLYING taken and must not issue second external write; recovery takeover reads stranded APPLYING if winner crashes"
+  },
+  "source_ownership": {
+    "SOURCE_OWNERSHIP_PLAN_REVIEW": "PASS",
+    "M4_5_EXCLUSIVE_WRITE_PATH_COUNT": 5,
+    "M4_5_SHARED_READ_ONLY_PATH_COUNT": 6,
+    "M4_5_INTEGRATION_ONLY_PATH_COUNT": 3,
+    "M4_5_FORBIDDEN_PATH_COUNT": 12,
+    "exclusive_paths": [
+      "aota_forge/adapters/plan_authority/port.py",
+      "aota_forge/core/journal/model.py",
+      "aota_forge/core/journal/state_machine.py",
+      "aota_forge/core/journal/reconcile.py",
+      "aota_forge/core/journal/retry.py"
+    ],
+    "shared_read_only": [
+      "aota_forge/core/ingress.py",
+      "aota_forge/core/contracts/mutation.py",
+      "aota_forge/core/contracts/descriptor.py",
+      "aota_forge/core/contracts/results.py",
+      "aota_forge/adapters/plan_authority/__init__.py",
+      "aota_forge/core/transaction.py"
+    ],
+    "integration_only": [
+      "aota_forge/core/idempotency.py",
+      "aota_forge/core/capability_lease.py",
+      "aota_forge/core/authority.py"
+    ],
+    "forbidden_prefix": 12,
+    "no_unconstrained_glob": true,
+    "no_m4_6_adapter_in_m4_5": true,
+    "no_m4_7_persistence_in_m4_5": true
+  },
+  "implementation_dag": {
+    "IMPLEMENTATION_DAG_REVIEW": "PASS",
+    "IMPLEMENTATION_SLICE_COUNT": 6,
+    "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+    "slices": [
+      {
+        "id": "M4-5-S1",
+        "objective": "Freeze Portable Plan Mutation Port interface and multi-domain revision/digest model (contract-only, no durable persistence yet)",
+        "paths": [
+          "aota_forge/adapters/plan_authority/port.py",
+          "aota_forge/core/contracts/mutation_port.py"
+        ]
+      },
+      {
+        "id": "M4-5-S2",
+        "objective": "Freeze durable mutation journal contract (states, write order, journal fields, invariants - no DB execution yet)",
+        "paths": [
+          "aota_forge/core/journal/__init__.py",
+          "aota_forge/core/journal/model.py",
+          "aota_forge/core/journal/state_machine.py"
+        ]
+      },
+      {
+        "id": "M4-5-S3",
+        "objective": "Freeze external apply + verify-after-write contracts via generic Port (no GitHub implementation)",
+        "paths": [
+          "aota_forge/adapters/plan_authority/port.py",
+          "aota_forge/core/journal/apply.py"
+        ]
+      },
+      {
+        "id": "M4-5-S4",
+        "objective": "Freeze three-way reconciliation and retry authorization contracts",
+        "paths": [
+          "aota_forge/core/journal/reconcile.py",
+          "aota_forge/core/journal/retry.py"
+        ]
+      },
+      {
+        "id": "M4-5-S5",
+        "objective": "Wire idempotency linkage and canonical result reuse; freeze platform-neutrality and downstream contracts",
+        "paths": [
+          "aota_forge/core/idempotency.py",
+          "aota_forge/core/contracts/results.py"
+        ]
+      },
+      {
+        "id": "M4-5-S6",
+        "objective": "Materialize deterministic failure injection harness and M4-5-owned regression closure (fake adapter + fixture authority + disposable store)",
+        "paths": [
+          "tests/test_m4_5_journal_contract.py",
+          "aota_forge/adapters/plan_authority/fake_port.py"
+        ]
+      }
+    ]
+  },
+  "gap_map": {
+    "GAP_MAP_REVIEW": "PASS",
+    "GAP_MAP_ENTRY_COUNT": 18,
+    "classifications": {
+      "EXISTS_AND_REUSE": [
+        "conflict",
+        "canonical result / error model"
+      ],
+      "EXISTS_BUT_NEEDS_WIRING": [
+        "idempotency linkage"
+      ],
+      "MISSING_M4_5": [
+        "external mutation boundary",
+        "authority precondition capture",
+        "journal/reservation",
+        "apply",
+        "read-back verification",
+        "unknown outcome",
+        "reconciliation",
+        "retry"
+      ],
+      "DEFER_TO_M4_6": [
+        "platform adapter",
+        "GitHub implementation",
+        "M4-6 dependencies"
+      ],
+      "DEFER_TO_M4_7": [
+        "M4-7 dependencies"
+      ],
+      "DEFER_TO_LATER": [
+        "CLI exposure"
+      ],
+      "OUT_OF_SCOPE": [
+        "runtime/deploy",
+        "generic writes / terminal"
+      ]
+    },
+    "no_m4_6_7_misclassified_as_missing": true
+  },
+  "acceptance_matrix": {
+    "ACCEPTANCE_MATRIX_REVIEW": "PASS",
+    "cases": {
+      "POS-01": "exact authorized external mutation verified (PREPARED->APPLYING->candidate observed -> VERIFIED)",
+      "POS-02": "exact replay does not duplicate external effect",
+      "NEG-01": "stale raw authority revision fails closed",
+      "NEG-02": "changed raw digest fails closed",
+      "NEG-03": "authorization drift same key -> CONFLICT",
+      "NEG-04": "external known failure/no effect -> FAILED_NO_EFFECT",
+      "NEG-05": "external unknown outcome -> OUTCOME_UNKNOWN, blind retry denied",
+      "REC-01": "observed candidate -> VERIFIED_RECOVERED",
+      "REC-02": "observed original -> RETRYABLE only with fresh auth",
+      "REC-03": "third state -> CONFLICT",
+      "REC-04": "retry requires fresh authorization + new lease",
+      "REC-05": "semantic ambiguity never mechanically resolved",
+      "CON-01": "concurrent duplicate attempt single eligibility",
+      "CON-02": "stale writer fails closed"
+    },
+    "all_deterministic_via_fake_adapter": true
+  },
+  "live_write_safety": {
+    "PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED": "no",
+    "PRODUCTION_GITHUB_TEST_WRITE_ALLOWED": "no",
+    "FAULT_INJECTION_ADAPTER_PLANNED": "yes",
+    "mechanism": "fake adapter + fixture authority + disposable store; production authority never written during planning or acceptance"
+  },
+  "m4_3_nbf": {
+    "M4_3_NBF_DISPOSITION_REVIEW": "PASS",
+    "i5": "NON_BLOCKING_CARRY_FORWARD (fixture-made leases remain test-only; M4-5 acceptance requires genuine lease from M4-2 issuer)",
+    "i8": "NON_BLOCKING_CARRY_FORWARD",
+    "i9": "NON_BLOCKING_CARRY_FORWARD",
+    "i12": "NON_BLOCKING_CARRY_FORWARD",
+    "guard_evidence_prefix": "NON_BLOCKING_CARRY_FORWARD (m4-3-source vs m4-3-source-r1-repair narrowness remains hardening debt; M4-5 guard covers m4-5-plan/* only)"
+  },
+  "plan_guard": {
+    "PLAN_GUARD": "PASS",
+    "PLAN_GUARD_TESTS_PLAN_NOT_IMPLEMENTATION": "yes",
+    "PLANNING_NEGATIVE_CASE_COUNT": 15,
+    "PLANNING_NEGATIVE_CASE_REJECT_COUNT": 15,
+    "guard_path": "scripts/m4_5_plan_guard.py",
+    "execution": "15/15 negative cases rejected as expected; guard tests planning invariants G1-G15, not implementation",
+    "independent_run": "python3 scripts/m4_5_plan_guard.py => PASS"
+  },
+  "independent_negative_matrix": {
+    "INDEPENDENT_PLAN_NEGATIVE_CASE_COUNT": 18,
+    "INDEPENDENT_PLAN_NEGATIVE_CASE_REJECT_COUNT": 18,
+    "cases": [
+      {
+        "id": "NEG-R1-01",
+        "probe": "M4-5 implements GitHub adapter (adapters/plan_authority/github.py or gh api transport in Core)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "m4-5-source-ownership.json FORBIDDEN_PATHS includes github.py (M4-6); m4-5-negative-scope.json forbids GitHub write in Core; downstream contract routes GitHub to M4-6; no GitHub code in plan artifacts"
+      },
+      {
+        "id": "NEG-R1-02",
+        "probe": "M4-5 implements durable journal persistence (core/journal/store.py or executor.py with DB writes)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "negative scope forbids durable persistence in M4-5 (contract only); downstream confers persistence to M4-7; source-ownership FORBIDDEN_PATHS lists store.py (M4-7); plan_guard G11 rejects"
+      },
+      {
+        "id": "NEG-R1-03",
+        "probe": "M4-5 implements reconciliation executor (core/journal/reconcile execution engine beyond contract definition)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "negative scope forbids reconciliation execution engine in M4-5; DAG S4 owns contract freezing, execution is M4-7 per downstream contract"
+      },
+      {
+        "id": "NEG-R1-04",
+        "probe": "cross-authority atomic transaction claimed (Subject Graph tx + external write commit atomically)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "plan cross_authority CROSS_AUTHORITY_ATOMIC_TRANSACTION_AVAILABLE=no; boundary_definition denies distributed transaction; plan_guard G3 rejects atomic claim"
+      },
+      {
+        "id": "NEG-R1-05",
+        "probe": "normalized digest used as external CAS (normalized_plan_digest fed to external precondition comparison or CAS token)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "pre D6 invariants NORMALIZED_PLAN_DIGEST_IS_EXTERNAL_CAS_TOKEN=no; boundary raw_vs_normalized no; journal NORMALIZED_EQUALITY_PROVES_EXACT_EXTERNAL_EFFECT=no; guard G4 rejects"
+      },
+      {
+        "id": "NEG-R1-06",
+        "probe": "subject revision used as raw authority revision (subject_expected_revision substituted for raw_source_revision)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "D6 distinct domains; SUBJECT_REVISION_DIFFERS_FROM_AUTHORITY_SOURCE_REVISION=yes; pre capture_timing explicitly distinguishes; guard via domain separation"
+      },
+      {
+        "id": "NEG-R1-07",
+        "probe": "external apply before PREPARED allowed (write permitted without durable PREPARED/APPLYING)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "journal invariants EXTERNAL_WRITE_BEFORE_PREPARED_DURABLE=no and EXTERNAL_WRITE_BEFORE_APPLYING_DURABLE=no; required_write_order mandates PREPARED->APPLYING before external attempt; boundary invariants deny"
+      },
+      {
+        "id": "NEG-R1-08",
+        "probe": "adapter success immediately means VERIFIED without readback (process exit 0 / HTTP 2xx substitutes for verify-after-write)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "VERIFY_AFTER_EXTERNAL_WRITE_REQUIRED=yes; boundary mechanical_boundary_sequence step 9 mandatory read authority after mutation; journal required_write_order includes read + classify; negates G5-equivalent"
+      },
+      {
+        "id": "NEG-R1-09",
+        "probe": "OUTCOME_UNKNOWN blindly retries (immediate second external attempt without reconciliation)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "retry UNKNOWN_OUTCOME_BLIND_LEASE_REUSE=no; recon stranded rule RECONCILING before retry; journal STRANDED_APPLYING_BLIND_RETRY_ALLOWED=no; plan_guard G6 rejects"
+      },
+      {
+        "id": "NEG-R1-10",
+        "probe": "old lease reused after RETRYABLE_NO_EFFECT (same lease/attempt authorizes next external try)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "RETRYABLE requires fresh authorization + Subject + raw preconditions + new bounded lease; RETRYABLE_NO_EFFECT_BLIND_OLD_LEASE_REUSE=no; idempotency plan external_operation_attempt_identity blind_reuse_denied"
+      },
+      {
+        "id": "NEG-R1-11",
+        "probe": "third state heuristically merged (best-effort merge / newest/current/pointer guess / arbitrary selection)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "recon forbidden includes heuristic selection / best effort merge / silent overwrite; classification third state -> CONFLICT always; SEMANTIC_ROLLBACK_ALLOWED=no; guard G7 rejects"
+      },
+      {
+        "id": "NEG-R1-12",
+        "probe": "journal/correlation ID becomes semantic authority (authorization_id / journal_id / correlation_id decides Approval/Decision/project choice)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "journal_may_not_invent excludes Approval/Decision/Project/Subject choice; JOURNAL_IS_SEMANTIC_DECISION_MAKER=no; opaque identifiers remain mechanical correlation only"
+      },
+      {
+        "id": "NEG-R1-13",
+        "probe": "external identity falls back to intent_fingerprint only (idempotency linkage weakened)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "idem external_journal_identity must_not_fall_back_to intent_fingerprint only; linkage requires complete authorization-bound identity (operation+target+intent+auth fingerprint+Subject+raw preconditions+candidate+correlation)"
+      },
+      {
+        "id": "NEG-R1-14",
+        "probe": "same key + changed authorization treated as replay (same idempotency_key with different principal/contract/mutation_scope replays)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "idem linkage same_key_changed_authorization must never become replay; always CONFLICT; M4-3 drift semantics reused; acceptance NEG-03 validates"
+      },
+      {
+        "id": "NEG-R1-15",
+        "probe": "generic external mutation API planned (generic write(path,payload) / generic HTTP request beyond plan_init/plan_retirement)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "platform GENERIC_EXTERNAL_MUTATION_API_ALLOWED=no; operation reuse generic_mutation_api_allowed=no; negative scope forbids generic external mutate-anything; guard G9 rejects"
+      },
+      {
+        "id": "NEG-R1-16",
+        "probe": "generic Git write planned (generic git write / terminal expansion beyond typed plan operation)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "platform GENERIC_GIT_WRITE_API_ALLOWED=no; negative scope Generic Git write API no; M4-0 D11 GENERIC_GIT_WRITE_API_ALLOWED=no; guard G8 rejects"
+      },
+      {
+        "id": "NEG-R1-17",
+        "probe": "production GitHub required for tests (live Issue writes / real authority store mutation in acceptance)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "failure_injection PRODUCTION_GITHUB_TEST_WRITE_ALLOWED=no + PRODUCTION_EXTERNAL_AUTHORITY_TEST_WRITE_ALLOWED=no; deterministic fake adapter + fixture authority + disposable store; guard G13 rejects production writes"
+      },
+      {
+        "id": "NEG-R1-18",
+        "probe": "M4-6/M4-7 parallel write ownership ambiguous (both lanes concurrently write same hot file without integration_only / serialization)",
+        "expected": "reject",
+        "result": "REJECT",
+        "evidence": "downstream parallel_safety_plan conditional_parallel + source-ownership hot_file_analysis PASS; policy: shared hot files (port.py, journal/model.py) remain integration_only for downstream, serialization required; ambiguity count 0"
+      }
+    ],
+    "verdict": "All 18 probes correctly rejected by plan contracts and guard; no probe bypasses planning invariants"
+  },
+  "implementability": {
+    "PLAN_IMPLEMENTABILITY_REVIEW": "PASS",
+    "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT": 0,
+    "later_executor_must_not_decide": [
+      "whether M4-5 owns durable persistence (owned=contract only per scope)",
+      "whether M4-5 implements GitHub (no, M4-6)",
+      "whether M4-5 executes reconciliation (no, M4-7)",
+      "what external CAS is (raw_source_revision + observed_raw_digest, distinct from Subject CAS and normalized digest)",
+      "what normalized digest means (semantic evidence only, not CAS)",
+      "whether verify-after-write required (yes, mandatory)",
+      "what ORIGINAL/CANDIDATE/OBSERVED mean (recorded original, recorded candidate, fresh raw read)",
+      "whether old lease may retry (no, fresh authorization required)",
+      "what happens at each J1-J10 crash point (C1-C9 + J10 transition cover all 10)",
+      "which paths are writable (5 exclusive, 6 shared read-only, 3 integration-only, 12 forbidden)",
+      "what M4-6 vs M4-7 own (M4-6 transport adapter, M4-7 durable recovery)"
+    ],
+    "semantics_first": true
+  },
+  "source_remains_unimplemented": {
+    "M4_5_MUTATION_PORT_IMPLEMENTED": "no",
+    "M4_5_JOURNAL_CONTRACT_IMPLEMENTED": "no (plan-only type/schema artifacts outside production source; no aota_forge/ mutation at candidate SHA)",
+    "DURABLE_JOURNAL_PERSISTENCE_IMPLEMENTED": "no",
+    "GITHUB_AUTHORITY_ADAPTER_IMPLEMENTED": "no",
+    "RECOVERY_EXECUTION_IMPLEMENTED": "no",
+    "PRODUCTION_SOURCE_MUTATION_COUNT": 0,
+    "evidence": "git diff 26e616872aa4063e6ecade2f43d258d27c23e188..4f6b96de49e56ff01a0077a47d02e1a3ad6a7a91 -- aota_forge/ empty; -- tests/ empty; only deploy/evidence/issues/9/m4-5-plan/* + scripts/m4_5_plan_guard.py"
+  },
+  "findings": {
+    "BLOCKING_FINDING_COUNT": 0,
+    "NON_BLOCKING_FINDING_COUNT": 1,
+    "BLOCKING_FINDINGS": [],
+    "NON_BLOCKING_FINDINGS": [
+      "NBF-01: Crash window presentation splits J10 (NONTERMINAL_AFTER_TERMINAL_PERSISTENCE_FAILURE->RECONCILING) across journal state-machine transition + reconciliation C4 (J3/J10) rather than a dedicated C10 row; logically complete (all 10 Js distinct) but presentation would benefit from explicit C10 row in M4-7 execution handoff — no semantic ambiguity, no blocking impact."
+    ],
+    "REVIEW_COMMIT_CREATED": "PENDING",
+    "REVIEW_PUSH_PERFORMED": "PENDING"
+  },
+  "verdict": {
+    "REVIEW_VERDICT": "PASS_WITH_NON_BLOCKING_FINDINGS",
+    "M4_5_PLAN_REVIEW_ACCEPTED": "yes",
+    "M4_5_PLAN_ACCEPTED": "no",
+    "M4_5_EXECUTION_AUTHORIZED": "no",
+    "M4_5_SOURCE_IMPLEMENTATION_AUTHORIZED": "no",
+    "M4_5_COMPLETED": "no",
+    "M4_6_PLANNING_READY": "no",
+    "M4_7_PLANNING_READY": "no",
+    "NEXT_READY_SET": "m4_5_plan_governance_acceptance",
+    "NEXT_ACTION": "Governance acceptance of M4-5 planning package (read-only plan checkpoint); no source implementation, no M4-6/M4-7 planning authorization until accepted"
+  }
+}
