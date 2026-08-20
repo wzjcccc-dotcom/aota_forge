@@ -49,6 +49,7 @@ from aota_forge.core.context import (
     TrustedContext,
     prepare_project_binding,
 )
+from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
 from aota_forge.core.contracts.mutation import MutationEffect, MutationIntent, MutationPreconditions
 from aota_forge.core.contracts.results import LifecycleResult, lifecycle_result
 from aota_forge.core.contracts.validation import validate_lifecycle_preconditions
@@ -301,6 +302,8 @@ class PlanInitRequest:
     project_evidence: object | None = None
     project_binding: ProjectBinding | None = None
     lease: CapabilityLease | None = None
+    external_authority_precondition: str | None = None
+    normalized_plan_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -390,6 +393,8 @@ class PlanRetirementRequest:
     retirement_kind: str
     successor_ref: ObjectRef | None = None
     lease: CapabilityLease | None = None
+    external_authority_precondition: str | None = None
+    normalized_plan_digest: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +582,26 @@ def _require_lifecycle_intent(
     if intent.operation != operation or intent.logical_target != target.serialize():
         raise ValueError("lifecycle intent operation or target is invalid")
     return intent
+
+
+def _actual_lifecycle_authorization_bindings(
+    *,
+    descriptor,
+    intent: MutationIntent,
+    preconditions: MutationPreconditions,
+    external_authority_precondition: str | None,
+    normalized_plan_digest: str | None,
+) -> dict[str, object]:
+    """Build AuthorityRequest bindings from the attempted lifecycle mutation."""
+    return {
+        "contract_hash": descriptor.contract_hash(),
+        "intent_fingerprint": intent.intent_fingerprint(),
+        "external_authority_precondition": external_authority_precondition,
+        "authority_source_revision": preconditions.authority_source_revision,
+        "authority_observed_raw_digest": preconditions.authority_observed_raw_digest,
+        "candidate_raw_digest": preconditions.candidate_raw_digest,
+        "normalized_plan_digest": normalized_plan_digest,
+    }
 
 
 def _precondition_failure(
@@ -1265,6 +1290,13 @@ def plan_init(store: TransactionStore, req: PlanInitRequest) -> LifecycleResult:
             trusted_context=req.trusted_context,
             requested_scope=dict(WRITE_SCOPE),
             lease=req.lease,
+            **_actual_lifecycle_authorization_bindings(
+                descriptor=PLAN_INIT_DESCRIPTOR,
+                intent=intent,
+                preconditions=req.preconditions,
+                external_authority_precondition=req.external_authority_precondition,
+                normalized_plan_digest=req.normalized_plan_digest,
+            ),
             idempotency_key=intent.idempotency_key,
             fingerprint=intent.intent_fingerprint(),
             trusted_time=req.trusted_time,
@@ -1586,6 +1618,13 @@ def retire_plan(store: TransactionStore, req: PlanRetirementRequest) -> Lifecycl
             trusted_context=req.trusted_context,
             requested_scope=dict(WRITE_SCOPE),
             lease=req.lease,
+            **_actual_lifecycle_authorization_bindings(
+                descriptor=PLAN_RETIREMENT_DESCRIPTOR,
+                intent=intent,
+                preconditions=req.preconditions,
+                external_authority_precondition=req.external_authority_precondition,
+                normalized_plan_digest=req.normalized_plan_digest,
+            ),
             idempotency_key=intent.idempotency_key,
             fingerprint=intent.intent_fingerprint(),
             trusted_time=req.trusted_time,

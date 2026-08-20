@@ -462,6 +462,13 @@ class SubjectTransaction(_TransactionBase):
         trusted_context,
         requested_scope: dict,
         lease,
+        contract_hash: str | None = None,
+        intent_fingerprint: str | None = None,
+        external_authority_precondition: str | None = None,
+        authority_source_revision: str | int | None = None,
+        authority_observed_raw_digest: str | None = None,
+        candidate_raw_digest: str | None = None,
+        normalized_plan_digest: str | None = None,
         idempotency_key: str,
         fingerprint: str,
         trusted_time,
@@ -477,6 +484,15 @@ class SubjectTransaction(_TransactionBase):
         self._trusted_context = trusted_context
         self._requested_scope = dict(requested_scope)
         self._lease = lease
+        # These bindings come from the actual mutation context.  A lease is
+        # evidence to validate, never a source for constructing the request.
+        self._contract_hash = contract_hash
+        self._intent_fingerprint = intent_fingerprint
+        self._external_authority_precondition = external_authority_precondition
+        self._authority_source_revision = authority_source_revision
+        self._authority_observed_raw_digest = authority_observed_raw_digest
+        self._candidate_raw_digest = candidate_raw_digest
+        self._normalized_plan_digest = normalized_plan_digest
         self._idempotency_key = _bounded_id(idempotency_key, "idempotency_key")
         self._fingerprint = fingerprint
         self._trusted_time = trusted_time
@@ -514,6 +530,13 @@ class SubjectTransaction(_TransactionBase):
                     lease=self._lease,
                     current_revision=current,
                     trusted_time=self._trusted_time,
+                    contract_hash=self._contract_hash,
+                    intent_fingerprint=self._intent_fingerprint,
+                    external_authority_precondition=self._external_authority_precondition,
+                    authority_source_revision=self._authority_source_revision,
+                    authority_observed_raw_digest=self._authority_observed_raw_digest,
+                    candidate_raw_digest=self._candidate_raw_digest,
+                    normalized_plan_digest=self._normalized_plan_digest,
                 )
             )
             if result.decision != AuthorityDecision.ALLOW:

@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 post-integration authorization seam repair",
+  "STATUS": "PASS",
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-4-POST-INTEGRATION-SOURCE-REPAIR",
+  "read_before_write": "PASS",
+  "repair_base_sha": "3ec4119f9a5be549f09a423cc0012b62dfa50e5b",
+  "failed_integration_review_evidence_sha": "0c643b4117184c2e1d9895be72566111dd5771ae",
+  "repair_candidate_sha": "pending_commit",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "m4_2_accepted_source_candidate": "9ce364cde6ae84284cd6fb83650417525bbd3144",
+  "m4_2_final_source_review_evidence": "23f652e78e270e608d05246aa2ba22a9aed32c15",
+  "m4_4_accepted_source_candidate": "10a7e9809d2e1cb3c324ad65a13e6611662957e6",
+  "m4_4_final_source_review_evidence": "841b020996b8572073aa2e190f4415380124739a",
+  "base_sha_verified": "yes",
+  "review_evidence_verified": "yes",
+  "m4_2_accepted_source_ancestor": "yes",
+  "m4_4_accepted_source_ancestor": "yes",
+  "exact_ownership_path_lists_read": "yes",
+  "blocking_finding_input_count": 1,
+  "failed_integration_blocker_reproduced": "yes",
+  "blocker": {
+    "source": "aota_forge/core/transaction.py:507-517",
+    "authority_validation": "aota_forge/core/authority.py:768-796",
+    "observed_failure": "genuine issued lease was denied as LEASE_INTENT_MISMATCH before PLAN_INIT or retirement mutation",
+    "masking_test": "tests/test_m4_2_m4_4_integration.py:test_i5_valid_authorization_and_plan_init_are_compatible",
+    "masking_fixture": "_make_lease"
+  },
+  "root_cause": {
+    "authority_request_binding_gap_audit": "PASS",
+    "missing_bindings": [
+      "intent_fingerprint",
+      "contract_hash",
+      "external_authority_precondition",
+      "authority_source_revision",
+      "authority_observed_raw_digest",
+      "candidate_raw_digest",
+      "normalized_plan_digest"
+    ],
+    "request_fingerprint_was_not_semantic_intent": "yes",
+    "lease_values_copied_into_request": "no"
+  },
+  "repair": {
+    "subject_transaction_authority_request_seam": "PASS",
+    "request_derived_from_actual_mutation_context": "yes",
+    "canonical_intent_source": "MutationIntent.intent_fingerprint()",
+    "canonical_contract_source": "PLAN_INIT_DESCRIPTOR.contract_hash() or PLAN_RETIREMENT_DESCRIPTOR.contract_hash()",
+    "canonical_precondition_sources": "lifecycle request external precondition and MutationPreconditions",
+    "lease_is_validation_evidence_only": "yes",
+    "new_repair_production_edit_paths": [
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py"
+    ]
+  },
+  "real_lease": {
+    "created_via_m4_2_issuer": "yes",
+    "has_intent_binding": "yes",
+    "has_contract_binding": "yes",
+    "has_authority_precondition_binding": "yes",
+    "unbound_fixture_used_for_plan_init_positive": "no",
+    "unbound_fixture_used_for_retirement_positive": "no"
+  },
+  "positive_cases": {
+    "count": 2,
+    "pass_count": 2,
+    "plan_init": "PASS",
+    "retirement": "PASS"
+  },
+  "negative_cases": {
+    "count": 12,
+    "pass_count": 12,
+    "intent_mismatch": "PASS",
+    "contract_mismatch": "PASS",
+    "authority_precondition_mismatch": "PASS",
+    "target_mismatch": "PASS",
+    "operation_mismatch": "PASS",
+    "scope_mismatch": "PASS",
+    "plan_init_reentry": "PASS",
+    "ambiguous_project": "PASS",
+    "active_current_protection": "PASS",
+    "running_task_protection": "PASS",
+    "successor_revision_drift": "PASS",
+    "unknown_outcome_replay": "PASS"
+  },
+  "m4_2_preservation": {
+    "source_files_newly_edited": 0,
+    "authority_validation_weakened": "no",
+    "lease_intent_check_removed": "no",
+    "lease_contract_check_removed": "no",
+    "authority_precondition_check_removed": "no",
+    "target_check_removed": "no",
+    "operation_check_removed": "no",
+    "scope_check_removed": "no"
+  },
+  "lifecycle_preservation": {
+    "m4_4_lifecycle_regression": "PASS",
+    "authorization_bypasses_lifecycle_preconditions": "no",
+    "unknown_outcome_lifecycle_replay_denied": "PASS",
+    "B89_current_semantic_probe": "PASS",
+    "B89_integration_seam_newly_edited": "no",
+    "historical_guard_rewrite_count": 0
+  },
+  "downstream_stops": {
+    "write_capable_unified_ingress_implemented": "no",
+    "production_mutation_operation_registered": "no",
+    "cli_write_operation_exposed": "no",
+    "portable_plan_external_write_implemented": "no",
+    "github_authority_write_implemented": "no",
+    "durable_mutation_journal_implemented": "no",
+    "external_mutation_reconciliation_implemented": "no",
+    "m4_3_execution_authorized": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no",
+    "deploy_performed": "no",
+    "runtime_activation_performed": "no",
+    "hermes_dispatch_performed": "no"
+  },
+  "test_ownership": {
+    "tests_path_ownership_respected": "yes",
+    "existing_integration_test_modified": "no",
+    "deferred_test_correction": "replace the fixture positive with genuine issuer construction during independent integration rereview"
+  },
+  "governance_state": {
+    "m4_2_completed": "no",
+    "m4_4_completed": "no",
+    "m4_2_is_known_good_checkpoint": "no",
+    "m4_4_is_known_good_checkpoint": "no",
+    "m4_3_planning_ready": "no",
+    "m4_3_execution_authorized": "no",
+    "next_ready_set": "independent_rereview_of_repaired_m4_2_m4_4_serial_integration"
+  }
+}

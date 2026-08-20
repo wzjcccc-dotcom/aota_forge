@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 post-integration AuthorityRequest binding matrix",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "repair_base_sha": "3ec4119f9a5be549f09a423cc0012b62dfa50e5b",
+  "authority_request_binding_gap_audit": "PASS",
+  "request_derived_from_actual_mutation_context": "yes",
+  "request_bindings_copied_from_lease": "no",
+  "matrix": [
+    {
+      "binding_field": "principal",
+      "source_of_truth": "runtime-bound TrustedContext.principal",
+      "capability_lease_value": "issued authorization principal",
+      "authority_request_value": "SubjectTransaction trusted_context.principal",
+      "currently_forwarded": "yes",
+      "required": "yes",
+      "repair_action": "unchanged existing forwarding"
+    },
+    {
+      "binding_field": "operation",
+      "source_of_truth": "actual lifecycle operation",
+      "capability_lease_value": "lease.operation",
+      "authority_request_value": "SubjectTransaction operation",
+      "currently_forwarded": "yes",
+      "required": "yes",
+      "repair_action": "unchanged existing forwarding"
+    },
+    {
+      "binding_field": "typed_target",
+      "source_of_truth": "actual lifecycle plan_ref / SubjectTransaction subject_ref",
+      "capability_lease_value": "lease.target",
+      "authority_request_value": "SubjectTransaction subject_ref",
+      "currently_forwarded": "yes",
+      "required": "yes",
+      "repair_action": "unchanged existing forwarding"
+    },
+    {
+      "binding_field": "mutation_scope",
+      "source_of_truth": "actual lifecycle WRITE_SCOPE",
+      "capability_lease_value": "lease.scope",
+      "authority_request_value": "SubjectTransaction requested_scope",
+      "currently_forwarded": "yes",
+      "required": "yes",
+      "repair_action": "unchanged existing forwarding"
+    },
+    {
+      "binding_field": "intent_fingerprint",
+      "source_of_truth": "actual MutationIntent.intent_fingerprint()",
+      "capability_lease_value": "lease.intent_fingerprint",
+      "authority_request_value": "lifecycle intent forwarded through SubjectTransaction",
+      "currently_forwarded": "no",
+      "required": "yes",
+      "repair_action": "derive from MutationIntent and pass explicitly"
+    },
+    {
+      "binding_field": "contract_hash",
+      "source_of_truth": "PLAN_INIT_DESCRIPTOR or PLAN_RETIREMENT_DESCRIPTOR.contract_hash()",
+      "capability_lease_value": "lease.contract_hash",
+      "authority_request_value": "canonical lifecycle descriptor hash",
+      "currently_forwarded": "no",
+      "required": "yes",
+      "repair_action": "derive from canonical descriptor and pass explicitly"
+    },
+    {
+      "binding_field": "subject_expected_revision",
+      "source_of_truth": "actual Subject current revision and lifecycle precondition",
+      "capability_lease_value": "lease.expected_revision",
+      "authority_request_value": "SubjectTransaction current_revision",
+      "currently_forwarded": "yes",
+      "required": "yes",
+      "repair_action": "unchanged existing current revision check"
+    },
+    {
+      "binding_field": "external_authority_precondition",
+      "source_of_truth": "actual lifecycle request external authority precondition",
+      "capability_lease_value": "lease.external_authority_precondition",
+      "authority_request_value": "PlanInitRequest or PlanRetirementRequest context field",
+      "currently_forwarded": "no",
+      "required": "yes when lease-bound",
+      "repair_action": "add explicit lifecycle request field; never read from lease"
+    },
+    {
+      "binding_field": "authority_source_revision",
+      "source_of_truth": "MutationPreconditions.authority_source_revision",
+      "capability_lease_value": "lease.authority_source_revision",
+      "authority_request_value": "actual lifecycle MutationPreconditions value",
+      "currently_forwarded": "no",
+      "required": "yes when lease-bound",
+      "repair_action": "forward MutationPreconditions value"
+    },
+    {
+      "binding_field": "authority_observed_raw_digest",
+      "source_of_truth": "MutationPreconditions.authority_observed_raw_digest",
+      "capability_lease_value": "lease.authority_observed_raw_digest",
+      "authority_request_value": "actual lifecycle MutationPreconditions value",
+      "currently_forwarded": "no",
+      "required": "yes when lease-bound",
+      "repair_action": "forward MutationPreconditions value"
+    },
+    {
+      "binding_field": "candidate_raw_digest",
+      "source_of_truth": "MutationPreconditions.candidate_raw_digest",
+      "capability_lease_value": "lease.candidate_raw_digest",
+      "authority_request_value": "actual lifecycle MutationPreconditions value",
+      "currently_forwarded": "no",
+      "required": "yes when lease-bound",
+      "repair_action": "forward MutationPreconditions value"
+    },
+    {
+      "binding_field": "normalized_plan_digest",
+      "source_of_truth": "actual lifecycle request context when applicable",
+      "capability_lease_value": "lease.normalized_plan_digest",
+      "authority_request_value": "PlanInitRequest or PlanRetirementRequest context field",
+      "currently_forwarded": "no",
+      "required": "yes when lease-bound; otherwise not_applicable",
+      "repair_action": "add explicit context field and preserve digest-domain separation"
+    },
+    {
+      "binding_field": "authorization_basis",
+      "source_of_truth": "M4-2 TrustedMutationAuthorization and issuer",
+      "capability_lease_value": "lease.authorization_basis / authority_basis",
+      "authority_request_value": "not_applicable in current AuthorityRequest schema for PLAN_INIT/retirement",
+      "currently_forwarded": "not_applicable",
+      "required": "not_applicable",
+      "repair_action": "M4-2 issuer structural and issuance validation remains unchanged"
+    },
+    {
+      "binding_field": "approval_and_decision_basis",
+      "source_of_truth": "trusted semantic authorization evidence before lease issuance",
+      "capability_lease_value": "lease approval_basis / decision_basis",
+      "authority_request_value": "not_applicable for the current PLAN_INIT/retirement AuthorityRequest path",
+      "currently_forwarded": "not_applicable",
+      "required": "not_applicable",
+      "repair_action": "M4-2 issuer continues to validate exact evidence before issuing lease"
+    }
+  ],
+  "independent_validation": {
+    "real_plan_init_request_captured": "yes",
+    "real_retirement_request_captured": "yes",
+    "intent_contract_and_authority_values_match_context": "yes",
+    "lease_value_substitution_detected": "no",
+    "M4_2_validation_weakened": "no"
+  }
+}

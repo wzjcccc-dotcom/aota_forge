@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 post-integration genuine lease regression matrix",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "repair_base_sha": "3ec4119f9a5be549f09a423cc0012b62dfa50e5b",
+  "guard": "scripts/m4_4_post_integration_repair_guard.py",
+  "lease_construction": {
+    "issuer": "aota_forge.core.authorization.CapabilityLeaseIssuer.issue",
+    "hand_constructed_capability_lease_used": "no",
+    "intent_binding": "yes",
+    "contract_binding": "yes",
+    "external_authority_precondition_binding": "yes",
+    "subject_revision_binding": "yes",
+    "raw_authority_precondition_bindings": "yes",
+    "normalized_plan_digest": "yes"
+  },
+  "positive_cases": [
+    {
+      "id": "REAL-01",
+      "scenario": "exact genuine M4-2 lease plus exact PLAN_INIT request",
+      "authority_request_source": "actual MutationIntent, PLAN_INIT_DESCRIPTOR, lifecycle preconditions, and request context",
+      "expected": "PLAN_INIT_APPLIED",
+      "result": "PASS",
+      "mutation_applied_once": "yes"
+    },
+    {
+      "id": "REAL-02",
+      "scenario": "exact genuine M4-2 lease plus exact abandoned retirement request",
+      "authority_request_source": "actual retirement MutationIntent, PLAN_RETIREMENT_DESCRIPTOR, lifecycle preconditions, and request context",
+      "expected": "RETIREMENT_APPLIED",
+      "result": "PASS",
+      "mutation_applied_once": "yes"
+    }
+  ],
+  "negative_cases": [
+    {
+      "id": "NEG-01",
+      "scenario": "lease intent A plus actual lifecycle intent B",
+      "expected_error": "LEASE_INTENT_MISMATCH",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-02",
+      "scenario": "lease contract A plus actual transaction contract B",
+      "expected_error": "LEASE_OPERATION_MISMATCH",
+      "canonical_meaning": "contract-bound lease mismatch in AuthorityEngine without an authorization envelope",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-03",
+      "scenario": "lease external authority precondition P1 plus actual request P2",
+      "expected_error": "AUTHORITY_PRECONDITION_STALE",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-04",
+      "scenario": "lease target A plus actual transaction target B",
+      "expected_error": "LEASE_TARGET_MISMATCH",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-05",
+      "scenario": "lease operation A plus actual transaction operation B",
+      "expected_error": "LEASE_OPERATION_MISMATCH",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-06",
+      "scenario": "lease scope A plus actual transaction scope B",
+      "expected_error": "LEASE_SCOPE_MISMATCH",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-07",
+      "scenario": "valid genuine lease plus PLAN_INIT re-entry",
+      "expected_error": "PLAN_INIT_ALREADY_INITIALIZED",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-08",
+      "scenario": "valid genuine lease plus ambiguous Project evidence",
+      "expected_error": "NEEDS_SEMANTIC_CHOICE",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-09",
+      "scenario": "valid genuine lease plus active/current protected retirement target",
+      "expected_error": "RETIREMENT_TARGET_PROTECTED",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-10",
+      "scenario": "valid genuine lease plus running-task protected retirement target",
+      "expected_error": "RETIREMENT_RUNNING_TASK_PROTECTED",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-11",
+      "scenario": "valid genuine lease plus successor revision drift",
+      "expected_error": "RETIREMENT_STALE_SNAPSHOT",
+      "result": "PASS",
+      "mutation_applied": "no"
+    },
+    {
+      "id": "NEG-12",
+      "scenario": "old genuine lease after OUTCOME_UNKNOWN",
+      "expected_error": "OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION",
+      "result": "PASS",
+      "mutation_applied": "no"
+    }
+  ],
+  "counts": {
+    "real_lease_positive_case_count": 2,
+    "real_lease_positive_case_pass_count": 2,
+    "real_lease_negative_case_count": 12,
+    "real_lease_negative_case_pass_count": 12
+  },
+  "lifecycle_precondition_precedence": {
+    "valid_authorization_bypasses_lifecycle": "no",
+    "ambiguous_project_remains_semantic_choice": "yes",
+    "protected_retirement_remains_denied": "yes",
+    "successor_drift_remains_denied": "yes",
+    "unknown_outcome_blind_replay_remains_denied": "yes"
+  }
+}

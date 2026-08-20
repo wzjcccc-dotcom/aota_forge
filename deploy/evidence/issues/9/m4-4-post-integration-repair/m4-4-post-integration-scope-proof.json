@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "artifact": "Issue #9 M4-4 post-integration repair scope proof",
+  "status": "PASS",
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "repair_base_sha": "3ec4119f9a5be549f09a423cc0012b62dfa50e5b",
+  "common_source_base": "d74953be16b103fbd09b0ee18b203881244c4f95",
+  "accepted_ancestors": {
+    "m4_2": "9ce364cde6ae84284cd6fb83650417525bbd3144",
+    "m4_4": "10a7e9809d2e1cb3c324ad65a13e6611662957e6",
+    "m4_2_ancestor_present": "yes",
+    "m4_4_ancestor_present": "yes",
+    "sibling_history_rewritten": "no"
+  },
+  "ownership_lists_read": "yes",
+  "expected_ownership_counts": {
+    "m4_2_exclusive_write_path_count": 3,
+    "m4_4_exclusive_write_path_count": 7,
+    "shared_read_only_path_count": 8,
+    "integration_only_path_count": 4,
+    "forbidden_cross_lane_write_path_count": 5
+  },
+  "m4_2_exclusive_write_paths": [
+    "aota_forge/core/authority.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/authorization.py"
+  ],
+  "m4_4_exclusive_write_paths": [
+    "aota_forge/core/context.py",
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/validation.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/project/resolver.py"
+  ],
+  "shared_read_only_paths": [
+    "aota_forge/core/contracts/canonical.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/operations.py",
+    "aota_forge/core/contracts/registry.py",
+    "aota_forge/core/contracts/version.py",
+    "aota_forge/core/idempotency.py",
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/graph/repository.py"
+  ],
+  "integration_only_paths": [
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/contracts/__init__.py",
+    "tests/**",
+    "aota_forge/core/__init__.py and exports"
+  ],
+  "forbidden_cross_lane_write_paths": [
+    "every path in the other lane's exclusive write list",
+    "every path in INTEGRATION_ONLY_PATHS",
+    "every path in SHARED_READ_ONLY_PATHS",
+    "aota_forge/core/ingress.py remains M4-3-owned",
+    "any unlisted aota_forge/** functional source path"
+  ],
+  "new_repair_edits": {
+    "production_paths": [
+      "aota_forge/core/transaction.py",
+      "aota_forge/core/transitions.py"
+    ],
+    "repair_guard": "scripts/m4_4_post_integration_repair_guard.py",
+    "evidence_prefix": "deploy/evidence/issues/9/m4-4-post-integration-repair/",
+    "m4_2_exclusive_path_edit_count": 0,
+    "m4_4_exclusive_path_edit_count": 2,
+    "shared_read_only_path_edit_count": 0,
+    "forbidden_path_edit_count": 0,
+    "integration_only_product_path_edit_count": 0,
+    "production_paths_within_m4_4_exclusive_set": "yes"
+  },
+  "historical_inherited_paths_not_new_repair_edits": "yes",
+  "test_path_ownership_respected": "yes",
+  "historical_guard_rewrite_count": 0,
+  "B89_integration_seam_newly_edited": "no",
+  "production_graph_mutated": "no",
+  "production_authority_mutated": "no",
+  "runtime_activation_performed": "no",
+  "deploy_performed": "no"
+}
