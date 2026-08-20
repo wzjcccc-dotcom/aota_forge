@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "control_role_cardinality_implemented": "PASS",
+  "heuristic_latest_comment_selection_allowed": "no",
+  "control_role_duplicate_auto_selection_allowed": "no",
+  "control_role_update_in_place_implemented": "yes",
+  "duplicate_control_role_creation_allowed": "no",
+  "tests": {
+    "T02_valid_control_role_count_1": "PASS - exactly one comment per required role resolves to deterministic target",
+    "T03_count_0_fail_closed": "PASS - binding count 0 -> CONTROL_ROLE_MISSING fail closed, no mutation",
+    "T04_count_gt1_fail_closed": "PASS - binding count >1 -> CONTROL_ROLE_DUPLICATE fail closed, no write, no latest selection",
+    "T05_update_in_place": "PASS - single bounded authorized write to exact comment ID; no new canonical role comment appended; verify readback proves candidate",
+    "T06_latest_comment_heuristic_absent": "PASS - duplicate roles not silently fixed by choosing newest; HEURISTIC_LATEST_COMMENT_SELECTION_ALLOWED=no"
+  },
+  "role_resolution_model": {
+    "binding_count_0": "CONTROL_ROLE_MISSING fail closed",
+    "binding_count_1": "deterministic target -> exact resolved comment ID + revision + digest is single mutation target; update in place",
+    "binding_count_gt1": "CONFLICT fail closed; no heuristic selection"
+  },
+  "forbidden_heuristics": [
+    "latest comment wins",
+    "EFFECTIVE_PLAN",
+    "first match",
+    "newest",
+    "lowest ID",
+    "highest ID"
+  ],
+  "verification": "M4-6 tests assert duplicate role surfaces CONFLICT, not silently prefers latest",
+  "result": "PASS"
+}

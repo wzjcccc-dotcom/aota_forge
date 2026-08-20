@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "github_raw_precondition_implementation": "PASS",
+  "subject_revision_used_as_github_cas": "no",
+  "normalized_plan_digest_used_as_github_cas": "no",
+  "false_native_cas_claim_count": 0,
+  "read_before_write_eliminates_all_race_windows": "no",
+  "tests": {
+    "T07_stale_issue_precondition_rejected": "PASS - stale revision or digest mismatch -> STALE_AUTHORITY fail closed, no blind overwrite",
+    "T08_stale_comment_precondition_rejected": "PASS - stale comment precondition -> no comment write; STALE_AUTHORITY fail closed",
+    "T09_subject_revision_cannot_satisfy_github_precondition": "PASS - subject revision never used as GitHub CAS; separate domains; stale fails even if subject matches numerically",
+    "T10_normalized_digest_cannot_satisfy_github_cas": "PASS - normalized digest never used as raw CAS; stale if normalized used as observed; J8 still CONFLICT"
+  },
+  "domains": [
+    {
+      "domain": "Subject lifecycle concurrency",
+      "fields": [
+        "subject_expected_revision"
+      ],
+      "type": "int \u22650"
+    },
+    {
+      "domain": "GitHub raw authority concurrency (external CAS)",
+      "fields": [
+        "authority_source_revision",
+        "authority_observed_raw_digest"
+      ],
+      "type": "opaque token + SHA-256"
+    },
+    {
+      "domain": "Portable Plan semantic identity",
+      "fields": [
+        "normalized_plan_digest"
+      ],
+      "type": "SHA-256 hex, evidence only"
+    }
+  ],
+  "raw_precondition_comparison_algorithm": "stale_if_any_mismatch - any revision or digest mismatch -> stale fail closed",
+  "native_cas_note": "Even with correct (revision+digest) CAS mapping, the underlying GitHub API provides no usable native conditional write primitive; therefore read-before-write does not eliminate all race windows; mechanical pre-read validation + single external attempt + mandatory readback verification + OUTCOME_UNKNOWN/CONFLICT handoff is required",
+  "result": "PASS"
+}

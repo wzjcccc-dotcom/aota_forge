@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "github_external_idempotency_implementation": "PASS",
+  "same_key_changed_authorization_github_replay_allowed": "no",
+  "tests": {
+    "T18_same_key_changed_authorization_not_replay": "PASS - same idempotency_key with changed authorization_reference/lease_reference/principal -> CONFLICT fail closed; GitHub replay denied",
+    "intent_fingerprint_only_insufficient": "PASS - intent_fingerprint alone not sufficient; candidate digest change also drifts"
+  },
+  "external_idempotency_model": {
+    "preserves_M4_5_M4_3_complete_identity": true,
+    "M4_3_authorization_bound_identity_reused": true,
+    "not_issue_number_only": true,
+    "not_comment_ID_only": true,
+    "not_idempotency_key_only": true,
+    "not_intent_fingerprint_only": true,
+    "complete_identity_required": "Same idempotency_key with changed authorization is different complete identity -> must not replay prior GitHub effect; must surface CONFLICT",
+    "same_key_same_complete_identity_replay": "REPLAYED_VERIFIED or VERIFIED_RECOVERED (deterministic replay with no duplicate semantic effect if observation already equals candidate)",
+    "same_key_changed_authorization_replay": "CONFLICT fail closed (M4-3/M4-5 same-key-different-request = conflict); GitHub replay denied"
+  },
+  "result": "PASS"
+}

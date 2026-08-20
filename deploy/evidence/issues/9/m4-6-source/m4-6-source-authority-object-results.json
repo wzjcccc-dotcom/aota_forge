@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "github_authority_object_model_implemented": "PASS",
+  "objects": [
+    {
+      "OBJECT": "Issue body",
+      "SEMANTIC_AUTHORITY": "yes",
+      "PROJECTION_ONLY": "no",
+      "WRITE_METHOD": "typed Issue body mutation: mutate(PortablePlanMutationRequest) -> verify readback",
+      "VERIFIED": "PASS"
+    },
+    {
+      "OBJECT": "milestone_progress_index (control comment)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "update canonical control comment in place",
+      "VERIFIED": "PASS"
+    },
+    {
+      "OBJECT": "development_notes (control comment)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "same: update-in-place",
+      "VERIFIED": "PASS"
+    },
+    {
+      "OBJECT": "defect_register (control comment)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "same: update-in-place",
+      "VERIFIED": "PASS"
+    },
+    {
+      "OBJECT": "runtime_activation_record (control comment, optional)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "absent unless explicitly authorized",
+      "VERIFIED": "PASS"
+    },
+    {
+      "OBJECT": "Event Log (append-only comment)",
+      "SEMANTIC_AUTHORITY": "no",
+      "PROJECTION_ONLY": "yes",
+      "WRITE_METHOD": "append-only typed operation: appendEventLog -> new comment",
+      "APPEND_ONLY": "yes",
+      "VERIFIED": "PASS"
+    }
+  ],
+  "critical_governance_rule_verified": "Issue body / Portable Plan is authority. Control comments are operational projections/indexes, not independent semantic authority. Issue body wins; CONTROL_COMMENTS_PLAN_AUTHORITY=no; EVENT_LOG_PLAN_AUTHORITY=no; per M4-0 D9",
+  "read_before_write_summary": "Every GitHub authority mutation requires read exact current raw object -> derive current raw revision/digest -> compare with M4-5 external authority precondition -> only then external apply eligibility; no blind overwrite.",
+  "verify_after_write_summary": "gh/API call success is not verification; must re-read exact authoritative GitHub object -> compare raw result to candidate/original -> return typed observation for journal/recovery handling.",
+  "tests": [
+    "T01",
+    "T17",
+    "governance invariants"
+  ],
+  "result": "PASS"
+}

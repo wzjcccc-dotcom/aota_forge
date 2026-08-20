@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6-SOURCE-IMPLEMENTATION",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_6_plan_known_good_checkpoint": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "m4_6_plan_review_evidence_sha": "5488bc2c864e4b2d9d19bc5af7ed5312cb728b5b",
+  "m4_6_exclusive_write_paths": [
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/fake_github.py",
+    "tests/test_m4_6_github_adapter.py"
+  ],
+  "m4_6_exclusive_write_path_count": 3,
+  "m4_6_shared_read_only_paths": [
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/__init__.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/state_machine.py",
+    "aota_forge/core/journal/retry.py"
+  ],
+  "m4_6_shared_read_only_path_count": 6,
+  "m4_6_integration_only_paths": [
+    "aota_forge/adapters/plan_authority/__init__.py",
+    "aota_forge/core/contracts/errors.py"
+  ],
+  "m4_6_integration_only_path_count": 2,
+  "m4_6_forbidden_paths": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/persistence.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/cli/commands/project.py",
+    "aota_forge/core/git/__init__.py",
+    "aota_forge/core/cutover/**",
+    "aota_forge/adapters/host/**",
+    "deploy/evidence/issues/9/m4-7-plan/**",
+    "deploy/evidence/issues/9/m4-8-plan/**",
+    "scripts/m4_7_plan_guard.py"
+  ],
+  "m4_6_forbidden_path_count": 12,
+  "actual_changed_files": [
+    "aota_forge/adapters/plan_authority/fake_github.py",
+    "aota_forge/adapters/plan_authority/github.py",
+    "scripts/m4_6_source_guard.py",
+    "tests/test_m4_6_github_adapter.py"
+  ],
+  "production_source_writes_within_accepted_m4_6_scope": "yes",
+  "m4_6_exclusive_write_path_count_actual": 3,
+  "m4_6_shared_read_only_path_write_count": 0,
+  "m4_6_forbidden_path_write_count": 0,
+  "m4_7_exclusive_path_write_count": 0,
+  "all_production_source_writes_within_accepted_m4_6_scope": "yes",
+  "m4_6_m4_7_parallel_safety_preserved": "yes",
+  "github_api_call_count": 0,
+  "durable_journal_persistence_implemented": "no",
+  "recovery_executor_implemented": "no",
+  "reconciliation_executor_implemented": "no"
+}

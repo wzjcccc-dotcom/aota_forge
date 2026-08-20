@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-6-SOURCE-IMPLEMENTATION",
+  "work_item_title": "GitHub Issue / Control-Comment Authority Adapter",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "m4_6_plan_known_good_checkpoint": "2a7da31772f6313f9da17c3e17ab245a58168305",
+  "m4_6_plan_review_evidence_sha": "5488bc2c864e4b2d9d19bc5af7ed5312cb728b5b",
+  "source_base_sha_verified": "yes",
+  "plan_sha_used_as_source_base": "no",
+  "implementation_dag_followed": "yes",
+  "implementation_slice_count": 5,
+  "implementation_slice_pass_count": 5,
+  "construction_time_semantic_decision_count": 0,
+  "slices": [
+    {
+      "SLICE_ID": "M4-6-S1",
+      "PREREQUISITES": [
+        "M4-5 Port contract accepted (e51141a)",
+        "Operation registry allowlist for plan_init/plan_retirement",
+        "Fake port fixture pattern"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py",
+        "aota_forge/adapters/plan_authority/__init__.py (integration_only re-export if needed)"
+      ],
+      "ACTUAL_CHANGED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "CONTRACTS_IMPLEMENTED": [
+        "Typed GitHub Issue authority methods: readRawAuthority, mutateIssueBody, verify; raw precondition capture; error projection"
+      ],
+      "TESTS": [
+        "POS-01",
+        "POS-02",
+        "POS-03",
+        "NEG-01",
+        "NEG-05",
+        "NEG-07",
+        "NEG-08",
+        "NEG-09",
+        "NEG-10"
+      ],
+      "RESULT": "PASS"
+    },
+    {
+      "SLICE_ID": "M4-6-S2",
+      "PREREQUISITES": [
+        "M4-6-S1 (Issue transport plumbing)"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "ACTUAL_CHANGED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "CONTRACTS_IMPLEMENTED": [
+        "Control-comment projection transport: bounded list + deterministic role resolution (0/1/>1) + update-in-place + verify readback per role"
+      ],
+      "TESTS": [
+        "POS-04",
+        "POS-05",
+        "NEG-02",
+        "NEG-03",
+        "NEG-04",
+        "NEG-11"
+      ],
+      "RESULT": "PASS"
+    },
+    {
+      "SLICE_ID": "M4-6-S3",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "ACTUAL_CHANGED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "CONTRACTS_IMPLEMENTED": [
+        "Event Log append-only transport + multi-object partial-effect ordering + typed observation contract for M4-7"
+      ],
+      "TESTS": [
+        "POS-06",
+        "NEG-12"
+      ],
+      "RESULT": "PASS"
+    },
+    {
+      "SLICE_ID": "M4-6-S4",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2",
+        "M4-6-S3"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py",
+        "aota_forge/adapters/plan_authority/fake_github.py (test seam)",
+        "tests/test_m4_6_github_adapter.py"
+      ],
+      "ACTUAL_CHANGED_PATHS": [
+        "aota_forge/adapters/plan_authority/fake_github.py",
+        "tests/test_m4_6_github_adapter.py"
+      ],
+      "CONTRACTS_IMPLEMENTED": [
+        "Auth preflight + idempotency preservation + error projection + deterministic fake transport seam"
+      ],
+      "TESTS": [
+        "NEG-06",
+        "NEG-09 (+ timeout/unknown)",
+        "all failure injection points (10 types)"
+      ],
+      "RESULT": "PASS"
+    },
+    {
+      "SLICE_ID": "M4-6-S5",
+      "PREREQUISITES": [
+        "M4-6-S1",
+        "M4-6-S2",
+        "M4-6-S3",
+        "M4-6-S4"
+      ],
+      "AUTHORIZED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "ACTUAL_CHANGED_PATHS": [
+        "aota_forge/adapters/plan_authority/github.py"
+      ],
+      "CONTRACTS_IMPLEMENTED": [
+        "Integration + regression hardening: CORE_GITHUB_SEMANTIC_LEAK_COUNT=0, verify portability boundary, close acceptance matrix"
+      ],
+      "TESTS": [
+        "full acceptance matrix 18 cases",
+        "crash windows J1-J10 interaction",
+        "source ownership checks"
+      ],
+      "RESULT": "PASS"
+    }
+  ],
+  "m4_5_port_contract_reused": "yes",
+  "m4_5_core_semantic_redefinition_count": 0,
+  "github_authority_object_model_implemented": "PASS",
+  "control_role_cardinality_implemented": "PASS",
+  "heuristic_latest_comment_selection_allowed": "no",
+  "control_role_duplicate_auto_selection_allowed": "no",
+  "control_role_update_in_place_implemented": "yes",
+  "duplicate_control_role_creation_allowed": "no",
+  "issue_body_typed_mutation_implemented": "PASS",
+  "generic_github_mutation_api_created": "no",
+  "github_raw_precondition_implementation": "PASS",
+  "subject_revision_used_as_github_cas": "no",
+  "normalized_plan_digest_used_as_github_cas": "no",
+  "false_native_cas_claim_count": 0,
+  "read_before_write_eliminates_all_race_windows": "no",
+  "github_read_before_write_implemented": "yes",
+  "blind_github_overwrite_allowed": "no",
+  "github_verify_after_write_implemented": "yes",
+  "transport_success_alone_means_verified": "no",
+  "multi_github_object_atomicity_assumed": "no",
+  "partial_effect_classification_implemented": "PASS",
+  "event_log_append_only_implemented": "yes",
+  "event_log_history_edit_implemented": "no",
+  "event_log_current_state_inference_implemented": "no",
+  "m4_6_to_m4_7_outcome_contract_implemented": "yes",
+  "github_unknown_outcome_implementation": "PASS",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "unknown_outcome_blind_old_lease_reuse": "no",
+  "github_external_idempotency_implementation": "PASS",
+  "same_key_changed_authorization_github_replay_allowed": "no",
+  "generic_rest_passthrough_implemented": "no",
+  "generic_graphql_passthrough_implemented": "no",
+  "generic_gh_command_executor_implemented": "no",
+  "generic_terminal_api_created": "no",
+  "github_adapter_is_semantic_decision_maker": "no",
+  "durable_journal_persistence_implemented": "no",
+  "journal_store_implemented": "no",
+  "recovery_scanner_implemented": "no",
+  "recovery_executor_implemented": "no",
+  "reconciliation_executor_implemented": "no",
+  "retry_lineage_persistence_implemented": "no",
+  "github_auth_self_repair_implemented": "no",
+  "cross_authority_atomic_transaction_available": "no",
+  "production_github_acceptance_write_count": 0,
+  "issue_9_acceptance_write_count": 0,
+  "all_production_source_writes_within_accepted_m4_6_scope": "yes",
+  "full_current_semantic_regression": "PASS",
+  "current_semantic_invariant_failure_count": 0,
+  "new_full_suite_failure_count": 0,
+  "compile_validation": "PASS",
+  "json_validation": "PASS",
+  "git_diff_check": "PASS",
+  "blocking_finding_count": 0,
+  "m4_6_completed": "no",
+  "m4_6_is_known_good_checkpoint": "no",
+  "m4_8_planning_ready": "no",
+  "next_ready_set": "independent_review_of_m4_6_source"
+}

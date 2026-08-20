@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "multi_github_object_atomicity_assumed": "no",
+  "partial_effect_classification_implemented": "PASS",
+  "event_log_append_only_implemented": "yes",
+  "tests": {
+    "T16_partial_multi_object_effect": "PASS - Issue body candidate observed but one projection failed -> PARTIAL_PROJECTION_FAILURE classified; Issue body effect persists; projections inconsistent; handed to M4-7 journal as RECONCILING",
+    "T17_event_log_append_only": "PASS - appends exactly one new Event Log comment with evidence; never edits history; readback confirms appended body digest"
+  },
+  "authority_vs_projection_order": "1) Issue body authority mutation (Portable Plan semantic authority) \u2014 read-before-write verified, single typed mutate, verify-after-write; 2) Projection updates ordered deterministically; 3) Readback verification per object; any failure enters partial-effect classification",
+  "partial_effect_scenarios": [
+    {
+      "scenario": "Issue body verified CANDIDATE_OBSERVED but one control projection update failed",
+      "classification": "PARTIAL_PROJECTION_FAILURE: Issue body effect is externally visible and may be VERIFIED or need RECONCILING; projections are stale wrt body; journal RECONCILING"
+    },
+    {
+      "scenario": "Issue body OUTCOME_UNKNOWN then projection writes not attempted",
+      "classification": "OUTCOME_UNKNOWN handoff to M4-7; no projection writes until authority reconciliation resolves"
+    },
+    {
+      "scenario": "Issue body FAILED_NO_EFFECT -> projections must not be mutated",
+      "classification": "FAILED_NO_EFFECT terminal; no projection mutation"
+    },
+    {
+      "scenario": "Issue body VERIFIED but Event Log append failed (J10-like)",
+      "classification": "Issue body remains candidate observed; journal stranded APPLYING/RECONCILING -> future run reconciles -> VERIFIED_RECOVERED; Event Log append is retried only via fresh journal observation"
+    }
+  ],
+  "handoff_to_journal_reconciliation": "Every partial-effect case surfaces a typed observation per object (observed_raw_digest, observed_revision, error_code) and a combined journal state for M4-7 to reconcile deterministically",
+  "result": "PASS"
+}

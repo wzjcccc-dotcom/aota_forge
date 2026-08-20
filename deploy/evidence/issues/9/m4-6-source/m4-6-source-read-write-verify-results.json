@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "milestone": "M4",
+  "work_item": "M4-6",
+  "accepted_writable_base": "e51141a8559faa0fb37ec1258d9c6446b8faa956",
+  "github_read_before_write_implemented": "yes",
+  "blind_github_overwrite_allowed": "no",
+  "github_verify_after_write_implemented": "yes",
+  "transport_success_alone_means_verified": "no",
+  "github_unknown_outcome_implementation": "PASS",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "unknown_outcome_blind_old_lease_reuse": "no",
+  "m4_6_to_m4_7_outcome_contract_implemented": "yes",
+  "tests": {
+    "T01_valid_issue_body_typed_write": "PASS - exact precondition match -> single typed GitHub Issue body update attempted; at-most-one",
+    "T07_T08_stale_rejection": "PASS - stale fails closed, no external write",
+    "T11_transport_success_not_verified_without_readback": "PASS - transport success True but verify returns original -> ORIGINAL_OBSERVED, not VERIFIED",
+    "T12_candidate_readback": "PASS - observed == candidate -> CANDIDATE_OBSERVED -> VERIFIED_RECOVERED",
+    "T13_original_readback": "PASS - observed == original -> ORIGINAL_OBSERVED -> RETRYABLE_NO_EFFECT",
+    "T14_third_state_readback": "PASS - observed third -> CONFLICT_THIRD -> CONFLICT, no heuristic merge, normalized equality supporting-only",
+    "T15_unknown_outcome": "PASS - timeout/connection reset/verify fail -> OUTCOME_UNKNOWN -> RECONCILING handoff, no blind retry, no old lease reuse"
+  },
+  "read_before_write_sequence": [
+    "read exact current raw object (Issue body via readRawAuthority; control comment via list+resolve+readExact for that role)",
+    "derive current raw revision/digest",
+    "compare with M4-5 external authority precondition",
+    "only then external apply eligibility: if any mismatch -> STALE_AUTHORITY fail closed, no external write"
+  ],
+  "verify_after_write_sequence": [
+    "write attempt (GitHub API returns transport result)",
+    "re-read exact authoritative GitHub object (mandatory readback regardless of prior transport success)",
+    "compare raw result to candidate/original: observed == candidate -> candidate observed; == original -> original observed; else -> third state or CONFLICT",
+    "return typed observation for journal/recovery handling"
+  ],
+  "unknown_handling": "if timeout/connection reset/response lost/readback unavailable -> surface OUTCOME_UNKNOWN with exact observation semantics (unknown means not success, not failure, not retry permission)",
+  "multi_object_atomicity": "no - Git cannot atomically mutate multiple GitHub objects; ordered authority then projections then Event Log",
+  "result": "PASS"
+}
