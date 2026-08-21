@@ -1,0 +1,256 @@
+{
+  "governance": {
+    "project_id": "aota_forge",
+    "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+    "milestone": "M4",
+    "work_item": "M4-R-INDEPENDENT-REVIEW",
+    "status": "PASS",
+    "read_before_write": "PASS",
+    "accepted_writable_base": "1a50ce843bcda690909c6c4975dec08af12651af",
+    "m4_r_execution_base": "1a50ce843bcda690909c6c4975dec08af12651af",
+    "m4_r_review_target_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+    "m4_r_target_sha_verified": "yes",
+    "m4_r_remote_ref_verified": "yes",
+    "m4_r_base_ancestry_verified": "yes",
+    "m4_status": "in_progress",
+    "m4_completed": "no",
+    "m4_r_completed": "no",
+    "m4_r_is_known_good_checkpoint": "no",
+    "m5_ready": "no",
+    "next_ready_set": "m4_final_governance_closure_reconciliation",
+    "next_action": "Project Steward review of M4-R independent review evidence and final Milestone 4 closure reconciliation on Issue #9"
+  },
+  "diff_and_source_ownership_review": {
+    "m4_r_diff_review": "PASS",
+    "unreported_changed_path_count": 0,
+    "m4_r_source_ownership_review": "PASS",
+    "product_source_mutation_count": 0,
+    "product_source_semantic_change_count": 0,
+    "authorized_fixture_write_path_count": 1,
+    "authorized_fixture_paths": [
+      "tests/test_m4_2_m4_4_integration.py"
+    ],
+    "authorized_guard_modernization_path_count": 4,
+    "authorized_guard_modernization_paths": [
+      "scripts/m4_2_source_guard.py",
+      "scripts/m4_5_source_guard.py",
+      "scripts/m4_6_source_guard.py",
+      "scripts/m4_7_source_guard.py"
+    ],
+    "closure_guard_path": "scripts/m4_r_closure_guard.py",
+    "evidence_directory": "deploy/evidence/issues/9/m4-r/",
+    "unauthorized_test_write_count": 0,
+    "unauthorized_source_write_count": 0,
+    "unowned_source_write_count": 0,
+    "forbidden_path_write_count": 0
+  },
+  "fixture_modernization_review": {
+    "fixture_modernization_source_review": "PASS",
+    "fixture_only_modernization_count": 4,
+    "fixture_semantic_assertion_weakening_count": 0,
+    "fixture_test_bypass_count": 0,
+    "test_deletion_count": 0,
+    "test_skip_introduction_count": 0,
+    "test_xfail_introduction_count": 0,
+    "i5_disposition": {
+      "review": "PASS",
+      "assertion_weakening_count": 0,
+      "product_source_dependency_change_count": 0,
+      "final_test_result": "PASS",
+      "detail": "Modernized test_i5 fixture in tests/test_m4_2_m4_4_integration.py to pass valid lease from _issue_authorization instead of dummy lease without multi-domain preconditions; assertion on PLAN_INIT_APPLIED retained and passes"
+    },
+    "i8_disposition": {
+      "review": "PASS",
+      "assertion_weakening_count": 0,
+      "product_source_dependency_change_count": 0,
+      "final_test_result": "PASS",
+      "detail": "Modernized test_i8 fixture to issue valid authorization for PLAN_RETIREMENT_DESCRIPTOR and pass lease; assertion on RETIREMENT_APPLIED retained and passes"
+    },
+    "i9_disposition": {
+      "review": "PASS",
+      "assertion_weakening_count": 0,
+      "product_source_dependency_change_count": 0,
+      "final_test_result": "PASS",
+      "detail": "Modernized test_i9 fixture to issue valid authorization for superseded retirement and pass lease; assertion on RETIREMENT_APPLIED retained and passes"
+    },
+    "i12_disposition": {
+      "review": "PASS",
+      "assertion_weakening_count": 0,
+      "product_source_dependency_change_count": 0,
+      "final_test_result": "PASS",
+      "detail": "Modernized test_i12 fixture to issue valid authorizations for both initial and conflicting intents; assertion on same-key changed-intent idempotency conflict retained and passes"
+    }
+  },
+  "historical_guard_modernization_review": {
+    "historical_guard_modernization_review": "PASS",
+    "modernized_guard_count": 4,
+    "m4_2_guard": {
+      "review": "PASS",
+      "semantic_check_removal_count": 0,
+      "semantic_check_weakening_count": 0,
+      "checks_passed": 37,
+      "recomputed_digest_adversarial_rejected": 12
+    },
+    "m4_5_guard": {
+      "review": "PASS",
+      "semantic_check_removal_count": 0,
+      "semantic_check_weakening_count": 0,
+      "checks_passed": 60
+    },
+    "m4_6_guard": {
+      "review": "PASS",
+      "semantic_check_removal_count": 0,
+      "semantic_check_weakening_count": 0,
+      "checks_passed": 93
+    },
+    "m4_7_guard": {
+      "review": "PASS",
+      "semantic_check_removal_count": 0,
+      "semantic_check_weakening_count": 0,
+      "checks_passed": 78
+    },
+    "modernized_guard_current_tree_pass_count": 4,
+    "modernized_guard_negative_case_count": 12,
+    "modernized_guard_negative_reject_count": 12,
+    "modernized_guard_negative_unexpected_accept_count": 0,
+    "final_historical_partition_guard_debt_count": 0
+  },
+  "closure_guard_review": {
+    "m4_r_closure_guard_review": "PASS",
+    "m4_r_closure_guard_check_count": 22,
+    "m4_r_closure_guard_pass_count": 22,
+    "m4_r_closure_guard_real_source_path": "yes",
+    "tautological_closure_guard_check_count": 0,
+    "grep_only_semantic_acceptance_count": 0,
+    "missing_critical_closure_behavior_count": 0
+  },
+  "milestone_regressions_and_parity_review": {
+    "m4_1_final_independent_regression": "PASS",
+    "m4_2_final_independent_regression": "PASS",
+    "m4_3_final_independent_regression": "PASS",
+    "m4_4_final_independent_regression": "PASS",
+    "m4_5_final_independent_regression": "PASS",
+    "m4_6_final_independent_regression": "PASS",
+    "m4_7_final_independent_regression": "PASS",
+    "m4_6_m4_7_final_integrated_independent_regression": "PASS",
+    "m4_8_final_independent_regression": "PASS",
+    "direct_core_real_path_final_parity": "PASS",
+    "unified_ingress_real_path_final_parity": "PASS",
+    "cli_real_path_final_parity": "PASS",
+    "parity_semantic_drift_count": 0,
+    "test_harness_semantic_reimplementation_count": 0,
+    "new_semantic_authority_count": 0
+  },
+  "semantic_authority_and_mutation_surface_audit": {
+    "m4_final_semantic_authority_independent_audit": "PASS",
+    "m4_final_allowed_mutation_operation_set": "plan_init,plan_retirement",
+    "unauthorized_operation_exposure_count": 0,
+    "generic_cli_mutation_dispatch_allowed": "no",
+    "generic_terminal_allowed": "no",
+    "generic_git_write_api_allowed": "no",
+    "generic_github_api_allowed": "no"
+  },
+  "identity_preconditions_and_control_roles_audit": {
+    "m4_final_identity_independent_audit": "PASS",
+    "m4_final_precondition_independent_audit": "PASS",
+    "stale_subject_external_attempt_count": 0,
+    "stale_external_authority_write_attempt_count": 0,
+    "m4_final_control_role_independent_audit": "PASS",
+    "latest_comment_heuristic_allowed": "no",
+    "duplicate_role_auto_selection_allowed": "no"
+  },
+  "verify_after_write_and_recovery_retry_audit": {
+    "m4_final_verify_after_write_independent_audit": "PASS",
+    "transport_success_alone_means_verified": "no",
+    "m4_final_unknown_outcome_independent_audit": "PASS",
+    "unknown_outcome_blind_retry_allowed": "no",
+    "m4_final_retry_independent_audit": "PASS",
+    "fresh_authorization_required_for_retry": "yes",
+    "old_authorization_history_mutation_count": 0,
+    "durable_applying_winner_count": 1,
+    "external_transport_attempt_count": 1,
+    "second_executor_external_attempt_count": 0,
+    "third_state_final_classification": "CONFLICT",
+    "third_state_auto_merge_allowed": "no"
+  },
+  "durability_and_boundaries_audit": {
+    "crash_window_count": 10,
+    "crash_window_pass_count": 10,
+    "m4_final_crash_window_independent_audit": "PASS",
+    "j10_external_blind_reapply_count": 0,
+    "process_restart_durability_independent_audit": "PASS",
+    "in_memory_only_durability_proof": "no",
+    "m4_final_cross_authority_independent_audit": "PASS",
+    "cross_authority_atomic_transaction_available": "no",
+    "m4_final_storage_boundary_independent_audit": "PASS",
+    "production_storage_engine_frozen": "no",
+    "file_backed_reference_adapter_production_default": "no",
+    "successor_final_independent_regression": "PASS"
+  },
+  "historical_regressions_review": {
+    "historical_regression_case_count": 14,
+    "historical_regression_executed_count": 14,
+    "historical_regression_pass_count": 14,
+    "historical_regression_provenance_review": "PASS",
+    "cases": [
+      {"case_id": "DRIFT-1", "name": "CLI argument projection derives exactly from descriptor", "result": "PASS"},
+      {"case_id": "RC2-1", "name": "Authoritative outcome unknown treated as unknown, not success", "result": "PASS"},
+      {"case_id": "B014-F", "name": "Silent materialization failure detected via readback verify", "result": "PASS"},
+      {"case_id": "B011", "name": "Subject revision CAS atomic check", "result": "PASS"},
+      {"case_id": "B013", "name": "Capability lease replay across multiple operations denied", "result": "PASS"},
+      {"case_id": "B014", "name": "Changed intent with same idempotency key fails closed with CONFLICT", "result": "PASS"},
+      {"case_id": "RECOVERY-1", "name": "Pure deterministic three-way classifier (candidate/original/third)", "result": "PASS"},
+      {"case_id": "BIND-1", "name": "Deterministic 0/1/>1 subject binding", "result": "PASS"},
+      {"case_id": "WCTX-1", "name": "Model-facing path injection rejected; logical IDs used", "result": "PASS"},
+      {"case_id": "CAS-1", "name": "Multi-domain precondition separation", "result": "PASS"},
+      {"case_id": "PRE-1", "name": "Mandatory raw precondition check before GitHub write", "result": "PASS"},
+      {"case_id": "ROLE-1", "name": "Control role deterministic 0/1/>1 cardinality fail closed", "result": "PASS"},
+      {"case_id": "CARD-1", "name": "Update in place required for control roles", "result": "PASS"},
+      {"case_id": "APPLY-1", "name": "PREPARED -> CAS APPLYING required before external mutate call", "result": "PASS"}
+    ]
+  },
+  "full_test_suite_acceptance": {
+    "pre_m4_r_test_total_count": 129,
+    "post_m4_r_test_total_count": 129,
+    "current_full_suite_total_count": 129,
+    "current_full_suite_pass_count": 129,
+    "current_full_suite_failure_count": 0,
+    "current_failure_set_exactly": "none",
+    "current_semantic_invariant_failure_count": 0,
+    "test_collection_integrity_review": "PASS",
+    "m4_r_full_suite_independent_acceptance": "PASS"
+  },
+  "independent_positive_and_negative_matrix": {
+    "independent_positive_case_count": 14,
+    "independent_positive_case_pass_count": 14,
+    "independent_negative_case_count": 38,
+    "independent_negative_case_reject_count": 38,
+    "independent_negative_case_unexpected_accept_count": 0
+  },
+  "closure_evidence_review": {
+    "m4_r_closure_evidence_review": "PASS",
+    "m4_r_evidence_contradiction_count": 0,
+    "m4_r_evidence_missing_critical_field_count": 0,
+    "m4_r_candidate_acceptable_for_final_closure": "yes",
+    "m4_final_closure_eligibility": "PASS"
+  },
+  "non_scope_and_boundary_verifications": {
+    "m5_implementation_performed": "no",
+    "deploy_performed": "no",
+    "runtime_activation_performed": "no",
+    "hermes_dispatch_performed": "no",
+    "production_github_acceptance_write_count": 0,
+    "issue_9_acceptance_write_count": 0,
+    "production_journal_mutated": "no",
+    "production_graph_mutated": "no",
+    "production_authority_mutated": "no"
+  },
+  "verdict_and_findings": {
+    "status": "PASS",
+    "blocking_finding_count": 0,
+    "non_blocking_finding_count": 0,
+    "blocking_findings": [],
+    "non_blocking_findings": [],
+    "m4_r_independent_review_accepted": "yes"
+  }
+}
