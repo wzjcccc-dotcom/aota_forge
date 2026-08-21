@@ -27,5 +27,16 @@
     "SG13": "PASS",
     "SG14": "PASS",
     "SG15": "PASS"
+  },
+  "provenance": {
+    "source_accepted_base": "3b2796188e4f88047215fc7ee5271dc06a9b1be4",
+    "prior_failed_candidate": "c79f529657cdebc9e0070b173c934f57bab7220d",
+    "r1_repair_id": "M5-6-R1-F01",
+    "r1_repair_class": "temporal_regression_invariant_defect",
+    "r1_disposition": "resolved",
+    "r2_repair_id": "M5-6-R2-F01",
+    "r2_repair_class": "source_guard_lifecycle_authorization_defect",
+    "r2_disposition": "resolved",
+    "production_source_repair_performed": "no"
   }
 }

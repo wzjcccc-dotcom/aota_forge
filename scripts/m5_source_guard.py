@@ -85,6 +85,15 @@ ALLOWED_CHANGED_PATTERNS = {
     "scripts/m5_source_guard.py",
 }
 
+AUTHORIZED_POST_ACCEPTANCE_REPAIRS = {
+    "M5-6-R1-F01": {
+        "path": "tests/test_m5_5_cli_dispatch.py",
+        "class": "temporal_regression_invariant_defect",
+        "target_class": "TestM55NegativeAndArchitecturalInvariants",
+        "target_method": "test_q15_m5_6_not_started",
+    }
+}
+
 
 def git(*args: str) -> str:
     res = subprocess.run(
@@ -94,6 +103,184 @@ def git(*args: str) -> str:
         check=True,
     )
     return res.stdout.strip()
+
+
+def verify_authorized_regression_repair(
+    base_source: str,
+    current_source: str,
+    class_name: str,
+    method_name: str,
+) -> tuple[bool, str]:
+    """Deterministic AST verifier proving only target_class.target_method body changed."""
+    try:
+        base_tree = ast.parse(base_source)
+    except Exception as exc:
+        return False, f"Failed to parse base source AST: {exc}"
+    try:
+        current_tree = ast.parse(current_source)
+    except Exception as exc:
+        return False, f"Failed to parse current source AST: {exc}"
+
+    # 1. Target class exists exactly once in both
+    base_classes = [n for n in base_tree.body if isinstance(n, ast.ClassDef) and n.name == class_name]
+    if len(base_classes) != 1:
+        return False, f"Base source defines class '{class_name}' {len(base_classes)} times (expected 1)"
+
+    curr_classes = [n for n in current_tree.body if isinstance(n, ast.ClassDef) and n.name == class_name]
+    if len(curr_classes) != 1:
+        return False, f"Current source defines class '{class_name}' {len(curr_classes)} times (expected 1)"
+
+    base_cls = base_classes[0]
+    curr_cls = curr_classes[0]
+
+    # 2. Target method exists exactly once in both
+    base_methods = [
+        n for n in base_cls.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == method_name
+    ]
+    if len(base_methods) != 1:
+        return False, f"Base class '{class_name}' defines method '{method_name}' {len(base_methods)} times (expected 1)"
+
+    curr_methods = [
+        n for n in curr_cls.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == method_name
+    ]
+    if len(curr_methods) != 1:
+        return False, f"Current class '{class_name}' defines method '{method_name}' {len(curr_methods)} times (expected 1)"
+
+    base_method = base_methods[0]
+    curr_method = curr_methods[0]
+
+    # 3. Target name is unchanged (confirmed by name check)
+    # 4. Decorators, parameters, and return annotations on target method must be unchanged
+    if len(base_method.decorator_list) != len(curr_method.decorator_list):
+        return False, f"Target method {class_name}.{method_name} decorators modified"
+    for b_dec, c_dec in zip(base_method.decorator_list, curr_method.decorator_list):
+        if ast.dump(b_dec, include_attributes=False) != ast.dump(c_dec, include_attributes=False):
+            return False, f"Target method {class_name}.{method_name} decorator content modified"
+
+    if ast.dump(base_method.args, include_attributes=False) != ast.dump(curr_method.args, include_attributes=False):
+        return False, f"Target method {class_name}.{method_name} arguments/signature modified"
+
+    if (base_method.returns is None) != (curr_method.returns is None):
+        return False, f"Target method {class_name}.{method_name} return annotation modified"
+    if base_method.returns and curr_method.returns:
+        if ast.dump(base_method.returns, include_attributes=False) != ast.dump(curr_method.returns, include_attributes=False):
+            return False, f"Target method {class_name}.{method_name} return annotation modified"
+
+    # 5. Permits only the body of the exact target method to differ.
+    # Replace body of target method with [ast.Pass()] in both AST trees.
+    base_method.body = [ast.Pass()]
+    curr_method.body = [ast.Pass()]
+
+    base_dump = ast.dump(base_tree, include_attributes=False)
+    curr_dump = ast.dump(current_tree, include_attributes=False)
+
+    if base_dump != curr_dump:
+        return False, f"Structural mutation detected outside authorized method {class_name}.{method_name}"
+
+    return True, f"Authorized repair in {class_name}.{method_name} verified cleanly"
+
+
+def verify_authorized_repair_for_file(rel_path: str) -> tuple[bool, str]:
+    """Verify that a modified file matches an explicitly authorized post-acceptance repair."""
+    matching_repairs = [
+        (repair_id, info)
+        for repair_id, info in AUTHORIZED_POST_ACCEPTANCE_REPAIRS.items()
+        if info.get("path") == rel_path
+    ]
+    if not matching_repairs:
+        return False, f"No authorized post-acceptance repair registered for path: {rel_path}"
+    if len(matching_repairs) > 1:
+        return False, f"Multiple authorized post-acceptance repairs registered for path: {rel_path}"
+
+    repair_id, repair_info = matching_repairs[0]
+    target_class = repair_info.get("target_class")
+    target_method = repair_info.get("target_method")
+    if not target_class or not target_method:
+        return False, f"Repair {repair_id} missing target_class or target_method metadata"
+
+    try:
+        base_source = git("show", f"{ACCEPTED_BASE}:{rel_path}")
+    except Exception as exc:
+        return False, f"Failed to read base version of {rel_path} at {ACCEPTED_BASE}: {exc}"
+
+    curr_path = ROOT / rel_path
+    if not curr_path.is_file():
+        return False, f"Current file {rel_path} does not exist"
+    try:
+        with open(curr_path, "r", encoding="utf-8") as handle:
+            curr_source = handle.read()
+    except Exception as exc:
+        return False, f"Failed to read current version of {rel_path}: {exc}"
+
+    return verify_authorized_regression_repair(base_source, curr_source, target_class, target_method)
+
+
+def _self_validate_guard_repair_logic() -> tuple[bool, str]:
+    """Non-destructive self-validation of AST repair verification logic."""
+    sample_base = (
+        "import unittest\n\n"
+        "class TestSample(unittest.TestCase):\n"
+        "    def test_other(self):\n"
+        "        pass\n\n"
+        "    def test_target(self):\n"
+        "        pass\n"
+    )
+    # Valid modification
+    sample_valid = (
+        "import unittest\n\n"
+        "class TestSample(unittest.TestCase):\n"
+        "    def test_other(self):\n"
+        "        pass\n\n"
+        "    def test_target(self):\n"
+        "        x = 42\n"
+        "        self.assertEqual(x, 42)\n"
+    )
+    ok, msg = verify_authorized_regression_repair(sample_base, sample_valid, "TestSample", "test_target")
+    if not ok:
+        return False, f"Self-validation failed on valid repair: {msg}"
+
+    # Invalid: other method modified
+    sample_invalid_other = (
+        "import unittest\n\n"
+        "class TestSample(unittest.TestCase):\n"
+        "    def test_other(self):\n"
+        "        self.assertTrue(False)\n\n"
+        "    def test_target(self):\n"
+        "        pass\n"
+    )
+    ok, _ = verify_authorized_regression_repair(sample_base, sample_invalid_other, "TestSample", "test_target")
+    if ok:
+        return False, "Self-validation failed: unauthorized other method modification was accepted"
+
+    # Invalid: import modified
+    sample_invalid_import = (
+        "import os\nimport unittest\n\n"
+        "class TestSample(unittest.TestCase):\n"
+        "    def test_other(self):\n"
+        "        pass\n\n"
+        "    def test_target(self):\n"
+        "        pass\n"
+    )
+    ok, _ = verify_authorized_regression_repair(sample_base, sample_invalid_import, "TestSample", "test_target")
+    if ok:
+        return False, "Self-validation failed: unauthorized import modification was accepted"
+
+    # Invalid: signature modified
+    sample_invalid_sig = (
+        "import unittest\n\n"
+        "class TestSample(unittest.TestCase):\n"
+        "    def test_other(self):\n"
+        "        pass\n\n"
+        "    def test_target(self, extra=True):\n"
+        "        pass\n"
+    )
+    ok, _ = verify_authorized_regression_repair(sample_base, sample_invalid_sig, "TestSample", "test_target")
+    if ok:
+        return False, "Self-validation failed: unauthorized signature modification was accepted"
+
+    return True, "Guard repair self-validation passed"
 
 
 def check_sg01_production_files_exist() -> tuple[bool, str]:
@@ -217,9 +404,19 @@ def check_sg10_canonical_roles_and_states_retained() -> tuple[bool, str]:
 
 
 def check_sg11_no_forbidden_m5_6_production_path() -> tuple[bool, str]:
-    diff_names = git("diff", "--name-only", ACCEPTED_BASE).splitlines()
+    self_ok, self_msg = _self_validate_guard_repair_logic()
+    if not self_ok:
+        return False, f"Guard quality verification failed: {self_msg}"
+
+    diff_names = [line.strip() for line in git("diff", "--name-only", ACCEPTED_BASE).splitlines() if line.strip()]
     for name in diff_names:
-        if name.strip() and name.strip() not in ALLOWED_CHANGED_PATTERNS and not name.startswith("deploy/evidence/issues/9/m5-source/"):
+        if name in ALLOWED_CHANGED_PATTERNS or name.startswith("deploy/evidence/issues/9/m5-source/"):
+            continue
+        if any(info.get("path") == name for info in AUTHORIZED_POST_ACCEPTANCE_REPAIRS.values()):
+            ok, msg = verify_authorized_repair_for_file(name)
+            if not ok:
+                return False, f"Authorized repair verification failed for {name}: {msg}"
+        else:
             return False, f"Forbidden file modified in M5-6: {name}"
     return True, "Only authorized M5-6 files modified"
 
@@ -251,12 +448,23 @@ def check_sg12_no_unresolved_semantic_todo() -> tuple[bool, str]:
 
 
 def check_sg13_source_ownership_intact() -> tuple[bool, str]:
-    diff_names = git("diff", "--name-only", ACCEPTED_BASE).splitlines()
+    self_ok, self_msg = _self_validate_guard_repair_logic()
+    if not self_ok:
+        return False, f"Guard quality verification failed: {self_msg}"
+
+    diff_names = [line.strip() for line in git("diff", "--name-only", ACCEPTED_BASE).splitlines() if line.strip()]
     for name in diff_names:
         if name.startswith("aota_forge/"):
             return False, f"Production source touched: {name}"
-        if name.startswith("tests/test_m4_") or (name.startswith("tests/test_m5_") and name != "tests/test_m5_6_convergence.py"):
+        if name.startswith("tests/test_m4_"):
             return False, f"Previous test touched: {name}"
+        if name.startswith("tests/test_m5_") and name != "tests/test_m5_6_convergence.py":
+            if any(info.get("path") == name for info in AUTHORIZED_POST_ACCEPTANCE_REPAIRS.values()):
+                ok, msg = verify_authorized_repair_for_file(name)
+                if not ok:
+                    return False, f"Previous test touched without verified authorized repair ({name}): {msg}"
+            else:
+                return False, f"Previous test touched: {name}"
     return True, "Source ownership partitions fully intact"
 
 

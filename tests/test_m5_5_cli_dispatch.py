@@ -797,8 +797,55 @@ class TestM55NegativeAndArchitecturalInvariants(unittest.TestCase):
         self.assertEqual(len(CANONICAL_ROLES), 5)
 
     def test_q15_m5_6_not_started(self):
-        self.assertFalse(os.path.exists("tests/test_m5_6_convergence.py"))
-        self.assertFalse(os.path.exists("scripts/m5_source_guard.py"))
+        """Permanent architectural invariant: M5-5 production implementation does not depend on, import, execute, or implement M5-6/M5-R artifacts."""
+        m5_5_files = [
+            "aota_forge/core/ingress.py",
+            "aota_forge/cli/commands/execution.py",
+            "aota_forge/cli/projection.py",
+            "aota_forge/cli/__main__.py",
+        ]
+        forbidden_modules = {
+            "test_m5_6_convergence",
+            "m5_source_guard",
+            "tests.test_m5_6_convergence",
+            "scripts.m5_source_guard",
+        }
+        forbidden_substrings = [
+            "test_m5_6_convergence",
+            "m5_source_guard",
+            "m5-source",
+            "m5_r",
+            "convergence",
+        ]
+        for fpath in m5_5_files:
+            file_path = pathlib.Path(fpath)
+            content = file_path.read_text("utf-8")
+            tree = ast.parse(content, filename=fpath)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        for forbidden in forbidden_modules:
+                            self.assertNotIn(
+                                forbidden,
+                                alias.name,
+                                f"M5-5 file {fpath} must not import M5-6 module: {alias.name}",
+                            )
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    for forbidden in forbidden_modules:
+                        self.assertNotIn(
+                            forbidden,
+                            mod,
+                            f"M5-5 file {fpath} must not import from M5-6 module: {mod}",
+                        )
+
+            for forbidden in forbidden_substrings:
+                self.assertNotIn(
+                    forbidden,
+                    content.lower(),
+                    f"M5-5 file {fpath} contains reference to M5-6/M5-R artifact: {forbidden}",
+                )
 
     def test_zero_semantic_todo_in_m5_5_files(self):
         m5_5_files = [

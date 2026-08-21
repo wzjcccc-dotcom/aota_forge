@@ -20,24 +20,27 @@
   },
   "m5_suite": {
     "total": 274,
-    "passed": 273,
-    "failed": 1,
-    "failing_test": "test_m5_5_cli_dispatch.py::TestM55NegativeAndArchitecturalInvariants::test_q15_m5_6_not_started",
-    "status": "FAIL_PREVIOUS_TEST_DEFECT"
+    "passed": 274,
+    "failed": 0,
+    "status": "PASS"
   },
   "full_suite": {
     "total": 403,
-    "passed": 402,
-    "failed": 1,
-    "status": "FAIL_PREVIOUS_TEST_DEFECT"
+    "passed": 403,
+    "failed": 0,
+    "status": "PASS"
   },
-  "findings": [
-    {
-      "severity": "BLOCKING",
-      "component": "tests/test_m5_5_cli_dispatch.py",
-      "test_name": "test_q15_m5_6_not_started",
-      "issue": "Accepted M5-5 test explicitly asserts that tests/test_m5_6_convergence.py and scripts/m5_source_guard.py do not exist on disk, failing when M5-6 files are created. M5-6 is prohibited from modifying previous accepted tests.",
-      "suggested_owner": "Slice M5-R / Governance Reconciliation"
-    }
-  ]
+  "findings": [],
+  "blocking_finding_count": 0,
+  "provenance": {
+    "source_accepted_base": "3b2796188e4f88047215fc7ee5271dc06a9b1be4",
+    "prior_failed_candidate": "c79f529657cdebc9e0070b173c934f57bab7220d",
+    "r1_repair_id": "M5-6-R1-F01",
+    "r1_repair_class": "temporal_regression_invariant_defect",
+    "r1_disposition": "resolved",
+    "r2_repair_id": "M5-6-R2-F01",
+    "r2_repair_class": "source_guard_lifecycle_authorization_defect",
+    "r2_disposition": "resolved",
+    "production_source_repair_performed": "no"
+  }
 }
