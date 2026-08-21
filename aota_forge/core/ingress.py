@@ -40,6 +40,8 @@ from aota_forge.core.contracts.descriptor import (
     PLAN_RETIREMENT_OPERATION,
     READ_ONLY,
     WRITE_ONLY,
+    InputSpec,
+    OperationContractDescriptor,
 )
 from aota_forge.core.contracts.errors import ForgeError, UnsupportedOperationError
 from aota_forge.core.contracts.mutation import MutationIntent, MutationPreconditions
@@ -48,6 +50,22 @@ from aota_forge.core.contracts.results import LifecycleResult, failure, failure_
 from aota_forge.core.contracts.validation import validate_inputs
 from aota_forge.core.contracts.version import PROTOCOL_VERSION
 from aota_forge.core.bootstrap import ensure_handlers_bound
+from aota_forge.core.execution.dispatcher import (
+    DispatcherError,
+    ExecutionDispatcher,
+    IdempotencyConflictError,
+    NeedsSemanticChoiceError,
+    PackageInvalidError,
+    TaskNotFoundError,
+)
+from aota_forge.core.execution.package import ExecutionPackage
+from aota_forge.core.execution.registry import (
+    AmbiguousExecutorError,
+    CapabilityMismatchError,
+    ExecutorNotFoundError,
+    ExecutorRegistryError,
+)
+from aota_forge.core.execution.roles import validate_canonical_role
 from aota_forge.core.identity.refs import ObjectRef
 from aota_forge.core.transaction import TransactionStore
 from aota_forge.core.transitions import PlanInitRequest, PlanRetirementRequest
@@ -55,6 +73,231 @@ from aota_forge.core.transitions import PlanInitRequest, PlanRetirementRequest
 _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 _RESOLVER = ContextResolver()
+
+
+# ---------------------------------------------------------------------------
+# M5 Canonical Execution Descriptors & Registration
+# ---------------------------------------------------------------------------
+
+TASK_START_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.task_start",
+    description="Mechanically dispatches a canonical execution task to the specified executor adapter",
+    inputs=(
+        InputSpec("executor", "str"),
+        InputSpec("role", "str"),
+        InputSpec("instruction", "str"),
+        InputSpec("project_id", "str"),
+        InputSpec("subject_ref", "str?"),
+        InputSpec("timeout", "int?"),
+    ),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=WRITE_ONLY,
+    mutation_scope="execution_task",
+    required_authority="caller_execution_intent",
+    approval_required=False,
+    decision_required=False,
+    valid_predecessor_state="uninitialized",
+    valid_successor_state="dispatched",
+    subject_revision_precondition=False,
+    external_authority_precondition=False,
+    idempotency="idempotent under (idempotency_key, intent_fingerprint)",
+    result_contract="canonical_dispatch_result.v1",
+    errors=(
+        "EXECUTOR_NOT_FOUND",
+        "EXECUTOR_UNAVAILABLE",
+        "CAPABILITY_MISMATCH",
+        "PACKAGE_INVALID",
+        "ROLE_MAPPING_NOT_FOUND",
+        "DISPATCH_REJECTED",
+        "DISPATCH_TIMEOUT",
+        "NEEDS_SEMANTIC_CHOICE",
+        "IDEMPOTENCY_CONFLICT",
+        "INTERNAL_MECHANICAL_ERROR",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+TASK_STATUS_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.task_status",
+    description="Queries the execution status of a dispatched task",
+    inputs=(
+        InputSpec("task_id", "str"),
+        InputSpec("executor", "str"),
+    ),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=READ_ONLY,
+    errors=(
+        "TASK_NOT_FOUND",
+        "EXECUTOR_UNAVAILABLE",
+        "TASK_STATE_UNKNOWN",
+        "ROUTE_EXECUTOR_MISMATCH",
+        "INTERNAL_MECHANICAL_ERROR",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+TASK_RESULT_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.task_result",
+    description="Fetches the CanonicalResult of a finished task",
+    inputs=(
+        InputSpec("task_id", "str"),
+        InputSpec("executor", "str"),
+    ),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=READ_ONLY,
+    errors=(
+        "TASK_NOT_FOUND",
+        "RESULT_INVALID",
+        "TASK_STILL_RUNNING",
+        "EXECUTOR_UNAVAILABLE",
+        "ROUTE_EXECUTOR_MISMATCH",
+        "INTERNAL_MECHANICAL_ERROR",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+TASK_CANCEL_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.task_cancel",
+    description="Requests cancellation of an active task",
+    inputs=(
+        InputSpec("task_id", "str"),
+        InputSpec("executor", "str"),
+    ),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=WRITE_ONLY,
+    mutation_scope="execution_task",
+    required_authority="caller_execution_intent",
+    approval_required=False,
+    decision_required=False,
+    valid_predecessor_state="active",
+    valid_successor_state="cancelled",
+    subject_revision_precondition=False,
+    external_authority_precondition=False,
+    idempotency="idempotent",
+    result_contract="canonical_cancel_result.v1",
+    errors=(
+        "TASK_NOT_FOUND",
+        "CANCEL_UNSUPPORTED",
+        "TASK_ALREADY_TERMINAL",
+        "ROUTE_EXECUTOR_MISMATCH",
+        "INTERNAL_MECHANICAL_ERROR",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+EXECUTOR_LIST_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.executor_list",
+    description="Lists all registered executor adapters and their descriptors",
+    inputs=(),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=READ_ONLY,
+    errors=("INTERNAL_MECHANICAL_ERROR",),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+EXECUTOR_CAPABILITIES_DESCRIPTOR = OperationContractDescriptor(
+    name="execution.executor_capabilities",
+    description="Displays advertised capabilities of the specified executor adapter",
+    inputs=(
+        InputSpec("executor", "str"),
+    ),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write=READ_ONLY,
+    errors=(
+        "EXECUTOR_NOT_FOUND",
+        "INTERNAL_MECHANICAL_ERROR",
+    ),
+    protocol_version=PROTOCOL_VERSION,
+)
+
+CANONICAL_EXECUTION_OPERATIONS: tuple[str, ...] = (
+    "execution.task_start",
+    "execution.task_status",
+    "execution.task_result",
+    "execution.task_cancel",
+    "execution.executor_list",
+    "execution.executor_capabilities",
+)
+
+EXECUTION_DESCRIPTORS: dict[str, OperationContractDescriptor] = {
+    desc.name: desc
+    for desc in (
+        TASK_START_DESCRIPTOR,
+        TASK_STATUS_DESCRIPTOR,
+        TASK_RESULT_DESCRIPTOR,
+        TASK_CANCEL_DESCRIPTOR,
+        EXECUTOR_LIST_DESCRIPTOR,
+        EXECUTOR_CAPABILITIES_DESCRIPTOR,
+    )
+}
+EXECUTION_OPERATIONS: frozenset[str] = frozenset(CANONICAL_EXECUTION_OPERATIONS)
+
+
+def get_execution_descriptor(operation: str) -> OperationContractDescriptor | None:
+    """Retrieve the canonical Execution descriptor for an operation."""
+    return EXECUTION_DESCRIPTORS.get(operation)
+
+
+def register_execution_descriptors(registry: Any | None = None) -> None:
+    """Register canonical execution descriptors into the provided or default registry."""
+    target = DEFAULT_REGISTRY if registry is None else registry
+    for desc in EXECUTION_DESCRIPTORS.values():
+        if not target.has(desc.name):
+            target.bind(desc)
+
+
+# ---------------------------------------------------------------------------
+# ExecutionDispatcher Mechanical Injection Seam
+# ---------------------------------------------------------------------------
+
+_BOUND_EXECUTION_DISPATCHER: ExecutionDispatcher | None = None
+
+
+def bind_execution_dispatcher(dispatcher: ExecutionDispatcher | None) -> None:
+    """Process-local mechanical injection seam for ExecutionDispatcher."""
+    if dispatcher is not None and not isinstance(dispatcher, ExecutionDispatcher):
+        raise TypeError(f"dispatcher must be ExecutionDispatcher, got {type(dispatcher).__name__}")
+    global _BOUND_EXECUTION_DISPATCHER
+    _BOUND_EXECUTION_DISPATCHER = dispatcher
+
+
+def get_execution_dispatcher() -> ExecutionDispatcher | None:
+    """Return the currently bound ExecutionDispatcher, or None."""
+    return _BOUND_EXECUTION_DISPATCHER
+
+
+def reset_execution_dispatcher() -> None:
+    """Reset the bound ExecutionDispatcher."""
+    global _BOUND_EXECUTION_DISPATCHER
+    _BOUND_EXECUTION_DISPATCHER = None
+
+
+def _require_bound_dispatcher() -> ExecutionDispatcher:
+    if _BOUND_EXECUTION_DISPATCHER is None:
+        raise ForgeError(
+            "INTERNAL_MECHANICAL_ERROR",
+            "Execution dispatcher is not bound in ingress",
+            retryable=False,
+        )
+    return _BOUND_EXECUTION_DISPATCHER
 
 
 @dataclass(frozen=True)
@@ -431,6 +674,280 @@ def execute_mutation(envelope: MutationIngressRequest) -> dict[str, Any]:
     return projected
 
 
+def execute_execution(
+    operation: str,
+    params: dict[str, Any] | None = None,
+    principal: object = None,
+    correlation_id: str | None = None,
+    trusted_context: TrustedContext | None = None,
+) -> dict[str, Any]:
+    """Execute one canonical execution operation via the bound ExecutionDispatcher."""
+    cid = resolve_correlation_id(correlation_id)
+    principal_binding = resolve_principal_binding(principal, trusted_context)
+    principal_audit = principal_binding.to_audit()
+
+    descriptor = get_execution_descriptor(operation) or DEFAULT_REGISTRY.get(operation)
+    if descriptor is None:
+        err = UnsupportedOperationError(f"unsupported operation: {operation}")
+        return failure_from_error(
+            operation,
+            err,
+            correlation_id=cid,
+            audit=_audit(operation, None, None, cid, "ok", "ok", "no_descriptor", principal_audit),
+        )
+
+    audit = _audit(
+        operation,
+        descriptor.protocol_version,
+        descriptor.contract_hash(),
+        cid,
+        "pending",
+        "pending",
+        "pending",
+        principal_audit,
+    )
+
+    raw_params = dict(params) if isinstance(params, Mapping) else {}
+    canonical_task_id = raw_params.pop("canonical_task_id", None)
+    idempotency_key = raw_params.pop("idempotency_key", None)
+    input_artifacts = raw_params.pop("input_artifacts", None)
+    working_context = raw_params.pop("working_context", None)
+    capability_requirements = raw_params.pop("capability_requirements", None)
+    constraints = raw_params.pop("constraints", None)
+    result_expectations = raw_params.pop("result_expectations", None)
+
+    try:
+        validated = validate_inputs(descriptor, raw_params)
+    except ForgeError as exc:
+        audit["validation"] = exc.code
+        audit["context"] = "not_reached"
+        audit["handler"] = "not_executed"
+        return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
+    except Exception as exc:
+        audit["validation"] = "INPUT_TYPE_INVALID"
+        audit["context"] = "not_reached"
+        audit["handler"] = "not_executed"
+        return failure(operation, "INPUT_TYPE_INVALID", str(exc), False, correlation_id=cid, audit=audit)
+
+    audit["validation"] = "ok"
+    audit["context"] = "ok"
+    audit["principal"] = {
+        **principal_audit,
+        "trust": "operator" if trusted_context else "untrusted",
+    }
+
+    try:
+        dispatcher = _require_bound_dispatcher()
+    except ForgeError as exc:
+        audit["handler"] = "dispatcher_unbound"
+        return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
+
+    try:
+        if operation == "execution.task_start":
+            executor = validated.get("executor")
+            if not isinstance(executor, str) or not executor.strip():
+                raise ForgeError("REQUIRED_INPUT_MISSING", "executor is required", retryable=False)
+
+            role = validated.get("role")
+            if not isinstance(role, str) or not role.strip():
+                raise ForgeError("REQUIRED_INPUT_MISSING", "role is required", retryable=False)
+            try:
+                validate_canonical_role(role)
+            except ValueError as e:
+                raise ForgeError("PACKAGE_INVALID", str(e), retryable=False)
+
+            instruction = validated.get("instruction")
+            if not isinstance(instruction, str) or not instruction.strip():
+                raise ForgeError("REQUIRED_INPUT_MISSING", "instruction is required", retryable=False)
+
+            project_id = validated.get("project_id")
+            if not isinstance(project_id, str) or not project_id.strip():
+                raise ForgeError("REQUIRED_INPUT_MISSING", "project_id is required", retryable=False)
+
+            subject_ref = validated.get("subject_ref")
+            timeout = validated.get("timeout")
+
+            constraints_dict = dict(constraints or {})
+            if timeout is not None:
+                constraints_dict["timeout_seconds"] = int(timeout)
+
+            task_id = canonical_task_id or str(uuid.uuid4())
+            idem_key = idempotency_key or str(uuid.uuid4())
+            norm_input_artifacts = input_artifacts or ()
+            norm_working_context = dict(working_context or {})
+            norm_capability_requirements = dict(capability_requirements or {})
+            norm_result_expectations = dict(result_expectations or {})
+
+            package = ExecutionPackage.create(
+                canonical_task_id=task_id,
+                project_id=project_id,
+                canonical_role=role,
+                instruction=instruction,
+                subject_ref=subject_ref,
+                input_artifacts=norm_input_artifacts,
+                working_context=norm_working_context,
+                capability_requirements=norm_capability_requirements,
+                constraints=constraints_dict,
+                idempotency_key=idem_key,
+                correlation_id=cid,
+                result_expectations=norm_result_expectations,
+            )
+
+            dispatch_result = dispatcher.dispatch(package, target_executor_id=executor)
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data=dispatch_result.to_dict(),
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        elif operation == "execution.task_status":
+            task_id = validated.get("task_id")
+            executor = validated.get("executor")
+            if not task_id or not executor:
+                raise ForgeError("REQUIRED_INPUT_MISSING", "task_id and executor are required", retryable=False)
+
+            route = dispatcher.get_route(task_id)
+            if route.executor_id != executor:
+                audit["handler"] = "route_executor_mismatch"
+                return failure(
+                    operation,
+                    "ROUTE_EXECUTOR_MISMATCH",
+                    f"Task {task_id!r} is routed to executor {route.executor_id!r}, not requested {executor!r}",
+                    False,
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            status_res = dispatcher.status(task_id)
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data=status_res.to_dict(),
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        elif operation == "execution.task_result":
+            task_id = validated.get("task_id")
+            executor = validated.get("executor")
+            if not task_id or not executor:
+                raise ForgeError("REQUIRED_INPUT_MISSING", "task_id and executor are required", retryable=False)
+
+            route = dispatcher.get_route(task_id)
+            if route.executor_id != executor:
+                audit["handler"] = "route_executor_mismatch"
+                return failure(
+                    operation,
+                    "ROUTE_EXECUTOR_MISMATCH",
+                    f"Task {task_id!r} is routed to executor {route.executor_id!r}, not requested {executor!r}",
+                    False,
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            res = dispatcher.result(task_id)
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data=res.to_dict(),
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        elif operation == "execution.task_cancel":
+            task_id = validated.get("task_id")
+            executor = validated.get("executor")
+            if not task_id or not executor:
+                raise ForgeError("REQUIRED_INPUT_MISSING", "task_id and executor are required", retryable=False)
+
+            route = dispatcher.get_route(task_id)
+            if route.executor_id != executor:
+                audit["handler"] = "route_executor_mismatch"
+                return failure(
+                    operation,
+                    "ROUTE_EXECUTOR_MISMATCH",
+                    f"Task {task_id!r} is routed to executor {route.executor_id!r}, not requested {executor!r}",
+                    False,
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            cancel_res = dispatcher.cancel(task_id)
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data=cancel_res.to_dict(),
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        elif operation == "execution.executor_list":
+            descriptors = [desc.to_dict() for desc in dispatcher.registry.list_descriptors()]
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data={"executors": descriptors},
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        elif operation == "execution.executor_capabilities":
+            executor = validated.get("executor")
+            if not executor:
+                raise ForgeError("REQUIRED_INPUT_MISSING", "executor is required", retryable=False)
+
+            desc = dispatcher.registry.get_descriptor(executor)
+            audit["handler"] = "success"
+            return success(
+                operation=operation,
+                data=desc.to_dict(),
+                correlation_id=cid,
+                audit=audit,
+            )
+
+        else:
+            raise UnsupportedOperationError(f"unsupported execution operation: {operation}")
+
+    except ExecutorNotFoundError as exc:
+        audit["handler"] = "executor_not_found"
+        return failure(operation, "EXECUTOR_NOT_FOUND", str(exc), False, correlation_id=cid, audit=audit)
+    except CapabilityMismatchError as exc:
+        audit["handler"] = "capability_mismatch"
+        return failure(operation, "CAPABILITY_MISMATCH", str(exc), False, correlation_id=cid, audit=audit)
+    except NeedsSemanticChoiceError as exc:
+        audit["handler"] = "needs_semantic_choice"
+        choices = [{"executor_id": c} for c in exc.candidates]
+        ret = failure(
+            operation,
+            "NEEDS_SEMANTIC_CHOICE",
+            str(exc),
+            False,
+            correlation_id=cid,
+            audit=audit,
+            next_action="Specify target executor explicitly",
+        )
+        ret["semantic_choices"] = choices
+        return ret
+    except PackageInvalidError as exc:
+        audit["handler"] = "package_invalid"
+        return failure(operation, "PACKAGE_INVALID", str(exc), False, correlation_id=cid, audit=audit)
+    except TaskNotFoundError as exc:
+        audit["handler"] = "task_not_found"
+        return failure(operation, "TASK_NOT_FOUND", str(exc), False, correlation_id=cid, audit=audit)
+    except IdempotencyConflictError as exc:
+        audit["handler"] = "idempotency_conflict"
+        return failure(operation, "IDEMPOTENCY_CONFLICT", str(exc), False, correlation_id=cid, audit=audit)
+    except ForgeError as exc:
+        audit["handler"] = "forge_error"
+        return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
+    except Exception as exc:
+        audit["handler"] = "internal_error"
+        err = ForgeError("INTERNAL_MECHANICAL_ERROR", f"internal error: {type(exc).__name__}: {str(exc)}", retryable=False)
+        return failure_from_error(operation, err, correlation_id=cid, audit=audit)
+
+
 def execute(
     operation: str,
     params: dict[str, Any] | None = None,
@@ -438,10 +955,19 @@ def execute(
     correlation_id: str | None = None,
     trusted_context: TrustedContext | None = None,
 ) -> dict[str, Any]:
-    """Execute one canonical read-only Core operation.
+    """Execute one canonical Core operation.
 
     Never raises ForgeError; canonical errors are returned in the envelope.
     """
+    if operation in CANONICAL_EXECUTION_OPERATIONS:
+        return execute_execution(
+            operation,
+            params,
+            principal=principal,
+            correlation_id=correlation_id,
+            trusted_context=trusted_context,
+        )
+
     ensure_handlers_bound()
     cid = resolve_correlation_id(correlation_id)
     principal_binding = resolve_principal_binding(principal, trusted_context)
@@ -521,4 +1047,24 @@ def execute(
     return _normalize_handler_result(operation, payload, cid, audit)
 
 
-__all__ = ["MutationIngressRequest", "execute", "execute_mutation", "resolve_correlation_id"]
+__all__ = [
+    "CANONICAL_EXECUTION_OPERATIONS",
+    "EXECUTION_DESCRIPTORS",
+    "EXECUTION_OPERATIONS",
+    "EXECUTOR_CAPABILITIES_DESCRIPTOR",
+    "EXECUTOR_LIST_DESCRIPTOR",
+    "MutationIngressRequest",
+    "TASK_CANCEL_DESCRIPTOR",
+    "TASK_RESULT_DESCRIPTOR",
+    "TASK_START_DESCRIPTOR",
+    "TASK_STATUS_DESCRIPTOR",
+    "bind_execution_dispatcher",
+    "execute",
+    "execute_execution",
+    "execute_mutation",
+    "get_execution_descriptor",
+    "get_execution_dispatcher",
+    "register_execution_descriptors",
+    "reset_execution_dispatcher",
+    "resolve_correlation_id",
+]

@@ -24,6 +24,14 @@ import os
 import sys
 from typing import Any, Callable
 
+from aota_forge.cli.commands.execution import (
+    executor_capabilities_params,
+    executor_list_params,
+    task_cancel_params,
+    task_result_params,
+    task_start_params,
+    task_status_params,
+)
 from aota_forge.cli.commands.host import status_params as host_status_params
 from aota_forge.cli.commands.plan import (
     plan_init_params,
@@ -100,6 +108,36 @@ def _build_parser() -> argparse.ArgumentParser:
     attach_semantic_arguments(plan_retire, "plan_retirement")
     _transport_flags(plan_retire)
 
+    task = sub.add_parser("task", help="task execution operations")
+    task_sub = task.add_subparsers(dest="task_command", required=True)
+
+    task_start = task_sub.add_parser("start", help="start/dispatch a canonical execution task")
+    attach_semantic_arguments(task_start, "execution.task_start")
+    _transport_flags(task_start)
+
+    task_status = task_sub.add_parser("status", help="query status of a dispatched task")
+    attach_semantic_arguments(task_status, "execution.task_status")
+    _transport_flags(task_status)
+
+    task_result = task_sub.add_parser("result", help="fetch canonical result of a task")
+    attach_semantic_arguments(task_result, "execution.task_result")
+    _transport_flags(task_result)
+
+    task_cancel = task_sub.add_parser("cancel", help="cancel an active task")
+    attach_semantic_arguments(task_cancel, "execution.task_cancel")
+    _transport_flags(task_cancel)
+
+    executor = sub.add_parser("executor", help="executor adapter operations")
+    executor_sub = executor.add_subparsers(dest="executor_command", required=True)
+
+    executor_list = executor_sub.add_parser("list", help="list registered executor adapters")
+    attach_semantic_arguments(executor_list, "execution.executor_list")
+    _transport_flags(executor_list)
+
+    executor_caps = executor_sub.add_parser("capabilities", help="display capabilities of an executor")
+    attach_semantic_arguments(executor_caps, "execution.executor_capabilities")
+    _transport_flags(executor_caps)
+
     operations = sub.add_parser("operations", help="list canonical operations")
     _transport_flags(operations)
     return parser
@@ -113,6 +151,12 @@ ROUTES: dict[tuple[str, str | None], tuple[str, ParamBuilder]] = {
     ("host", "status"): ("host.status", host_status_params),
     ("plan", "init"): ("plan_init", plan_init_params),
     ("plan", "retire"): ("plan_retirement", plan_retire_params),
+    ("task", "start"): ("execution.task_start", task_start_params),
+    ("task", "status"): ("execution.task_status", task_status_params),
+    ("task", "result"): ("execution.task_result", task_result_params),
+    ("task", "cancel"): ("execution.task_cancel", task_cancel_params),
+    ("executor", "list"): ("execution.executor_list", executor_list_params),
+    ("executor", "capabilities"): ("execution.executor_capabilities", executor_capabilities_params),
 }
 
 
@@ -159,30 +203,33 @@ def _main(argv: list[str] | None = None) -> int:
         if trusted_metadata
         else None
     )
-    descriptor = DEFAULT_REGISTRY.get(operation)
-    if descriptor and descriptor.read_write != READ_ONLY:
-        if isinstance(params, MutationIngressRequest):
-            payload = execute_mutation(params)
-        elif isinstance(params, dict) and "request" in params and "store" in params:
-            payload = execute_mutation(
-                MutationIngressRequest(
-                    operation=operation,
-                    store=params["store"],
-                    request=params["request"],
-                )
-            )
-        else:
-            store = params.get("store") if isinstance(params, dict) else None
-            request = params.get("request") if isinstance(params, dict) else None
-            payload = execute_mutation(
-                MutationIngressRequest(
-                    operation=operation,
-                    store=store,
-                    request=request,
-                )
-            )
-    else:
+    if operation.startswith("execution."):
         payload = forge_execute(operation, params, trusted_context=trusted_context)
+    else:
+        descriptor = DEFAULT_REGISTRY.get(operation)
+        if descriptor and descriptor.read_write != READ_ONLY:
+            if isinstance(params, MutationIngressRequest):
+                payload = execute_mutation(params)
+            elif isinstance(params, dict) and "request" in params and "store" in params:
+                payload = execute_mutation(
+                    MutationIngressRequest(
+                        operation=operation,
+                        store=params["store"],
+                        request=params["request"],
+                    )
+                )
+            else:
+                store = params.get("store") if isinstance(params, dict) else None
+                request = params.get("request") if isinstance(params, dict) else None
+                payload = execute_mutation(
+                    MutationIngressRequest(
+                        operation=operation,
+                        store=store,
+                        request=request,
+                    )
+                )
+        else:
+            payload = forge_execute(operation, params, trusted_context=trusted_context)
     _emit(args, payload)
     return classify(payload)
 

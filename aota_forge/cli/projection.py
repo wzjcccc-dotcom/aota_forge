@@ -20,10 +20,15 @@ from typing import Any
 from aota_forge.core.contracts.descriptor import OperationContractDescriptor
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
+from aota_forge.core.ingress import get_execution_descriptor
 
 # Transport parse for the small closed set of declared input types; anything
 # unknown stays a string and is validated by the canonical ingress.
 _TRANSPORT_TYPES = {"int": int}
+
+
+def _lookup_descriptor(operation: str) -> OperationContractDescriptor | None:
+    return DEFAULT_REGISTRY.get(operation) or get_execution_descriptor(operation)
 
 
 def semantic_input_specs(descriptor: OperationContractDescriptor) -> tuple:
@@ -33,7 +38,7 @@ def semantic_input_specs(descriptor: OperationContractDescriptor) -> tuple:
 
 def operation_schema(operation: str) -> dict[str, Any] | None:
     """Project one canonical operation descriptor into the CLI schema."""
-    descriptor = DEFAULT_REGISTRY.get(operation)
+    descriptor = _lookup_descriptor(operation)
     if descriptor is None:
         return None
     return {
@@ -49,7 +54,7 @@ def operation_schema(operation: str) -> dict[str, Any] | None:
 
 def attach_semantic_arguments(parser: argparse.ArgumentParser, operation: str) -> None:
     """Attach descriptor-derived semantic flags to one CLI subparser."""
-    descriptor = DEFAULT_REGISTRY.get(operation)
+    descriptor = _lookup_descriptor(operation)
     if descriptor is None:
         return
     for spec in semantic_input_specs(descriptor):
