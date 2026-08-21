@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "probe_count": 12,
+  "reject_count": 12,
+  "unexpected_accept_count": 0,
+  "status": "PASS",
+  "results": [
+    {
+      "probe_id": "RP-N01",
+      "name": "Cross-artifact split-brain state definitions",
+      "expected_error_pattern": "canonical_task_state: missing required states",
+      "rejected": true,
+      "errors": [
+        "canonical_task_state: missing required states in {'ACCEPTED', 'WAITING', 'CANCELLED', 'UNKNOWN', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'}"
+      ]
+    },
+    {
+      "probe_id": "RP-N02",
+      "name": "Hidden Hermes alias in canonical capabilities contract",
+      "expected_error_pattern": "capabilities_contract: hidden adapter alias",
+      "rejected": true,
+      "errors": [
+        "capabilities_contract: hidden adapter alias in field hermes_profile_mode"
+      ]
+    },
+    {
+      "probe_id": "RP-N03",
+      "name": "Ambiguous adapter tie auto-selection without semantic choice",
+      "expected_error_pattern": "selection: multi-match must require semantic choice",
+      "rejected": true,
+      "errors": [
+        "selection: multi-match must require semantic choice"
+      ]
+    },
+    {
+      "probe_id": "RP-N04",
+      "name": "Capability weakening / silent downgrade allowed",
+      "expected_error_pattern": "selection: SILENT_CAPABILITY_DOWNGRADE_ALLOWED must be no",
+      "rejected": true,
+      "errors": [
+        "selection: SILENT_CAPABILITY_DOWNGRADE_ALLOWED must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N05",
+      "name": "Identity domain collapse (executor-local ID as canonical)",
+      "expected_error_pattern": "execution_identity: EXECUTOR_LOCAL_TASK_ID_IS_CANONICAL_IDENTITY must be no",
+      "rejected": true,
+      "errors": [
+        "execution_identity: EXECUTOR_LOCAL_TASK_ID_IS_CANONICAL_IDENTITY must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N06",
+      "name": "Retry/resume collapse (adapter auto semantic retry)",
+      "expected_error_pattern": "execution_identity: ADAPTER_AUTO_SEMANTIC_RETRY_ALLOWED must be no",
+      "rejected": true,
+      "errors": [
+        "execution_identity: ADAPTER_AUTO_SEMANTIC_RETRY_ALLOWED must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N07",
+      "name": "Unknown state false completion",
+      "expected_error_pattern": "canonical_task_state: UNKNOWN_IS_NOT_COMPLETED must be yes",
+      "rejected": true,
+      "errors": [
+        "canonical_task_state: UNKNOWN_IS_NOT_COMPLETED must be yes"
+      ]
+    },
+    {
+      "probe_id": "RP-N08",
+      "name": "Result taxonomy collapse (generic failure allowed)",
+      "expected_error_pattern": "canonical_result: GENERIC_EXECUTION_FAILURE_COLLAPSE_ALLOWED must be no",
+      "rejected": true,
+      "errors": [
+        "canonical_result: GENERIC_EXECUTION_FAILURE_COLLAPSE_ALLOWED must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N09",
+      "name": "CLI semantic drift (heuristic Hermes fallback in CLI)",
+      "expected_error_pattern": "cli_dispatch: CLI_HEURISTIC_HERMES_FALLBACK_ALLOWED must be no",
+      "rejected": true,
+      "errors": [
+        "cli_dispatch: CLI_HEURISTIC_HERMES_FALLBACK_ALLOWED must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N10",
+      "name": "Hidden hot-file conflict in integration seam",
+      "expected_error_pattern": "source_ownership: integration path",
+      "rejected": true,
+      "errors": [
+        "source_ownership: integration path aota_forge/core/ingress.py missing owner_slice"
+      ]
+    },
+    {
+      "probe_id": "RP-N11",
+      "name": "Reference adapter accidental production default",
+      "expected_error_pattern": "negative_scope: REFERENCE_EXECUTOR_PRODUCTION_DEFAULT must be no",
+      "rejected": true,
+      "errors": [
+        "negative_scope: REFERENCE_EXECUTOR_PRODUCTION_DEFAULT must be no"
+      ]
+    },
+    {
+      "probe_id": "RP-N12",
+      "name": "Execution/mutation plane contamination (M4 surface redefined)",
+      "expected_error_pattern": "negative_scope: M4_MUTATION_SURFACE_REDEFINED must be no",
+      "rejected": true,
+      "errors": [
+        "negative_scope: M4_MUTATION_SURFACE_REDEFINED must be no"
+      ]
+    }
+  ]
+}

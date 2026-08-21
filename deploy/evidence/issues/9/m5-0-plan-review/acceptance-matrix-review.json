@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "m5_acceptance_case_count": 24,
+  "cases_evaluated": [
+    {
+      "case_id": "POS-M5-01",
+      "name": "ExecutorCapabilities serialization",
+      "coverage": "ExecutorCapabilities data model",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-02",
+      "name": "ExecutionPackage validation",
+      "coverage": "ExecutionPackage model validation",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-03",
+      "name": "CanonicalTaskState mapping",
+      "coverage": "CanonicalTaskState enum mapping",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-04",
+      "name": "CanonicalResult mapping",
+      "coverage": "CanonicalResult envelope projection",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-05",
+      "name": "RoleMapping resolution",
+      "coverage": "RoleMapping translation fail-closed",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-06",
+      "name": "Reference adapter in-memory dispatch",
+      "coverage": "ReferenceFakeExecutorAdapter execution",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-07",
+      "name": "HermesAdapter translation",
+      "coverage": "HermesAdapter payload & status translation",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-08",
+      "name": "ExecutorRegistry registration",
+      "coverage": "ExecutorRegistry registration mechanics",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-09",
+      "name": "Unique executor selection",
+      "coverage": "Deterministic matching for 1 valid adapter",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-10",
+      "name": "Capability matching success",
+      "coverage": "Capability constraint validation",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-11",
+      "name": "Synchronous dispatch flow",
+      "coverage": "Sync execution lifecycle",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-12",
+      "name": "Asynchronous dispatch flow",
+      "coverage": "Async dispatch & polling",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-13",
+      "name": "Task status query",
+      "coverage": "Status query & state normalization",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-14",
+      "name": "Task result query",
+      "coverage": "Result retrieval & payload parsing",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-15",
+      "name": "Task cancellation flow",
+      "coverage": "Cancel operation & CANCELLED state",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-16",
+      "name": "Task resume flow",
+      "coverage": "Resume operation for suspended tasks",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-17",
+      "name": "Dispatch idempotency replay",
+      "coverage": "Idempotent dispatch replay",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-18",
+      "name": "Direct Core dispatch parity",
+      "coverage": "Core dispatcher entrypoint",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-19",
+      "name": "Unified Ingress dispatch parity",
+      "coverage": "Unified Ingress execution route",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-20",
+      "name": "CLI dispatch parity",
+      "coverage": "CLI aota task start surface parity",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-21",
+      "name": "CLI executor listing",
+      "coverage": "CLI aota executor list command",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-22",
+      "name": "CLI executor capabilities",
+      "coverage": "CLI aota executor capabilities command",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-23",
+      "name": "Task state reconciliation",
+      "coverage": "Reconciliation of external states",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "POS-M5-24",
+      "name": "M4 regression zero-breakage",
+      "coverage": "Full M4 regression suite 129/129 pass",
+      "verdict": "PASS"
+    }
+  ],
+  "status": "PASS"
+}

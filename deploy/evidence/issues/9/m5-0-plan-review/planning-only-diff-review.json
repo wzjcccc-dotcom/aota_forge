@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "candidate_sha": "29e2ffed3e8aa6b086ca3cae645ef9dc8767e130",
+  "total_changed_files": 25,
+  "planning_artifact_count": 24,
+  "plan_guard_count": 1,
+  "production_source_mutation_count": 0,
+  "product_test_mutation_count": 0,
+  "m5_implementation_performed": false,
+  "live_hermes_dispatch": false,
+  "deployment_change": false,
+  "m4_mutation_surface_change": false,
+  "classified_paths": {
+    "planning_artifacts": [
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-acceptance-matrix.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-architecture-boundary.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-authority-extraction.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-canonical-result.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-canonical-task-state.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-cli-dispatch-plan.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-downstream-handoff.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-execution-identity.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-execution-package-contract.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-executor-adapter-contract.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-executor-capabilities-contract.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-executor-selection.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-failure-injection.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-hermes-adapter-boundary.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-implementation-dag.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-negative-matrix.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-negative-scope.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-phase-boundaries.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-plan.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-refactor-strategy.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-result-error-taxonomy.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-role-mapping.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-source-ownership.json",
+      "deploy/evidence/issues/9/m5-0-plan/m5-0-source-reconnaissance.json"
+    ],
+    "plan_guard": [
+      "scripts/m5_0_plan_guard.py"
+    ],
+    "production_source": [],
+    "product_tests": [],
+    "runtime_deployment": []
+  },
+  "status": "PASS"
+}

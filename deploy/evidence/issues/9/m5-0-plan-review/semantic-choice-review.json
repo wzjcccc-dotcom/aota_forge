@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "scanned_keywords": [
+    "todo",
+    "tbd",
+    "later",
+    "implementation decides",
+    "coder decides",
+    "choose appropriate",
+    "best",
+    "preferred",
+    "fallback",
+    "default",
+    "heuristic",
+    "auto-select",
+    "as needed",
+    "implementation-specific"
+  ],
+  "total_occurrences_found": 15,
+  "construction_time_semantic_decision_count": 0,
+  "audit_findings": [
+    {
+      "artifact": "m5-0-architecture-boundary.json",
+      "keyword": "fallback",
+      "snippet": "cutor selection\",         \"no heuristic fallback to Hermes\",         \"no arbitrary shell execution\" ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-architecture-boundary.json",
+      "keyword": "default",
+      "snippet": " \"test-only\",         \"never production default\"       ]     },     \"canonical_cli_projection\": {   ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-architecture-boundary.json",
+      "keyword": "heuristic",
+      "snippet": "onciles task status and results without heuristic assumptions.\",       \"dependencies\": [         \"ao",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-architecture-boundary.json",
+      "keyword": "heuristic",
+      "snippet": "mantic executor selection\",         \"no heuristic fallback to Hermes\",         \"no arbitrary shell e",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-executor-selection.json",
+      "keyword": "fallback",
+      "snippet": "CUTOR_NOT_FOUND error; fails closed; no fallback\",       \"one_match\": \"Deterministically selects the",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-executor-selection.json",
+      "keyword": "heuristic",
+      "snippet": "E with candidate list; fails closed; no heuristic guessing\"     }   },   \"capability_matching\": {   ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "todo",
+      "snippet": "24\",       \"name\": \"Unresolved semantic TODO delegated to coder\",       \"condition\": \"Planning artif",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "todo",
+      "snippet": "ition\": \"Planning artifact contains TBD/TODO on semantic choices\",       \"expected_result\": \"REJECT ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "tbd",
+      "snippet": "condition\": \"Planning artifact contains TBD/TODO on semantic choices\",       \"expected_result\": \"REJ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "best",
+      "snippet": "se_id\": \"N06\",       \"name\": \"Heuristic best executor selection\",       \"condition\": \"Core ranks or ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "fallback",
+      "snippet": "d\": \"N07\",       \"name\": \"Silent Hermes fallback\",       \"condition\": \"Missing or incompatible execu",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "default",
+      "snippet": ": \"Reference adapter becomes production default\",       \"condition\": \"Test double reference adapter ",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-negative-matrix.json",
+      "keyword": "heuristic",
+      "snippet": "       \"case_id\": \"N06\",       \"name\": \"Heuristic best executor selection\",       \"condition\": \"Core",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-role-mapping.json",
+      "keyword": "fallback",
+      "snippet": "FOUND error; fails closed; no heuristic fallback\"   },   \"invariants\": {     \"ROLE_MAPPING_PLAN\": \"P",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    },
+    {
+      "artifact": "m5-0-role-mapping.json",
+      "keyword": "heuristic",
+      "snippet": "PPING_NOT_FOUND error; fails closed; no heuristic fallback\"   },   \"invariants\": {     \"ROLE_MAPPING",
+      "classification": "prohibition_or_test_case_definition",
+      "is_unresolved_coder_decision": false
+    }
+  ],
+  "rationale": "Every scanned keyword in the 24 planning artifacts occurs strictly as a prohibition definition (e.g. no heuristic fallback, never production default), an invariant check, a forbidden field rule, or a negative test case specification. Zero open semantic choices are delegated to coders.",
+  "status": "PASS"
+}

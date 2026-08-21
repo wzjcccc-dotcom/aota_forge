@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "plan_guard_script": "scripts/m5_0_plan_guard.py",
+  "plan_guard_executed": true,
+  "plan_guard_positive_baseline": "PASS",
+  "plan_guard_negative_case_count": 26,
+  "plan_guard_negative_reject_count": 26,
+  "plan_guard_negative_unexpected_accept_count": 0,
+  "plan_guard_negative_quality": "PASS",
+  "cases": [
+    {
+      "case_id": "G01_WRONG_M4_BASE",
+      "intended_violation": "wrong M4 source base",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "m5-0-plan.json: invalid expected_base_sha '1111111111111111111111111111111111111111'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G02_M5_SOURCE_IMPLEMENTED",
+      "intended_violation": "source implementation during planning",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "phases: planning performs live hermes dispatch"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G03_HERMES_PRIVATE_TYPE_IN_CORE",
+      "intended_violation": "Hermes private type in Core",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "boundary: HERMES_PRIVATE_OBJECT_IN_CANONICAL_CORE_COUNT must be 0"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G04_HERMES_PROFILE_AS_ROLE",
+      "intended_violation": "Hermes profile as canonical role",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "roles: hermes profile name used as canonical role"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G05_CORE_DIRECT_HERMES",
+      "intended_violation": "Core direct Hermes dependency",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "boundary: CORE_DIRECT_HERMES_DEPENDENCY_ALLOWED must be 'no'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G06_CLI_DIRECT_HERMES",
+      "intended_violation": "CLI direct Hermes dependency",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "boundary: CLI_DIRECT_HERMES_DEPENDENCY_ALLOWED must be 'no'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G07_CLI_EXCLUSIVE_ENTRYPOINT",
+      "intended_violation": "CLI exclusive execution entrypoint",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "negative_scope: CLI_EXCLUSIVE_ENTRYPOINT must be 'no'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G08_HEURISTIC_EXECUTOR_SELECTION",
+      "intended_violation": "heuristic executor selection",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "selection: heuristic executor selection allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G09_SILENT_HERMES_FALLBACK",
+      "intended_violation": "silent Hermes fallback",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "selection: silent hermes fallback allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G10_SILENT_CAPABILITY_DOWNGRADE",
+      "intended_violation": "silent capability downgrade",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "selection: silent capability downgrade allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G11_ARBITRARY_EXECUTOR_COMMAND",
+      "intended_violation": "arbitrary executor command",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "adapter: arbitrary executor command allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G12_GENERIC_TERMINAL_ALLOWED",
+      "intended_violation": "generic terminal",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "cli: arbitrary executor command string allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G13_GENERIC_GIT_WRITE",
+      "intended_violation": "generic Git write",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "negative_scope: GENERIC_GIT_WRITE_API_ALLOWED must be 'no'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G14_GENERIC_GITHUB_API",
+      "intended_violation": "generic GitHub API",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "authority: generic GitHub API claimed in m5_owns"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G15_ADAPTER_SEMANTIC_AUTHORITY",
+      "intended_violation": "adapter semantic authority",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "roles: role mapping has semantic decision authority"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G16_LOCAL_ID_AS_CANONICAL",
+      "intended_violation": "executor-local ID as canonical identity",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "identity: executor local task id used as canonical identity"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G17_GENERIC_RESULT_COLLAPSE",
+      "intended_violation": "generic result/error collapse",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "result: generic failure collapse allowed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G18_UNKNOWN_STATE_AS_SUCCESS",
+      "intended_violation": "unknown state treated as success",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "state: unknown collapsed to completed"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G19_REFERENCE_ADAPTER_PRODUCTION_DEFAULT",
+      "intended_violation": "reference adapter production default",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "negative_scope: REFERENCE_EXECUTOR_PRODUCTION_DEFAULT must be 'no'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G20_LIVE_RUNTIME_IN_PLANNING",
+      "intended_violation": "live runtime activation in planning",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "phases: planning performs live hermes dispatch"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G21_DEPLOYMENT_IN_PLANNING",
+      "intended_violation": "deployment in planning",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "phases: planning performs deployment"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G22_M4_MUTATION_SURFACE_REDEFINED",
+      "intended_violation": "M4 mutation-surface redefinition",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "authority: M4 mutation surface redefinition claimed in m5_owns"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G23_UNRESOLVED_SOURCE_OWNERSHIP",
+      "intended_violation": "unresolved source ownership",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "ownership: source ownership ambiguities detected"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G24_CODER_TIME_SEMANTIC_TODO",
+      "intended_violation": "coder-time semantic TODO",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "plan: unresolved semantic choice 'todo: semantic'"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G25_UNRESOLVED_HERMES_BOUNDARY",
+      "intended_violation": "unresolved Hermes boundary",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "hermes_boundary: hermes private types escaping"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "G26_MISSING_DOWNSTREAM_HANDOFF",
+      "intended_violation": "missing downstream handoff",
+      "mutation_verified": true,
+      "orthogonal_mutation": true,
+      "expected_reject": true,
+      "actual_reject": true,
+      "reject_errors": [
+        "downstream: handoff plan invalid"
+      ],
+      "reject_reason_matches_intent": true,
+      "false_positive_risk": "low",
+      "verdict": "PASS"
+    }
+  ],
+  "status": "PASS"
+}

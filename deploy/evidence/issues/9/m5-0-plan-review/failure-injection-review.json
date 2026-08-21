@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "scenario_count": 15,
+  "scenarios_evaluated": [
+    {
+      "scenario_id": "FI-01",
+      "name": "Executor not registered",
+      "injection": "Dispatch to unregistered executor id nonexistent",
+      "expected_error": "EXECUTOR_NOT_FOUND",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-02",
+      "name": "Capability mismatch on mode",
+      "injection": "Request async mode on adapter supporting sync only",
+      "expected_error": "CAPABILITY_MISMATCH",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-03",
+      "name": "Invalid execution package structure",
+      "injection": "Pass package with missing instruction or non-string role",
+      "expected_error": "PACKAGE_INVALID",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-04",
+      "name": "Role mapping not found",
+      "injection": "Specify canonical role unknown_role not supported by adapter",
+      "expected_error": "ROLE_MAPPING_NOT_FOUND",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-05",
+      "name": "Executor adapter unavailable",
+      "injection": "Simulate adapter host connection failure on dispatch",
+      "expected_error": "EXECUTOR_UNAVAILABLE",
+      "retryable": true,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-06",
+      "name": "Dispatch rejection by host",
+      "injection": "Simulate adapter queue full or authorization rejection",
+      "expected_error": "DISPATCH_REJECTED",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-07",
+      "name": "Dispatch timeout",
+      "injection": "Simulate timeout waiting for adapter dispatch acknowledgement",
+      "expected_error": "DISPATCH_TIMEOUT",
+      "retryable": true,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-08",
+      "name": "Duplicate dispatch with changed intent",
+      "injection": "Dispatch same idempotency key with different instruction",
+      "expected_error": "CONFLICT",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-09",
+      "name": "Task not found on status query",
+      "injection": "Query status with unknown task id",
+      "expected_error": "TASK_NOT_FOUND",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-10",
+      "name": "Task state unknown on status query",
+      "injection": "Simulate host daemon crash while querying task status",
+      "expected_error": "TASK_STATE_UNKNOWN",
+      "retryable": true,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-11",
+      "name": "Malformed result payload from executor",
+      "injection": "Simulate corrupt/unparseable result from adapter host",
+      "expected_error": "RESULT_MALFORMED",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-12",
+      "name": "Cancellation unsupported by adapter",
+      "injection": "Call cancel() on adapter with supports_task_cancellation=False",
+      "expected_error": "CANCEL_UNSUPPORTED",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-13",
+      "name": "Resume unsupported by adapter",
+      "injection": "Call resume() on adapter with supports_task_resume=False",
+      "expected_error": "RESUME_UNSUPPORTED",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-14",
+      "name": "CLI unknown command",
+      "injection": "Invoke aota executor invalid_subcommand",
+      "expected_error": "EXIT_USAGE / ArgumentError",
+      "retryable": false,
+      "verdict": "PASS"
+    },
+    {
+      "scenario_id": "FI-15",
+      "name": "Hermes translation failure",
+      "injection": "Pass malformed package to Hermes payload translator",
+      "expected_error": "ADAPTER_PROTOCOL_ERROR",
+      "retryable": false,
+      "verdict": "PASS"
+    }
+  ],
+  "status": "PASS"
+}

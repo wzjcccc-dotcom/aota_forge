@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "claimed_max_safe_parallel_source_lanes": 2,
+  "safe_concurrent_pair_count": 1,
+  "safe_concurrent_pairs": [
+    {
+      "pair": [
+        "M5-2",
+        "M5-4"
+      ],
+      "common_base": "M5-1 completed",
+      "m5_2_writes": [
+        "aota_forge/adapters/execution/*",
+        "tests/test_m5_2_reference_adapter.py"
+      ],
+      "m5_4_writes": [
+        "aota_forge/adapters/hermes/executor.py",
+        "tests/test_m5_4_hermes_adapter.py"
+      ],
+      "write_path_overlap": [],
+      "shared_hot_file_conflict": "none",
+      "safety_rationale": "M5-2 and M5-4 both depend exclusively on completed M5-1 contracts; write entirely disjoint adapter trees; share no mutable hot files; require no cross-slice coordination."
+    }
+  ],
+  "unsafe_concurrent_pair_set_count": 20,
+  "status": "PASS"
+}

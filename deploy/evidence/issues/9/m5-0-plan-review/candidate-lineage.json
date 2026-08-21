@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLAN-INDEPENDENT-REVIEW",
+  "candidate_sha": "29e2ffed3e8aa6b086ca3cae645ef9dc8767e130",
+  "remote_ref": "refs/heads/aota/m5/m5-0-plan",
+  "remote_sha": "29e2ffed3e8aa6b086ca3cae645ef9dc8767e130",
+  "parent_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "parent_count": 1,
+  "sole_child_verified": true,
+  "ancestry_verified": true,
+  "commit_object_type": "commit",
+  "tree_sha": "f2179f3530d217a1b5e1ab7c6b738e71186db15d",
+  "review_checkout_base": "29e2ffed3e8aa6b086ca3cae645ef9dc8767e130",
+  "accepted_writable_base": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS"
+}
