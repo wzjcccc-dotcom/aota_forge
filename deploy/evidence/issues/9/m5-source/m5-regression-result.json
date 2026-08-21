@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "title": "M5 Full Suite Regression Results",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-6",
+  "convergence_suite": {
+    "total": 53,
+    "passed": 53,
+    "failed": 0,
+    "status": "PASS"
+  },
+  "m4_regression_suite": {
+    "total": 129,
+    "passed": 129,
+    "failed": 0,
+    "status": "PASS"
+  },
+  "m5_suite": {
+    "total": 274,
+    "passed": 273,
+    "failed": 1,
+    "failing_test": "test_m5_5_cli_dispatch.py::TestM55NegativeAndArchitecturalInvariants::test_q15_m5_6_not_started",
+    "status": "FAIL_PREVIOUS_TEST_DEFECT"
+  },
+  "full_suite": {
+    "total": 403,
+    "passed": 402,
+    "failed": 1,
+    "status": "FAIL_PREVIOUS_TEST_DEFECT"
+  },
+  "findings": [
+    {
+      "severity": "BLOCKING",
+      "component": "tests/test_m5_5_cli_dispatch.py",
+      "test_name": "test_q15_m5_6_not_started",
+      "issue": "Accepted M5-5 test explicitly asserts that tests/test_m5_6_convergence.py and scripts/m5_source_guard.py do not exist on disk, failing when M5-6 files are created. M5-6 is prohibited from modifying previous accepted tests.",
+      "suggested_owner": "Slice M5-R / Governance Reconciliation"
+    }
+  ]
+}
