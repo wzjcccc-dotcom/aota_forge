@@ -25,6 +25,10 @@ import sys
 from typing import Any, Callable
 
 from aota_forge.cli.commands.host import status_params as host_status_params
+from aota_forge.cli.commands.plan import (
+    plan_init_params,
+    plan_retire_params,
+)
 from aota_forge.cli.commands.project import inspect_params, resolve_params
 from aota_forge.cli.commands.runtime import status_params as runtime_status_params
 from aota_forge.cli.config import (
@@ -35,10 +39,13 @@ from aota_forge.cli.config import (
 from aota_forge.cli.exit_codes import EXIT_USAGE, classify
 from aota_forge.cli.projection import attach_semantic_arguments
 from aota_forge.core import execute as forge_execute
+from aota_forge.core.contracts.descriptor import READ_ONLY
 from aota_forge.core.contracts.errors import ForgeError
+from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.contracts.results import failure_from_error
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
+from aota_forge.core.ingress import MutationIngressRequest, execute_mutation
 
 ParamBuilder = Callable[[argparse.Namespace, AdapterTrustedConfig], dict[str, Any]]
 
@@ -50,7 +57,7 @@ def _transport_flags(parser: argparse.ArgumentParser) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aota",
-        description="AOTA Forge canonical CLI machine adapter (read-only in M2).",
+        description="AOTA Forge canonical CLI machine adapter.",
     )
     _transport_flags(parser)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -83,6 +90,16 @@ def _build_parser() -> argparse.ArgumentParser:
     host_status.add_argument("--receipt-id", default=None, help="logical deployment receipt resource id (trusted channel)")
     _transport_flags(host_status)
 
+    plan = sub.add_parser("plan", help="plan lifecycle mechanical mutation commands")
+    plan_sub = plan.add_subparsers(dest="plan_command", required=True)
+    plan_init = plan_sub.add_parser("init", help="mechanically initialize one exact Plan Subject")
+    attach_semantic_arguments(plan_init, "plan_init")
+    _transport_flags(plan_init)
+
+    plan_retire = plan_sub.add_parser("retire", help="mechanically retire one exact Plan Subject")
+    attach_semantic_arguments(plan_retire, "plan_retirement")
+    _transport_flags(plan_retire)
+
     operations = sub.add_parser("operations", help="list canonical operations")
     _transport_flags(operations)
     return parser
@@ -94,6 +111,8 @@ ROUTES: dict[tuple[str, str | None], tuple[str, ParamBuilder]] = {
     ("git", "inspect"): ("git.inspect", inspect_params),
     ("runtime", "status"): ("runtime.status", runtime_status_params),
     ("host", "status"): ("host.status", host_status_params),
+    ("plan", "init"): ("plan_init", plan_init_params),
+    ("plan", "retire"): ("plan_retirement", plan_retire_params),
 }
 
 
@@ -140,7 +159,30 @@ def _main(argv: list[str] | None = None) -> int:
         if trusted_metadata
         else None
     )
-    payload = forge_execute(operation, params, trusted_context=trusted_context)
+    descriptor = DEFAULT_REGISTRY.get(operation)
+    if descriptor and descriptor.read_write != READ_ONLY:
+        if isinstance(params, MutationIngressRequest):
+            payload = execute_mutation(params)
+        elif isinstance(params, dict) and "request" in params and "store" in params:
+            payload = execute_mutation(
+                MutationIngressRequest(
+                    operation=operation,
+                    store=params["store"],
+                    request=params["request"],
+                )
+            )
+        else:
+            store = params.get("store") if isinstance(params, dict) else None
+            request = params.get("request") if isinstance(params, dict) else None
+            payload = execute_mutation(
+                MutationIngressRequest(
+                    operation=operation,
+                    store=store,
+                    request=request,
+                )
+            )
+    else:
+        payload = forge_execute(operation, params, trusted_context=trusted_context)
     _emit(args, payload)
     return classify(payload)
 

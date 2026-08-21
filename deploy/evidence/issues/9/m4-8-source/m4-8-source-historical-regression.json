@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "historical_regression_case_count": 14,
+  "historical_regression_executed_count": 14,
+  "historical_regression_pass_count": 14,
+  "historical_regression_required_case_missing_count": 0,
+  "i5_source_mutation_for_repair": "no",
+  "i8_source_mutation_for_repair": "no",
+  "i9_source_mutation_for_repair": "no",
+  "i12_source_mutation_for_repair": "no",
+  "historical_partition_guard_rewrite_count": 0,
+  "cases": [
+    {
+      "case_id": "DRIFT-1",
+      "name": "CLI argument projection derives exactly from descriptor",
+      "result": "PASS"
+    },
+    {
+      "case_id": "RC2-1",
+      "name": "Authoritative outcome unknown treated as unknown, not success",
+      "result": "PASS"
+    },
+    {
+      "case_id": "B014-F",
+      "name": "Silent materialization failure detected via readback verify",
+      "result": "PASS"
+    },
+    {
+      "case_id": "B011",
+      "name": "Subject revision CAS atomic check",
+      "result": "PASS"
+    },
+    {
+      "case_id": "B013",
+      "name": "Capability lease replay across multiple operations denied",
+      "result": "PASS"
+    },
+    {
+      "case_id": "B014",
+      "name": "Changed intent with same idempotency key fails closed with CONFLICT",
+      "result": "PASS"
+    },
+    {
+      "case_id": "RECOVERY-1",
+      "name": "Pure deterministic three-way classifier (candidate/original/third)",
+      "result": "PASS"
+    },
+    {
+      "case_id": "BIND-1",
+      "name": "Deterministic 0/1/>1 subject binding",
+      "result": "PASS"
+    },
+    {
+      "case_id": "WCTX-1",
+      "name": "Model-facing path injection rejected; logical IDs used",
+      "result": "PASS"
+    },
+    {
+      "case_id": "CAS-1",
+      "name": "Multi-domain precondition separation",
+      "result": "PASS"
+    },
+    {
+      "case_id": "PRE-1",
+      "name": "Mandatory raw precondition check before GitHub write",
+      "result": "PASS"
+    },
+    {
+      "case_id": "ROLE-1",
+      "name": "Control role deterministic 0/1/>1 cardinality fail closed",
+      "result": "PASS"
+    },
+    {
+      "case_id": "CARD-1",
+      "name": "Update in place required for control roles",
+      "result": "PASS"
+    },
+    {
+      "case_id": "APPLY-1",
+      "name": "PREPARED -> CAS APPLYING required before external mutate call",
+      "result": "PASS"
+    }
+  ],
+  "verification": "PASS"
+}

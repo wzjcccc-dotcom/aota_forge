@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "title": "M4-8 Canonical Mutation Entry Surfaces and Parity Convergence",
+  "project_id": "aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M4",
+  "work_item": "M4-8-SOURCE-IMPLEMENTATION",
+  "status": "PASS",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "source_base_sha": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "source_base_sha_verified": "yes",
+  "plan_known_good_checkpoint": "9b9011ba638c87c11049d34fa920de51b946c534",
+  "plan_review_evidence_sha": "be6f3ac016239aab1947929db28fc0d6afbb7daf",
+  "plan_sha_used_as_source_base": "no",
+  "implementation_dag_followed": "yes",
+  "implementation_slice_count": 6,
+  "implementation_slice_pass_count": 6,
+  "construction_time_semantic_decision_count": 0,
+  "upstream_semantic_redefinition_count": 0,
+  "m4_8_allowed_mutation_operation_set": [
+    "plan_init",
+    "plan_retirement"
+  ],
+  "contracts_implemented": [
+    "CANONICAL_CLI_MUTATION_PROJECTION_IMPLEMENTED",
+    "DIRECT_CORE_AND_UNIFIED_INGRESS_MUTATION_ROUTING_IMPLEMENTED",
+    "MECHANICAL_MUTATION_PIPELINE_END_TO_END_IMPLEMENTED",
+    "ENTRY_SURFACE_PARITY_3_WAY_IMPLEMENTED",
+    "DETERMINISTIC_FAILURE_INJECTION_SUITE_IMPLEMENTED",
+    "COMPREHENSIVE_CONVERGENCE_TEST_SUITE_IMPLEMENTED"
+  ],
+  "slices": [
+    {
+      "slice_id": "M4-8-S1",
+      "objective": "Implement CLI argument projection and canonical subcommands (plan init / plan retire)",
+      "authorized_paths": [
+        "aota_forge/cli/commands/plan.py",
+        "aota_forge/cli/__main__.py"
+      ],
+      "result": "PASS"
+    },
+    {
+      "slice_id": "M4-8-S2",
+      "objective": "Wire Direct Core and Unified Ingress mutation routing and error envelopes",
+      "authorized_paths": [
+        "aota_forge/cli/__main__.py"
+      ],
+      "result": "PASS"
+    },
+    {
+      "slice_id": "M4-8-S3",
+      "objective": "Verify mechanical execution pipeline through RecoveryExecutor and DurableJournalStore",
+      "authorized_paths": [
+        "tests/test_m4_8_convergence.py"
+      ],
+      "result": "PASS"
+    },
+    {
+      "slice_id": "M4-8-S4",
+      "objective": "Implement 3-way entry surface parity verification matrix (Core, Ingress, CLI)",
+      "authorized_paths": [
+        "tests/test_m4_8_convergence.py"
+      ],
+      "result": "PASS"
+    },
+    {
+      "slice_id": "M4-8-S5",
+      "objective": "Implement deterministic failure injection, negative acceptance, and historical regressions",
+      "authorized_paths": [
+        "tests/test_m4_8_convergence.py"
+      ],
+      "result": "PASS"
+    },
+    {
+      "slice_id": "M4-8-S6",
+      "objective": "Run full test suite, static compile checks, and generate complete evidence suite",
+      "authorized_paths": [
+        "scripts/m4_8_source_guard.py",
+        "deploy/evidence/issues/9/m4-8-source/*"
+      ],
+      "result": "PASS"
+    }
+  ],
+  "blocking_finding_count": 0,
+  "non_blocking_finding_count": 0
+}

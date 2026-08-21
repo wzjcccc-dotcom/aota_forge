@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "entry_surface_identity_convergence": "PASS",
+  "idempotency_key_alone_is_complete_identity": "no",
+  "intent_fingerprint_alone_is_complete_identity": "no",
+  "cli_hash_alone_is_complete_identity": "no",
+  "operation_name_alone_is_complete_identity": "no",
+  "complete_identity_dimensions": [
+    "operation",
+    "typed_target",
+    "subject_expected_revision",
+    "authority_source_revision",
+    "authority_observed_raw_digest",
+    "candidate_raw_digest",
+    "normalized_plan_digest",
+    "principal",
+    "capability_lease",
+    "contract_hash"
+  ],
+  "verification": "PASS"
+}

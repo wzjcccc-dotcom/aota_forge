@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "m4_8_end_to_end_mechanical_flow_implemented": "PASS",
+  "semantic_decision_count_in_mechanical_flow": 0,
+  "flow_stages": [
+    "Semantic Authorization (AuthorityEngine / CapabilityLeaseIssuer)",
+    "Typed Request Construction (PortablePlanMutationRequest)",
+    "Entry Surface Ingress Routing (Direct Core / Unified Ingress / CLI)",
+    "Durable Journal PREPARED State (DurableJournalStore)",
+    "Atomic CAS Reservation to APPLYING (RecoveryExecutor)",
+    "External Port Mutate Call (PlanAuthorityMutationPort / GitHubAuthorityAdapter)",
+    "Verify-After-Write Readback (Deterministic 3-Way Classifier)",
+    "Terminal CAS State Transition (VERIFIED / VERIFIED_RECOVERED / FAILED_NO_EFFECT)",
+    "Canonical Result & Error Projection"
+  ],
+  "cross_authority_atomic_transaction_available": "no",
+  "false_cross_authority_atomicity_claim_count": 0,
+  "journal_cas_implies_external_write_atomicity": "no",
+  "transport_success_alone_means_verified": "no",
+  "github_verify_after_write_preserved": "yes",
+  "verification": "PASS"
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "m4_8_failure_injection_execution": "PASS",
+  "failure_injection_case_count": 12,
+  "failure_injection_executed_count": 12,
+  "failure_injection_pass_count": 12,
+  "failure_injection_case_missing_count": 0,
+  "negative_acceptance_count": 12,
+  "negative_acceptance_pass_count": 12,
+  "negative_unexpected_accept_count": 0,
+  "fi_cases": [
+    {
+      "id": "FI-01",
+      "description": "Authorization drift (contract hash mismatch)",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-02",
+      "description": "Stale Subject revision",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-03",
+      "description": "Stale external authority precondition",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-04",
+      "description": "Duplicate control role comment (cardinality > 1)",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-05",
+      "description": "Durable journal CAS race (at most one winner)",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-06",
+      "description": "External write timeout -> OUTCOME_UNKNOWN",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-07",
+      "description": "Lost response / connection reset -> recovery via readback",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-08",
+      "description": "Verify readback failure -> remains RECONCILING",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-09",
+      "description": "Third-state observation -> CONFLICT",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-10",
+      "description": "Terminal journal persistence failure (J10)",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-11",
+      "description": "Process crash & restart recovery discovery",
+      "result": "PASS"
+    },
+    {
+      "id": "FI-12",
+      "description": "Fresh authorization retry lineage handoff",
+      "result": "PASS"
+    }
+  ],
+  "verification": "PASS"
+}

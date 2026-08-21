@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "verification": "PASS",
+  "entry_surface_count": 3,
+  "entry_surfaces": [
+    "direct_core",
+    "unified_ingress",
+    "canonical_cli"
+  ],
+  "parity_operation_count": 2,
+  "parity_operations": [
+    "plan_init",
+    "plan_retirement"
+  ],
+  "entry_surface_semantic_parity_implemented": "PASS",
+  "parity_semantic_drift_count": 0,
+  "direct_core_semantic_authority_delta": 0,
+  "direct_core_mutation_parity": "PASS",
+  "unified_ingress_semantic_authority_delta": 0,
+  "unified_ingress_mutation_parity": "PASS",
+  "cli_semantic_authority_delta": 0,
+  "cli_exclusive_entrypoint": "no",
+  "cli_typed_mutation_surface_implemented": "PASS",
+  "generic_cli_mutation_dispatch_allowed": "no",
+  "generic_terminal_allowed": "no",
+  "generic_git_write_api_allowed": "no",
+  "generic_github_api_allowed": "no",
+  "authority_delta_zero_enforced": "yes",
+  "capability_lease_mandatory_across_all_surfaces": "yes"
+}

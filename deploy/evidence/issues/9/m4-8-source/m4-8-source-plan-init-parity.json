@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "operation": "plan_init",
+  "contract_hash": "2f6c91e1d0f1f13bf69b59ca54ab9ddbb6062f6b31e9c56ca715cefe7a35368a",
+  "direct_core_parity": "PASS",
+  "unified_ingress_parity": "PASS",
+  "cli_parity": "PASS",
+  "cross_surface_semantic_parity": "PASS",
+  "direct_core_result_code": "PLAN_INIT_APPLIED",
+  "unified_ingress_result_code": "PLAN_INIT_APPLIED",
+  "cli_result_code": "PLAN_INIT_APPLIED",
+  "direct_core_mutation_effect": "APPLIED_VERIFIED",
+  "unified_ingress_mutation_effect": "APPLIED_VERIFIED",
+  "cli_mutation_effect": "APPLIED_VERIFIED",
+  "authority_bypass_tested": {
+    "direct_core": "PLAN_INIT_AUTHORIZATION_REQUIRED",
+    "unified_ingress": "AUTHORIZATION_MISSING",
+    "cli": "AUTHORIZATION_MISSING"
+  },
+  "semantic_drift_count": 0,
+  "verification": "PASS"
+}

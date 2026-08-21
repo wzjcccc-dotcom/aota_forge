@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "recovery_scanner_implemented": "yes",
+  "three_way_reconcile_classifier_implemented": "yes",
+  "durable_applying_winner_count": 1,
+  "duplicate_external_attempt_count": 0,
+  "unknown_outcome_recovery_verified": "yes",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "unknown_outcome_blind_old_lease_reuse": "no",
+  "third_state_auto_merge_allowed": "no",
+  "heuristic_third_state_selection_allowed": "no",
+  "fresh_authorization_required_for_retry": "yes",
+  "old_lease_automatic_reuse_allowed": "no",
+  "auto_retry_without_fresh_auth_count": 0,
+  "j10_convergence_regression": "PASS",
+  "j10_external_blind_reapply_count": 0,
+  "process_restart_entry_surface_regression": "PASS",
+  "production_storage_engine_frozen": "no",
+  "file_backed_reference_adapter_production_default": "no",
+  "file_backed_reference_adapter_global_runtime_wiring_count": 0,
+  "verification": "PASS"
+}

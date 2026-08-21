@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "entry_surface_result_convergence": "PASS",
+  "entry_surface_error_convergence": "PASS",
+  "result_semantic_drift_count": 0,
+  "error_semantic_drift_count": 0,
+  "generic_failed_collapse_allowed": "no",
+  "distinct_outcomes_preserved": [
+    "PLAN_INIT_APPLIED",
+    "RETIREMENT_APPLIED",
+    "APPLIED_VERIFIED",
+    "VERIFIED_RECOVERED",
+    "FAILED_NO_EFFECT",
+    "RETRYABLE_NO_EFFECT",
+    "OUTCOME_UNKNOWN",
+    "CONFLICT",
+    "SUBJECT_REVISION_STALE",
+    "AUTHORITY_PRECONDITION_STALE",
+    "AUTHORIZATION_CONTRACT_DRIFT",
+    "AUTHORIZATION_OPERATION_MISMATCH",
+    "AUTHORIZATION_MISSING",
+    "CONTROL_ROLE_DUPLICATE",
+    "CONTROL_ROLE_MISSING",
+    "UNSUPPORTED_OPERATION",
+    "RETIREMENT_SUCCESSOR_REQUIRED",
+    "RETIREMENT_TARGET_PROTECTED",
+    "RETIREMENT_RUNNING_TASK_PROTECTED",
+    "RETIREMENT_STALE_SNAPSHOT"
+  ],
+  "verification": "PASS"
+}

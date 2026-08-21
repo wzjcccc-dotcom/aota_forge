@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "accepted_writable_base": "76b89a8cf73c8b6f690e5cb74ebe8900cc101dde",
+  "all_production_source_writes_within_accepted_m4_8_scope": "yes",
+  "changed_files": [
+    {
+      "path": "aota_forge/cli/commands/plan.py",
+      "ownership_class": "exclusive_write"
+    },
+    {
+      "path": "aota_forge/cli/__main__.py",
+      "ownership_class": "exclusive_write"
+    },
+    {
+      "path": "tests/test_m4_8_convergence.py",
+      "ownership_class": "exclusive_write"
+    },
+    {
+      "path": "scripts/m4_8_source_guard.py",
+      "ownership_class": "exclusive_write"
+    }
+  ],
+  "m4_8_exclusive_write_paths": [
+    "aota_forge/cli/commands/plan.py",
+    "aota_forge/cli/__main__.py",
+    "tests/test_m4_8_convergence.py",
+    "scripts/m4_8_source_guard.py"
+  ],
+  "m4_8_shared_read_only_paths": [
+    "aota_forge/core/contracts/descriptor.py",
+    "aota_forge/core/contracts/registry.py",
+    "aota_forge/core/contracts/mutation.py",
+    "aota_forge/core/contracts/results.py",
+    "aota_forge/core/contracts/errors.py",
+    "aota_forge/core/authority.py",
+    "aota_forge/core/authorization.py",
+    "aota_forge/core/capability_lease.py",
+    "aota_forge/core/transitions.py",
+    "aota_forge/core/transaction.py",
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/journal/model.py",
+    "aota_forge/core/journal/executor.py",
+    "aota_forge/core/journal/reconcile.py",
+    "aota_forge/core/journal/recovery.py",
+    "aota_forge/core/journal/retry_handoff.py",
+    "aota_forge/adapters/plan_authority/port.py",
+    "aota_forge/adapters/plan_authority/fake_port.py",
+    "aota_forge/adapters/plan_authority/github.py",
+    "aota_forge/adapters/plan_authority/fake_github.py"
+  ],
+  "m4_8_integration_only_paths": [
+    "aota_forge/core/ingress.py",
+    "aota_forge/core/project/resolver.py",
+    "aota_forge/core/idempotency.py"
+  ],
+  "m4_8_forbidden_paths": [
+    "tests/test_m4_2_m4_4_integration.py",
+    "tests/test_m4_6_github_adapter.py",
+    "tests/test_m4_7_durable_journal.py",
+    "tests/test_m4_7_recovery.py",
+    "aota_forge/core/git/*",
+    "aota_forge/core/runtime/*"
+  ],
+  "m4_8_shared_read_only_path_write_count": 0,
+  "m4_8_integration_only_write_count": 0,
+  "m4_8_forbidden_path_write_count": 0,
+  "unowned_source_write_count": 0,
+  "m4_8_source_ownership_ambiguity_count": 0,
+  "verification": "PASS"
+}

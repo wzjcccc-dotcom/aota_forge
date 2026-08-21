@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "m4_8_to_m4_r_source_handoff_evidence": "PASS",
+  "m4_r_implementation_performed": "no",
+  "m4_8_completed": "no",
+  "m4_8_is_known_good_checkpoint": "no",
+  "m4_r_ready": "no",
+  "next_ready_set": "independent_review_of_m4_8_source",
+  "next_action": "Execute independent review of M4-8 source candidate before M4-R handoff",
+  "fixture_debt_carried_forward": [
+    {
+      "test_name": "test_i5_valid_authorization_and_plan_init_are_compatible",
+      "reason": "Test fixture helper creates lease with mismatching target/preconditions compared to strict multi-domain evaluator",
+      "target_milestone": "M4-R"
+    },
+    {
+      "test_name": "test_i8_abandoned_retirement_preserves_cancelled_semantics",
+      "reason": "Test fixture helper creates lease with mismatching target/preconditions compared to strict multi-domain evaluator",
+      "target_milestone": "M4-R"
+    },
+    {
+      "test_name": "test_i9_exact_successor_retirement_is_valid",
+      "reason": "Test fixture helper creates lease with mismatching target/preconditions compared to strict multi-domain evaluator",
+      "target_milestone": "M4-R"
+    },
+    {
+      "test_name": "test_i12_changed_intent_conflicts_on_same_idempotency_identity",
+      "reason": "Test fixture helper creates lease with mismatching target/preconditions compared to strict multi-domain evaluator",
+      "target_milestone": "M4-R"
+    }
+  ],
+  "production_github_acceptance_write_count": 0,
+  "issue_9_acceptance_write_count": 0,
+  "production_journal_mutated": "no",
+  "production_graph_mutated": "no",
+  "production_authority_mutated": "no",
+  "runtime_activation_performed": "no",
+  "hermes_dispatch_performed": "no",
+  "m5_implementation_performed": "no",
+  "verification": "PASS"
+}

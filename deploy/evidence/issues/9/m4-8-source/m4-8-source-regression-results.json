@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "baseline_total_count": 117,
+  "baseline_pass_count": 113,
+  "baseline_failure_set_exactly": "i5,i8,i9,i12",
+  "current_full_suite_total_count": 129,
+  "current_full_suite_pass_count": 125,
+  "current_failure_set_exactly": "i5,i8,i9,i12",
+  "new_full_suite_failure_count": 0,
+  "current_semantic_invariant_failure_count": 0,
+  "suite_breakdown": {
+    "test_m4_2_m4_4_integration.py": {
+      "total": 20,
+      "passed": 16,
+      "failed": 4,
+      "failures": ["i5", "i8", "i9", "i12"]
+    },
+    "test_m4_3_write_ingress.py": {
+      "total": 17,
+      "passed": 17,
+      "failed": 0
+    },
+    "test_m4_5_journal_contract.py": {
+      "total": 23,
+      "passed": 23,
+      "failed": 0
+    },
+    "test_m4_6_github_adapter.py": {
+      "total": 25,
+      "passed": 25,
+      "failed": 0
+    },
+    "test_m4_7_durable_journal.py": {
+      "total": 17,
+      "passed": 17,
+      "failed": 0
+    },
+    "test_m4_7_recovery.py": {
+      "total": 16,
+      "passed": 16,
+      "failed": 0
+    },
+    "test_m4_8_convergence.py": {
+      "total": 12,
+      "passed": 12,
+      "failed": 0
+    }
+  },
+  "m4_7_current_semantic_regression": "PASS",
+  "m4_6_current_semantic_regression": "PASS",
+  "m4_6_m4_7_integration_regression": "PASS",
+  "m4_5_current_semantic_regression": "PASS",
+  "m4_4_current_semantic_regression": "PASS",
+  "m4_3_current_semantic_regression": "PASS",
+  "m4_2_current_semantic_regression": "PASS",
+  "m4_1_current_semantic_regression": "PASS",
+  "full_current_semantic_regression": "PASS",
+  "verification": "PASS"
+}

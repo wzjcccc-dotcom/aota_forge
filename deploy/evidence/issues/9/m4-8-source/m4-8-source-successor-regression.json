@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "m4_8_successor_regression": "PASS",
+  "successor_regression_case_count": 7,
+  "successor_regression_executed_count": 7,
+  "successor_regression_pass_count": 7,
+  "successor_regression_required_case_missing_count": 0,
+  "cases": [
+    {
+      "case_id": "SUCC-01",
+      "name": "abandoned plan retirement transitions to cancelled",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-02",
+      "name": "superseded plan retirement requires and binds successor",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-03",
+      "name": "active / current plan protected from retirement",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-04",
+      "name": "running task plan protected from retirement",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-05",
+      "name": "stage-one snapshot binding (stale snapshot revision fails)",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-06",
+      "name": "no heuristic successor selection (explicit successor required)",
+      "result": "PASS"
+    },
+    {
+      "case_id": "SUCC-07",
+      "name": "no implicit resurrection (terminal plans remain immutable)",
+      "result": "PASS"
+    }
+  ],
+  "verification": "PASS"
+}

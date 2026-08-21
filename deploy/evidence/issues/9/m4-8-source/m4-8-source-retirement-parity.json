@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "operation": "plan_retirement",
+  "contract_hash": "e67406a0da2a98f5be57297e20ecbc89bfec1676dfce90e7a233b8a36418df4d",
+  "direct_core_parity": "PASS",
+  "unified_ingress_parity": "PASS",
+  "cli_parity": "PASS",
+  "cross_surface_semantic_parity": "PASS",
+  "direct_core_result_code": "RETIREMENT_APPLIED",
+  "unified_ingress_result_code": "RETIREMENT_APPLIED",
+  "cli_result_code": "RETIREMENT_APPLIED",
+  "direct_core_mutation_effect": "APPLIED_VERIFIED",
+  "unified_ingress_mutation_effect": "APPLIED_VERIFIED",
+  "cli_mutation_effect": "APPLIED_VERIFIED",
+  "successor_handling_verified": "yes",
+  "semantic_drift_count": 0,
+  "verification": "PASS"
+}
