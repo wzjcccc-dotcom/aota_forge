@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "title": "M5 Hermes Adapter Boundary and Translation Architecture",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "adapter_name": "HermesAdapter",
+  "adapter_module": "aota_forge/adapters/hermes/executor.py",
+  "hermes_host_boundary_classification": {
+    "adapter_source": {
+      "classification": "OWNED",
+      "description": "Python adapter implementing ExecutorAdapter in aota_forge/adapters/hermes/"
+    },
+    "profile_mapping": {
+      "classification": "OWNED",
+      "description": "Canonical role to Hermes profile translation table"
+    },
+    "status_result_translation": {
+      "classification": "OWNED",
+      "description": "Mapping Hermes native response to CanonicalTaskState and CanonicalResult"
+    },
+    "host_protocol_contract": {
+      "classification": "OWNED",
+      "description": "Host daemon communication contract definitions"
+    },
+    "reference_fake_boundary": {
+      "classification": "OWNED",
+      "description": "Fake Hermes host interface for hermes-adapter unit tests"
+    },
+    "live_runtime_activation": {
+      "classification": "DOWNSTREAM_RUNTIME",
+      "description": "Running live hermes daemon processes (M6/M7)"
+    },
+    "production_deployment": {
+      "classification": "OUT_OF_SCOPE",
+      "description": "Deploying Hermes to production environments"
+    }
+  },
+  "translation_functions": [
+    {
+      "name": "canonical_to_hermes_payload",
+      "input": "ExecutionPackage",
+      "output": "dict (Hermes host dispatch envelope: profile, instruction, context, artifacts)",
+      "rules": "Translates canonical package fields into Hermes-expected schema; no Hermes private objects generated"
+    },
+    {
+      "name": "hermes_status_to_canonical_state",
+      "input": "str (Hermes status string)",
+      "output": "CanonicalTaskState",
+      "rules": "Deterministic enum translation; unknown states map to CanonicalTaskState.UNKNOWN"
+    },
+    {
+      "name": "hermes_output_to_canonical_result",
+      "input": "dict (Hermes output payload, exit code, logs)",
+      "output": "CanonicalResult",
+      "rules": "Extracts result data, artifacts, exit codes, and maps errors into canonical error codes"
+    }
+  ],
+  "isolation_rules": {
+    "HERMES_PRIVATE_TYPE_ESCAPE_COUNT": 0,
+    "HERMES_FILESYSTEM_LAYOUT_IN_CORE_COUNT": 0,
+    "HERMES_HOME_PATH_IN_CORE": "denied",
+    "CORE_IMPORTS_HERMES_HOST": "denied",
+    "CLI_IMPORTS_HERMES_HOST": "denied"
+  },
+  "invariants": {
+    "HERMES_ADAPTER_PLAN": "PASS",
+    "HERMES_HOST_BOUNDARY_PLAN": "PASS"
+  }
+}

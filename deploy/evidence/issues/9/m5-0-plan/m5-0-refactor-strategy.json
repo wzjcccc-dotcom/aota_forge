@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "title": "M5 Refactor Strategy and Component Classification Map",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "classifications": [
+    {
+      "component": "aota_forge.core.contracts (descriptor, registry, mutation, results, errors)",
+      "action": "RETAIN",
+      "rationale": "Foundation of canonical operation contracts and result envelopes; M1-M4 contracts must remain completely frozen."
+    },
+    {
+      "component": "aota_forge.core (authority, authorization, capability_lease, transitions, transaction)",
+      "action": "RETAIN",
+      "rationale": "Closed M4 mutation plane operates correctly; must not be reopened or modified."
+    },
+    {
+      "component": "aota_forge.core.execution (new module)",
+      "action": "EXTRACT",
+      "rationale": "Houses new canonical execution contracts: capabilities.py, package.py, state.py, results.py, roles.py, adapter.py, registry.py, dispatcher.py."
+    },
+    {
+      "component": "aota_forge.adapters.hermes (executor.py)",
+      "action": "WRAP_WITH_ADAPTER",
+      "rationale": "Implements ExecutorAdapter interface for Hermes host runtime without leaking Hermes private types to Core."
+    },
+    {
+      "component": "aota_forge.adapters.execution.reference (new module)",
+      "action": "EXTRACT",
+      "rationale": "In-memory test double implementing ExecutorAdapter for deterministic contract testing."
+    },
+    {
+      "component": "aota_forge.cli.commands.execution (new module)",
+      "action": "EXTRACT",
+      "rationale": "Implements CLI command projections for task and executor operations."
+    },
+    {
+      "component": "aota_forge.cli.__main__.py",
+      "action": "WRAP_WITH_ADAPTER",
+      "rationale": "Adds routing for execution commands through Unified Ingress."
+    }
+  ],
+  "retirements_in_m5": "none (M7 owns retirement of legacy paths after replacement evidence)",
+  "rewrites_in_m5": "none",
+  "invariants": {
+    "M5_REFACTOR_STRATEGY_MAP": "PASS"
+  }
+}

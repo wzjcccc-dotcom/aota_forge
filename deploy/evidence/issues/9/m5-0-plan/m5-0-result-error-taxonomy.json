@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "title": "M5 Canonical Execution Error Taxonomy Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "taxonomy_name": "ExecutionErrorTaxonomy",
+  "definition_path": "aota_forge/core/contracts/errors.py",
+  "error_codes": [
+    {
+      "code": "EXECUTOR_NOT_FOUND",
+      "message": "Requested executor is not registered in ExecutorRegistry",
+      "retryable": false,
+      "next_action": "Specify a registered executor or register adapter before dispatch"
+    },
+    {
+      "code": "EXECUTOR_UNAVAILABLE",
+      "message": "Registered executor adapter is offline or host unreachable",
+      "retryable": true,
+      "next_action": "Check executor host daemon status and retry"
+    },
+    {
+      "code": "CAPABILITY_MISMATCH",
+      "message": "Executor does not support the capabilities required by execution package",
+      "retryable": false,
+      "next_action": "Adjust package requirements or select compatible executor"
+    },
+    {
+      "code": "PACKAGE_INVALID",
+      "message": "Execution package failed structural or semantic validation",
+      "retryable": false,
+      "next_action": "Correct package parameters and re-dispatch"
+    },
+    {
+      "code": "ROLE_MAPPING_NOT_FOUND",
+      "message": "Canonical role cannot be mapped by the target executor adapter",
+      "retryable": false,
+      "next_action": "Specify an authorized canonical role supported by adapter"
+    },
+    {
+      "code": "DISPATCH_REJECTED",
+      "message": "Executor adapter rejected the dispatch request",
+      "retryable": false,
+      "next_action": "Inspect rejection reason in details"
+    },
+    {
+      "code": "DISPATCH_TIMEOUT",
+      "message": "Dispatch operation timed out before acknowledgement from executor",
+      "retryable": true,
+      "next_action": "Query task status before re-dispatching"
+    },
+    {
+      "code": "TASK_NOT_FOUND",
+      "message": "Queried task identifier is not known to the executor adapter",
+      "retryable": false,
+      "next_action": "Verify canonical_task_id or adapter handle"
+    },
+    {
+      "code": "TASK_STATE_UNKNOWN",
+      "message": "Executor reported ambiguous or uncertain task state",
+      "retryable": true,
+      "next_action": "Run task reconciliation query to resolve state"
+    },
+    {
+      "code": "EXECUTION_FAILED",
+      "message": "Task execution terminated with an error in the executor",
+      "retryable": false,
+      "next_action": "Inspect stderr summary and error details"
+    },
+    {
+      "code": "EXECUTION_TIMEOUT",
+      "message": "Task execution exceeded maximum allowed time limit",
+      "retryable": false,
+      "next_action": "Increase timeout constraint if task is long-running"
+    },
+    {
+      "code": "EXECUTION_CANCELLED",
+      "message": "Task execution was cancelled by operator or timeout handler",
+      "retryable": false,
+      "next_action": "Re-dispatch as a fresh task if needed"
+    },
+    {
+      "code": "CANCEL_UNSUPPORTED",
+      "message": "Target executor adapter does not support cancellation",
+      "retryable": false,
+      "next_action": "Wait for task to complete or restart host process"
+    },
+    {
+      "code": "RESUME_UNSUPPORTED",
+      "message": "Target executor adapter does not support resume operations",
+      "retryable": false,
+      "next_action": "Dispatch fresh execution package instead"
+    },
+    {
+      "code": "ADAPTER_PROTOCOL_ERROR",
+      "message": "Malformed response or unexpected protocol error from executor host",
+      "retryable": false,
+      "next_action": "Inspect adapter protocol logs"
+    },
+    {
+      "code": "RESULT_MALFORMED",
+      "message": "Executor output could not be parsed into valid CanonicalResult",
+      "retryable": false,
+      "next_action": "Verify executor output format conformance"
+    },
+    {
+      "code": "INTERNAL_MECHANICAL_ERROR",
+      "message": "Internal error in core execution dispatcher or registry",
+      "retryable": false,
+      "next_action": "Inspect stack trace for dispatch defect"
+    }
+  ],
+  "invariants": {
+    "M5_EXECUTION_ERROR_TAXONOMY_PLAN": "PASS"
+  }
+}

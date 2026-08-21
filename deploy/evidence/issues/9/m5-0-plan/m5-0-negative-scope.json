@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "title": "M5 Negative Scope and Prohibitions Registry",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "prohibitions": [
+    {
+      "rule": "NEW_SEMANTIC_AUTHORITY_COUNT",
+      "value": 0,
+      "description": "No new semantic decision maker introduced in Core or adapters"
+    },
+    {
+      "rule": "HERMES_PRIVATE_OBJECT_IN_CANONICAL_CORE_COUNT",
+      "value": 0,
+      "description": "Zero Hermes private classes in Core"
+    },
+    {
+      "rule": "HERMES_PRIVATE_OBJECT_IN_CANONICAL_CLI_CONTRACT_COUNT",
+      "value": 0,
+      "description": "Zero Hermes private classes in CLI"
+    },
+    {
+      "rule": "HERMES_FILESYSTEM_LAYOUT_IN_CORE_COUNT",
+      "value": 0,
+      "description": "Zero Hermes home paths referenced in Core"
+    },
+    {
+      "rule": "CORE_DIRECT_HERMES_DEPENDENCY_ALLOWED",
+      "value": "no",
+      "description": "Core does not import Hermes host"
+    },
+    {
+      "rule": "CLI_DIRECT_HERMES_DEPENDENCY_ALLOWED",
+      "value": "no",
+      "description": "CLI does not import Hermes host"
+    },
+    {
+      "rule": "CLI_EXCLUSIVE_ENTRYPOINT",
+      "value": "no",
+      "description": "Core is accessible via Direct Core, Ingress, and CLI"
+    },
+    {
+      "rule": "CLI_SEMANTIC_EXECUTOR_SELECTION_ALLOWED",
+      "value": "no",
+      "description": "CLI does not choose executor heuristically"
+    },
+    {
+      "rule": "CLI_HEURISTIC_HERMES_FALLBACK_ALLOWED",
+      "value": "no",
+      "description": "CLI does not fall back to Hermes on error"
+    },
+    {
+      "rule": "HEURISTIC_EXECUTOR_SELECTION_ALLOWED",
+      "value": "no",
+      "description": "Core does not heuristically rank executors"
+    },
+    {
+      "rule": "SILENT_CAPABILITY_DOWNGRADE_ALLOWED",
+      "value": "no",
+      "description": "Adapters fail closed on unsupported capabilities"
+    },
+    {
+      "rule": "GENERIC_ARBITRARY_EXECUTOR_COMMAND_ALLOWED",
+      "value": "no",
+      "description": "No generic command string execution"
+    },
+    {
+      "rule": "GENERIC_TERMINAL_ALLOWED",
+      "value": "no",
+      "description": "No unconstrained bash terminal execution"
+    },
+    {
+      "rule": "GENERIC_GIT_WRITE_API_ALLOWED",
+      "value": "no",
+      "description": "No unconstrained git commit/push API"
+    },
+    {
+      "rule": "GENERIC_GITHUB_API_ALLOWED",
+      "value": "no",
+      "description": "No unconstrained GitHub API access"
+    },
+    {
+      "rule": "ADAPTER_AUTO_SEMANTIC_RETRY_ALLOWED",
+      "value": "no",
+      "description": "Adapters do not retry under changed semantics"
+    },
+    {
+      "rule": "EXECUTOR_LOCAL_TASK_ID_IS_CANONICAL_IDENTITY",
+      "value": "no",
+      "description": "Host task IDs are adapter-private"
+    },
+    {
+      "rule": "GENERIC_EXECUTION_FAILURE_COLLAPSE_ALLOWED",
+      "value": "no",
+      "description": "Failures maintain distinct error codes"
+    },
+    {
+      "rule": "UNKNOWN_EXECUTOR_STATE_COLLAPSED_TO_FAILURE",
+      "value": "no",
+      "description": "Unknown state remains explicit"
+    },
+    {
+      "rule": "REFERENCE_EXECUTOR_PRODUCTION_DEFAULT",
+      "value": "no",
+      "description": "Reference fake adapter is test-only"
+    },
+    {
+      "rule": "LIVE_HERMES_DISPATCH_PERFORMED",
+      "value": "no",
+      "description": "No live daemon execution during planning"
+    },
+    {
+      "rule": "HERMES_RUNTIME_ACTIVATION_PERFORMED",
+      "value": "no",
+      "description": "No runtime activation during planning"
+    },
+    {
+      "rule": "DEPLOY_PERFORMED",
+      "value": "no",
+      "description": "No deployment during planning"
+    },
+    {
+      "rule": "M4_MUTATION_SURFACE_REDEFINED",
+      "value": "no",
+      "description": "M4 mutation plane remains closed and frozen"
+    },
+    {
+      "rule": "CONSTRUCTION_TIME_SEMANTIC_DECISION_COUNT",
+      "value": 0,
+      "description": "Zero unresolved semantic choices for coders"
+    },
+    {
+      "rule": "BLOCKING_PLAN_GAP_COUNT",
+      "value": 0,
+      "description": "Zero blocking gaps in planning evidence"
+    }
+  ],
+  "invariants": {
+    "M5_SEMANTIC_AUTHORITY_BOUNDARY_PLAN": "PASS"
+  }
+}

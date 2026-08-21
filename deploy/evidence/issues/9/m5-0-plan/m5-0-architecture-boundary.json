@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "title": "M5 Architecture Boundary Map and Layering Invariants",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "layers": {
+    "canonical_core_execution": {
+      "components": [
+        "ExecutorCapabilities",
+        "ExecutionPackage",
+        "CanonicalTaskState",
+        "CanonicalResult",
+        "RoleMapping contract",
+        "ExecutorAdapter interface",
+        "ExecutorRegistry",
+        "Core Execution Dispatcher",
+        "Task State Reconciler",
+        "Execution Error Taxonomy"
+      ],
+      "responsibilities": "Defines universal, executor-neutral data models and deterministic dispatch mechanics. Validates package requirements against advertised capabilities. Reconciles task status and results without heuristic assumptions.",
+      "dependencies": [
+        "aota_forge.core.contracts",
+        "aota_forge.core.identity"
+      ],
+      "forbidden_dependencies": [
+        "hermes",
+        "hermes_host",
+        "subprocess",
+        "os.environ['HERMES_HOME']"
+      ]
+    },
+    "executor_adapter_protocol": {
+      "components": [
+        "ExecutorAdapter (abstract base class / protocol)"
+      ],
+      "responsibilities": "Defines the standard boundary methods: capabilities(), validate_package(), dispatch(), status(), result(), cancel(), resume().",
+      "properties": [
+        "pure mechanical contract",
+        "no semantic decision authority",
+        "no direct shell/git access outside adapter boundary"
+      ]
+    },
+    "hermes_adapter_implementation": {
+      "components": [
+        "HermesAdapter",
+        "HermesProfileMapper",
+        "HermesPayloadTranslator",
+        "HermesStateTranslator"
+      ],
+      "responsibilities": "Translates canonical ExecutionPackage to Hermes-specific payload, maps canonical role to Hermes profile, translates Hermes task state to CanonicalTaskState, packages Hermes output into CanonicalResult.",
+      "boundary_rules": [
+        "Hermes private types terminate at adapter boundary",
+        "Hermes home paths stay adapter-local",
+        "No Hermes objects returned to Core caller"
+      ]
+    },
+    "reference_fake_adapter": {
+      "components": [
+        "ReferenceFakeExecutorAdapter"
+      ],
+      "responsibilities": "In-memory deterministic test double implementing ExecutorAdapter for contract and unit testing without host dependencies.",
+      "properties": [
+        "test-only",
+        "never production default"
+      ]
+    },
+    "canonical_cli_projection": {
+      "components": [
+        "aota task",
+        "aota executor",
+        "cli.projection",
+        "cli.render"
+      ],
+      "responsibilities": "Machine adapter CLI. Parses CLI transport arguments, projects descriptor-derived flags, passes typed request to Unified Ingress / Core, formats CanonicalResult to stdout/json.",
+      "prohibitions": [
+        "no semantic executor selection",
+        "no heuristic fallback to Hermes",
+        "no arbitrary shell execution"
+      ]
+    },
+    "external_semantic_authority": {
+      "actor": "LLM / User / Governance",
+      "responsibilities": "Decides task purpose, semantic role, instruction content, and explicitly selects target executor adapter under ambiguity."
+    }
+  },
+  "boundary_questions_answered": {
+    "what_belongs_to_canonical_core": "ExecutorCapabilities, ExecutionPackage, CanonicalTaskState, CanonicalResult, RoleMapping contract, ExecutorAdapter interface, ExecutorRegistry, Core Dispatcher, task reconciliation, execution error taxonomy.",
+    "what_belongs_to_executor_adapter": "Translation of canonical execution package to executor-native format, querying native task status/result, translating native status to canonical state, error mapping.",
+    "what_belongs_only_to_hermes_adapter": "Hermes profile names, Hermes worker management, Hermes CLI/host protocol payloads, Hermes-specific filesystem configuration.",
+    "what_belongs_to_cli_projection": "Command syntax parsing, descriptor-derived argument attachment, calling Unified Ingress / Core execution entrypoint, formatting canonical results to stdout/json.",
+    "what_remains_external_semantic_input": "Task intent, instruction text, semantic role choice, target executor selection under ambiguity, approval of high-impact operations."
+  },
+  "invariants": {
+    "CORE_DIRECT_HERMES_DEPENDENCY_ALLOWED": "no",
+    "CLI_DIRECT_HERMES_DEPENDENCY_ALLOWED": "no",
+    "HERMES_IS_EXECUTOR_ADAPTER": "yes",
+    "HERMES_PRIVATE_OBJECT_IN_CANONICAL_CORE_COUNT": 0,
+    "HERMES_PRIVATE_OBJECT_IN_CANONICAL_CLI_CONTRACT_COUNT": 0,
+    "HERMES_FILESYSTEM_LAYOUT_IN_CORE_COUNT": 0,
+    "NEW_SEMANTIC_AUTHORITY_COUNT": 0
+  }
+}

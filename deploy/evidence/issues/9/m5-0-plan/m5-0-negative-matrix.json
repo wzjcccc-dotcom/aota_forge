@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "title": "M5 Negative Acceptance Test Matrix (N01 - N24)",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "negative_cases": [
+    {
+      "case_id": "N01",
+      "name": "Hermes type leaks into Core",
+      "condition": "Core execution models import or reference Hermes-private classes",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N02",
+      "name": "Hermes profile becomes canonical role",
+      "condition": "Hermes profile name is used as canonical role name",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N03",
+      "name": "Core imports Hermes runtime directly",
+      "condition": "Core execution dispatcher directly imports hermes_host or daemon",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N04",
+      "name": "CLI calls Hermes directly",
+      "condition": "CLI command bypasses Unified Ingress and calls Hermes daemon directly",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N05",
+      "name": "CLI becomes exclusive execution entrypoint",
+      "condition": "Core execution API is accessible only via CLI binary",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N06",
+      "name": "Heuristic best executor selection",
+      "condition": "Core ranks or auto-selects executor without explicit request",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N07",
+      "name": "Silent Hermes fallback",
+      "condition": "Missing or incompatible executor silently falls back to Hermes",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N08",
+      "name": "Silent capability downgrade",
+      "condition": "Unsupported requirement is silently ignored rather than failing closed",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N09",
+      "name": "Arbitrary executor command string",
+      "condition": "CLI accepts arbitrary unvalidated shell/executor command string",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N10",
+      "name": "Arbitrary shell/terminal access",
+      "condition": "Adapter exposes generic unconstrained bash terminal tool",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N11",
+      "name": "Generic Git write API",
+      "condition": "Adapter exposes generic arbitrary git commit/push API",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N12",
+      "name": "Generic GitHub API",
+      "condition": "Adapter exposes raw generic GitHub REST/GraphQL write endpoint",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N13",
+      "name": "Adapter makes semantic role decision",
+      "condition": "Adapter changes or invents semantic role",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N14",
+      "name": "Adapter changes task intent",
+      "condition": "Adapter rewrites semantic instruction or parameters",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N15",
+      "name": "Adapter auto semantic retry",
+      "condition": "Adapter retries failed task under altered semantics without authorization",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N16",
+      "name": "Executor-local task ID used as canonical identity",
+      "condition": "Executor host task ID replaces canonical_task_id",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N17",
+      "name": "Malformed package dispatched",
+      "condition": "Invalid package bypassed schema validation and dispatched",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N18",
+      "name": "Unknown executor state mapped to completed",
+      "condition": "Uncertain/crashed executor state treated as successful completion",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N19",
+      "name": "Arbitrary Hermes object appears in CanonicalResult",
+      "condition": "Hermes-private object escaped into CanonicalResult payload",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N20",
+      "name": "Reference adapter becomes production default",
+      "condition": "Test double reference adapter used in production execution",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N21",
+      "name": "Live Hermes dispatch during planning/tests where not authorized",
+      "condition": "Live host daemon spawned during offline unit tests",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N22",
+      "name": "Deployment/runtime activation pulled into planning",
+      "condition": "Planning phase performs live deployment",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N23",
+      "name": "M4 mutation semantics redefined",
+      "condition": "plan_init or plan_retirement contracts altered",
+      "expected_result": "REJECT / FAIL"
+    },
+    {
+      "case_id": "N24",
+      "name": "Unresolved semantic TODO delegated to coder",
+      "condition": "Planning artifact contains TBD/TODO on semantic choices",
+      "expected_result": "REJECT / FAIL"
+    }
+  ],
+  "invariants": {
+    "M5_NEGATIVE_ACCEPTANCE_PLAN": "PASS",
+    "M5_NEGATIVE_CASE_COUNT": 24
+  }
+}

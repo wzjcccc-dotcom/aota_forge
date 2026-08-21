@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "title": "M5 Canonical CLI Execution Dispatch Plan",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "cli_commands": [
+    {
+      "command": "aota task start",
+      "canonical_operation": "execution.task_start",
+      "arguments": [
+        {
+          "flag": "--executor",
+          "type": "str",
+          "required": true,
+          "help": "Registered executor adapter identifier"
+        },
+        {
+          "flag": "--role",
+          "type": "str",
+          "required": true,
+          "help": "Authorized canonical role (planner, coder, reviewer, steward, executor)"
+        },
+        {
+          "flag": "--instruction",
+          "type": "str",
+          "required": true,
+          "help": "Task instruction text"
+        },
+        {
+          "flag": "--project-id",
+          "type": "str",
+          "required": true,
+          "help": "Target canonical project ID"
+        },
+        {
+          "flag": "--subject-ref",
+          "type": "str",
+          "required": false,
+          "help": "Associated canonical Subject reference"
+        },
+        {
+          "flag": "--timeout",
+          "type": "int",
+          "required": false,
+          "help": "Maximum execution timeout in seconds"
+        }
+      ],
+      "description": "Mechanically dispatches a canonical execution task to the specified executor adapter"
+    },
+    {
+      "command": "aota task status",
+      "canonical_operation": "execution.task_status",
+      "arguments": [
+        {
+          "flag": "--task-id",
+          "type": "str",
+          "required": true,
+          "help": "Canonical task identifier"
+        },
+        {
+          "flag": "--executor",
+          "type": "str",
+          "required": true,
+          "help": "Executor adapter identifier"
+        }
+      ],
+      "description": "Queries the execution status of a dispatched task"
+    },
+    {
+      "command": "aota task result",
+      "canonical_operation": "execution.task_result",
+      "arguments": [
+        {
+          "flag": "--task-id",
+          "type": "str",
+          "required": true,
+          "help": "Canonical task identifier"
+        },
+        {
+          "flag": "--executor",
+          "type": "str",
+          "required": true,
+          "help": "Executor adapter identifier"
+        }
+      ],
+      "description": "Fetches the CanonicalResult of a finished task"
+    },
+    {
+      "command": "aota task cancel",
+      "canonical_operation": "execution.task_cancel",
+      "arguments": [
+        {
+          "flag": "--task-id",
+          "type": "str",
+          "required": true,
+          "help": "Canonical task identifier"
+        },
+        {
+          "flag": "--executor",
+          "type": "str",
+          "required": true,
+          "help": "Executor adapter identifier"
+        }
+      ],
+      "description": "Requests cancellation of an active task"
+    },
+    {
+      "command": "aota executor list",
+      "canonical_operation": "execution.executor_list",
+      "arguments": [],
+      "description": "Lists all registered executor adapters and their descriptors"
+    },
+    {
+      "command": "aota executor capabilities",
+      "canonical_operation": "execution.executor_capabilities",
+      "arguments": [
+        {
+          "flag": "--executor",
+          "type": "str",
+          "required": true,
+          "help": "Executor adapter identifier"
+        }
+      ],
+      "description": "Displays advertised capabilities of the specified executor adapter"
+    }
+  ],
+  "dispatch_pipeline": [
+    "1. CLI parses transport flags and options",
+    "2. CLI builds ExecutionPackage using descriptor-derived types",
+    "3. CLI invokes Unified Ingress / Core execution entrypoint",
+    "4. Core validates package and resolves target adapter via ExecutorRegistry",
+    "5. Adapter translates package and dispatches to executor host",
+    "6. Core projects CanonicalResult / status envelope to CLI",
+    "7. CLI formats result (--json or human render) and maps to frozen exit code"
+  ],
+  "prohibitions": {
+    "CLI_SEMANTIC_EXECUTOR_SELECTION_ALLOWED": "no",
+    "CLI_HEURISTIC_HERMES_FALLBACK_ALLOWED": "no",
+    "CLI_DIRECT_HERMES_DEPENDENCY_ALLOWED": "no",
+    "ARBITRARY_EXECUTOR_COMMAND_STRING_ALLOWED": "no"
+  },
+  "invariants": {
+    "M5_CLI_DISPATCH_PLAN": "PASS",
+    "M5_CLI_COMMAND_PLAN": "PASS"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "title": "M5 ExecutorAdapter Abstract Interface Contract Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "interface_name": "ExecutorAdapter",
+  "definition_path": "aota_forge/core/execution/adapter.py",
+  "methods": [
+    {
+      "name": "capabilities",
+      "signature": "capabilities() -> ExecutorCapabilities",
+      "inputs": [],
+      "outputs": "ExecutorCapabilities",
+      "errors": [],
+      "idempotency": "pure read",
+      "side_effects": "none",
+      "blocking": false,
+      "description": "Returns static/advertised capabilities of this executor adapter."
+    },
+    {
+      "name": "validate_package",
+      "signature": "validate_package(package: ExecutionPackage) -> ValidationResult",
+      "inputs": [
+        {
+          "name": "package",
+          "type": "ExecutionPackage"
+        }
+      ],
+      "outputs": "ValidationResult (valid: bool, errors: list[str])",
+      "errors": [
+        "PACKAGE_INVALID",
+        "CAPABILITY_MISMATCH",
+        "ROLE_MAPPING_NOT_FOUND"
+      ],
+      "idempotency": "pure read",
+      "side_effects": "none",
+      "blocking": false,
+      "description": "Validates whether the execution package can be executed by this adapter."
+    },
+    {
+      "name": "dispatch",
+      "signature": "dispatch(package: ExecutionPackage) -> DispatchResult",
+      "inputs": [
+        {
+          "name": "package",
+          "type": "ExecutionPackage"
+        }
+      ],
+      "outputs": "DispatchResult (canonical_task_id: str, adapter_handle: str, initial_state: CanonicalTaskState, dispatch_time: str)",
+      "errors": [
+        "DISPATCH_REJECTED",
+        "EXECUTOR_UNAVAILABLE",
+        "DISPATCH_TIMEOUT",
+        "CAPABILITY_MISMATCH"
+      ],
+      "idempotency": "idempotent under (idempotency_key, intent_fingerprint)",
+      "side_effects": "creates/starts execution task on executor host",
+      "blocking": "async (returns initial state) or sync depending on mode",
+      "description": "Dispatches execution package to executor host."
+    },
+    {
+      "name": "status",
+      "signature": "status(canonical_task_id: str, adapter_handle: str) -> TaskStatusResult",
+      "inputs": [
+        {
+          "name": "canonical_task_id",
+          "type": "str"
+        },
+        {
+          "name": "adapter_handle",
+          "type": "str"
+        }
+      ],
+      "outputs": "TaskStatusResult (canonical_task_id: str, state: CanonicalTaskState, progress: dict, details: str)",
+      "errors": [
+        "TASK_NOT_FOUND",
+        "EXECUTOR_UNAVAILABLE",
+        "TASK_STATE_UNKNOWN"
+      ],
+      "idempotency": "pure read",
+      "side_effects": "none",
+      "blocking": false,
+      "description": "Queries current execution state of dispatched task."
+    },
+    {
+      "name": "result",
+      "signature": "result(canonical_task_id: str, adapter_handle: str) -> CanonicalResult",
+      "inputs": [
+        {
+          "name": "canonical_task_id",
+          "type": "str"
+        },
+        {
+          "name": "adapter_handle",
+          "type": "str"
+        }
+      ],
+      "outputs": "CanonicalResult",
+      "errors": [
+        "TASK_NOT_FOUND",
+        "RESULT_INVALID",
+        "TASK_STILL_RUNNING",
+        "EXECUTOR_UNAVAILABLE"
+      ],
+      "idempotency": "pure read",
+      "side_effects": "none",
+      "blocking": false,
+      "description": "Fetches terminal CanonicalResult of completed or failed task."
+    },
+    {
+      "name": "cancel",
+      "signature": "cancel(canonical_task_id: str, adapter_handle: str) -> CancelResult",
+      "inputs": [
+        {
+          "name": "canonical_task_id",
+          "type": "str"
+        },
+        {
+          "name": "adapter_handle",
+          "type": "str"
+        }
+      ],
+      "outputs": "CancelResult (canonical_task_id: str, cancelled: bool, state: CanonicalTaskState)",
+      "errors": [
+        "TASK_NOT_FOUND",
+        "CANCEL_UNSUPPORTED",
+        "TASK_ALREADY_TERMINAL"
+      ],
+      "idempotency": "idempotent",
+      "side_effects": "signals task termination to executor host",
+      "blocking": false,
+      "description": "Requests cancellation of active task."
+    },
+    {
+      "name": "resume",
+      "signature": "resume(canonical_task_id: str, adapter_handle: str, resume_package: ExecutionPackage) -> ResumeResult",
+      "inputs": [
+        {
+          "name": "canonical_task_id",
+          "type": "str"
+        },
+        {
+          "name": "adapter_handle",
+          "type": "str"
+        },
+        {
+          "name": "resume_package",
+          "type": "ExecutionPackage"
+        }
+      ],
+      "outputs": "ResumeResult (canonical_task_id: str, state: CanonicalTaskState)",
+      "errors": [
+        "TASK_NOT_FOUND",
+        "RESUME_UNSUPPORTED",
+        "TASK_NOT_WAITING"
+      ],
+      "idempotency": "idempotent under resume idempotency token",
+      "side_effects": "resumes suspended task on executor host",
+      "blocking": false,
+      "description": "Resumes waiting or suspended task with new input."
+    }
+  ],
+  "invariants": {
+    "EXECUTOR_ADAPTER_CONTRACT_PLAN": "PASS",
+    "GENERIC_ARBITRARY_EXECUTOR_COMMAND_ALLOWED": "no"
+  }
+}

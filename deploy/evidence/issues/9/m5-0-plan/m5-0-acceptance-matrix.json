@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "title": "M5 Positive Acceptance Test Matrix",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "cases": [
+    {
+      "case_id": "POS-M5-01",
+      "name": "ExecutorCapabilities serialization",
+      "verification": "Capabilities object serializes to deterministic JSON without callable identity"
+    },
+    {
+      "case_id": "POS-M5-02",
+      "name": "ExecutionPackage validation",
+      "verification": "Valid ExecutionPackage passes structural and schema checks"
+    },
+    {
+      "case_id": "POS-M5-03",
+      "name": "CanonicalTaskState mapping",
+      "verification": "All adapter-local states map deterministically to CanonicalTaskState"
+    },
+    {
+      "case_id": "POS-M5-04",
+      "name": "CanonicalResult mapping",
+      "verification": "Execution outcomes map to structured CanonicalResult without string collapse"
+    },
+    {
+      "case_id": "POS-M5-05",
+      "name": "RoleMapping resolution",
+      "verification": "Canonical roles map to deterministic executor profiles"
+    },
+    {
+      "case_id": "POS-M5-06",
+      "name": "Reference adapter in-memory dispatch",
+      "verification": "Reference adapter executes task end-to-end in memory"
+    },
+    {
+      "case_id": "POS-M5-07",
+      "name": "HermesAdapter translation",
+      "verification": "ExecutionPackage translates to Hermes host payload correctly"
+    },
+    {
+      "case_id": "POS-M5-08",
+      "name": "ExecutorRegistry registration",
+      "verification": "Multiple adapters register without handler leak"
+    },
+    {
+      "case_id": "POS-M5-09",
+      "name": "Unique executor selection",
+      "verification": "Explicit executor request resolves to unique registered adapter"
+    },
+    {
+      "case_id": "POS-M5-10",
+      "name": "Capability matching success",
+      "verification": "Matching required capabilities allows dispatch"
+    },
+    {
+      "case_id": "POS-M5-11",
+      "name": "Synchronous dispatch flow",
+      "verification": "Sync dispatch returns COMPLETED result directly"
+    },
+    {
+      "case_id": "POS-M5-12",
+      "name": "Asynchronous dispatch flow",
+      "verification": "Async dispatch returns ACCEPTED/QUEUED and supports status polling"
+    },
+    {
+      "case_id": "POS-M5-13",
+      "name": "Task status query",
+      "verification": "status() returns current CanonicalTaskState"
+    },
+    {
+      "case_id": "POS-M5-14",
+      "name": "Task result query",
+      "verification": "result() returns completed CanonicalResult"
+    },
+    {
+      "case_id": "POS-M5-15",
+      "name": "Task cancellation flow",
+      "verification": "cancel() aborts active task and transitions to CANCELLED"
+    },
+    {
+      "case_id": "POS-M5-16",
+      "name": "Task resume flow",
+      "verification": "resume() continues waiting task with new input"
+    },
+    {
+      "case_id": "POS-M5-17",
+      "name": "Dispatch idempotency replay",
+      "verification": "Same idempotency key + intent fingerprint replays existing dispatch"
+    },
+    {
+      "case_id": "POS-M5-18",
+      "name": "Direct Core dispatch parity",
+      "verification": "Direct Core execution entrypoint executes task and returns envelope"
+    },
+    {
+      "case_id": "POS-M5-19",
+      "name": "Unified Ingress dispatch parity",
+      "verification": "Ingress executes task with audit tracking"
+    },
+    {
+      "case_id": "POS-M5-20",
+      "name": "CLI dispatch parity",
+      "verification": "aota task start executes and outputs json/human identically"
+    },
+    {
+      "case_id": "POS-M5-21",
+      "name": "CLI executor listing",
+      "verification": "aota executor list returns all registered adapters"
+    },
+    {
+      "case_id": "POS-M5-22",
+      "name": "CLI executor capabilities",
+      "verification": "aota executor capabilities returns capability descriptor"
+    },
+    {
+      "case_id": "POS-M5-23",
+      "name": "Task state reconciliation",
+      "verification": "Reconciler resolves ambiguous task state via adapter status"
+    },
+    {
+      "case_id": "POS-M5-24",
+      "name": "M4 regression zero-breakage",
+      "verification": "All 129 M4 regression tests continue to pass 100%"
+    }
+  ],
+  "invariants": {
+    "M5_ACCEPTANCE_MATRIX": "PASS",
+    "M5_ACCEPTANCE_CASE_COUNT": 24
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "title": "M5 ExecutorCapabilities Contract Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "contract_name": "ExecutorCapabilities",
+  "definition_path": "aota_forge/core/execution/capabilities.py",
+  "fields": [
+    {
+      "name": "executor_id",
+      "type": "str",
+      "required": true,
+      "description": "Unique deterministic executor identifier (e.g. 'hermes', 'reference-fake', 'codex')"
+    },
+    {
+      "name": "adapter_kind",
+      "type": "str",
+      "required": true,
+      "description": "Kind of adapter implementation ('host_process', 'in_process_test_double', 'remote_service')"
+    },
+    {
+      "name": "supported_execution_modes",
+      "type": "tuple[str, ...]",
+      "required": true,
+      "description": "Supported execution modes ('sync', 'async', 'batch')"
+    },
+    {
+      "name": "supports_streaming_events",
+      "type": "bool",
+      "required": true,
+      "description": "Whether the executor emits progressive stream events"
+    },
+    {
+      "name": "supports_task_cancellation",
+      "type": "bool",
+      "required": true,
+      "description": "Whether running tasks can be cancelled cooperatively or preemptively"
+    },
+    {
+      "name": "supports_task_resume",
+      "type": "bool",
+      "required": true,
+      "description": "Whether suspended or waiting tasks can be resumed with input"
+    },
+    {
+      "name": "supports_structured_result",
+      "type": "bool",
+      "required": true,
+      "description": "Whether structured json data payloads can be returned"
+    },
+    {
+      "name": "supported_canonical_roles",
+      "type": "tuple[str, ...]",
+      "required": true,
+      "description": "Canonical roles supported by this executor (e.g. 'planner', 'coder', 'reviewer', 'steward', 'executor')"
+    },
+    {
+      "name": "supported_isolation_modes",
+      "type": "tuple[str, ...]",
+      "required": true,
+      "description": "Supported isolation levels ('worktree', 'process', 'container', 'none')"
+    },
+    {
+      "name": "supports_working_directory",
+      "type": "bool",
+      "required": true,
+      "description": "Whether tasks can be dispatched to an explicit working directory"
+    },
+    {
+      "name": "supports_artifact_transport",
+      "type": "bool",
+      "required": true,
+      "description": "Whether input and output file artifacts are tracked and transported"
+    },
+    {
+      "name": "max_timeout_seconds",
+      "type": "int | None",
+      "required": false,
+      "description": "Maximum allowed execution timeout in seconds if constrained"
+    },
+    {
+      "name": "concurrency_limit",
+      "type": "int | None",
+      "required": false,
+      "description": "Maximum concurrent tasks allowed by adapter instance"
+    }
+  ],
+  "forbidden_semantic_fields": [
+    "preferred_executor",
+    "best_role",
+    "task_priority_recommendation",
+    "semantic_routing_score",
+    "heuristic_quality_rating"
+  ],
+  "serialization": {
+    "deterministic_json": "yes",
+    "sorted_keys": "yes",
+    "no_callable_members": "yes"
+  },
+  "invariants": {
+    "EXECUTOR_CAPABILITIES_CONTRACT_PLAN": "PASS",
+    "EXECUTOR_CAPABILITIES_SEMANTIC_DECISION_FIELD_COUNT": 0
+  }
+}

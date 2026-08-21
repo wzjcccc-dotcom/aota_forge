@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "title": "M5 Source Ownership Plan and Path Partitioning",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "ownership_partitions": {
+    "EXCLUSIVE_WRITE": [
+      {
+        "path": "aota_forge/core/execution/__init__.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/capabilities.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/package.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/state.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/results.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/roles.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/adapter.py",
+        "owner_slice": "M5-1"
+      },
+      {
+        "path": "aota_forge/core/execution/registry.py",
+        "owner_slice": "M5-3"
+      },
+      {
+        "path": "aota_forge/core/execution/dispatcher.py",
+        "owner_slice": "M5-3"
+      },
+      {
+        "path": "aota_forge/adapters/execution/__init__.py",
+        "owner_slice": "M5-2"
+      },
+      {
+        "path": "aota_forge/adapters/execution/reference.py",
+        "owner_slice": "M5-2"
+      },
+      {
+        "path": "aota_forge/adapters/hermes/executor.py",
+        "owner_slice": "M5-4"
+      },
+      {
+        "path": "aota_forge/cli/commands/execution.py",
+        "owner_slice": "M5-5"
+      },
+      {
+        "path": "tests/test_m5_*.py",
+        "owner_slice": "M5-1..M5-6"
+      },
+      {
+        "path": "scripts/m5_*.py",
+        "owner_slice": "M5-0..M5-R"
+      },
+      {
+        "path": "deploy/evidence/issues/9/m5-*/*",
+        "owner_slice": "M5-0..M5-R"
+      }
+    ],
+    "SHARED_READ_ONLY": [
+      {
+        "path": "aota_forge/core/contracts/descriptor.py",
+        "purpose": "Descriptor contract definitions"
+      },
+      {
+        "path": "aota_forge/core/contracts/registry.py",
+        "purpose": "Operation registry"
+      },
+      {
+        "path": "aota_forge/core/contracts/mutation.py",
+        "purpose": "Mutation results & preconditions"
+      },
+      {
+        "path": "aota_forge/core/contracts/results.py",
+        "purpose": "Result envelope utilities"
+      },
+      {
+        "path": "aota_forge/core/contracts/errors.py",
+        "purpose": "Forge error base classes"
+      },
+      {
+        "path": "aota_forge/core/identity/refs.py",
+        "purpose": "ObjectRef and ID kinds"
+      },
+      {
+        "path": "aota_forge/core/context.py",
+        "purpose": "TrustedContext and PrincipalBinding"
+      },
+      {
+        "path": "aota_forge/core/journal/*",
+        "purpose": "M4 mutation journal store and models"
+      },
+      {
+        "path": "aota_forge/adapters/plan_authority/*",
+        "purpose": "Plan authority adapter"
+      },
+      {
+        "path": "aota_forge/adapters/host/*",
+        "purpose": "Host diagnostics"
+      }
+    ],
+    "INTEGRATION_ONLY": [
+      {
+        "path": "aota_forge/core/ingress.py",
+        "owner_slice": "M5-5",
+        "purpose": "Wire execution dispatch operations"
+      },
+      {
+        "path": "aota_forge/cli/__main__.py",
+        "owner_slice": "M5-5",
+        "purpose": "Attach execution subcommands and routes"
+      },
+      {
+        "path": "aota_forge/cli/projection.py",
+        "owner_slice": "M5-5",
+        "purpose": "Project execution descriptor arguments"
+      }
+    ],
+    "FORBIDDEN": [
+      {
+        "path": "tests/test_m4_*.py",
+        "reason": "M4 test suite is frozen baseline (129/129 pass)"
+      },
+      {
+        "path": "deploy/evidence/issues/9/m1-*/*",
+        "reason": "Historical milestone evidence"
+      },
+      {
+        "path": "deploy/evidence/issues/9/m2-*/*",
+        "reason": "Historical milestone evidence"
+      },
+      {
+        "path": "deploy/evidence/issues/9/m3-*/*",
+        "reason": "Historical milestone evidence"
+      },
+      {
+        "path": "deploy/evidence/issues/9/m4-*/*",
+        "reason": "Historical milestone evidence"
+      },
+      {
+        "path": "scripts/m4_*.py",
+        "reason": "Historical milestone guards"
+      }
+    ],
+    "DOWNSTREAM_RUNTIME_ONLY": [
+      {
+        "path": "hermes live daemon launcher",
+        "reason": "Live runtime activation is owned by M6/M7"
+      },
+      {
+        "path": "production deployment scripts",
+        "reason": "Deployment is out of scope for M5"
+      }
+    ]
+  },
+  "hot_file_coordination": {
+    "aota_forge/cli/__main__.py": "Mutated exclusively in Slice M5-5 after contracts in M5-1..M5-4 are stable",
+    "aota_forge/core/ingress.py": "Mutated exclusively in Slice M5-5 after Core dispatcher in M5-3 is verified"
+  },
+  "invariants": {
+    "M5_SOURCE_OWNERSHIP_PLAN": "PASS",
+    "SOURCE_OWNERSHIP_AMBIGUITY_COUNT": 0
+  }
+}

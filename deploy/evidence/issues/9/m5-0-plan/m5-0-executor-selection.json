@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "title": "M5 Executor Selection and Capability Matching Authority Plan",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "selection_architecture": {
+    "semantic_selection_authority": "LLM / User / Upstream caller explicitly requests target executor or provides required capability constraints",
+    "mechanical_resolution_authority": "Core ExecutorRegistry and Dispatcher perform deterministic matching against registered adapters",
+    "cardinality_rules": {
+      "zero_match": "Returns EXECUTOR_NOT_FOUND error; fails closed; no fallback",
+      "one_match": "Deterministically selects the unique matching adapter",
+      "multiple_matches_no_explicit_target": "Returns NEEDS_SEMANTIC_CHOICE with candidate list; fails closed; no heuristic guessing"
+    }
+  },
+  "capability_matching": {
+    "validation_model": "Required capabilities in ExecutionPackage are checked against advertised ExecutorCapabilities",
+    "mode_matching": "Exact match required on execution_mode, isolation_mode, and role_support",
+    "silent_downgrade": "FORBIDDEN (e.g. if async requested but only sync supported, dispatch is rejected with CAPABILITY_MISMATCH)",
+    "timeout_matching": "Requested timeout must be <= adapter max_timeout_seconds if set"
+  },
+  "prohibitions": {
+    "HEURISTIC_EXECUTOR_SELECTION_ALLOWED": "no",
+    "SILENT_HERMES_FALLBACK_ALLOWED": "no",
+    "SILENT_CAPABILITY_DOWNGRADE_ALLOWED": "no",
+    "BEST_EXECUTOR_GUESSING_ALLOWED": "no"
+  },
+  "invariants": {
+    "EXECUTOR_SELECTION_AUTHORITY_PLAN": "PASS",
+    "CAPABILITY_MATCHING_PLAN": "PASS"
+  }
+}

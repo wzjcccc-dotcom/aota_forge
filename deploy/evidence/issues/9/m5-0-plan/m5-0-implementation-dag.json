@@ -1,0 +1,306 @@
+{
+  "schema_version": 1,
+  "title": "M5 Implementation DAG Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "slices": [
+    {
+      "slice_id": "M5-1",
+      "name": "Canonical Execution Contracts Foundation",
+      "objective": "Define ExecutorCapabilities, ExecutionPackage, CanonicalTaskState, CanonicalResult, RoleMapping, and ExecutorAdapter abstract class",
+      "prerequisites": [
+        "M5-0 accepted plan"
+      ],
+      "authorized_write_paths": [
+        "aota_forge/core/execution/*",
+        "tests/test_m5_1_contracts.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/contracts/*",
+        "aota_forge/core/identity/*"
+      ],
+      "input_contracts": [
+        "M5-0 contract specifications"
+      ],
+      "output_contracts": [
+        "ExecutorCapabilities",
+        "ExecutionPackage",
+        "CanonicalTaskState",
+        "CanonicalResult",
+        "RoleMapping",
+        "ExecutorAdapter"
+      ],
+      "focused_tests": [
+        "tests/test_m5_1_contracts.py"
+      ],
+      "acceptance_criteria": "All data models validate, serialize deterministically, enforce typing, and reject semantic decision fields",
+      "dependents": [
+        "M5-2",
+        "M5-3",
+        "M5-4"
+      ]
+    },
+    {
+      "slice_id": "M5-2",
+      "name": "Reference Fake Executor Adapter and Contract Tests",
+      "objective": "Implement ReferenceFakeExecutorAdapter in-memory test double for pure contract verification",
+      "prerequisites": [
+        "M5-1"
+      ],
+      "authorized_write_paths": [
+        "aota_forge/adapters/execution/*",
+        "tests/test_m5_2_reference_adapter.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*"
+      ],
+      "input_contracts": [
+        "M5-1 ExecutorAdapter protocol"
+      ],
+      "output_contracts": [
+        "ReferenceFakeExecutorAdapter"
+      ],
+      "focused_tests": [
+        "tests/test_m5_2_reference_adapter.py"
+      ],
+      "acceptance_criteria": "Reference adapter executes all lifecycle states in memory with 0 external dependencies",
+      "dependents": [
+        "M5-3",
+        "M5-6"
+      ]
+    },
+    {
+      "slice_id": "M5-3",
+      "name": "Executor Registry and Core Dispatcher",
+      "objective": "Implement ExecutorRegistry and deterministic Core Execution Dispatcher with capability validation and task reconciliation",
+      "prerequisites": [
+        "M5-1",
+        "M5-2"
+      ],
+      "authorized_write_paths": [
+        "aota_forge/core/execution/registry.py",
+        "aota_forge/core/execution/dispatcher.py",
+        "tests/test_m5_3_dispatcher.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/execution/*"
+      ],
+      "input_contracts": [
+        "M5-1 contracts",
+        "M5-2 reference adapter"
+      ],
+      "output_contracts": [
+        "ExecutorRegistry",
+        "ExecutionDispatcher"
+      ],
+      "focused_tests": [
+        "tests/test_m5_3_dispatcher.py"
+      ],
+      "acceptance_criteria": "Registry supports 0/1/many cardinality, capability validation, and deterministic dispatch/status/result/cancel/resume flows",
+      "dependents": [
+        "M5-5",
+        "M5-6"
+      ]
+    },
+    {
+      "slice_id": "M5-4",
+      "name": "Hermes Adapter Translation Layer",
+      "objective": "Implement HermesAdapter translating canonical execution contracts to Hermes host protocol",
+      "prerequisites": [
+        "M5-1"
+      ],
+      "authorized_write_paths": [
+        "aota_forge/adapters/hermes/executor.py",
+        "tests/test_m5_4_hermes_adapter.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*"
+      ],
+      "input_contracts": [
+        "M5-1 ExecutorAdapter protocol",
+        "M5-1 RoleMapping"
+      ],
+      "output_contracts": [
+        "HermesAdapter"
+      ],
+      "focused_tests": [
+        "tests/test_m5_4_hermes_adapter.py"
+      ],
+      "acceptance_criteria": "HermesAdapter translates packages, profiles, statuses, and outputs with 0 Hermes private objects escaping boundary",
+      "dependents": [
+        "M5-5",
+        "M5-6"
+      ]
+    },
+    {
+      "slice_id": "M5-5",
+      "name": "Unified Ingress and Canonical CLI Dispatch Projection",
+      "objective": "Wire execution dispatch operations into Unified Ingress and add CLI commands (aota task ..., aota executor ...)",
+      "prerequisites": [
+        "M5-3",
+        "M5-4"
+      ],
+      "authorized_write_paths": [
+        "aota_forge/core/ingress.py",
+        "aota_forge/cli/commands/execution.py",
+        "aota_forge/cli/__main__.py",
+        "aota_forge/cli/projection.py",
+        "tests/test_m5_5_cli_dispatch.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/hermes/*"
+      ],
+      "input_contracts": [
+        "ExecutionDispatcher",
+        "HermesAdapter",
+        "OperationContractDescriptor"
+      ],
+      "output_contracts": [
+        "CLI execution subcommands",
+        "Ingress execution routing",
+        "3-way surface parity"
+      ],
+      "focused_tests": [
+        "tests/test_m5_5_cli_dispatch.py"
+      ],
+      "acceptance_criteria": "3 entry surfaces (Direct Core, Ingress, CLI) produce identical results with 0 semantic drift",
+      "dependents": [
+        "M5-6"
+      ]
+    },
+    {
+      "slice_id": "M5-6",
+      "name": "Comprehensive Regression, Failure Injection, and Convergence",
+      "objective": "Implement end-to-end integration tests, failure injection matrix, and full regression verification",
+      "prerequisites": [
+        "M5-2",
+        "M5-3",
+        "M5-4",
+        "M5-5"
+      ],
+      "authorized_write_paths": [
+        "tests/test_m5_6_convergence.py",
+        "scripts/m5_source_guard.py",
+        "deploy/evidence/issues/9/m5-source/*"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/*"
+      ],
+      "input_contracts": [
+        "All M5 components"
+      ],
+      "output_contracts": [
+        "M5 Source Implementation Candidate",
+        "Full suite passing"
+      ],
+      "focused_tests": [
+        "tests/test_m5_*.py",
+        "tests/test_m4_*.py"
+      ],
+      "acceptance_criteria": "100% full regression pass, 0 semantic failures, failure injection matrix passing",
+      "dependents": [
+        "M5-R"
+      ]
+    },
+    {
+      "slice_id": "M5-R",
+      "name": "Milestone Review, Reconciliation, and Known-Good Checkpoint",
+      "objective": "Execute independent review, verify source immutability, run closure guard, and advance known-good checkpoint",
+      "prerequisites": [
+        "M5-6"
+      ],
+      "authorized_write_paths": [
+        "scripts/m5_r_closure_guard.py",
+        "deploy/evidence/issues/9/m5-r/*"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/*",
+        "tests/*"
+      ],
+      "input_contracts": [
+        "M5-6 candidate"
+      ],
+      "output_contracts": [
+        "M5 Known-Good Checkpoint"
+      ],
+      "focused_tests": [
+        "Full regression suite",
+        "m5_r_closure_guard.py"
+      ],
+      "acceptance_criteria": "PASS verdict on independent review, 0 blocking findings, full suite passing",
+      "dependents": []
+    }
+  ],
+  "dag_properties": {
+    "node_count": 7,
+    "edges": [
+      [
+        "M5-1",
+        "M5-2"
+      ],
+      [
+        "M5-1",
+        "M5-3"
+      ],
+      [
+        "M5-1",
+        "M5-4"
+      ],
+      [
+        "M5-2",
+        "M5-3"
+      ],
+      [
+        "M5-3",
+        "M5-5"
+      ],
+      [
+        "M5-4",
+        "M5-5"
+      ],
+      [
+        "M5-2",
+        "M5-6"
+      ],
+      [
+        "M5-3",
+        "M5-6"
+      ],
+      [
+        "M5-4",
+        "M5-6"
+      ],
+      [
+        "M5-5",
+        "M5-6"
+      ],
+      [
+        "M5-6",
+        "M5-R"
+      ]
+    ],
+    "acyclic": "yes",
+    "dag_cycle_count": 0,
+    "unresolved_slice_dependency_count": 0
+  },
+  "parallelization": {
+    "M5_PARALLEL_SOURCE_EXECUTION_ALLOWED": "yes",
+    "MAX_SAFE_PARALLEL_SOURCE_LANES": 2,
+    "parallel_pairs": [
+      [
+        "M5-2 (Reference Adapter)",
+        "M5-4 (Hermes Adapter translation)"
+      ]
+    ]
+  },
+  "invariants": {
+    "M5_IMPLEMENTATION_DAG_DEFINED": "yes"
+  }
+}

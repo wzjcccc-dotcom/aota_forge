@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "title": "M5 CanonicalResult Contract Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "contract_name": "CanonicalResult",
+  "definition_path": "aota_forge/core/execution/results.py",
+  "fields": [
+    {
+      "name": "ok",
+      "type": "bool",
+      "required": true,
+      "description": "True only if execution completed successfully with verified result"
+    },
+    {
+      "name": "status",
+      "type": "str",
+      "required": true,
+      "description": "Normalized result status ('completed', 'failed', 'cancelled', 'rejected', 'unknown')"
+    },
+    {
+      "name": "canonical_task_id",
+      "type": "str",
+      "required": true,
+      "description": "Canonical task identifier"
+    },
+    {
+      "name": "executor_id",
+      "type": "str",
+      "required": true,
+      "description": "Identifier of executor adapter that executed the task"
+    },
+    {
+      "name": "canonical_task_state",
+      "type": "str",
+      "required": true,
+      "description": "CanonicalTaskState string value at termination"
+    },
+    {
+      "name": "exit_code",
+      "type": "int | None",
+      "required": false,
+      "description": "Process exit code if host process executed"
+    },
+    {
+      "name": "result_data",
+      "type": "dict",
+      "required": true,
+      "description": "Structured JSON output data produced by task"
+    },
+    {
+      "name": "output_artifacts",
+      "type": "tuple[dict, ...]",
+      "required": true,
+      "description": "Artifact references produced (path, sha256 digest, size_bytes)"
+    },
+    {
+      "name": "stdout_summary",
+      "type": "str | None",
+      "required": false,
+      "description": "Bounded summary of stdout output"
+    },
+    {
+      "name": "stderr_summary",
+      "type": "str | None",
+      "required": false,
+      "description": "Bounded summary of stderr output"
+    },
+    {
+      "name": "error",
+      "type": "dict | None",
+      "required": false,
+      "description": "Structured error envelope ({code, message, retryable, details})"
+    },
+    {
+      "name": "execution_stats",
+      "type": "dict",
+      "required": true,
+      "description": "Timing and resource metrics ({start_time, end_time, duration_seconds, attempts})"
+    },
+    {
+      "name": "correlation_id",
+      "type": "str",
+      "required": true,
+      "description": "Lineage correlation ID"
+    }
+  ],
+  "result_categories": [
+    {
+      "category": "EXECUTION_SUCCESS",
+      "ok": true,
+      "status": "completed",
+      "error": null
+    },
+    {
+      "category": "EXECUTION_FAILURE",
+      "ok": false,
+      "status": "failed",
+      "error": "code set to EXECUTION_FAILED or specific error"
+    },
+    {
+      "category": "DISPATCH_REJECTED",
+      "ok": false,
+      "status": "rejected",
+      "error": "code set to DISPATCH_REJECTED or CAPABILITY_MISMATCH"
+    },
+    {
+      "category": "EXECUTION_TIMEOUT",
+      "ok": false,
+      "status": "failed",
+      "error": "code set to EXECUTION_TIMEOUT"
+    },
+    {
+      "category": "EXECUTION_CANCELLED",
+      "ok": false,
+      "status": "cancelled",
+      "error": "code set to EXECUTION_CANCELLED"
+    },
+    {
+      "category": "UNKNOWN_EXECUTOR_STATE",
+      "ok": false,
+      "status": "unknown",
+      "error": "code set to TASK_STATE_UNKNOWN"
+    }
+  ],
+  "prohibitions": {
+    "GENERIC_EXECUTION_FAILURE_COLLAPSE_ALLOWED": "no",
+    "ARBITRARY_STRING_ERROR_ALLOWED": "no",
+    "HERMES_PRIVATE_OBJECT_IN_RESULT_ALLOWED": "no"
+  },
+  "invariants": {
+    "CANONICAL_RESULT_PLAN": "PASS"
+  }
+}

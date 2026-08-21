@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "title": "M5 Phase Boundary and Serial Activation Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "phases": [
+    {
+      "phase": "M5-0 PLANNING",
+      "activities": [
+        "Read-before-write governance check",
+        "Architecture freeze review",
+        "Contract specifications design",
+        "Implementation DAG & ownership planning",
+        "Plan guard construction"
+      ],
+      "authorized_writes": [
+        "deploy/evidence/issues/9/m5-0-plan/*",
+        "scripts/m5_0_plan_guard.py"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false
+    },
+    {
+      "phase": "M5 SOURCE CONSTRUCTION (M5-1..M5-6)",
+      "activities": [
+        "Implement execution contracts",
+        "Implement reference adapter",
+        "Implement Core dispatcher & registry",
+        "Implement Hermes adapter",
+        "Implement CLI subcommands",
+        "Execute unit and contract tests"
+      ],
+      "authorized_writes": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/execution/*",
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/cli/commands/execution.py",
+        "tests/test_m5_*.py",
+        "scripts/m5_source_guard.py",
+        "deploy/evidence/issues/9/m5-source/*"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false
+    },
+    {
+      "phase": "M5-R REVIEW AND CHECKPOINT",
+      "activities": [
+        "Independent review of M5 source candidate",
+        "Full suite regression (129 M4 + M5 tests)",
+        "Closure guard verification",
+        "Known-good checkpoint advancement"
+      ],
+      "authorized_writes": [
+        "scripts/m5_r_closure_guard.py",
+        "deploy/evidence/issues/9/m5-r/*"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false
+    },
+    {
+      "phase": "DOWNSTREAM RUNTIME ACTIVATION (M6/M7)",
+      "activities": [
+        "Live Hermes daemon launching",
+        "Multi-executor proof (Codex)",
+        "Live E2E integration smoke tests"
+      ],
+      "authorized_writes": [
+        "M6/M7 milestone directories"
+      ],
+      "live_runtime_allowed": true,
+      "deployment_allowed": false
+    },
+    {
+      "phase": "PRODUCTION DEPLOYMENT",
+      "activities": [
+        "Host deployment",
+        "Supervisor configuration",
+        "Production cutover"
+      ],
+      "authorized_writes": [
+        "Out of scope for M5/M6"
+      ],
+      "live_runtime_allowed": true,
+      "deployment_allowed": true
+    }
+  ],
+  "invariants": {
+    "M5_PHASE_BOUNDARY_PLAN": "PASS",
+    "PLANNING_PERFORMS_LIVE_HERMES_DISPATCH": "no",
+    "PLANNING_PERFORMS_DEPLOYMENT": "no"
+  }
+}

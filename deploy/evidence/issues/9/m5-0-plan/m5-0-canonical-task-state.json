@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "title": "M5 CanonicalTaskState Enum and State Transition Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "enum_name": "CanonicalTaskState",
+  "definition_path": "aota_forge/core/execution/state.py",
+  "canonical_states": [
+    {
+      "state": "CREATED",
+      "description": "ExecutionPackage constructed, not yet submitted to executor adapter",
+      "terminal": false
+    },
+    {
+      "state": "ACCEPTED",
+      "description": "Adapter received package and validated capabilities and syntax",
+      "terminal": false
+    },
+    {
+      "state": "QUEUED",
+      "description": "Task queued in executor host waiting for available execution slot",
+      "terminal": false
+    },
+    {
+      "state": "RUNNING",
+      "description": "Executor actively executing the task instruction",
+      "terminal": false
+    },
+    {
+      "state": "WAITING",
+      "description": "Executor waiting on external input, subagent response, or approval",
+      "terminal": false
+    },
+    {
+      "state": "COMPLETED",
+      "description": "Execution finished successfully with valid result",
+      "terminal": true
+    },
+    {
+      "state": "FAILED",
+      "description": "Execution finished with mechanical or semantic failure",
+      "terminal": true
+    },
+    {
+      "state": "CANCELLED",
+      "description": "Execution explicitly aborted by cancel operation",
+      "terminal": true
+    },
+    {
+      "state": "UNKNOWN",
+      "description": "Executor state uncertain (disconnect, crash, timeout before status)",
+      "terminal": false
+    }
+  ],
+  "state_transitions": [
+    {
+      "from": "CREATED",
+      "to": "ACCEPTED",
+      "event": "package validated by adapter"
+    },
+    {
+      "from": "CREATED",
+      "to": "FAILED",
+      "event": "package rejected by adapter on pre-dispatch validation"
+    },
+    {
+      "from": "ACCEPTED",
+      "to": "QUEUED",
+      "event": "adapter enqueued task in host runtime"
+    },
+    {
+      "from": "ACCEPTED",
+      "to": "RUNNING",
+      "event": "synchronous dispatch immediately started execution"
+    },
+    {
+      "from": "ACCEPTED",
+      "to": "UNKNOWN",
+      "event": "host communication lost during dispatch"
+    },
+    {
+      "from": "QUEUED",
+      "to": "RUNNING",
+      "event": "executor worker picked up task"
+    },
+    {
+      "from": "QUEUED",
+      "to": "CANCELLED",
+      "event": "cancellation requested while queued"
+    },
+    {
+      "from": "RUNNING",
+      "to": "WAITING",
+      "event": "executor yielded for subagent or user input"
+    },
+    {
+      "from": "RUNNING",
+      "to": "COMPLETED",
+      "event": "task execution succeeded with valid result"
+    },
+    {
+      "from": "RUNNING",
+      "to": "FAILED",
+      "event": "task execution encountered unhandled error or exit code != 0"
+    },
+    {
+      "from": "RUNNING",
+      "to": "CANCELLED",
+      "event": "cancellation requested and confirmed by executor"
+    },
+    {
+      "from": "RUNNING",
+      "to": "UNKNOWN",
+      "event": "host process crashed or timeout reading status"
+    },
+    {
+      "from": "WAITING",
+      "to": "RUNNING",
+      "event": "resume operation supplied input or subagent returned"
+    },
+    {
+      "from": "WAITING",
+      "to": "CANCELLED",
+      "event": "cancellation requested while waiting"
+    },
+    {
+      "from": "UNKNOWN",
+      "to": "COMPLETED",
+      "event": "reconciliation query confirmed task completed with result"
+    },
+    {
+      "from": "UNKNOWN",
+      "to": "FAILED",
+      "event": "reconciliation query confirmed task terminated with failure"
+    },
+    {
+      "from": "UNKNOWN",
+      "to": "RUNNING",
+      "event": "reconciliation query confirmed task still active"
+    }
+  ],
+  "adapter_state_mapping_rules": {
+    "hermes": {
+      "init": "CREATED",
+      "pending": "QUEUED",
+      "running": "RUNNING",
+      "waiting_for_input": "WAITING",
+      "waiting_for_subagent": "WAITING",
+      "done": "COMPLETED",
+      "success": "COMPLETED",
+      "error": "FAILED",
+      "failed": "FAILED",
+      "aborted": "CANCELLED",
+      "cancelled": "CANCELLED",
+      "unreachable": "UNKNOWN",
+      "timeout": "UNKNOWN"
+    },
+    "reference_fake": {
+      "created": "CREATED",
+      "accepted": "ACCEPTED",
+      "queued": "QUEUED",
+      "running": "RUNNING",
+      "waiting": "WAITING",
+      "completed": "COMPLETED",
+      "failed": "FAILED",
+      "cancelled": "CANCELLED",
+      "unknown": "UNKNOWN"
+    }
+  },
+  "reconciliation_invariants": {
+    "UNKNOWN_IS_NOT_COMPLETED": "yes",
+    "UNKNOWN_IS_NOT_SILENT_SUCCESS": "yes",
+    "HERMES_ENUM_USED_AS_CANONICAL_STATE_AUTHORITY": "no"
+  }
+}

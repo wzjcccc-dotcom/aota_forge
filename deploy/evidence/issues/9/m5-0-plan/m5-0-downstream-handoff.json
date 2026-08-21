@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "title": "M5 Downstream Handoff Contract to Milestone 6",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "target_milestone": "M6 — Multi-Executor Proof and Surface Reduction",
+  "target_objective": "證明 Forge 不再 requires Hermes，並在 replacement evidence 出現後降低 legacy model-facing surface。",
+  "handoff_deliverables": [
+    {
+      "deliverable": "Canonical Execution Contracts",
+      "location": "aota_forge/core/execution/",
+      "description": "ExecutorCapabilities, ExecutionPackage, CanonicalTaskState, CanonicalResult, RoleMapping, ExecutorAdapter"
+    },
+    {
+      "deliverable": "Hermes Adapter Implementation",
+      "location": "aota_forge/adapters/hermes/executor.py",
+      "description": "Verified ExecutorAdapter translating to Hermes host protocol"
+    },
+    {
+      "deliverable": "Reference Test Double Adapter",
+      "location": "aota_forge/adapters/execution/reference.py",
+      "description": "In-memory test double for contract tests"
+    },
+    {
+      "deliverable": "Core Execution Dispatcher & Registry",
+      "location": "aota_forge/core/execution/",
+      "description": "Deterministic capability matching and dispatch mechanics"
+    },
+    {
+      "deliverable": "Canonical CLI Dispatch",
+      "location": "aota_forge/cli/commands/execution.py",
+      "description": "aota task / aota executor commands"
+    },
+    {
+      "deliverable": "Full Regression Test Suite",
+      "location": "tests/",
+      "description": "129 M4 tests + M5 execution contract tests 100% passing"
+    },
+    {
+      "deliverable": "M5 Known-Good Checkpoint",
+      "location": "git commit",
+      "description": "Accepted immutable checkpoint commit SHA"
+    }
+  ],
+  "downstream_expectations": {
+    "m6_builds_second_executor": "Codex adapter implementing ExecutorAdapter to prove CHANGE_EXECUTOR != CHANGE_PLAN",
+    "m6_surface_reduction": "Reduces model-facing tool count and legacy toolset complexity based on M5 canonical contracts"
+  },
+  "invariants": {
+    "M5_DOWNSTREAM_HANDOFF_PLAN": "PASS"
+  }
+}

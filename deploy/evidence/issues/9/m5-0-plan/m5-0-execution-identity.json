@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "title": "M5 Execution Identity and Idempotency Architecture",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "identity_domains": {
+    "canonical_task_id": {
+      "role": "Semantic task identity",
+      "scope": "Subject / project execution lifecycle",
+      "format": "Canonical object ref or UUID"
+    },
+    "package_id": {
+      "role": "Execution package immutable identity",
+      "scope": "Single normalized execution request package",
+      "format": "UUID"
+    },
+    "dispatch_attempt_id": {
+      "role": "Dispatch attempt instance identity",
+      "scope": "Single physical dispatch attempt to an executor adapter",
+      "format": "UUID"
+    },
+    "executor_task_id": {
+      "role": "Adapter/executor-local task handle",
+      "scope": "Executor host daemon private task identifier",
+      "format": "Executor-specific string",
+      "boundary": "TERMINATES AT ADAPTER BOUNDARY; never canonical identity"
+    },
+    "correlation_id": {
+      "role": "End-to-end lineage correlation",
+      "scope": "Traceability across entry surfaces and adapters",
+      "format": "UUID / safe bounded string"
+    },
+    "idempotency_identity": {
+      "role": "Dispatch idempotency pairing",
+      "components": [
+        "idempotency_key",
+        "intent_fingerprint"
+      ],
+      "rule": "Same key + same fingerprint -> REPLAY; same key + changed fingerprint -> CONFLICT"
+    }
+  },
+  "retry_and_resume_semantics": {
+    "pre_dispatch_retry": "Creates a new dispatch attempt with new dispatch_attempt_id after revalidating package",
+    "task_resume": "Resumes existing suspended task using original canonical_task_id and adapter handle",
+    "redispatch": "Explicit new dispatch requiring fresh package_id and fresh dispatch_attempt_id",
+    "ADAPTER_AUTO_SEMANTIC_RETRY_ALLOWED": "no"
+  },
+  "invariants": {
+    "M5_EXECUTION_IDENTITY_PLAN": "PASS",
+    "EXECUTOR_LOCAL_TASK_ID_IS_CANONICAL_IDENTITY": "no"
+  }
+}

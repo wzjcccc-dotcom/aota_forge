@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "title": "M5 ExecutionPackage Contract Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M5",
+  "work_item": "M5-0-PLANNING",
+  "expected_base_sha": "b91aa7fd8ecd8219fab8386e00c098296b9c0c7b",
+  "status": "PASS",
+  "contract_name": "ExecutionPackage",
+  "definition_path": "aota_forge/core/execution/package.py",
+  "fields": [
+    {
+      "name": "package_id",
+      "type": "str",
+      "required": true,
+      "description": "Canonical unique execution package ID (UUID)"
+    },
+    {
+      "name": "protocol_version",
+      "type": "str",
+      "required": true,
+      "description": "Protocol version of execution package contract (e.g. '1.0.0')"
+    },
+    {
+      "name": "contract_hash",
+      "type": "str",
+      "required": true,
+      "description": "SHA-256 hash of execution contract definition"
+    },
+    {
+      "name": "operation",
+      "type": "str",
+      "required": true,
+      "description": "Canonical operation name ('task_dispatch', 'task_resume')"
+    },
+    {
+      "name": "canonical_task_id",
+      "type": "str",
+      "required": true,
+      "description": "Canonical task identifier"
+    },
+    {
+      "name": "subject_ref",
+      "type": "str | None",
+      "required": false,
+      "description": "Optional ObjectRef canonical string of associated Subject"
+    },
+    {
+      "name": "project_id",
+      "type": "str",
+      "required": true,
+      "description": "Canonical project ID binding"
+    },
+    {
+      "name": "canonical_role",
+      "type": "str",
+      "required": true,
+      "description": "Authorized canonical role for this task ('planner', 'coder', 'reviewer', 'steward', 'executor')"
+    },
+    {
+      "name": "instruction",
+      "type": "str",
+      "required": true,
+      "description": "Normalized semantic task instruction text"
+    },
+    {
+      "name": "input_artifacts",
+      "type": "tuple[dict, ...]",
+      "required": true,
+      "description": "List of input artifact references with path, digest, and role"
+    },
+    {
+      "name": "working_context",
+      "type": "dict",
+      "required": true,
+      "description": "Working directory path, allowed environment variables, isolation mode"
+    },
+    {
+      "name": "capability_requirements",
+      "type": "dict",
+      "required": true,
+      "description": "Required execution capabilities (async, isolation, timeout, etc.)"
+    },
+    {
+      "name": "constraints",
+      "type": "dict",
+      "required": true,
+      "description": "Execution constraints (timeout_seconds, max_cost, max_attempts)"
+    },
+    {
+      "name": "idempotency_key",
+      "type": "str",
+      "required": true,
+      "description": "Caller-provided idempotency key for dispatch"
+    },
+    {
+      "name": "intent_fingerprint",
+      "type": "str",
+      "required": true,
+      "description": "Deterministic SHA-256 fingerprint of semantic intent"
+    },
+    {
+      "name": "correlation_id",
+      "type": "str",
+      "required": true,
+      "description": "Lineage correlation ID"
+    },
+    {
+      "name": "result_expectations",
+      "type": "dict",
+      "required": true,
+      "description": "Expected structured output schema and output artifact paths"
+    }
+  ],
+  "forbidden_hermes_fields": [
+    "hermes_profile_object",
+    "hermes_worker_object",
+    "hermes_session_object",
+    "hermes_task_object",
+    "hermes_toolset_object",
+    "hermes_home_path"
+  ],
+  "deterministic_fingerprinting": {
+    "intent_fingerprint_formula": "sha256(canonical_json({canonical_role, instruction, input_artifacts, project_id}))",
+    "package_fingerprint_formula": "sha256(canonical_json(to_dict()))"
+  },
+  "invariants": {
+    "EXECUTION_PACKAGE_CONTRACT_PLAN": "PASS",
+    "EXECUTION_PACKAGE_HERMES_PRIVATE_FIELD_COUNT": 0
+  }
+}
