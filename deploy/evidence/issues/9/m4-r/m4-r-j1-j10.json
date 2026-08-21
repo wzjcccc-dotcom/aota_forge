@@ -1,0 +1,9 @@
+{
+  "crash_window_count": 10,
+  "crash_window_pass_count": 10,
+  "j10_external_blind_reapply_count": 0,
+  "j10_recovery_requires_fresh_authorization": "yes",
+  "m4_final_crash_window_audit": "PASS",
+  "schema_version": 1,
+  "verification": "PASS"
+}

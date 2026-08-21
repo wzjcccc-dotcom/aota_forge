@@ -1,0 +1,10 @@
+{
+  "durable_applying_winner_count": 1,
+  "durable_cas_atomic_sequencing": "yes",
+  "external_transport_attempt_count": 1,
+  "in_memory_lock_is_sole_authority": "no",
+  "m4_final_at_most_one_attempt_audit": "PASS",
+  "schema_version": 1,
+  "second_executor_external_attempt_count": 0,
+  "verification": "PASS"
+}

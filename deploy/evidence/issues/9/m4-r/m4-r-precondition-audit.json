@@ -1,0 +1,10 @@
+{
+  "m4_final_precondition_audit": "PASS",
+  "multi_domain_precondition_separation_preserved": "yes",
+  "normalized_digest_used_as_github_cas": "no",
+  "schema_version": 1,
+  "stale_external_authority_write_attempt_count": 0,
+  "stale_subject_external_attempt_count": 0,
+  "subject_revision_used_as_github_cas": "no",
+  "verification": "PASS"
+}

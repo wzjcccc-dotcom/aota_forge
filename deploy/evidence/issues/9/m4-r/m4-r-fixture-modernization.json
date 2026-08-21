@@ -1,0 +1,36 @@
+{
+  "assertion_weakening_count": 0,
+  "fixture_only_count": 4,
+  "modernized_fixtures": [
+    {
+      "action": "MODERNIZE_FIXTURE",
+      "result": "PASS",
+      "test_id": "i5",
+      "test_name": "test_i5_valid_authorization_and_plan_init_are_compatible"
+    },
+    {
+      "action": "MODERNIZE_FIXTURE",
+      "result": "PASS",
+      "test_id": "i8",
+      "test_name": "test_i8_abandoned_retirement_preserves_cancelled_semantics"
+    },
+    {
+      "action": "MODERNIZE_FIXTURE",
+      "result": "PASS",
+      "test_id": "i9",
+      "test_name": "test_i9_exact_successor_retirement_is_valid"
+    },
+    {
+      "action": "MODERNIZE_FIXTURE",
+      "result": "PASS",
+      "test_id": "i12",
+      "test_name": "test_i12_changed_intent_conflicts_on_same_idempotency_identity"
+    }
+  ],
+  "schema_version": 1,
+  "source_semantic_change_count": 0,
+  "target_file": "tests/test_m4_2_m4_4_integration.py",
+  "title": "M4-R Fixture Modernization Report",
+  "unresolved_non_acceptance_debt": 0,
+  "verification": "PASS"
+}

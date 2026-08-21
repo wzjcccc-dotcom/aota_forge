@@ -1,0 +1,35 @@
+{
+  "accepted_writable_base": "1a50ce843bcda690909c6c4975dec08af12651af",
+  "forbidden_path_write_count": 0,
+  "governance_reported_counts": {
+    "exclusive": 2,
+    "forbidden": 4,
+    "integration_only": 7,
+    "shared_read_only": 14
+  },
+  "implementation_reported_counts": {
+    "exclusive": 4,
+    "forbidden": 6,
+    "integration_only": 3,
+    "shared_read_only": 19
+  },
+  "m4_r_authorized_fixture_writes": [
+    "tests/test_m4_2_m4_4_integration.py"
+  ],
+  "m4_r_authorized_guard_writes": [
+    "scripts/m4_2_source_guard.py",
+    "scripts/m4_5_source_guard.py",
+    "scripts/m4_6_source_guard.py",
+    "scripts/m4_7_source_guard.py"
+  ],
+  "m4_r_closure_guard": "scripts/m4_r_closure_guard.py",
+  "m4_r_evidence_directory": "deploy/evidence/issues/9/m4-r/",
+  "ownership_count_domain_reconciliation": "PASS_SAME_EXACT_PATH_AUTHORITY_DIFFERENT_COUNT_DOMAIN",
+  "product_source_mutation_count": 0,
+  "schema_version": 1,
+  "title": "M4-R Source Ownership and Scope Proof",
+  "unauthorized_source_write_count": 0,
+  "unauthorized_test_write_count": 0,
+  "unowned_source_write_count": 0,
+  "verification": "PASS"
+}

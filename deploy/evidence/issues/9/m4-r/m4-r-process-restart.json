@@ -1,0 +1,8 @@
+{
+  "applying_record_survives_process_restart": "yes",
+  "file_backed_store_reopen_durability": "PASS",
+  "in_memory_only_durability_proof": "no",
+  "process_restart_durability_final_audit": "PASS",
+  "schema_version": 1,
+  "verification": "PASS"
+}

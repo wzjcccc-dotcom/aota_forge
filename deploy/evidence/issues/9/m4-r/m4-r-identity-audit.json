@@ -1,0 +1,18 @@
+{
+  "complete_identity_dimensions": [
+    "operation",
+    "typed_target",
+    "subject_expected_revision",
+    "authority_source_revision",
+    "authority_observed_raw_digest",
+    "candidate_raw_digest",
+    "principal",
+    "capability_lease"
+  ],
+  "idempotency_key_alone_is_complete_identity": "no",
+  "intent_fingerprint_alone_is_complete_identity": "no",
+  "same_key_changed_authorization_replay_allowed": "no",
+  "same_key_changed_authorization_result": "CONFLICT",
+  "schema_version": 1,
+  "verification": "PASS"
+}

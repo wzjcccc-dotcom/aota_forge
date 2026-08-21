@@ -1,0 +1,10 @@
+{
+  "generic_cli_mutation_dispatch_allowed": "no",
+  "generic_git_write_api_allowed": "no",
+  "generic_github_api_allowed": "no",
+  "generic_terminal_allowed": "no",
+  "m4_final_allowed_mutation_operation_set": "plan_init,plan_retirement",
+  "schema_version": 1,
+  "unauthorized_operation_exposure_count": 0,
+  "verification": "PASS"
+}

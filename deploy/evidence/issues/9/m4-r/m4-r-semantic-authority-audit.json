@@ -1,0 +1,12 @@
+{
+  "cli_semantic_authority_delta": 0,
+  "github_adapter_semantic_authority_delta": 0,
+  "ingress_semantic_authority_delta": 0,
+  "lease_issuer_semantic_authority_count": 0,
+  "m4_final_semantic_authority_audit": "PASS",
+  "new_semantic_authority_count": 0,
+  "project_steward_is_semantic_decision_maker": false,
+  "recovery_executor_is_semantic_decision_maker": false,
+  "schema_version": 1,
+  "verification": "PASS"
+}

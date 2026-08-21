@@ -1,0 +1,11 @@
+{
+  "action": "MODERNIZE_FIXTURE",
+  "description": "Supplied valid issued retirement authorization lease while preserving cancelled semantics and evidence history",
+  "final_test_result": "PASS",
+  "product_source_change_count": 0,
+  "schema_version": 1,
+  "semantic_assertion_weakening_count": 0,
+  "test_id": "i8",
+  "test_name": "test_i8_abandoned_retirement_preserves_cancelled_semantics",
+  "verification": "PASS"
+}

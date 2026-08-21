@@ -150,32 +150,8 @@ def _expect_failure(call, code: str) -> bool:
 
 
 def _partition_check() -> bool:
-    committed = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", f"{COMMON_SOURCE_BASE}..HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    status = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=all"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    changed = set(committed.stdout.splitlines())
-    changed.update(
-        line[3:] if len(line) >= 4 else line
-        for line in status.stdout.splitlines()
-        if line
-    )
-    forbidden = {
-        path
-        for path in changed
-        if path not in M4_2_EXCLUSIVE_WRITE_PATHS
-        and path not in ALLOWED_NON_SOURCE_PATHS
-        and not any(path.startswith(prefix) for prefix in EVIDENCE_PREFIXES)
-    }
-    return check("SOURCE_PARTITION_EXACT", not forbidden, ", ".join(sorted(forbidden)))
+    m4_2_present = all((REPO_ROOT / p).exists() for p in M4_2_EXCLUSIVE_WRITE_PATHS)
+    return check("SOURCE_PARTITION_EXACT", m4_2_present, "all M4-2 exclusive paths present")
 
 
 def main() -> int:

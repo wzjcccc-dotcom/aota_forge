@@ -1,0 +1,11 @@
+{
+  "action": "MODERNIZE_FIXTURE",
+  "description": "Supplied valid issued authorization leases for both initial and conflicting intent requests while preserving CONFLICT code and revision=2 assertions",
+  "final_test_result": "PASS",
+  "product_source_change_count": 0,
+  "schema_version": 1,
+  "semantic_assertion_weakening_count": 0,
+  "test_id": "i12",
+  "test_name": "test_i12_changed_intent_conflicts_on_same_idempotency_identity",
+  "verification": "PASS"
+}

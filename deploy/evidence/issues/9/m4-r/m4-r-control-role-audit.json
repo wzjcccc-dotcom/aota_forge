@@ -1,0 +1,11 @@
+{
+  "control_role_0_missing": "CONTROL_ROLE_MISSING",
+  "control_role_1_unique": "PASS",
+  "control_role_gt1_conflict": "CONTROL_ROLE_DUPLICATE",
+  "control_role_update_in_place_implemented": "yes",
+  "duplicate_role_auto_selection_allowed": "no",
+  "latest_comment_heuristic_allowed": "no",
+  "m4_final_control_role_cardinality_audit": "PASS",
+  "schema_version": 1,
+  "verification": "PASS"
+}

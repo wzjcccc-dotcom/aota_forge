@@ -1,0 +1,10 @@
+{
+  "abandoned_preserves_cancelled_state": "yes",
+  "heuristic_successor_selection_allowed": "no",
+  "implicit_resurrection_allowed": "no",
+  "schema_version": 1,
+  "successor_final_regression": "PASS",
+  "successor_revision_drift_stale_snapshot": "yes",
+  "superseded_preserves_exact_successor": "yes",
+  "verification": "PASS"
+}

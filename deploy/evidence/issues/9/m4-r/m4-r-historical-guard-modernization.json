@@ -1,0 +1,49 @@
+{
+  "current_tree_pass_count": 4,
+  "final_historical_partition_guard_debt_count": 0,
+  "modernized_guard_count": 4,
+  "modernized_guards": [
+    {
+      "check_count": 37,
+      "integrated_tree_condition": "All M4-2 exclusive write paths present and valid on integrated tree",
+      "old_assumption": "Single-lane M4-2 isolated diff against M4-1 base rejected presence of integrated M4 sibling files",
+      "pass_count": 37,
+      "path": "scripts/m4_2_source_guard.py",
+      "preserved_semantic_checks": "All 37 behavioral and decision evidence invariant checks preserved",
+      "result": "PASS"
+    },
+    {
+      "check_count": 60,
+      "integrated_tree_condition": "All M4-5 port and journal contracts present and valid on integrated tree",
+      "old_assumption": "Single-lane M4-5 isolated diff and pre-implementation prohibition on durable store keywords in journal dir",
+      "pass_count": 60,
+      "path": "scripts/m4_5_source_guard.py",
+      "preserved_semantic_checks": "All 60 3-way classifier, state machine, and retry handoff invariant checks preserved",
+      "result": "PASS"
+    },
+    {
+      "check_count": 93,
+      "integrated_tree_condition": "All M4-6 GitHub adapter and control comment files present and valid on integrated tree",
+      "old_assumption": "Single-lane M4-6 diff rejected presence of M4-7 durable recovery and M4-8 CLI files",
+      "pass_count": 93,
+      "path": "scripts/m4_6_source_guard.py",
+      "preserved_semantic_checks": "All 93 GitHub adapter, role cardinality 0/1/>1, and verify-after-write invariant checks preserved",
+      "result": "PASS"
+    },
+    {
+      "check_count": 78,
+      "integrated_tree_condition": "All M4-7 durable journal and recovery files present and valid on integrated tree",
+      "old_assumption": "Single-lane M4-7 diff rejected presence of M4-6 GitHub adapter and M4-8 CLI files",
+      "pass_count": 78,
+      "path": "scripts/m4_7_source_guard.py",
+      "preserved_semantic_checks": "All 78 durable CAS, J1-J10 recovery, and process-restart durability checks preserved",
+      "result": "PASS"
+    }
+  ],
+  "negative_unexpected_accept_count": 0,
+  "schema_version": 1,
+  "semantic_check_removal_count": 0,
+  "semantic_check_weakening_count": 0,
+  "title": "M4-R Historical Guard Modernization Report",
+  "verification": "PASS"
+}

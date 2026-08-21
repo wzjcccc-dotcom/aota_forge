@@ -1,0 +1,11 @@
+{
+  "action": "MODERNIZE_FIXTURE",
+  "description": "Supplied valid issued authorization lease matching strict multi-domain evaluator preconditions",
+  "final_test_result": "PASS",
+  "product_source_change_count": 0,
+  "schema_version": 1,
+  "semantic_assertion_weakening_count": 0,
+  "test_id": "i5",
+  "test_name": "test_i5_valid_authorization_and_plan_init_are_compatible",
+  "verification": "PASS"
+}

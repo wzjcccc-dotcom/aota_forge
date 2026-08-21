@@ -1,0 +1,11 @@
+{
+  "m4_final_verify_after_write_audit": "PASS",
+  "readback_candidate_observed_verified": "yes",
+  "readback_original_observed_retryable": "yes",
+  "readback_third_state_conflict": "yes",
+  "readback_transport_error_unknown_outcome": "yes",
+  "schema_version": 1,
+  "transport_success_alone_means_verified": "no",
+  "verification": "PASS",
+  "verify_after_write_mandatory": "yes"
+}

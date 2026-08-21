@@ -232,7 +232,11 @@ def _issue_authorization(
     )
 
 
-def _plan_init_request(fixture: LifecycleFixture, *, intent, lease, evidence=None, binding=None, revision=1):
+def _plan_init_request(fixture: LifecycleFixture, *, intent, lease, evidence=None, binding=None, revision=1, external_authority_precondition=None, normalized_plan_digest=None):
+    if external_authority_precondition is None and lease is not None:
+        external_authority_precondition = getattr(lease, "external_authority_precondition", None)
+    if normalized_plan_digest is None and lease is not None:
+        normalized_plan_digest = getattr(lease, "normalized_plan_digest", None)
     return PlanInitRequest(
         trusted_context=fixture.context,
         plan_ref=fixture.plan_ref,
@@ -242,10 +246,16 @@ def _plan_init_request(fixture: LifecycleFixture, *, intent, lease, evidence=Non
         project_evidence=fixture.project_evidence if evidence is None else evidence,
         project_binding=fixture.project_binding if binding is None else binding,
         lease=lease,
+        external_authority_precondition=external_authority_precondition,
+        normalized_plan_digest=normalized_plan_digest,
     )
 
 
-def _retirement_request(fixture: LifecycleFixture, snapshot, *, intent, lease, successor=None, revision=1):
+def _retirement_request(fixture: LifecycleFixture, snapshot, *, intent, lease, successor=None, revision=1, external_authority_precondition=None, normalized_plan_digest=None):
+    if external_authority_precondition is None and lease is not None:
+        external_authority_precondition = getattr(lease, "external_authority_precondition", None)
+    if normalized_plan_digest is None and lease is not None:
+        normalized_plan_digest = getattr(lease, "normalized_plan_digest", None)
     return PlanRetirementRequest(
         trusted_context=fixture.context,
         plan_ref=fixture.plan_ref,
@@ -256,6 +266,8 @@ def _retirement_request(fixture: LifecycleFixture, snapshot, *, intent, lease, s
         retirement_kind="superseded" if successor is not None else "abandoned",
         successor_ref=successor,
         lease=lease,
+        external_authority_precondition=external_authority_precondition,
+        normalized_plan_digest=normalized_plan_digest,
     )
 
 
@@ -356,7 +368,7 @@ class M42M44IntegrationTests(unittest.TestCase):
                 _plan_init_request(
                     fixture,
                     intent=auth.intent,
-                    lease=_make_lease(fixture.context, "plan_init", fixture.plan_ref, lease_id="i5-lifecycle-lease"),
+                    lease=auth.lease,
                 ),
             )
             self.assertEqual(lifecycle_result.code, "PLAN_INIT_APPLIED")
@@ -405,13 +417,18 @@ class M42M44IntegrationTests(unittest.TestCase):
             fixture.store._put_staged(patched)
             snapshot = capture_retirement_snapshot(fixture.store, fixture.plan_ref)
             intent = _make_intent("plan_retirement", fixture.plan_ref, "i8-retire", retirement_kind="abandoned")
+            auth = _issue_authorization(
+                fixture,
+                descriptor=PLAN_RETIREMENT_DESCRIPTOR,
+                intent=intent,
+            )
             result = retire_plan(
                 fixture.store,
                 _retirement_request(
                     fixture,
                     snapshot,
                     intent=intent,
-                    lease=_make_lease(fixture.context, "plan_retirement", fixture.plan_ref, lease_id="i8-lease"),
+                    lease=auth.lease,
                 ),
             )
             state = fixture.store.read_subject(fixture.plan_ref).mechanical_state
@@ -430,6 +447,11 @@ class M42M44IntegrationTests(unittest.TestCase):
                 retirement_kind="superseded",
                 successor_ref=successor.serialize(),
             )
+            auth = _issue_authorization(
+                fixture,
+                descriptor=PLAN_RETIREMENT_DESCRIPTOR,
+                intent=intent,
+            )
             result = retire_plan(
                 fixture.store,
                 _retirement_request(
@@ -437,7 +459,7 @@ class M42M44IntegrationTests(unittest.TestCase):
                     snapshot,
                     intent=intent,
                     successor=successor,
-                    lease=_make_lease(fixture.context, "plan_retirement", fixture.plan_ref, lease_id="i9-lease"),
+                    lease=auth.lease,
                 ),
             )
             self.assertEqual(result.code, "RETIREMENT_APPLIED")
@@ -483,21 +505,23 @@ class M42M44IntegrationTests(unittest.TestCase):
     def test_i12_changed_intent_conflicts_on_same_idempotency_identity(self):
         with _lifecycle_fixture("i12") as fixture:
             first_intent = _make_intent("plan_init", fixture.plan_ref, "i12-key", project_id="p1")
+            first_auth = _issue_authorization(fixture, intent=first_intent)
             first = plan_init(
                 fixture.store,
                 _plan_init_request(
                     fixture,
                     intent=first_intent,
-                    lease=_make_lease(fixture.context, "plan_init", fixture.plan_ref, lease_id="i12-first"),
+                    lease=first_auth.lease,
                 ),
             )
             changed_intent = _make_intent("plan_init", fixture.plan_ref, "i12-key", project_id="other")
+            second_auth = _issue_authorization(fixture, intent=changed_intent)
             second = plan_init(
                 fixture.store,
                 _plan_init_request(
                     fixture,
                     intent=changed_intent,
-                    lease=_make_lease(fixture.context, "plan_init", fixture.plan_ref, revision=2, lease_id="i12-second"),
+                    lease=second_auth.lease,
                     revision=2,
                 ),
             )

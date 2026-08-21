@@ -1,0 +1,8 @@
+{
+  "cross_authority_atomic_transaction_available": "no",
+  "false_cross_authority_atomicity_claim_count": 0,
+  "journal_cas_implies_external_write_atomicity": "no",
+  "m4_final_cross_authority_audit": "PASS",
+  "schema_version": 1,
+  "verification": "PASS"
+}

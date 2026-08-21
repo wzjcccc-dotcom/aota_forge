@@ -1,0 +1,10 @@
+{
+  "fresh_authorization_required_for_retry": "yes",
+  "m4_final_retry_audit": "PASS",
+  "old_authorization_history_mutation_count": 0,
+  "retryable_no_effect_auto_authorization_allowed": "no",
+  "schema_version": 1,
+  "unknown_outcome_blind_old_lease_reuse": "no",
+  "unknown_outcome_blind_retry_allowed": "no",
+  "verification": "PASS"
+}

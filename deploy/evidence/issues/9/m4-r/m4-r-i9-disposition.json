@@ -1,0 +1,11 @@
+{
+  "action": "MODERNIZE_FIXTURE",
+  "description": "Supplied valid issued retirement authorization lease while preserving exact successor superseded state assertion",
+  "final_test_result": "PASS",
+  "product_source_change_count": 0,
+  "schema_version": 1,
+  "semantic_assertion_weakening_count": 0,
+  "test_id": "i9",
+  "test_name": "test_i9_exact_successor_retirement_is_valid",
+  "verification": "PASS"
+}

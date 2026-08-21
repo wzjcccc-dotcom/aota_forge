@@ -1,0 +1,8 @@
+{
+  "durable_store_is_neutral_port": "yes",
+  "file_backed_reference_adapter_production_default": "no",
+  "m4_final_storage_boundary_audit": "PASS",
+  "production_storage_engine_frozen": "no",
+  "schema_version": 1,
+  "verification": "PASS"
+}

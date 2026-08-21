@@ -1,0 +1,11 @@
+{
+  "cli_real_path_final_parity": "PASS",
+  "direct_core_real_path_final_parity": "PASS",
+  "parity_semantic_drift_count": 0,
+  "plan_init_parity": "PASS",
+  "plan_retirement_parity": "PASS",
+  "schema_version": 1,
+  "test_harness_semantic_reimplementation_count": 0,
+  "unified_ingress_real_path_final_parity": "PASS",
+  "verification": "PASS"
+}

@@ -1,0 +1,31 @@
+{
+  "accepted_writable_base": "1a50ce843bcda690909c6c4975dec08af12651af",
+  "authorized_closure_guard_path": "scripts/m4_r_closure_guard.py",
+  "authorized_evidence_directory": "deploy/evidence/issues/9/m4-r/",
+  "authorized_fixture_write_paths": [
+    "tests/test_m4_2_m4_4_integration.py"
+  ],
+  "authorized_guard_write_paths": [
+    "scripts/m4_2_source_guard.py",
+    "scripts/m4_5_source_guard.py",
+    "scripts/m4_6_source_guard.py",
+    "scripts/m4_7_source_guard.py"
+  ],
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue_9_current_authority_read": "PASS",
+  "m4_r_execution_authorized": "yes",
+  "m4_r_fixture_modernization_authorized": "yes",
+  "m4_r_guard_modernization_authorized": "yes",
+  "m4_r_independent_review_required": "yes",
+  "m4_r_ready": "yes",
+  "m4_r_source_mutation_authorized": "no",
+  "milestone": "M4",
+  "production_source_mutation_count": 0,
+  "read_before_write": "PASS",
+  "schema_version": 1,
+  "title": "M4-R Authority and Scope Proof",
+  "unauthorized_source_writes": 0,
+  "unauthorized_test_writes": 0,
+  "verification": "PASS",
+  "work_item": "M4-R-EXECUTION"
+}
