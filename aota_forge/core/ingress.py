@@ -58,6 +58,7 @@ from aota_forge.core.execution.dispatcher import (
     PackageInvalidError,
     TaskNotFoundError,
 )
+from aota_forge.core.execution.adapter import CancelResult
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import (
     AmbiguousExecutorError,
@@ -66,6 +67,7 @@ from aota_forge.core.execution.registry import (
     ExecutorRegistryError,
 )
 from aota_forge.core.execution.roles import validate_canonical_role
+from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.identity.refs import ObjectRef
 from aota_forge.core.transaction import TransactionStore
 from aota_forge.core.transitions import PlanInitRequest, PlanRetirementRequest
@@ -874,7 +876,58 @@ def execute_execution(
                     audit=audit,
                 )
 
-            cancel_res = dispatcher.cancel(task_id)
+            replay_result = getattr(route, "_successful_cancel_result", None)
+            if isinstance(replay_result, CancelResult):
+                audit["handler"] = "cancel_replay"
+                return success(
+                    operation=operation,
+                    data=replay_result.to_dict(),
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            if route.last_known_state.is_terminal:
+                audit["handler"] = "terminal_state"
+                return failure(
+                    operation,
+                    "TASK_ALREADY_TERMINAL",
+                    f"Task {task_id!r} is already in terminal state {route.last_known_state.value}",
+                    False,
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            try:
+                cancel_res = dispatcher.cancel(task_id)
+            except ValueError as exc:
+                message = str(exc)
+                known_code = next(
+                    (
+                        code
+                        for code in (
+                            "CANCEL_UNSUPPORTED",
+                            "TASK_ALREADY_TERMINAL",
+                            "TASK_STATE_UNKNOWN",
+                            "TASK_NOT_FOUND",
+                        )
+                        if message.startswith(f"{code}:")
+                    ),
+                    "INTERNAL_MECHANICAL_ERROR",
+                )
+                audit["handler"] = known_code.lower()
+                return failure(
+                    operation,
+                    known_code,
+                    message,
+                    False,
+                    correlation_id=cid,
+                    audit=audit,
+                )
+
+            if cancel_res.cancelled and cancel_res.state == CanonicalTaskState.CANCELLED:
+                # Keep replay evidence on the existing per-task route, not in a
+                # process-global semantic cache.
+                setattr(route, "_successful_cancel_result", cancel_res)
             audit["handler"] = "success"
             return success(
                 operation=operation,

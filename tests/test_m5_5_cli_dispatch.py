@@ -612,6 +612,89 @@ class TestM55RouteAssertionAndIdentity(unittest.TestCase):
         self.assertFalse(cli_payload["ok"])
         self.assertEqual(cli_payload["error"]["code"], "ROUTE_EXECUTOR_MISMATCH")
 
+    def test_identical_cancel_replay_is_idempotent_without_duplicate_adapter_call(self):
+        package = ExecutionPackage.create(
+            canonical_task_id="task-cancel-replay-1",
+            project_id="test-proj",
+            canonical_role="executor",
+            instruction="Run cancellable execution",
+        )
+        self.dispatcher.dispatch(package, target_executor_id=REFERENCE_EXECUTOR_ID)
+        self.ref_adapter.simulate_running(package.canonical_task_id)
+
+        params = {
+            "task_id": package.canonical_task_id,
+            "executor": REFERENCE_EXECUTOR_ID,
+        }
+        first = execute("execution.task_cancel", params)
+        replay = execute("execution.task_cancel", params)
+
+        self.assertTrue(first["ok"])
+        self.assertTrue(replay["ok"])
+        self.assertEqual(replay["data"], first["data"])
+        self.assertEqual(self.ref_adapter.cancel_count, 1)
+
+    def test_cancel_completed_before_cancel_fails_closed(self):
+        package = ExecutionPackage.create(
+            canonical_task_id="task-cancel-completed-1",
+            project_id="test-proj",
+            canonical_role="executor",
+            instruction="Complete before cancellation",
+        )
+        self.dispatcher.dispatch(package, target_executor_id=REFERENCE_EXECUTOR_ID)
+        self.ref_adapter.simulate_completion(package.canonical_task_id)
+        self.dispatcher.status(package.canonical_task_id)
+
+        result = execute(
+            "execution.task_cancel",
+            {"task_id": package.canonical_task_id, "executor": REFERENCE_EXECUTOR_ID},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "TASK_ALREADY_TERMINAL")
+        self.assertEqual(self.ref_adapter.cancel_count, 0)
+
+    def test_cancel_failed_before_cancel_fails_closed(self):
+        package = ExecutionPackage.create(
+            canonical_task_id="task-cancel-failed-1",
+            project_id="test-proj",
+            canonical_role="executor",
+            instruction="Fail before cancellation",
+        )
+        self.dispatcher.dispatch(package, target_executor_id=REFERENCE_EXECUTOR_ID)
+        self.ref_adapter.simulate_failure(package.canonical_task_id)
+        self.dispatcher.status(package.canonical_task_id)
+
+        result = execute(
+            "execution.task_cancel",
+            {"task_id": package.canonical_task_id, "executor": REFERENCE_EXECUTOR_ID},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "TASK_ALREADY_TERMINAL")
+        self.assertEqual(self.ref_adapter.cancel_count, 0)
+
+    def test_preexisting_cancelled_task_is_not_treated_as_cancel_replay(self):
+        package = ExecutionPackage.create(
+            canonical_task_id="task-cancel-preexisting-1",
+            project_id="test-proj",
+            canonical_role="executor",
+            instruction="Cancel before ingress cancellation",
+        )
+        self.dispatcher.dispatch(package, target_executor_id=REFERENCE_EXECUTOR_ID)
+        self.ref_adapter.simulate_running(package.canonical_task_id)
+        self.ref_adapter.simulate_transition(package.canonical_task_id, CanonicalTaskState.CANCELLED)
+        self.dispatcher.status(package.canonical_task_id)
+
+        result = execute(
+            "execution.task_cancel",
+            {"task_id": package.canonical_task_id, "executor": REFERENCE_EXECUTOR_ID},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "TASK_ALREADY_TERMINAL")
+        self.assertEqual(self.ref_adapter.cancel_count, 0)
+
     def test_executor_not_found_fails_closed(self):
         exit_code, cli_payload = run_cli([
             "task", "start",
