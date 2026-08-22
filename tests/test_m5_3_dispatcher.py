@@ -99,6 +99,8 @@ def make_adapter(
     supports_artifact_transport: bool = True,
     max_timeout_seconds: int | None = 3600,
     concurrency_limit: int | None = 8,
+    default_initial_state: CanonicalTaskState | str = CanonicalTaskState.ACCEPTED,
+    auto_complete: bool = False,
 ) -> ReferenceFakeExecutorAdapter:
     """Create a configured ReferenceFakeExecutorAdapter double with a custom executor_id."""
     caps = ExecutorCapabilities(
@@ -120,7 +122,12 @@ def make_adapter(
         executor_id=executor_id,
         mapping_dict={role: f"{executor_id}_{role}" for role in supported_roles},
     )
-    return ReferenceFakeExecutorAdapter(capabilities=caps, role_mapping=role_mapping)
+    return ReferenceFakeExecutorAdapter(
+        capabilities=caps,
+        role_mapping=role_mapping,
+        default_initial_state=default_initial_state,
+        auto_complete=auto_complete,
+    )
 
 
 def make_package(
@@ -579,6 +586,84 @@ class TestExecutionDispatcherLifecycleOperations:
 
         with pytest.raises(TaskNotFoundError):
             dispatcher.resume("task-nonexistent", make_package("task-nonexistent"))
+
+    def test_route_binding_survives_executor_replacement(self) -> None:
+        registry = ExecutorRegistry()
+        adapter_a = make_adapter(
+            "executor-route",
+            default_initial_state=CanonicalTaskState.WAITING,
+        )
+        adapter_b = make_adapter(
+            "executor-route",
+            default_initial_state=CanonicalTaskState.QUEUED,
+        )
+        registry.register(make_adapter("executor-z"))
+        registry.register(adapter_a)
+        registry.register(make_adapter("executor-a"))
+
+        with pytest.raises(DuplicateExecutorError):
+            registry.register(adapter_b)
+
+        dispatcher = ExecutionDispatcher(registry)
+        task_id = "task-route-original"
+        dispatcher.dispatch(
+            make_package(task_id, execution_mode="async"),
+            target_executor_id="executor-route",
+        )
+
+        registry.unregister("executor-route")
+        registry.register(adapter_b)
+        assert registry.list_executor_ids() == [
+            "executor-a",
+            "executor-route",
+            "executor-z",
+        ]
+
+        route = dispatcher.get_route(task_id)
+        assert route._adapter is adapter_a
+        route_dict = route.to_dict()
+        assert "_adapter" not in route_dict
+        assert json.loads(route.to_json()) == route_dict
+        serialized_route = json.dumps(route_dict)
+        public_route_repr = repr(route)
+        for forbidden in (
+            "ReferenceFakeExecutorAdapter",
+            "object at",
+            "bound method",
+        ):
+            assert forbidden not in serialized_route
+            assert forbidden not in public_route_repr
+
+        assert dispatcher.status(task_id).state == CanonicalTaskState.WAITING
+        assert dispatcher.resume(
+            task_id,
+            make_package(
+                task_id,
+                instruction="resume original route",
+                execution_mode="async",
+                idempotency_key="resume-original-route",
+            ),
+        ).state == CanonicalTaskState.RUNNING
+        assert dispatcher.cancel(task_id).state == CanonicalTaskState.CANCELLED
+        assert dispatcher.result(task_id).canonical_task_state == CanonicalTaskState.CANCELLED.value
+
+        assert adapter_a.status_count == 1
+        assert adapter_a.resume_count == 1
+        assert adapter_a.cancel_count == 1
+        assert adapter_a.result_count == 1
+        assert adapter_b.status_count == 0
+        assert adapter_b.resume_count == 0
+        assert adapter_b.cancel_count == 0
+        assert adapter_b.result_count == 0
+        assert adapter_b.dispatch_count == 0
+
+        new_task_id = "task-route-replacement"
+        dispatcher.dispatch(
+            make_package(new_task_id, execution_mode="async"),
+            target_executor_id="executor-route",
+        )
+        assert adapter_b.dispatch_count == 1
+        assert dispatcher.get_route(new_task_id)._adapter is adapter_b
 
 
 class TestCrossAdapterIsolationAndZeroBroadcast:

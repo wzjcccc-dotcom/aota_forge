@@ -20,6 +20,7 @@ from aota_forge.core.contracts.canonical import canonical_json, canonicalize
 from aota_forge.core.execution.adapter import (
     CancelResult,
     DispatchResult,
+    ExecutorAdapter,
     ResumeResult,
     TaskStatusResult,
 )
@@ -61,6 +62,8 @@ class RouteRecord:
     initial_state: CanonicalTaskState
     dispatched_at: str
     last_known_state: CanonicalTaskState
+    # Process-local binding only; public route serializers intentionally omit it.
+    _adapter: ExecutorAdapter = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.canonical_task_id, str) or not self.canonical_task_id.strip():
@@ -79,6 +82,10 @@ class RouteRecord:
             raise ValueError("idempotency_key must be a non-empty string")
         if not isinstance(self.intent_fingerprint, str) or not self.intent_fingerprint.strip():
             raise ValueError("intent_fingerprint must be a non-empty string")
+        if not isinstance(self._adapter, ExecutorAdapter):
+            raise TypeError(
+                f"_adapter must implement ExecutorAdapter, got {type(self._adapter).__name__}"
+            )
         self.initial_state = parse_state(self.initial_state)
         self.last_known_state = parse_state(self.last_known_state)
 
@@ -256,6 +263,7 @@ class ExecutionDispatcher:
             initial_state=dispatch_result.initial_state,
             dispatched_at=dispatch_result.dispatch_time,
             last_known_state=dispatch_result.initial_state,
+            _adapter=adapter,
         )
 
         self._routes[package.canonical_task_id] = route
@@ -293,7 +301,7 @@ class ExecutionDispatcher:
     def status(self, canonical_task_id: str) -> TaskStatusResult:
         """Query current execution state of a dispatched task using exact stored route."""
         route = self.get_route(canonical_task_id)
-        adapter = self.registry.get(route.executor_id)
+        adapter = route._adapter
         status_res = adapter.status(canonical_task_id, route.adapter_handle)
         # Update last known state
         route.last_known_state = status_res.state
@@ -302,7 +310,7 @@ class ExecutionDispatcher:
     def result(self, canonical_task_id: str) -> CanonicalResult:
         """Fetch terminal CanonicalResult for a dispatched task using exact stored route."""
         route = self.get_route(canonical_task_id)
-        adapter = self.registry.get(route.executor_id)
+        adapter = route._adapter
         canonical_res = adapter.result(canonical_task_id, route.adapter_handle)
         state_enum = parse_state(canonical_res.canonical_task_state)
         route.last_known_state = state_enum
@@ -311,7 +319,7 @@ class ExecutionDispatcher:
     def cancel(self, canonical_task_id: str) -> CancelResult:
         """Request cancellation of an active task using exact stored route."""
         route = self.get_route(canonical_task_id)
-        adapter = self.registry.get(route.executor_id)
+        adapter = route._adapter
         cancel_res = adapter.cancel(canonical_task_id, route.adapter_handle)
         route.last_known_state = cancel_res.state
         return cancel_res
@@ -327,7 +335,7 @@ class ExecutionDispatcher:
                 f"resume_package must be an ExecutionPackage, got {type(resume_package).__name__}"
             )
         route = self.get_route(canonical_task_id)
-        adapter = self.registry.get(route.executor_id)
+        adapter = route._adapter
         resume_res = adapter.resume(canonical_task_id, route.adapter_handle, resume_package)
         route.last_known_state = resume_res.state
         return resume_res
@@ -341,7 +349,7 @@ class ExecutionDispatcher:
         - Returns reconciled CanonicalTaskState.
         """
         route = self.get_route(canonical_task_id)
-        adapter = self.registry.get(route.executor_id)
+        adapter = route._adapter
         try:
             status_res = adapter.status(canonical_task_id, route.adapter_handle)
             state = status_res.state
