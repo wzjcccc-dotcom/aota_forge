@@ -366,7 +366,24 @@ def hermes_output_to_canonical_result(
             correlation_id=cid,
         )
 
-    # Handle failure (status = error/failed or other non-terminal states treated as failure)
+    # Preserve active host states as non-terminal canonical results.
+    if not state.is_terminal:
+        return CanonicalResult.failure(
+            canonical_task_id=canonical_task_id,
+            executor_id=HERMES_EXECUTOR_ID,
+            error_code="TASK_STILL_RUNNING",
+            error_message=f"Hermes task remains in non-terminal state {state.value}",
+            retryable=True,
+            exit_code=None,
+            stdout_summary=stdout_summary,
+            stderr_summary=stderr_summary,
+            execution_stats=stats,
+            correlation_id=cid,
+            status="unknown",
+            canonical_task_state=state.value,
+        )
+
+    # Handle failure (status = error/failed)
     err_raw = output.get("error")
     if isinstance(err_raw, Mapping):
         err_code = str(err_raw.get("code", "EXECUTION_FAILED"))
@@ -711,6 +728,17 @@ class HermesAdapter(ExecutorAdapter):
             raise ValueError("canonical_task_id must be a non-empty string")
         if not isinstance(adapter_handle, str) or not adapter_handle.strip():
             raise ValueError("adapter_handle must be a non-empty string")
+
+        if not isinstance(resume_package, ExecutionPackage):
+            raise TypeError(
+                f"resume_package must be ExecutionPackage, got {type(resume_package).__name__}"
+            )
+        if resume_package.canonical_task_id != canonical_task_id:
+            raise HermesAdapterError(
+                f"TASK_ID_MISMATCH: Resume package canonical_task_id "
+                f"{resume_package.canonical_task_id!r} != {canonical_task_id!r}",
+                code="TASK_ID_MISMATCH",
+            )
 
         if not self._capabilities.supports_task_resume:
             raise HermesAdapterError("RESUME_UNSUPPORTED: Hermes adapter does not support task resume", code="RESUME_UNSUPPORTED")
