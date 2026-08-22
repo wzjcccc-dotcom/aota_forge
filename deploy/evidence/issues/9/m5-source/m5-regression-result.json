@@ -1,11 +1,45 @@
 {
-  "schema_version": 2,
-  "title": "M5-R-R1D Focused, M5, M4, and Full Regression Results",
+  "schema_version": 3,
+  "title": "M5-R-R2E Focused, R2, M5, M4, and Full Regression Results",
   "project_id": "aota_forge",
   "repository": "wzjcccc-dotcom/aota_forge",
   "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
   "milestone": "M5",
-  "work_item": "M5-R-R1D",
+  "work_item": "M5-R-R2E",
+  "r2_repair_focused": {
+    "r2a": {
+      "invocation": "python -m pytest -q tests/test_m5_r_r2a_hermes_repair.py",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "status": "PASS"
+    },
+    "r2b": {
+      "invocation": "python -m pytest -q tests/test_m5_r_r2b_reference_replay.py",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "status": "PASS"
+    },
+    "r2c": {
+      "invocation": "python -m pytest -q tests/test_m5_r_r2c_ingress_error_preservation.py",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "status": "PASS"
+    },
+    "r2d": {
+      "invocation": "python -m pytest -q tests/test_m5_r_r2d_capability_validation.py",
+      "total": 23,
+      "passed": 23,
+      "failed": 0,
+      "status": "PASS"
+    },
+    "combined_total": 47,
+    "combined_passed": 47,
+    "combined_failed": 0,
+    "status": "PASS"
+  },
   "focused_repaired_surface": {
     "dispatcher": {
       "invocation": "python -m pytest -q tests/test_m5_3_dispatcher.py",
@@ -31,12 +65,12 @@
   },
   "convergence_suite": {
     "invocation": "python -m pytest -q tests/test_m5_6_convergence.py",
-    "pre_r1d_total": 53,
-    "pre_r1d_passed": 53,
-    "post_r1d_total": 58,
-    "post_r1d_passed": 58,
-    "post_r1d_failed": 0,
-    "r1d_new_convergence_test_count": 5,
+    "pre_r2e_total": 58,
+    "pre_r2e_passed": 58,
+    "post_r2e_total": 83,
+    "post_r2e_passed": 83,
+    "post_r2e_failed": 0,
+    "r2e_new_convergence_test_count": 25,
     "status": "PASS"
   },
   "m4_regression_suite": {
@@ -48,73 +82,78 @@
   },
   "m5_suite": {
     "invocation": "python -m pytest -q tests/test_m5_*.py",
-    "baseline": 293,
-    "total": 298,
-    "passed": 298,
+    "baseline": 345,
+    "total": 370,
+    "passed": 370,
     "failed": 0,
-    "collection_arithmetic": "293 + 5 R1D convergence tests = 298",
+    "collection_arithmetic": "345 + 25 R2E convergence tests = 370",
     "status": "PASS"
   },
   "full_suite": {
     "invocation": "python -m pytest -q",
-    "baseline": 422,
-    "total": 427,
-    "passed": 427,
+    "baseline": 474,
+    "total": 499,
+    "passed": 499,
     "failed": 0,
-    "collection_arithmetic": "422 + 5 R1D convergence tests = 427",
+    "collection_arithmetic": "474 + 25 R2E convergence tests = 499",
     "status": "PASS"
   },
   "acceptance_matrices": {
     "positive": "24/24 PASS",
     "negative": "24/24 PASS",
     "failure_injection_existing": "5/5 PASS",
-    "r1d_convergence_probes": "5/5 PASS"
+    "r2e_convergence_probes": "25/25 PASS"
   },
   "source_guard": {
     "invocation": "python scripts/m5_source_guard.py",
-    "total": 28,
-    "passed": 28,
+    "total": 34,
+    "passed": 34,
     "failed": 0,
     "status": "PASS"
   },
   "findings": [],
   "blocking_finding_count": 0,
   "provenance": {
-    "pre_repair_source_base": "c32d2c4eac5cb99aec529787473fd88fc9646521",
-    "final_repaired_source_base": "f89874b0f419184de88c39f5ccc25ae473c707f1",
-    "R1A_SOURCE": "d1a25c141c2da4b134f2fb20690526a4909dda92",
-    "R1B_SOURCE": "435437d67fa2ad355b55b373597e7358ddfa8d1c",
-    "R1C_SOURCE": "5ff86933a7c2676c8e3a573b23c1a24a99b0a896",
-    "BLOCKED_INTEGRATION_CANDIDATE": "31a63c7e1dbdbf99217fe98b770842152a16ac55",
-    "BLOCKED_INTEGRATION_REASON": "M5-R-F04 direct dispatcher cancellation non-idempotency",
-    "SUPERSEDED_BY": "f89874b0f419184de88c39f5ccc25ae473c707f1",
-    "R1C2_SOURCE": "f89874b0f419184de88c39f5ccc25ae473c707f1",
-    "R1C2_PARENT": "31a63c7e1dbdbf99217fe98b770842152a16ac55",
-    "R1C2_SERIAL_PROVENANCE": "PASS"
+    "pre_r2_repair_base": "23c3c69e6e00bf4b32eba4f5f688e5a677418933",
+    "post_r2_repaired_source_base": "eefe1260892eb309d8f0ad459ec607e6eff0d8cb",
+    "R2A_SOURCE": "d74f7fbcf7ed9477df1b7d722a6957e94aa36b9c",
+    "R2B_SOURCE": "7da6877953967d30ab98f667f65c256ce55cc2f6",
+    "R2C_SOURCE": "22112f6c33c8b13fdbfd04e1437066091f952315",
+    "R2D_SOURCE": "225fadd3f5763f85a6c1d076cccb3abc799339e5",
+    "R2_INTEGRATION": "eefe1260892eb309d8f0ad459ec607e6eff0d8cb",
+    "R2_INTEGRATION_PARENT": "23c3c69e6e00bf4b32eba4f5f688e5a677418933",
+    "R2_AUTHORIZED_REPAIR_DELTA_PATH_COUNT": 9,
+    "R2_AUTHORIZED_PRODUCTION_PATH_COUNT": 5,
+    "R2_AUTHORIZED_REPAIR_TEST_PATH_COUNT": 4,
+    "R2_UNAUTHORIZED_REPAIR_DELTA_PATH_COUNT": 0,
+    "R2A_PATCH_PROVENANCE": "PASS",
+    "R2B_PATCH_PROVENANCE": "PASS",
+    "R2C_PATCH_PROVENANCE": "PASS",
+    "R2D_PATCH_PROVENANCE": "PASS",
+    "R2_INTEGRATION_PROVENANCE": "PASS",
+    "UNATTRIBUTED_R2_DELTA_COUNT": 0
   },
   "invariants": {
     "production_source_mutation_count": 0,
     "previous_repair_test_mutation_count": 0,
     "m4_test_mutation_count": 0,
     "unresolved_semantic_todo_count": 0,
-    "source_repair_performed_in_r1d": "no",
+    "r2_blocked_review_artifacts_mutated": "no",
     "live_hermes_dispatch_performed": "no",
     "hermes_process_spawn_count": 0,
     "production_executor_dispatch_count": 0,
     "deployment_performed": "no",
     "runtime_activation_performed": "no",
-    "original_m5_r_review_verdict": "BLOCKED",
-    "original_m5_r_review_evidence_mutated": "no",
-    "M5_R_F05_DISPOSITION": "non_blocking_carry_forward",
-    "m5_r_f05_mutated": "no"
+    "original_m5_r_r2_review_verdict": "BLOCKED",
+    "original_m5_r_r2_review_evidence_mutated": "no"
   },
   "candidate_state": {
-    "R1D_SOURCE_ACCEPTANCE_CANDIDATE": "yes",
-    "R1D_GOVERNANCE_ACCEPTED": "no",
+    "R2E_SOURCE_ACCEPTANCE_CANDIDATE": "yes",
+    "R2E_GOVERNANCE_ACCEPTED": "no",
     "M5_KNOWN_GOOD_CHECKPOINT_ESTABLISHED": "no",
     "M5_COMPLETED": "no",
     "PUSH_PERFORMED": "no",
     "ISSUE_9_GOVERNANCE_MUTATED": "no",
-    "M5_R_RERUN_PERFORMED": "no"
+    "M5_R_POST_R2_FRESH_REVIEW_EXECUTED": "no"
   }
 }

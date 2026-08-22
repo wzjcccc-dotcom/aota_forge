@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M5 source and post-repair provenance guard (SG01 .. SG28).
+"""M5 source and post-repair provenance guard (SG01 .. SG35).
 
 Deterministic, read-only mechanical guard verifying:
 - SG01: Required accepted M5 production files exist
@@ -25,11 +25,17 @@ Deterministic, read-only mechanical guard verifying:
 - SG21: Critical guard claims are non-tautological
 - SG22: M5-6 R1/R2 lifecycle protections remain bounded
 - SG23: M4 test scope remains frozen
-- SG24: R1D changed paths are exact and authorized
-- SG25: R1D evidence remains under the exact evidence root
+- SG24: R2E changed paths are exact and authorized
+- SG25: R2E evidence remains under the exact evidence root
 - SG26: Historical blocked review evidence remains untouched
-- SG27: The guard is an authorized R1D path
+- SG27: The guard is an authorized R2E path
 - SG28: No unauthorized current source mutation is accepted
+- SG30: R2A/R2B/R2C/R2D lane provenance is exact
+- SG31: R2 integration direct parent and lineage are exact
+- SG32: R2 repair delta is exactly nine authorized paths
+- SG33: Integrated deltas are exact lane blobs
+- SG34: No generic or wildcard R2 allowlist exists
+- SG35: Post-R2 unauthorized production/test mutations are rejected
 """
 
 from __future__ import annotations
@@ -70,6 +76,70 @@ R1A_SOURCE = "d1a25c141c2da4b134f2fb20690526a4909dda92"
 R1B_SOURCE = "435437d67fa2ad355b55b373597e7358ddfa8d1c"
 R1C_SOURCE = "5ff86933a7c2676c8e3a573b23c1a24a99b0a896"
 R1C2_SOURCE = FINAL_REPAIRED_SOURCE_BASE
+
+# R2 exact repair provenance anchors.
+PRE_R2_REPAIR_BASE = "23c3c69e6e00bf4b32eba4f5f688e5a677418933"
+POST_R2_REPAIR_BASE = "eefe1260892eb309d8f0ad459ec607e6eff0d8cb"
+R2A_SOURCE = "d74f7fbcf7ed9477df1b7d722a6957e94aa36b9c"
+R2B_SOURCE = "7da6877953967d30ab98f667f65c256ce55cc2f6"
+R2C_SOURCE = "22112f6c33c8b13fdbfd04e1437066091f952315"
+R2D_SOURCE = "225fadd3f5763f85a6c1d076cccb3abc799339e5"
+
+R2E_EVIDENCE_ROOT = "deploy/evidence/issues/9/m5-source/"
+R2E_EXACT_CHANGED_PATHS = frozenset(
+    {
+        "tests/test_m5_6_convergence.py",
+        "scripts/m5_source_guard.py",
+    }
+)
+
+R2_AUTHORIZED_PRODUCTION_PATHS = frozenset(
+    {
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/adapters/execution/reference.py",
+        "aota_forge/core/ingress.py",
+        "aota_forge/core/execution/registry.py",
+        "aota_forge/core/execution/capabilities.py",
+    }
+)
+R2_AUTHORIZED_REPAIR_TEST_PATHS = frozenset(
+    {
+        "tests/test_m5_r_r2a_hermes_repair.py",
+        "tests/test_m5_r_r2b_reference_replay.py",
+        "tests/test_m5_r_r2c_ingress_error_preservation.py",
+        "tests/test_m5_r_r2d_capability_validation.py",
+    }
+)
+R2_AUTHORIZED_REPAIR_DELTA_PATHS = (
+    R2_AUTHORIZED_PRODUCTION_PATHS | R2_AUTHORIZED_REPAIR_TEST_PATHS
+)
+R2_LANE_PATHS = {
+    R2A_SOURCE: frozenset(
+        {
+            "aota_forge/adapters/hermes/executor.py",
+            "tests/test_m5_r_r2a_hermes_repair.py",
+        }
+    ),
+    R2B_SOURCE: frozenset(
+        {
+            "aota_forge/adapters/execution/reference.py",
+            "tests/test_m5_r_r2b_reference_replay.py",
+        }
+    ),
+    R2C_SOURCE: frozenset(
+        {
+            "aota_forge/core/ingress.py",
+            "tests/test_m5_r_r2c_ingress_error_preservation.py",
+        }
+    ),
+    R2D_SOURCE: frozenset(
+        {
+            "aota_forge/core/execution/capabilities.py",
+            "aota_forge/core/execution/registry.py",
+            "tests/test_m5_r_r2d_capability_validation.py",
+        }
+    ),
+}
 
 R1D_EVIDENCE_ROOT = "deploy/evidence/issues/9/m5-source/"
 R1D_EXACT_CHANGED_PATHS = frozenset(
@@ -193,7 +263,7 @@ def diff_paths(base: str, head: str | None = None) -> frozenset[str]:
 
 
 def current_changed_paths() -> frozenset[str]:
-    paths = set(diff_paths(FINAL_REPAIRED_SOURCE_BASE))
+    paths = set(diff_paths(POST_R2_REPAIR_BASE))
     status = subprocess.run(
         ["git", "-C", str(ROOT), "status", "--short", "--untracked-files=all"],
         capture_output=True,
@@ -224,6 +294,10 @@ def blob(commit: str, path: str) -> str:
 
 def is_authorized_r1d_path(path: str) -> bool:
     return path in R1D_EXACT_CHANGED_PATHS or path.startswith(R1D_EVIDENCE_ROOT)
+
+
+def is_authorized_r2e_path(path: str) -> bool:
+    return path in R2E_EXACT_CHANGED_PATHS or path.startswith(R2E_EVIDENCE_ROOT)
 
 
 def verify_authorized_regression_repair(
@@ -551,10 +625,10 @@ def check_sg11_no_forbidden_m5_6_production_path() -> tuple[bool, str]:
     if not self_ok:
         return False, f"Guard quality verification failed: {self_msg}"
 
-    forbidden = sorted(path for path in current_changed_paths() if not is_authorized_r1d_path(path))
+    forbidden = sorted(path for path in current_changed_paths() if not is_authorized_r2e_path(path))
     if forbidden:
         return False, f"Forbidden file modified after repaired base: {forbidden}"
-    return True, "Only exact R1D paths are modified after the repaired base"
+    return True, "Only exact R2E paths are modified after the R2 repaired base"
 
 
 def check_sg12_no_unresolved_semantic_todo() -> tuple[bool, str]:
@@ -644,6 +718,76 @@ def check_sg18_r1c2_serial_provenance() -> tuple[bool, str]:
     return True, "R1C2 is a serial child of blocked integration with exact two-path provenance"
 
 
+def check_sg30_r2_lane_provenance() -> tuple[bool, str]:
+    """Mechanically verify each R2 lane is a direct child of the pre-R2 base."""
+    for lane in (R2A_SOURCE, R2B_SOURCE, R2C_SOURCE, R2D_SOURCE):
+        if commit_parent(lane) != PRE_R2_REPAIR_BASE:
+            return False, f"R2 lane {lane} parent is not the pre-R2 base"
+    return True, "R2A/R2B/R2C/R2D are each direct children of the pre-R2 repair base"
+
+
+def check_sg31_r2_integration_provenance() -> tuple[bool, str]:
+    """Mechanically verify the R2 integration direct parent and exact delta attribution."""
+    if commit_parent(POST_R2_REPAIR_BASE) != PRE_R2_REPAIR_BASE:
+        return False, "R2 integration direct parent is not the pre-R2 base"
+    if not is_ancestor(PRE_R2_REPAIR_BASE, POST_R2_REPAIR_BASE):
+        return False, "Pre-R2 base is not an ancestor of the R2 integration"
+    return True, "R2 integration direct parent = pre-R2 base with exact lineage"
+
+
+def check_sg32_r2_delta_exact() -> tuple[bool, str]:
+    """Mechanically verify the R2 repair delta is exactly nine authorized paths."""
+    actual_paths = diff_paths(PRE_R2_REPAIR_BASE, POST_R2_REPAIR_BASE)
+    if actual_paths != R2_AUTHORIZED_REPAIR_DELTA_PATHS:
+        return False, f"R2 repair delta mismatch: {sorted(actual_paths)}"
+    return True, "R2 repair delta is exactly nine authorized production/test paths"
+
+
+def check_sg33_r2_lane_blob_attribution() -> tuple[bool, str]:
+    """Mechanically attribute the integrated deltas to R2A/B/C/D by exact blob equality."""
+    for lane, lane_paths in R2_LANE_PATHS.items():
+        actual_paths = diff_paths(PRE_R2_REPAIR_BASE, lane)
+        if actual_paths != lane_paths:
+            return False, f"R2 lane {lane} changed {sorted(actual_paths)}, expected {sorted(lane_paths)}"
+        for path in lane_paths:
+            if blob(lane, path) != blob(POST_R2_REPAIR_BASE, path):
+                return False, f"R2 integration does not contain the exact {lane} blob for {path}"
+    return True, "All nine integrated deltas are exact blobs from R2A/R2B/R2C/R2D"
+
+
+def check_sg34_no_generic_r2_allowlist() -> tuple[bool, str]:
+    """No generic or wildcard R2 allowlist exists."""
+    all_r2_paths = R2_AUTHORIZED_PRODUCTION_PATHS | R2_AUTHORIZED_REPAIR_TEST_PATHS
+    if any("*" in path or "?" in path for path in all_r2_paths):
+        return False, "Wildcard R2 repair path is present"
+    if any(
+        path.startswith("aota_forge/") for path in R1D_EXACT_CHANGED_PATHS
+    ) or any(path.startswith("aota_forge/") for path in R2E_EXACT_CHANGED_PATHS):
+        return False, "R2E exact path set contains a generic production allowance"
+    return True, "GENERIC_PRODUCTION_ALLOWLIST_PRESENT=no; WILDCARD_REPAIR_ALLOWLIST_PRESENT=no"
+
+
+def check_sg35_post_r2_future_mutations_rejected() -> tuple[bool, str]:
+    """Negative self-checks: hypothetical unauthorized mutations after eefe126 are rejected."""
+    conceptual_unauthorized = (
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/adapters/execution/reference.py",
+        "aota_forge/core/ingress.py",
+        "aota_forge/core/execution/registry.py",
+        "aota_forge/core/execution/capabilities.py",
+        "aota_forge/core/execution/extra.py",
+        "tests/test_m5_7_extra.py",
+        "tests/test_m5_r_r2a_hermes_repair.py",
+        "scripts/other_guard.py",
+    )
+    accepted = [path for path in conceptual_unauthorized if is_authorized_r2e_path(path)]
+    if accepted:
+        return False, f"Conceptual unauthorized paths were accepted: {accepted}"
+    if not all(is_authorized_r2e_path(path) for path in R2E_EXACT_CHANGED_PATHS):
+        return False, "An exact R2E path was rejected"
+    return True, "POST_R2_UNAUTHORIZED_PRODUCTION_MUTATION_REJECTED=yes; POST_R2_UNAUTHORIZED_TEST_MUTATION_REJECTED=yes"
+
+
 def check_sg19_no_generic_or_wildcard_allowlist() -> tuple[bool, str]:
     if AUTHORIZED_REPAIR_PRODUCTION_PATHS != {
         "aota_forge/adapters/hermes/executor.py",
@@ -684,12 +828,21 @@ def check_sg20_future_unauthorized_mutations_rejected() -> tuple[bool, str]:
         return False, f"Conceptual unauthorized paths were accepted: {accepted}"
     if not all(is_authorized_r1d_path(path) for path in R1D_EXACT_CHANGED_PATHS):
         return False, "An exact R1D path was rejected"
+    if not all(is_authorized_r2e_path(path) for path in R2E_EXACT_CHANGED_PATHS):
+        return False, "An exact R2E path was rejected"
     return True, "POST_REPAIR_UNAUTHORIZED_PRODUCTION_MUTATION_REJECTED=yes; POST_REPAIR_UNAUTHORIZED_TEST_MUTATION_REJECTED=yes"
 
 
 def check_sg21_guard_non_tautological() -> tuple[bool, str]:
     source = (ROOT / "scripts" / "m5_source_guard.py").read_text(encoding="utf-8")
-    required_mechanical_tokens = ("ast.parse", "merge-base", "diff_paths", "FINAL_REPAIRED_SOURCE_BASE")
+    required_mechanical_tokens = (
+        "ast.parse",
+        "merge-base",
+        "diff_paths",
+        "FINAL_REPAIRED_SOURCE_BASE",
+        "POST_R2_REPAIR_BASE",
+        "R2_LANE_PATHS",
+    )
     missing = [token for token in required_mechanical_tokens if token not in source]
     if missing:
         return False, f"Guard is missing mechanical validation structure: {missing}"
@@ -742,19 +895,19 @@ def check_sg23_m4_scope_frozen() -> tuple[bool, str]:
 
 def check_sg24_r1d_changed_paths_exact() -> tuple[bool, str]:
     current = current_changed_paths()
-    unexpected = sorted(path for path in current if not is_authorized_r1d_path(path))
+    unexpected = sorted(path for path in current if not is_authorized_r2e_path(path))
     if unexpected:
-        return False, f"R1D unauthorized changed paths: {unexpected}"
-    if not R1D_EXACT_CHANGED_PATHS.issubset(current):
-        return False, "R1D convergence test and guard are not both present in the candidate"
-    return True, "R1D changed paths are exact; evidence may only be under the exact M5 source root"
+        return False, f"R2E unauthorized changed paths: {unexpected}"
+    if not R2E_EXACT_CHANGED_PATHS.issubset(current):
+        return False, "R2E convergence test and guard are not both present in the candidate"
+    return True, "R2E changed paths are exact; evidence may only be under the exact M5 source root"
 
 
 def check_sg25_evidence_root_authorized() -> tuple[bool, str]:
     evidence_paths = [
         path for path in current_changed_paths() if path.startswith("deploy/evidence/issues/9/")
     ]
-    unauthorized = [path for path in evidence_paths if not path.startswith(R1D_EVIDENCE_ROOT)]
+    unauthorized = [path for path in evidence_paths if not path.startswith(R2E_EVIDENCE_ROOT)]
     if unauthorized:
         return False, f"Evidence changed outside the authorized M5 source root: {unauthorized}"
     return True, "All current evidence changes are under deploy/evidence/issues/9/m5-source/"
@@ -773,8 +926,8 @@ def check_sg26_historical_review_untouched() -> tuple[bool, str]:
 
 def check_sg27_guard_path_authorized() -> tuple[bool, str]:
     if "scripts/m5_source_guard.py" not in current_changed_paths():
-        return False, "R1D guard path is missing from the candidate"
-    return True, "scripts/m5_source_guard.py is an exact authorized R1D path"
+        return False, "R2E guard path is missing from the candidate"
+    return True, "scripts/m5_source_guard.py is an exact authorized R2E path"
 
 
 def check_sg28_current_source_mutation_rejected() -> tuple[bool, str]:
@@ -828,6 +981,12 @@ CHECKS = [
     ("SG26", check_sg26_historical_review_untouched),
     ("SG27", check_sg27_guard_path_authorized),
     ("SG28", check_sg28_current_source_mutation_rejected),
+    ("SG30", check_sg30_r2_lane_provenance),
+    ("SG31", check_sg31_r2_integration_provenance),
+    ("SG32", check_sg32_r2_delta_exact),
+    ("SG33", check_sg33_r2_lane_blob_attribution),
+    ("SG34", check_sg34_no_generic_r2_allowlist),
+    ("SG35", check_sg35_post_r2_future_mutations_rejected),
 ]
 
 

@@ -21,6 +21,7 @@ import pathlib
 import subprocess
 import sys
 import unittest
+from dataclasses import replace
 from typing import Any, Mapping
 from unittest.mock import patch
 
@@ -42,6 +43,7 @@ from aota_forge.adapters.hermes.executor import (
     HERMES_STATUS_MAP,
     HermesAdapter,
     HermesAdapterError,
+    HermesDispatchRejectedError,
     HermesHostClient,
     HermesHostUnavailableError,
     HermesProtocolError,
@@ -224,6 +226,51 @@ class FakeHermesHostClient:
     def resume_task(self, adapter_handle: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         self.resumes.append((adapter_handle, dict(payload)))
         return {"resumed": True, "status": "running"}
+
+
+class _R2EDispatchRejectedHost:
+    """Host double that rejects dispatch with HermesDispatchRejectedError."""
+
+    def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        raise HermesDispatchRejectedError("dispatch denied by host policy")
+
+    def query_status(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"status": "pending"}
+
+    def fetch_result(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"status": "running"}
+
+    def cancel_task(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"cancelled": True, "status": "cancelled"}
+
+    def resume_task(self, adapter_handle: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"status": "running"}
+
+
+class _R2EUnexpectedAdapter(ReferenceFakeExecutorAdapter):
+    """Adapter whose dispatch raises an unexpected private implementation exception."""
+
+    def dispatch(self, package: ExecutionPackage) -> DispatchResult:
+        raise RuntimeError("_private_r2e_internal_object_")
+
+
+class _R2EUnexpectedHost:
+    """Host double raising a private exception from the dispatch boundary."""
+
+    def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        raise RuntimeError("_private_r2e_host_internal_")
+
+    def query_status(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"status": "pending"}
+
+    def fetch_result(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"status": "running"}
+
+    def cancel_task(self, adapter_handle: str) -> Mapping[str, Any]:
+        return {"cancelled": True, "status": "cancelled"}
+
+    def resume_task(self, adapter_handle: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"status": "running"}
 
 
 class RouteProbeAdapter(ExecutorAdapter):
@@ -1709,6 +1756,659 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
 
         with self.assertRaises(TaskNotFoundError):
             direct_dispatcher.cancel("r1d-f04b-unknown")
+
+
+# ==============================================================================
+# R2E Convergence Probes
+# ==============================================================================
+
+
+class TestR2EDispatchIdempotencyConvergence(unittest.TestCase):
+    """M5-R-R2-F02: Hermes dispatch idempotency at the physical host boundary."""
+
+    @staticmethod
+    def _package(
+        task_id: str,
+        instruction: str,
+        *,
+        idempotency_key: str,
+        package_id: str,
+        correlation_id: str = "r2e-f02-corr",
+    ) -> ExecutionPackage:
+        return ExecutionPackage.create(
+            canonical_task_id=task_id,
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction=instruction,
+            operation="task_dispatch",
+            idempotency_key=idempotency_key,
+            package_id=package_id,
+            correlation_id=correlation_id,
+        )
+
+    def test_f02_identical_replay_never_redispatches_host(self) -> None:
+        host = FakeHermesHostClient()
+        adapter = HermesAdapter(host_client=host)
+
+        first = self._package(
+            "r2e-f02-task",
+            "identical canonical intent",
+            idempotency_key="r2e-f02-key",
+            package_id="r2e-f02-package",
+        )
+        replay_a = self._package(
+            "r2e-f02-task",
+            "identical canonical intent",
+            idempotency_key="r2e-f02-key",
+            package_id="r2e-f02-replay-a",
+            correlation_id="r2e-f02-replay-a-corr",
+        )
+        replay_b = self._package(
+            "r2e-f02-task",
+            "identical canonical intent",
+            idempotency_key="r2e-f02-key",
+            package_id="r2e-f02-replay-b",
+            correlation_id="r2e-f02-replay-b-corr",
+        )
+
+        first_result = adapter.dispatch(first)
+        second_result = adapter.dispatch(replay_a)
+        third_result = adapter.dispatch(replay_b)
+
+        self.assertEqual(second_result, first_result)
+        self.assertEqual(third_result, first_result)
+        self.assertEqual(len(host.dispatched), 1)
+        self.assertEqual(host.process_spawn_count, 0)
+        self.assertEqual(host.live_dispatch_count, 0)
+
+    def test_f02_changed_intent_fails_closed_without_second_dispatch(self) -> None:
+        host = FakeHermesHostClient()
+        adapter = HermesAdapter(host_client=host)
+        original = self._package(
+            "r2e-f02-conflict",
+            "original intent",
+            idempotency_key="r2e-f02-conflict-key",
+            package_id="r2e-f02-conflict-package",
+        )
+        adapter.dispatch(original)
+
+        conflicting = self._package(
+            "r2e-f02-conflict",
+            "different intent fingerprint",
+            idempotency_key="r2e-f02-conflict-key",
+            package_id="r2e-f02-conflict-altered",
+        )
+
+        with self.assertRaises(HermesAdapterError) as mismatch:
+            adapter.dispatch(conflicting)
+        self.assertEqual(mismatch.exception.code, "IDEMPOTENCY_CONFLICT")
+        self.assertEqual(len(host.dispatched), 1)
+        self.assertEqual(host.process_spawn_count, 0)
+
+
+class TestR2EHermesReplaySafetyConvergence(unittest.TestCase):
+    """M5-R-R2-F03: Hermes adapter cancel/resume replay safety."""
+
+    def setUp(self) -> None:
+        self.host = FakeHermesHostClient()
+        self.adapter = HermesAdapter(host_client=self.host)
+        self.package = ExecutionPackage.create(
+            canonical_task_id="r2e-f03-hermes-task",
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="hermes replay convergence",
+            operation="task_dispatch",
+            idempotency_key="r2e-f03-dispatch-key",
+            package_id="r2e-f03-dispatch-package",
+        )
+        self.dispatch = self.adapter.dispatch(self.package)
+
+    @staticmethod
+    def _resume_package(task_id: str, key: str, package_id: str) -> ExecutionPackage:
+        return ExecutionPackage.create(
+            canonical_task_id=task_id,
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="resume hermes replay convergence",
+            operation="task_resume",
+            idempotency_key=key,
+            package_id=package_id,
+            correlation_id="r2e-f03-resume-corr",
+        )
+
+    def test_f03_hermes_cancel_replay_has_one_host_effect(self) -> None:
+        first = self.adapter.cancel("r2e-f03-hermes-task", self.dispatch.adapter_handle)
+        second = self.adapter.cancel("r2e-f03-hermes-task", self.dispatch.adapter_handle)
+        third = self.adapter.cancel("r2e-f03-hermes-task", self.dispatch.adapter_handle)
+
+        self.assertEqual(second, first)
+        self.assertEqual(third, first)
+        self.assertTrue(first.cancelled)
+        self.assertEqual(first.state, CanonicalTaskState.CANCELLED)
+        self.assertEqual(len(self.host.cancels), 1)
+
+    def test_f03_hermes_resume_replay_has_one_host_effect(self) -> None:
+        first_package = self._resume_package(
+            "r2e-f03-hermes-task", "r2e-f03-resume-key", "r2e-f03-resume-package"
+        )
+        replay_a = self._resume_package(
+            "r2e-f03-hermes-task", "r2e-f03-resume-key", "r2e-f03-resume-replay-a"
+        )
+        replay_b = self._resume_package(
+            "r2e-f03-hermes-task", "r2e-f03-resume-key", "r2e-f03-resume-replay-b"
+        )
+
+        first = self.adapter.resume(
+            "r2e-f03-hermes-task", self.dispatch.adapter_handle, first_package
+        )
+        second = self.adapter.resume(
+            "r2e-f03-hermes-task", self.dispatch.adapter_handle, replay_a
+        )
+        third = self.adapter.resume(
+            "r2e-f03-hermes-task", self.dispatch.adapter_handle, replay_b
+        )
+
+        self.assertEqual(second, first)
+        self.assertEqual(third, first)
+        self.assertEqual(first.state, CanonicalTaskState.RUNNING)
+        self.assertEqual(len(self.host.resumes), 1)
+
+    def test_f03_hermes_wrong_canonical_task_fails_closed(self) -> None:
+        resume_package = self._resume_package(
+            "r2e-f03-wrong-task", "r2e-f03-wrong-key", "r2e-f03-wrong-package"
+        )
+
+        with self.assertRaises(HermesAdapterError) as mismatch:
+            self.adapter.resume(
+                "r2e-f03-hermes-task", self.dispatch.adapter_handle, resume_package
+            )
+        self.assertEqual(mismatch.exception.code, "TASK_ID_MISMATCH")
+        self.assertEqual(len(self.host.resumes), 0)
+
+    def test_f03_hermes_unsupported_cancel_and_resume_typed_failure(self) -> None:
+        no_cancel_adapter = HermesAdapter(
+            host_client=FakeHermesHostClient(),
+            capabilities=replace(default_hermes_capabilities(), supports_task_cancellation=False),
+        )
+        dispatch = no_cancel_adapter.dispatch(self.package)
+        cancel_result = no_cancel_adapter.cancel(
+            "r2e-f03-hermes-task", dispatch.adapter_handle
+        )
+        self.assertIsInstance(cancel_result, CancelResult)
+        self.assertFalse(cancel_result.cancelled)
+        self.assertEqual(cancel_result.state, CanonicalTaskState.UNKNOWN)
+
+        no_resume_adapter = HermesAdapter(
+            host_client=FakeHermesHostClient(),
+            capabilities=replace(default_hermes_capabilities(), supports_task_resume=False),
+        )
+        resume_dispatch = no_resume_adapter.dispatch(self.package)
+        resume_package = self._resume_package(
+            "r2e-f03-hermes-task", "r2e-f03-unsupported-resume", "r2e-f03-unsupported-package"
+        )
+        with self.assertRaises(HermesAdapterError) as unsupported:
+            no_resume_adapter.resume(
+                "r2e-f03-hermes-task", resume_dispatch.adapter_handle, resume_package
+            )
+        self.assertEqual(unsupported.exception.code, "RESUME_UNSUPPORTED")
+
+
+class TestR2EReferenceReplaySafetyConvergence(unittest.TestCase):
+    """M5-R-R2-F03: Reference adapter cancel/resume replay safety."""
+
+    def setUp(self) -> None:
+        self.adapter = ReferenceFakeExecutorAdapter()
+        self.package = ExecutionPackage.create(
+            canonical_task_id="r2e-f03-reference-task",
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="reference replay convergence",
+            operation="task_dispatch",
+            idempotency_key="r2e-f03-reference-dispatch-key",
+            package_id="r2e-f03-reference-dispatch-package",
+        )
+        self.dispatch = self.adapter.dispatch(self.package)
+
+    @staticmethod
+    def _resume_package(task_id: str, key: str, package_id: str) -> ExecutionPackage:
+        return ExecutionPackage.create(
+            canonical_task_id=task_id,
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="resume reference replay convergence",
+            operation="task_resume",
+            idempotency_key=key,
+            package_id=package_id,
+            correlation_id="r2e-f03-reference-resume-corr",
+        )
+
+    def test_f03_reference_cancel_replay_has_zero_duplicate_effect(self) -> None:
+        self.adapter.simulate_running(self.dispatch.canonical_task_id)
+        first = self.adapter.cancel(
+            self.dispatch.canonical_task_id, self.dispatch.adapter_handle
+        )
+        second = self.adapter.cancel(
+            self.dispatch.canonical_task_id, self.dispatch.adapter_handle
+        )
+
+        self.assertEqual(second, first)
+        self.assertTrue(first.cancelled)
+        self.assertEqual(first.state, CanonicalTaskState.CANCELLED)
+        self.assertEqual(self.adapter.cancel_count, 1)
+        self.assertEqual(
+            self.adapter.status(
+                self.dispatch.canonical_task_id, self.dispatch.adapter_handle
+            ).state,
+            CanonicalTaskState.CANCELLED,
+        )
+
+    def test_f03_reference_resume_replay_has_zero_duplicate_effect(self) -> None:
+        self.adapter.simulate_waiting(self.dispatch.canonical_task_id)
+        first_package = self._resume_package(
+            self.dispatch.canonical_task_id,
+            "r2e-f03-reference-resume-key",
+            "r2e-f03-reference-resume-package",
+        )
+        replay = self._resume_package(
+            self.dispatch.canonical_task_id,
+            "r2e-f03-reference-resume-key",
+            "r2e-f03-reference-resume-replay",
+        )
+
+        first = self.adapter.resume(
+            self.dispatch.canonical_task_id, self.dispatch.adapter_handle, first_package
+        )
+        second = self.adapter.resume(
+            self.dispatch.canonical_task_id, self.dispatch.adapter_handle, replay
+        )
+
+        self.assertEqual(second, first)
+        self.assertEqual(first.state, CanonicalTaskState.RUNNING)
+        self.assertEqual(self.adapter.resume_count, 1)
+        self.assertEqual(
+            self.adapter.get_task_record(self.dispatch.canonical_task_id).resume_history,
+            [first_package],
+        )
+
+    def test_f03_reference_unknown_task_fails_closed(self) -> None:
+        resume_package = self._resume_package(
+            "r2e-f03-reference-unknown", "r2e-f03-reference-unknown-key", "r2e-f03-reference-unknown-package"
+        )
+        with self.assertRaisesRegex(KeyError, "TASK_NOT_FOUND"):
+            self.adapter.cancel("r2e-f03-reference-unknown", "unknown-handle")
+        with self.assertRaisesRegex(KeyError, "TASK_NOT_FOUND"):
+            self.adapter.resume("r2e-f03-reference-unknown", "unknown-handle", resume_package)
+        self.assertEqual(self.adapter.cancel_count, 0)
+        self.assertEqual(self.adapter.resume_count, 0)
+
+    def test_f03_reference_wrong_task_identity_fails_closed(self) -> None:
+        self.adapter.simulate_waiting(self.dispatch.canonical_task_id)
+        wrong_package = self._resume_package(
+            "r2e-f03-reference-other",
+            "r2e-f03-reference-wrong-key",
+            "r2e-f03-reference-wrong-package",
+        )
+        with self.assertRaisesRegex(ValueError, "TASK_ID_MISMATCH"):
+            self.adapter.resume(
+                self.dispatch.canonical_task_id,
+                self.dispatch.adapter_handle,
+                wrong_package,
+            )
+        self.assertEqual(self.adapter.resume_count, 0)
+
+    def test_f03_reference_unsupported_operation_typed_failure(self) -> None:
+        limited = ReferenceFakeExecutorAdapter(
+            capabilities=ExecutorCapabilities(
+                executor_id="r2e-f03-limited",
+                adapter_kind="in_process_test_double",
+                supported_execution_modes=("sync",),
+                supports_streaming_events=True,
+                supports_task_cancellation=False,
+                supports_task_resume=False,
+                supports_structured_result=True,
+                supported_canonical_roles=CANONICAL_ROLES,
+                supported_isolation_modes=("process",),
+                supports_working_directory=True,
+                supports_artifact_transport=True,
+            )
+        )
+        limited_dispatch = limited.dispatch(self.package)
+        with self.assertRaisesRegex(ValueError, "CANCEL_UNSUPPORTED"):
+            limited.cancel(
+                self.dispatch.canonical_task_id, limited_dispatch.adapter_handle
+            )
+        limited.simulate_waiting(self.dispatch.canonical_task_id)
+        resume_package = self._resume_package(
+            self.dispatch.canonical_task_id,
+            "r2e-f03-reference-unsupported-resume",
+            "r2e-f03-reference-unsupported-package",
+        )
+        with self.assertRaisesRegex(ValueError, "RESUME_UNSUPPORTED"):
+            limited.resume(
+                self.dispatch.canonical_task_id,
+                limited_dispatch.adapter_handle,
+                resume_package,
+            )
+        self.assertEqual(limited.cancel_count, 0)
+        self.assertEqual(limited.resume_count, 0)
+
+
+class TestR2ETypedErrorPreservationConvergence(unittest.TestCase):
+    """M5-R-R2-F05: Unified Ingress typed error preservation."""
+
+    def setUp(self) -> None:
+        reset_execution_dispatcher()
+
+    def tearDown(self) -> None:
+        reset_execution_dispatcher()
+
+    def _start_params(self, executor: str, instruction: str) -> dict[str, Any]:
+        return {
+            "executor": executor,
+            "role": "coder",
+            "instruction": instruction,
+            "project_id": "aota_forge",
+        }
+
+    def test_f05_executor_unavailable_preserved_through_ingress(self) -> None:
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=None))
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+
+        result = execute("execution.task_start", self._start_params("hermes", "offline host"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "EXECUTOR_UNAVAILABLE")
+        self.assertEqual(result["errors"][0]["code"], "EXECUTOR_UNAVAILABLE")
+        serialized = json.dumps(result, sort_keys=True)
+        self.assertNotIn("Traceback", serialized)
+        self.assertNotIn("HermesHostUnavailableError", serialized)
+
+    def test_f05_dispatch_rejected_preserved_through_ingress(self) -> None:
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=_R2EDispatchRejectedHost()))
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+
+        result = execute("execution.task_start", self._start_params("hermes", "rejected dispatch"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "DISPATCH_REJECTED")
+        self.assertEqual(result["errors"][0]["code"], "DISPATCH_REJECTED")
+
+    def test_f05_unexpected_exception_maps_to_internal_mechanical_error(self) -> None:
+        registry = ExecutorRegistry()
+        registry.register(_R2EUnexpectedAdapter())
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+
+        result = execute(
+            "execution.task_start",
+            self._start_params(REFERENCE_EXECUTOR_ID, "unexpected adapter failure"),
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "INTERNAL_MECHANICAL_ERROR")
+        serialized = json.dumps(result, sort_keys=True)
+        self.assertNotIn("_private_r2e_internal_object_", serialized)
+        self.assertNotIn("Traceback", serialized)
+        self.assertNotIn("RuntimeError", serialized)
+
+    def test_f05_unexpected_host_exception_contained_no_type_leak(self) -> None:
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=_R2EUnexpectedHost()))
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+
+        result = execute(
+            "execution.task_start",
+            self._start_params("hermes", "unexpected host failure"),
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "ADAPTER_PROTOCOL_ERROR")
+        serialized = json.dumps(result, sort_keys=True)
+        self.assertNotIn("Traceback", serialized)
+        self.assertNotIn("RuntimeError", serialized)
+
+
+class TestR2ECrossLayerCapabilityConvergence(unittest.TestCase):
+    """M5-R-R2-F06: Cross-layer capability validation (package -> registry -> adapter)."""
+
+    def setUp(self) -> None:
+        reset_execution_dispatcher()
+
+    def tearDown(self) -> None:
+        reset_execution_dispatcher()
+
+    @staticmethod
+    def _package(
+        task_id: str,
+        *,
+        capability_requirements: dict[str, Any],
+        idempotency_key: str,
+    ) -> ExecutionPackage:
+        return ExecutionPackage.create(
+            canonical_task_id=task_id,
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="cross layer capability convergence",
+            operation="task_dispatch",
+            idempotency_key=idempotency_key,
+            capability_requirements=capability_requirements,
+        )
+
+    def _bind_hermes(self, host: Any) -> None:
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=host))
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+
+    def test_f06_unknown_capability_key_fails_closed_no_host_dispatch(self) -> None:
+        host = FakeHermesHostClient()
+        self._bind_hermes(host)
+        package = self._package(
+            "r2e-f06-unknown",
+            capability_requirements={"requires_gpu": True},
+            idempotency_key="r2e-f06-unknown-key",
+        )
+
+        result = execute(
+            "execution.task_start",
+            {
+                "executor": "hermes",
+                "role": "coder",
+                "instruction": "unknown capability probe",
+                "project_id": "aota_forge",
+                "canonical_task_id": package.canonical_task_id,
+                "capability_requirements": {"requires_gpu": True},
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertNotEqual(result["error"]["code"], "EXECUTOR_NOT_FOUND")
+        self.assertEqual(len(host.dispatched), 0)
+        self.assertEqual(host.process_spawn_count, 0)
+
+    def test_f06_unsupported_requirement_fails_closed_no_host_dispatch(self) -> None:
+        host = FakeHermesHostClient()
+        self._bind_hermes(host)
+        package = self._package(
+            "r2e-f06-unsupported",
+            capability_requirements={"requires_streaming_events": True},
+            idempotency_key="r2e-f06-unsupported-key",
+        )
+
+        result = execute(
+            "execution.task_start",
+            {
+                "executor": "hermes",
+                "role": "coder",
+                "instruction": "unsupported capability probe",
+                "project_id": "aota_forge",
+                "canonical_task_id": package.canonical_task_id,
+                "capability_requirements": {"requires_streaming_events": True},
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertNotEqual(result["error"]["code"], "EXECUTOR_NOT_FOUND")
+        self.assertEqual(len(host.dispatched), 0)
+        self.assertEqual(host.process_spawn_count, 0)
+
+    def test_f06_valid_supported_capability_accepts_normal_path(self) -> None:
+        host = FakeHermesHostClient()
+        self._bind_hermes(host)
+        package = self._package(
+            "r2e-f06-valid",
+            capability_requirements={"execution_mode": "async"},
+            idempotency_key="r2e-f06-valid-key",
+        )
+
+        result = execute(
+            "execution.task_start",
+            {
+                "executor": "hermes",
+                "role": "coder",
+                "instruction": "valid capability probe",
+                "project_id": "aota_forge",
+                "canonical_task_id": package.canonical_task_id,
+                "capability_requirements": {"execution_mode": "async"},
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(host.dispatched), 1)
+
+    def test_f06_zero_valid_semantic_choice_fails_closed(self) -> None:
+        registry = ExecutorRegistry()
+        registry.register(
+            ReferenceFakeExecutorAdapter(
+                capabilities=ExecutorCapabilities(
+                    executor_id="r2e-f06-limited",
+                    adapter_kind="in_process_test_double",
+                    supported_execution_modes=("sync",),
+                    supports_streaming_events=True,
+                    supports_task_cancellation=True,
+                    supports_task_resume=True,
+                    supports_structured_result=True,
+                    supported_canonical_roles=("coder",),
+                    supported_isolation_modes=("worktree",),
+                    supports_working_directory=True,
+                    supports_artifact_transport=True,
+                )
+            )
+        )
+        bind_execution_dispatcher(ExecutionDispatcher(registry))
+        package = self._package(
+            "r2e-f06-zero",
+            capability_requirements={"execution_mode": "batch"},
+            idempotency_key="r2e-f06-zero-key",
+        )
+
+        with self.assertRaises(ExecutorNotFoundError):
+            ExecutionDispatcher(registry).dispatch(package)
+        self.assertEqual(len(registry.list_executor_ids()), 1)
+
+    def test_f06_one_valid_is_deterministic(self) -> None:
+        host = FakeHermesHostClient()
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=host))
+        dispatcher = ExecutionDispatcher(registry)
+        package = self._package(
+            "r2e-f06-one",
+            capability_requirements={"execution_mode": "sync"},
+            idempotency_key="r2e-f06-one-key",
+        )
+
+        dispatch_result = dispatcher.dispatch(package)
+
+        self.assertEqual(dispatch_result.canonical_task_id, "r2e-f06-one")
+        self.assertEqual(len(host.dispatched), 1)
+        self.assertEqual(host.process_spawn_count, 0)
+
+    def test_f06_multiple_valid_requires_semantic_choice(self) -> None:
+        host = FakeHermesHostClient()
+        registry = ExecutorRegistry()
+        registry.register(
+            ReferenceFakeExecutorAdapter(
+                capabilities=ExecutorCapabilities(
+                    executor_id="r2e-f06-reference",
+                    adapter_kind="in_process_test_double",
+                    supported_execution_modes=("sync",),
+                    supports_streaming_events=True,
+                    supports_task_cancellation=True,
+                    supports_task_resume=True,
+                    supports_structured_result=True,
+                    supported_canonical_roles=("coder",),
+                    supported_isolation_modes=("worktree",),
+                    supports_working_directory=True,
+                    supports_artifact_transport=True,
+                )
+            )
+        )
+        registry.register(HermesAdapter(host_client=host))
+        dispatcher = ExecutionDispatcher(registry)
+        package = self._package(
+            "r2e-f06-multi",
+            capability_requirements={"execution_mode": "sync"},
+            idempotency_key="r2e-f06-multi-key",
+        )
+
+        with self.assertRaises(NeedsSemanticChoiceError) as ambiguous:
+            dispatcher.dispatch(package)
+
+        self.assertEqual(
+            set(ambiguous.exception.candidates),
+            {"hermes", "r2e-f06-reference"},
+        )
+        self.assertEqual(len(host.dispatched), 0)
+        self.assertEqual(host.process_spawn_count, 0)
+
+
+class TestR2ECapabilityEnumsConvergence(unittest.TestCase):
+    """M5-R-R2-F07: ExecutorCapabilities rejects non-canonical mode vocabulary."""
+
+    def _base_data(self) -> dict[str, Any]:
+        return {
+            "executor_id": "r2e-f07-executor",
+            "adapter_kind": "in_process_test_double",
+            "supports_streaming_events": True,
+            "supports_task_cancellation": True,
+            "supports_task_resume": True,
+            "supports_structured_result": True,
+            "supported_canonical_roles": list(CANONICAL_ROLES),
+            "supports_working_directory": True,
+            "supports_artifact_transport": True,
+        }
+
+    def test_f07_rejects_noncanonical_execution_modes(self) -> None:
+        for mode in ("magic", "hermes", "vm-ish", ""):
+            data = self._base_data()
+            data["supported_execution_modes"] = [mode]
+            data["supported_isolation_modes"] = ["worktree"]
+            with self.assertRaises(ValueError):
+                ExecutorCapabilities.from_dict(data)
+
+    def test_f07_rejects_noncanonical_isolation_modes(self) -> None:
+        for mode in ("vm-ish", "sandboxish", "magic", ""):
+            data = self._base_data()
+            data["supported_execution_modes"] = ["sync"]
+            data["supported_isolation_modes"] = [mode]
+            with self.assertRaises(ValueError):
+                ExecutorCapabilities.from_dict(data)
+
+    def test_f07_accepts_exact_canonical_execution_modes(self) -> None:
+        for mode in ("sync", "async", "batch"):
+            data = self._base_data()
+            data["supported_execution_modes"] = [mode]
+            data["supported_isolation_modes"] = ["worktree"]
+            caps = ExecutorCapabilities.from_dict(data)
+            self.assertEqual(caps.supported_execution_modes, (mode,))
+
+    def test_f07_accepts_exact_canonical_isolation_modes(self) -> None:
+        for mode in ("worktree", "process", "container", "none"):
+            data = self._base_data()
+            data["supported_execution_modes"] = ["sync"]
+            data["supported_isolation_modes"] = [mode]
+            caps = ExecutorCapabilities.from_dict(data)
+            self.assertEqual(caps.supported_isolation_modes, (mode,))
 
 
 if __name__ == "__main__":
