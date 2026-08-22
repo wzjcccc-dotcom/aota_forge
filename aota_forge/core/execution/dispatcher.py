@@ -316,12 +316,32 @@ class ExecutionDispatcher:
         route.last_known_state = state_enum
         return canonical_res
 
-    def cancel(self, canonical_task_id: str) -> CancelResult:
-        """Request cancellation of an active task using exact stored route."""
+    def cancel(self, canonical_task_id: str, executor: str | None = None) -> CancelResult:
+        """Request cancellation using the exact stored route and optional executor identity."""
         route = self.get_route(canonical_task_id)
+
+        if executor is not None and route.executor_id != executor:
+            raise ValueError(
+                f"ROUTE_EXECUTOR_MISMATCH: Task {canonical_task_id!r} is routed to "
+                f"executor {route.executor_id!r}, not requested {executor!r}"
+            )
+
+        if route.last_known_state == CanonicalTaskState.CANCELLED:
+            replay_result = getattr(route, "_successful_cancel_result", None)
+            if isinstance(replay_result, CancelResult):
+                return replay_result
+
+        if route.last_known_state.is_terminal:
+            raise ValueError(
+                f"TASK_ALREADY_TERMINAL: Task {canonical_task_id!r} is already in terminal state "
+                f"{route.last_known_state.value}"
+            )
+
         adapter = route._adapter
         cancel_res = adapter.cancel(canonical_task_id, route.adapter_handle)
         route.last_known_state = cancel_res.state
+        if cancel_res.cancelled and cancel_res.state == CanonicalTaskState.CANCELLED:
+            setattr(route, "_successful_cancel_result", cancel_res)
         return cancel_res
 
     def resume(

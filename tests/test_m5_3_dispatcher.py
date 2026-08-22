@@ -80,6 +80,7 @@ from aota_forge.core.execution.registry import (
     ExecutorResolution,
     ResolutionOutcome,
 )
+from aota_forge.core.ingress import bind_execution_dispatcher, execute, reset_execution_dispatcher
 
 
 # ==============================================================================
@@ -664,6 +665,152 @@ class TestExecutionDispatcherLifecycleOperations:
         )
         assert adapter_b.dispatch_count == 1
         assert dispatcher.get_route(new_task_id)._adapter is adapter_b
+
+
+class TestExecutionDispatcherCancellationIdempotency:
+    def _running_dispatcher(
+        self,
+        task_id: str = "task-cancel-idempotent",
+        executor_id: str = "exec-cancel-idempotent",
+    ) -> tuple[ExecutionDispatcher, ReferenceFakeExecutorAdapter]:
+        registry = ExecutorRegistry()
+        adapter = make_adapter(executor_id)
+        registry.register(adapter)
+        dispatcher = ExecutionDispatcher(registry)
+        dispatcher.dispatch(
+            make_package(task_id, execution_mode="async"),
+            target_executor_id=executor_id,
+        )
+        adapter.simulate_running(task_id)
+        return dispatcher, adapter
+
+    def test_direct_first_cancel_succeeds(self) -> None:
+        dispatcher, adapter = self._running_dispatcher()
+
+        result = dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        assert result == CancelResult(
+            canonical_task_id="task-cancel-idempotent",
+            cancelled=True,
+            state=CanonicalTaskState.CANCELLED,
+        )
+        assert adapter.cancel_count == 1
+
+    def test_direct_second_identical_cancel_replays_success(self) -> None:
+        dispatcher, adapter = self._running_dispatcher()
+        first = dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        replay = dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        assert replay == first
+        assert replay.cancelled is True
+        assert replay.state == CanonicalTaskState.CANCELLED
+        assert adapter.cancel_count == 1
+
+    def test_direct_third_identical_cancel_replays_success(self) -> None:
+        dispatcher, adapter = self._running_dispatcher()
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        third = dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        assert third.cancelled is True
+        assert third.state == CanonicalTaskState.CANCELLED
+        assert adapter.cancel_count == 1
+
+    def test_direct_cancel_replay_has_exactly_one_adapter_side_effect(self) -> None:
+        dispatcher, adapter = self._running_dispatcher()
+
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+        assert adapter.cancel_count == 1
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+        assert adapter.cancel_count == 1
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+        assert adapter.cancel_count == 1
+
+    def test_direct_cancel_preserves_cancelled_route_state(self) -> None:
+        dispatcher, _adapter = self._running_dispatcher()
+
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        route = dispatcher.get_route("task-cancel-idempotent")
+        assert route.last_known_state == CanonicalTaskState.CANCELLED
+
+    def test_completed_before_first_direct_cancel_fails_closed(self) -> None:
+        dispatcher, adapter = self._running_dispatcher("task-cancel-completed", "exec-cancel-terminal")
+        adapter.simulate_completion("task-cancel-completed")
+        dispatcher.status("task-cancel-completed")
+
+        with pytest.raises(ValueError, match="TASK_ALREADY_TERMINAL"):
+            dispatcher.cancel("task-cancel-completed", executor="exec-cancel-terminal")
+        assert adapter.cancel_count == 0
+
+    def test_failed_before_first_direct_cancel_fails_closed(self) -> None:
+        dispatcher, adapter = self._running_dispatcher("task-cancel-failed", "exec-cancel-terminal")
+        adapter.simulate_failure("task-cancel-failed")
+        dispatcher.status("task-cancel-failed")
+
+        with pytest.raises(ValueError, match="TASK_ALREADY_TERMINAL"):
+            dispatcher.cancel("task-cancel-failed", executor="exec-cancel-terminal")
+        assert adapter.cancel_count == 0
+
+    def test_cancelled_route_wrong_executor_fails_closed_before_replay(self) -> None:
+        dispatcher, adapter = self._running_dispatcher()
+        dispatcher.cancel("task-cancel-idempotent", executor="exec-cancel-idempotent")
+
+        with pytest.raises(ValueError, match="ROUTE_EXECUTOR_MISMATCH"):
+            dispatcher.cancel("task-cancel-idempotent", executor="different-executor")
+        assert adapter.cancel_count == 1
+
+    def test_unknown_direct_cancel_fails_closed(self) -> None:
+        dispatcher, _adapter = self._running_dispatcher()
+
+        with pytest.raises(TaskNotFoundError):
+            dispatcher.cancel("task-unknown", executor="exec-cancel-idempotent")
+
+    def test_direct_and_ingress_cancel_replay_have_equivalent_semantics(self) -> None:
+        registry = ExecutorRegistry()
+        adapter = make_adapter("exec-cancel-parity")
+        registry.register(adapter)
+        dispatcher = ExecutionDispatcher(registry)
+        bind_execution_dispatcher(dispatcher)
+
+        try:
+            direct_task = "task-cancel-parity-direct"
+            dispatcher.dispatch(
+                make_package(direct_task, execution_mode="async"),
+                target_executor_id="exec-cancel-parity",
+            )
+            adapter.simulate_running(direct_task)
+            direct_first = dispatcher.cancel(direct_task, executor="exec-cancel-parity")
+            direct_replay = dispatcher.cancel(direct_task, executor="exec-cancel-parity")
+            assert adapter.cancel_count == 1
+
+            ingress_task = "task-cancel-parity-ingress"
+            dispatcher.dispatch(
+                make_package(ingress_task, execution_mode="async"),
+                target_executor_id="exec-cancel-parity",
+            )
+            adapter.simulate_running(ingress_task)
+            ingress_first = execute(
+                "execution.task_cancel",
+                {"task_id": ingress_task, "executor": "exec-cancel-parity"},
+            )
+            assert ingress_first["ok"] is True
+            assert adapter.cancel_count == 2
+            ingress_replay = execute(
+                "execution.task_cancel",
+                {"task_id": ingress_task, "executor": "exec-cancel-parity"},
+            )
+            assert ingress_replay["ok"] is True
+            assert adapter.cancel_count == 2
+
+            assert direct_first.cancelled is ingress_first["data"]["cancelled"]
+            assert direct_first.state.value == ingress_first["data"]["state"]
+            assert direct_replay.to_dict() == direct_first.to_dict()
+            assert ingress_replay["data"] == ingress_first["data"]
+        finally:
+            reset_execution_dispatcher()
 
 
 class TestCrossAdapterIsolationAndZeroBroadcast:
