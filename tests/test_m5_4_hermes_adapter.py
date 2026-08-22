@@ -415,6 +415,28 @@ class TestAdapterLifecycle:
         assert res.error["details"] == "SyntaxError at line 42"
         assert res.error["retryable"] is False
 
+    @pytest.mark.parametrize(
+        ("host_status", "expected_state"),
+        [
+            ("running", CanonicalTaskState.RUNNING),
+            ("pending", CanonicalTaskState.QUEUED),
+            ("waiting_for_input", CanonicalTaskState.WAITING),
+        ],
+    )
+    def test_active_result_preserves_nonterminal_state(
+        self, hermes_adapter, fake_client, sample_package, host_status, expected_state
+    ):
+        dispatch_res = hermes_adapter.dispatch(sample_package)
+        fake_client.results[dispatch_res.adapter_handle] = {"status": host_status}
+
+        res = hermes_adapter.result(sample_package.canonical_task_id, dispatch_res.adapter_handle)
+
+        assert res.ok is False
+        assert res.status == "unknown"
+        assert res.canonical_task_state == expected_state.value
+        assert res.canonical_task_state != CanonicalTaskState.FAILED.value
+        assert res.error["code"] == "TASK_STILL_RUNNING"
+
     def test_cancel_task(self, hermes_adapter, fake_client, sample_package):
         dispatch_res = hermes_adapter.dispatch(sample_package)
         handle = dispatch_res.adapter_handle
@@ -444,6 +466,30 @@ class TestAdapterLifecycle:
         assert resume_res.state == CanonicalTaskState.RUNNING
         assert len(fake_client.resumes) == 1
         assert fake_client.resumes[0][0] == handle
+
+    def test_resume_rejects_mismatched_task_identity_before_host_call(
+        self, hermes_adapter, fake_client, sample_package
+    ):
+        dispatch_res = hermes_adapter.dispatch(sample_package)
+        resume_pkg = ExecutionPackage.create(
+            canonical_task_id="task-m5-4-other",
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="Continue with corrected input",
+            operation="task_resume",
+        )
+
+        with pytest.raises(HermesAdapterError, match="TASK_ID_MISMATCH") as exc_info:
+            hermes_adapter.resume(
+                sample_package.canonical_task_id,
+                dispatch_res.adapter_handle,
+                resume_pkg,
+            )
+
+        assert exc_info.value.code == "TASK_ID_MISMATCH"
+        assert fake_client.resumes == []
+        assert sample_package.canonical_task_id == "task-m5-4-001"
+        assert resume_pkg.canonical_task_id == "task-m5-4-other"
 
 
 # ==============================================================================
