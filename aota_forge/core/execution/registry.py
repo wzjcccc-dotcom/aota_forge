@@ -23,6 +23,24 @@ from aota_forge.core.execution.capabilities import (
 from aota_forge.core.execution.package import ExecutionPackage
 
 
+KNOWN_CAPABILITY_REQUIREMENT_KEYS: frozenset[str] = frozenset(
+    {
+        "execution_mode",
+        "isolation_mode",
+        "isolation",
+        "timeout_seconds",
+        "requires_cancellation",
+        "requires_resume",
+        "requires_structured_result",
+        "requires_streaming_events",
+        "requires_working_directory",
+        "requires_artifact_transport",
+        "target_executor_id",
+        "executor_id",
+    }
+)
+
+
 class ResolutionOutcome(str, Enum):
     """Mechanical resolution outcome enum."""
 
@@ -324,6 +342,12 @@ class ExecutorRegistry:
             )
 
         reasons: list[str] = []
+        requirements = package.capability_requirements
+
+        # Capability requirements are a closed vocabulary. Unknown keys must not
+        # disappear from matching and accidentally produce a compatible result.
+        for key in sorted(set(requirements) - KNOWN_CAPABILITY_REQUIREMENT_KEYS):
+            reasons.append(f"Unknown capability requirement key {key!r}")
 
         # 1. Canonical role support
         if not capabilities.supports_role(package.canonical_role):
@@ -332,35 +356,66 @@ class ExecutorRegistry:
             )
 
         # 2. Execution mode check
-        req_mode = package.capability_requirements.get("execution_mode")
-        if req_mode is not None:
-            if not isinstance(req_mode, str) or not capabilities.supports_mode(req_mode):
+        if "execution_mode" in requirements:
+            req_mode = requirements["execution_mode"]
+            if not isinstance(req_mode, str):
+                reasons.append(
+                    f"Execution mode {req_mode!r} must be a canonical string"
+                )
+            elif req_mode not in ALLOWED_EXECUTION_MODES:
+                reasons.append(
+                    f"Execution mode {req_mode!r} is not canonical "
+                    f"(allowed: {sorted(ALLOWED_EXECUTION_MODES)})"
+                )
+            elif not capabilities.supports_mode(req_mode):
                 reasons.append(
                     f"Execution mode {req_mode!r} not supported by executor (supported: {list(capabilities.supported_execution_modes)})"
                 )
 
         # 3. Isolation mode check
-        req_iso = package.capability_requirements.get(
-            "isolation_mode"
-        ) or package.capability_requirements.get("isolation")
-        if req_iso is not None:
-            if not isinstance(req_iso, str) or not capabilities.supports_isolation(req_iso):
+        for isolation_key in ("isolation_mode", "isolation"):
+            if isolation_key not in requirements:
+                continue
+            req_iso = requirements[isolation_key]
+            if not isinstance(req_iso, str):
+                reasons.append(
+                    f"Isolation mode {req_iso!r} must be a canonical string"
+                )
+            elif req_iso not in ALLOWED_ISOLATION_MODES:
+                reasons.append(
+                    f"Isolation mode {req_iso!r} is not canonical "
+                    f"(allowed: {sorted(ALLOWED_ISOLATION_MODES)})"
+                )
+            elif not capabilities.supports_isolation(req_iso):
                 reasons.append(
                     f"Isolation mode {req_iso!r} not supported by executor (supported: {list(capabilities.supported_isolation_modes)})"
                 )
 
         # 4. Timeout check
-        req_timeout = (
-            package.capability_requirements.get("timeout_seconds")
-            or package.constraints.get("timeout_seconds")
-            or package.constraints.get("max_timeout_seconds")
-        )
-        if req_timeout is not None:
-            if capabilities.max_timeout_seconds is not None:
-                if not isinstance(req_timeout, (int, float)) or req_timeout > capabilities.max_timeout_seconds:
-                    reasons.append(
-                        f"Requested timeout {req_timeout}s exceeds executor maximum {capabilities.max_timeout_seconds}s"
-                    )
+        timeout_source: tuple[str, Any] | None = None
+        if "timeout_seconds" in requirements:
+            timeout_source = ("capability requirement", requirements["timeout_seconds"])
+        elif "timeout_seconds" in package.constraints:
+            timeout_source = ("constraint", package.constraints["timeout_seconds"])
+        elif "max_timeout_seconds" in package.constraints:
+            timeout_source = ("constraint", package.constraints["max_timeout_seconds"])
+        if timeout_source is not None:
+            _, req_timeout = timeout_source
+            if (
+                type(req_timeout) not in (int, float)
+                or isinstance(req_timeout, bool)
+                or req_timeout <= 0
+            ):
+                reasons.append(
+                    f"Requested timeout {req_timeout!r} must be a positive number of seconds"
+                )
+            elif (
+                capabilities.max_timeout_seconds is not None
+                and req_timeout > capabilities.max_timeout_seconds
+            ):
+                reasons.append(
+                    f"Requested timeout {req_timeout}s exceeds executor maximum {capabilities.max_timeout_seconds}s"
+                )
 
         # 5. Feature flags checks
         feature_checks = (
@@ -396,9 +451,29 @@ class ExecutorRegistry:
             ),
         )
         for req_key, cap_supported, feature_name in feature_checks:
-            if package.capability_requirements.get(req_key) is True and not cap_supported:
+            if req_key not in requirements:
+                continue
+            requested = requirements[req_key]
+            if type(requested) is not bool:
+                reasons.append(f"Requirement {req_key!r} must be a bool")
+            elif requested and not cap_supported:
                 reasons.append(
                     f"Requirement {req_key!r} ({feature_name}) is not supported by executor"
+                )
+
+        # Explicit target IDs are routing constraints, not semantic preferences.
+        for target_key in ("target_executor_id", "executor_id"):
+            if target_key not in requirements:
+                continue
+            requested_executor_id = requirements[target_key]
+            if not isinstance(requested_executor_id, str) or not requested_executor_id.strip():
+                reasons.append(
+                    f"Requirement {target_key!r} must be a non-empty executor ID string"
+                )
+            elif requested_executor_id != capabilities.executor_id:
+                reasons.append(
+                    f"Requirement {target_key!r} requests executor "
+                    f"{requested_executor_id!r}, not {capabilities.executor_id!r}"
                 )
 
         return (len(reasons) == 0, tuple(reasons))
