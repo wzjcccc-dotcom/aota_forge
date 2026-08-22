@@ -58,6 +58,7 @@ from aota_forge.core.execution.dispatcher import (
     PackageInvalidError,
     TaskNotFoundError,
 )
+from aota_forge.core.execution import ExecutionErrorCode
 from aota_forge.core.execution.adapter import CancelResult
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import (
@@ -251,6 +252,58 @@ EXECUTION_DESCRIPTORS: dict[str, OperationContractDescriptor] = {
     )
 }
 EXECUTION_OPERATIONS: frozenset[str] = frozenset(CANONICAL_EXECUTION_OPERATIONS)
+
+_CANONICAL_EXECUTION_ERROR_CODES = frozenset(
+    {code.value for code in ExecutionErrorCode}
+).union(
+    code
+    for descriptor in EXECUTION_DESCRIPTORS.values()
+    for code in descriptor.errors
+)
+
+
+def _typed_execution_error(exc: Exception) -> tuple[str, str, bool] | None:
+    """Extract a bounded canonical error from an adapter exception."""
+    code: str | None = None
+    for attribute in ("code", "error_code"):
+        try:
+            candidate = getattr(exc, attribute, None)
+        except Exception:
+            continue
+        if isinstance(candidate, str) and candidate.strip() in _CANONICAL_EXECUTION_ERROR_CODES:
+            code = candidate.strip()
+            break
+
+    message: str | None = None
+    try:
+        candidate_message = getattr(exc, "message", None)
+    except Exception:
+        candidate_message = None
+    if isinstance(candidate_message, str) and candidate_message:
+        message = candidate_message
+
+    if code is None:
+        try:
+            args = exc.args
+        except Exception:
+            args = ()
+        if isinstance(args, (tuple, list)) and args and isinstance(args[0], str):
+            raw_message = args[0]
+            prefix = raw_message.partition(":")[0].strip()
+            if prefix in _CANONICAL_EXECUTION_ERROR_CODES:
+                code = prefix
+                message = message or raw_message
+
+    if code is None:
+        return None
+
+    if message is None:
+        message = code.replace("_", " ").lower()
+    try:
+        retryable = getattr(exc, "retryable", False)
+    except Exception:
+        retryable = False
+    return code, message, retryable if isinstance(retryable, bool) else False
 
 
 def get_execution_descriptor(operation: str) -> OperationContractDescriptor | None:
@@ -996,8 +1049,24 @@ def execute_execution(
         audit["handler"] = "forge_error"
         return failure_from_error(operation, exc, correlation_id=cid, audit=audit)
     except Exception as exc:
+        typed_error = _typed_execution_error(exc)
+        if typed_error is not None:
+            code, message, retryable = typed_error
+            audit["handler"] = code.lower()
+            return failure(
+                operation,
+                code,
+                message,
+                retryable,
+                correlation_id=cid,
+                audit=audit,
+            )
         audit["handler"] = "internal_error"
-        err = ForgeError("INTERNAL_MECHANICAL_ERROR", f"internal error: {type(exc).__name__}: {str(exc)}", retryable=False)
+        err = ForgeError(
+            "INTERNAL_MECHANICAL_ERROR",
+            "internal mechanical execution error",
+            retryable=False,
+        )
         return failure_from_error(operation, err, correlation_id=cid, audit=audit)
 
 
