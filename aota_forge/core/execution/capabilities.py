@@ -68,8 +68,16 @@ class ExecutorCapabilities:
         if not isinstance(self.supported_execution_modes, (tuple, list)) or len(self.supported_execution_modes) == 0:
             raise ValueError("supported_execution_modes must be a non-empty sequence of strings")
         for mode in self.supported_execution_modes:
-            if not isinstance(mode, str) or not mode.strip():
-                raise ValueError("supported_execution_modes members must be non-empty strings")
+            if not isinstance(mode, str):
+                raise TypeError(
+                    "supported_execution_modes members must be strings, "
+                    f"got {type(mode).__name__}"
+                )
+            if mode not in ALLOWED_EXECUTION_MODES:
+                raise ValueError(
+                    f"supported_execution_modes contains non-canonical value {mode!r}; "
+                    f"must be one of {sorted(ALLOWED_EXECUTION_MODES)}"
+                )
         object.__setattr__(self, "supported_execution_modes", tuple(sorted(set(self.supported_execution_modes))))
 
         # Validate supported_canonical_roles
@@ -83,8 +91,16 @@ class ExecutorCapabilities:
         if not isinstance(self.supported_isolation_modes, (tuple, list)) or len(self.supported_isolation_modes) == 0:
             raise ValueError("supported_isolation_modes must be a non-empty sequence of strings")
         for mode in self.supported_isolation_modes:
-            if not isinstance(mode, str) or not mode.strip():
-                raise ValueError("supported_isolation_modes members must be non-empty strings")
+            if not isinstance(mode, str):
+                raise TypeError(
+                    "supported_isolation_modes members must be strings, "
+                    f"got {type(mode).__name__}"
+                )
+            if mode not in ALLOWED_ISOLATION_MODES:
+                raise ValueError(
+                    f"supported_isolation_modes contains non-canonical value {mode!r}; "
+                    f"must be one of {sorted(ALLOWED_ISOLATION_MODES)}"
+                )
         object.__setattr__(self, "supported_isolation_modes", tuple(sorted(set(self.supported_isolation_modes))))
 
         # Validate optional ints
