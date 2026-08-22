@@ -129,8 +129,11 @@ class ReferenceFakeExecutorAdapter(ExecutorAdapter):
         self._handles: dict[str, str] = {}
         # Idempotency index: idempotency_key -> (canonical_task_id, intent_fingerprint, adapter_handle, DispatchResult)
         self._idempotency_index: dict[str, tuple[str, str, str, DispatchResult]] = {}
+        # Successful lifecycle operations are replayable only for their exact bound request.
+        self._cancel_replays: dict[tuple[str, str], CancelResult] = {}
+        self._resume_replays: dict[str, tuple[str, str, str, ResumeResult]] = {}
 
-        # Mechanical counters for auditing and zero-IO verification
+        # Mechanical effect counters for auditing and zero-IO verification
         self.validation_count: int = 0
         self.dispatch_count: int = 0
         self.status_count: int = 0
@@ -370,11 +373,15 @@ class ReferenceFakeExecutorAdapter(ExecutorAdapter):
 
     def cancel(self, canonical_task_id: str, adapter_handle: str) -> CancelResult:
         """Request cancellation of active task."""
-        self.cancel_count += 1
         if not self._capabilities.supports_task_cancellation:
             raise ValueError(f"{CANCEL_UNSUPPORTED}: Executor does not support cancellation")
 
         record = self._get_verified_task(canonical_task_id, adapter_handle)
+        replay_key = (canonical_task_id, adapter_handle)
+        replay_result = self._cancel_replays.get(replay_key)
+        if replay_result is not None:
+            return replay_result
+
         if record.state.is_terminal:
             raise ValueError(
                 f"TASK_ALREADY_TERMINAL: Task {canonical_task_id!r} is already in terminal state {record.state.value}"
@@ -391,11 +398,14 @@ class ReferenceFakeExecutorAdapter(ExecutorAdapter):
             error_message="Task cancelled by request",
             correlation_id=record.package.correlation_id,
         )
-        return CancelResult(
+        cancel_result = CancelResult(
             canonical_task_id=canonical_task_id,
             cancelled=True,
             state=CanonicalTaskState.CANCELLED,
         )
+        self._cancel_replays[replay_key] = cancel_result
+        self.cancel_count += 1
+        return cancel_result
 
     def resume(
         self,
@@ -404,33 +414,59 @@ class ReferenceFakeExecutorAdapter(ExecutorAdapter):
         resume_package: ExecutionPackage,
     ) -> ResumeResult:
         """Resume waiting task with new input."""
-        self.resume_count += 1
         if not self._capabilities.supports_task_resume:
             raise ValueError(f"{RESUME_UNSUPPORTED}: Executor does not support task resume")
 
         record = self._get_verified_task(canonical_task_id, adapter_handle)
-        if record.state != CanonicalTaskState.WAITING:
-            raise ValueError(
-                f"TASK_NOT_WAITING: Task {canonical_task_id!r} is in state {record.state.value}, not WAITING"
+        if not isinstance(resume_package, ExecutionPackage):
+            raise TypeError(
+                f"resume_package must be an ExecutionPackage, got {type(resume_package).__name__}"
             )
-
-        val = self.validate_package(resume_package)
-        if not val.valid:
-            raise ValueError(f"{PACKAGE_INVALID}: Invalid resume package: {'; '.join(val.errors)}")
 
         if resume_package.canonical_task_id != canonical_task_id:
             raise ValueError(
                 f"TASK_ID_MISMATCH: Resume package canonical_task_id {resume_package.canonical_task_id!r} != {canonical_task_id!r}"
             )
 
+        val = self.validate_package(resume_package)
+        if not val.valid:
+            raise ValueError(f"{PACKAGE_INVALID}: Invalid resume package: {'; '.join(val.errors)}")
+
+        previous = self._resume_replays.get(resume_package.idempotency_key)
+        if previous is not None:
+            previous_task_id, previous_handle, previous_fingerprint, previous_result = previous
+            if (
+                previous_task_id != canonical_task_id
+                or previous_handle != adapter_handle
+                or previous_fingerprint != resume_package.intent_fingerprint
+            ):
+                raise ValueError(
+                    f"IDEMPOTENCY_CONFLICT: Resume idempotency key "
+                    f"{resume_package.idempotency_key!r} is bound to a different task, handle, or intent"
+                )
+            return previous_result
+
+        if record.state != CanonicalTaskState.WAITING:
+            raise ValueError(
+                f"TASK_NOT_WAITING: Task {canonical_task_id!r} is in state {record.state.value}, not WAITING"
+            )
+
         validate_transition(record.state, CanonicalTaskState.RUNNING)
         record.state = CanonicalTaskState.RUNNING
         record.resume_history.append(resume_package)
         record.details = f"Task resumed with package {resume_package.package_id}"
-        return ResumeResult(
+        resume_result = ResumeResult(
             canonical_task_id=canonical_task_id,
             state=CanonicalTaskState.RUNNING,
         )
+        self._resume_replays[resume_package.idempotency_key] = (
+            canonical_task_id,
+            adapter_handle,
+            resume_package.intent_fingerprint,
+            resume_result,
+        )
+        self.resume_count += 1
+        return resume_result
 
     # --------------------------------------------------------------------------
     # Deterministic test fixture simulation helpers
@@ -584,3 +620,5 @@ class ReferenceFakeExecutorAdapter(ExecutorAdapter):
         self._tasks.clear()
         self._handles.clear()
         self._idempotency_index.clear()
+        self._cancel_replays.clear()
+        self._resume_replays.clear()
