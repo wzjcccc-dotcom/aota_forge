@@ -83,6 +83,30 @@ HERMES_STATUS_MAP: dict[str, CanonicalTaskState] = {
     "timeout": CanonicalTaskState.UNKNOWN,
 }
 
+_HERMES_CAPABILITY_REQUIREMENT_KEYS: frozenset[str] = frozenset(
+    {
+        "execution_mode",
+        "isolation",
+        "isolation_mode",
+        "timeout_seconds",
+        "requires_cancellation",
+        "requires_resume",
+        "requires_structured_result",
+        "requires_streaming_events",
+        "requires_working_directory",
+        "requires_artifact_transport",
+    }
+)
+
+_HERMES_BOOLEAN_CAPABILITY_REQUIREMENTS: tuple[tuple[str, str, str], ...] = (
+    ("requires_cancellation", "supports_task_cancellation", "task cancellation"),
+    ("requires_resume", "supports_task_resume", "task resume"),
+    ("requires_structured_result", "supports_structured_result", "structured result"),
+    ("requires_streaming_events", "supports_streaming_events", "streaming events"),
+    ("requires_working_directory", "supports_working_directory", "working directory"),
+    ("requires_artifact_transport", "supports_artifact_transport", "artifact transport"),
+)
+
 
 class HermesAdapterError(Exception):
     """Base exception for Hermes adapter mechanical errors."""
@@ -464,10 +488,33 @@ class HermesAdapter(ExecutorAdapter):
         self._host_client = host_client
         self._capabilities = capabilities or default_hermes_capabilities()
         self._role_mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
+        self._dispatch_replays: dict[str, tuple[str, DispatchResult]] = {}
+        self._cancel_replays: dict[tuple[str, str], CancelResult] = {}
+        self._resume_replays: dict[str, tuple[str, str, str, ResumeResult]] = {}
+        self._handle_tasks: dict[str, str] = {}
+        self._task_handles: dict[str, str] = {}
 
     def capabilities(self) -> ExecutorCapabilities:
         """Return static advertised capabilities of the Hermes adapter."""
         return self._capabilities
+
+    def _verify_task_handle(self, canonical_task_id: str, adapter_handle: str) -> None:
+        """Reject a known handle/task pair that has been rebound."""
+        known_task_id = self._handle_tasks.get(adapter_handle)
+        if known_task_id is not None and known_task_id != canonical_task_id:
+            raise HermesAdapterError(
+                f"TASK_ID_MISMATCH: Adapter handle {adapter_handle!r} belongs to "
+                f"canonical task {known_task_id!r}, not {canonical_task_id!r}",
+                code="TASK_ID_MISMATCH",
+            )
+
+        known_handle = self._task_handles.get(canonical_task_id)
+        if known_handle is not None and known_handle != adapter_handle:
+            raise HermesAdapterError(
+                f"TASK_ID_MISMATCH: Canonical task {canonical_task_id!r} is bound to "
+                f"adapter handle {known_handle!r}, not {adapter_handle!r}",
+                code="TASK_ID_MISMATCH",
+            )
 
     def validate_package(self, package: ExecutionPackage) -> ValidationResult:
         """Pure read check whether package can be executed by Hermes adapter."""
@@ -475,6 +522,11 @@ class HermesAdapter(ExecutorAdapter):
             raise TypeError(f"package must be ExecutionPackage, got {type(package).__name__}")
 
         errors: list[str] = []
+        requirements = package.capability_requirements
+
+        for key in sorted(requirements, key=str):
+            if key not in _HERMES_CAPABILITY_REQUIREMENT_KEYS:
+                errors.append(f"PACKAGE_INVALID: unknown capability requirement key {key!r}")
 
         # 1. Check canonical role mapping
         if not self._role_mapping.has_role(package.canonical_role):
@@ -485,54 +537,70 @@ class HermesAdapter(ExecutorAdapter):
 
         # 2. Check execution mode
         req_mode = (
-            package.capability_requirements.get("execution_mode")
-            or package.constraints.get("execution_mode")
+            requirements["execution_mode"]
+            if "execution_mode" in requirements
+            else package.constraints.get("execution_mode")
         )
-        if req_mode is not None and not self._capabilities.supports_mode(str(req_mode)):
+        if req_mode is not None and (
+            not isinstance(req_mode, str) or not self._capabilities.supports_mode(req_mode)
+        ):
             errors.append(
                 f"CAPABILITY_MISMATCH: execution mode {req_mode!r} not supported by Hermes adapter"
             )
 
         # 3. Check isolation mode
-        req_iso = (
-            package.capability_requirements.get("isolation")
-            or package.capability_requirements.get("isolation_mode")
-            or package.constraints.get("isolation")
-        )
-        if req_iso is not None and not self._capabilities.supports_isolation(str(req_iso)):
-            errors.append(
-                f"CAPABILITY_MISMATCH: isolation mode {req_iso!r} not supported by Hermes adapter"
-            )
+        isolation_requirements = [
+            requirements[key]
+            for key in ("isolation", "isolation_mode")
+            if key in requirements
+        ]
+        if "isolation" in package.constraints:
+            isolation_requirements.append(package.constraints["isolation"])
+        if "isolation_mode" in package.constraints:
+            isolation_requirements.append(package.constraints["isolation_mode"])
+        for req_iso in isolation_requirements:
+            if not isinstance(req_iso, str) or not self._capabilities.supports_isolation(req_iso):
+                errors.append(
+                    f"CAPABILITY_MISMATCH: isolation mode {req_iso!r} not supported by Hermes adapter"
+                )
 
         # 4. Check timeout requirement
         req_timeout = (
-            package.constraints.get("timeout_seconds")
-            or package.capability_requirements.get("timeout_seconds")
+            requirements["timeout_seconds"]
+            if "timeout_seconds" in requirements
+            else package.constraints.get("timeout_seconds")
         )
-        if req_timeout is not None and self._capabilities.max_timeout_seconds is not None:
-            if isinstance(req_timeout, (int, float)) and req_timeout > self._capabilities.max_timeout_seconds:
+        if req_timeout is not None:
+            if not isinstance(req_timeout, (int, float)) or isinstance(req_timeout, bool):
+                errors.append(
+                    f"PACKAGE_INVALID: timeout_seconds must be numeric, got {req_timeout!r}"
+                )
+            elif (
+                self._capabilities.max_timeout_seconds is not None
+                and req_timeout > self._capabilities.max_timeout_seconds
+            ):
                 errors.append(
                     f"CAPABILITY_MISMATCH: requested timeout {req_timeout}s exceeds "
                     f"Hermes max timeout {self._capabilities.max_timeout_seconds}s"
                 )
 
-        # 5. Check cancellation requirement
-        if package.capability_requirements.get("requires_cancellation", False) and not self._capabilities.supports_task_cancellation:
-            errors.append("CAPABILITY_MISMATCH: task requires cancellation but Hermes adapter does not support it")
+        # 5. Check typed feature requirements.
+        for req_key, capability_name, feature_name in _HERMES_BOOLEAN_CAPABILITY_REQUIREMENTS:
+            if req_key not in requirements:
+                continue
+            requested = requirements[req_key]
+            if type(requested) is not bool:
+                errors.append(
+                    f"PACKAGE_INVALID: capability requirement {req_key!r} must be boolean"
+                )
+            elif requested and not getattr(self._capabilities, capability_name):
+                errors.append(
+                    f"CAPABILITY_MISMATCH: task requires {feature_name} but Hermes adapter does not support it"
+                )
 
-        # 6. Check resume requirement / operation
+        # 6. Check resume requirement / operation.
         if package.operation == "task_resume" and not self._capabilities.supports_task_resume:
             errors.append("RESUME_UNSUPPORTED: task_resume requested but Hermes adapter does not support resume")
-        if package.capability_requirements.get("requires_resume", False) and not self._capabilities.supports_task_resume:
-            errors.append("CAPABILITY_MISMATCH: task requires resume but Hermes adapter does not support it")
-
-        # 7. Check working directory requirement
-        if package.capability_requirements.get("requires_working_directory", False) and not self._capabilities.supports_working_directory:
-            errors.append("CAPABILITY_MISMATCH: task requires working directory support")
-
-        # 8. Check artifact transport requirement
-        if package.capability_requirements.get("requires_artifact_transport", False) and not self._capabilities.supports_artifact_transport:
-            errors.append("CAPABILITY_MISMATCH: task requires artifact transport support")
 
         if len(errors) > 0:
             return ValidationResult(valid=False, errors=tuple(errors))
@@ -545,6 +613,17 @@ class HermesAdapter(ExecutorAdapter):
             raise HermesDispatchRejectedError(
                 f"DISPATCH_REJECTED: package validation failed: {list(val.errors)}"
             )
+
+        previous = self._dispatch_replays.get(package.idempotency_key)
+        if previous is not None:
+            previous_fingerprint, previous_result = previous
+            if previous_fingerprint != package.intent_fingerprint:
+                raise HermesAdapterError(
+                    f"IDEMPOTENCY_CONFLICT: Idempotency key {package.idempotency_key!r} "
+                    "already used with different intent fingerprint",
+                    code="IDEMPOTENCY_CONFLICT",
+                )
+            return previous_result
 
         if self._host_client is None:
             raise HermesHostUnavailableError(
@@ -575,12 +654,20 @@ class HermesAdapter(ExecutorAdapter):
         initial_state = hermes_status_to_canonical_state(raw_status)
         dispatch_time = str(host_resp.get("dispatch_time", "2026-08-21T00:00:00Z"))
 
-        return DispatchResult(
+        dispatch_result = DispatchResult(
             canonical_task_id=package.canonical_task_id,
             adapter_handle=str(adapter_handle),
             initial_state=initial_state,
             dispatch_time=dispatch_time,
         )
+
+        self._dispatch_replays[package.idempotency_key] = (
+            package.intent_fingerprint,
+            dispatch_result,
+        )
+        self._handle_tasks[dispatch_result.adapter_handle] = package.canonical_task_id
+        self._task_handles[package.canonical_task_id] = dispatch_result.adapter_handle
+        return dispatch_result
 
     def status(self, canonical_task_id: str, adapter_handle: str) -> TaskStatusResult:
         """Query execution state of dispatched task on Hermes host."""
@@ -677,6 +764,12 @@ class HermesAdapter(ExecutorAdapter):
         if not isinstance(adapter_handle, str) or not adapter_handle.strip():
             raise ValueError("adapter_handle must be a non-empty string")
 
+        self._verify_task_handle(canonical_task_id, adapter_handle)
+        replay_key = (canonical_task_id, adapter_handle)
+        replay_result = self._cancel_replays.get(replay_key)
+        if replay_result is not None:
+            return replay_result
+
         if not self._capabilities.supports_task_cancellation:
             return CancelResult(
                 canonical_task_id=canonical_task_id,
@@ -711,11 +804,13 @@ class HermesAdapter(ExecutorAdapter):
         raw_status = host_resp.get("status", "cancelled" if cancelled else "running")
         state = hermes_status_to_canonical_state(raw_status)
 
-        return CancelResult(
+        cancel_result = CancelResult(
             canonical_task_id=canonical_task_id,
             cancelled=cancelled,
             state=state,
         )
+        self._cancel_replays[replay_key] = cancel_result
+        return cancel_result
 
     def resume(
         self,
@@ -740,6 +835,8 @@ class HermesAdapter(ExecutorAdapter):
                 code="TASK_ID_MISMATCH",
             )
 
+        self._verify_task_handle(canonical_task_id, adapter_handle)
+
         if not self._capabilities.supports_task_resume:
             raise HermesAdapterError("RESUME_UNSUPPORTED: Hermes adapter does not support task resume", code="RESUME_UNSUPPORTED")
 
@@ -748,6 +845,21 @@ class HermesAdapter(ExecutorAdapter):
             raise HermesDispatchRejectedError(
                 f"DISPATCH_REJECTED: resume package validation failed: {list(val.errors)}"
             )
+
+        previous = self._resume_replays.get(resume_package.idempotency_key)
+        if previous is not None:
+            previous_task_id, previous_handle, previous_fingerprint, previous_result = previous
+            if (
+                previous_task_id != canonical_task_id
+                or previous_handle != adapter_handle
+                or previous_fingerprint != resume_package.intent_fingerprint
+            ):
+                raise HermesAdapterError(
+                    f"IDEMPOTENCY_CONFLICT: Resume idempotency key "
+                    f"{resume_package.idempotency_key!r} is bound to a different task, handle, or intent",
+                    code="IDEMPOTENCY_CONFLICT",
+                )
+            return previous_result
 
         if self._host_client is None:
             raise HermesHostUnavailableError("EXECUTOR_UNAVAILABLE: Hermes host client is not configured")
@@ -767,7 +879,14 @@ class HermesAdapter(ExecutorAdapter):
         raw_status = host_resp.get("status", "running")
         state = hermes_status_to_canonical_state(raw_status)
 
-        return ResumeResult(
+        resume_result = ResumeResult(
             canonical_task_id=canonical_task_id,
             state=state,
         )
+        self._resume_replays[resume_package.idempotency_key] = (
+            canonical_task_id,
+            adapter_handle,
+            resume_package.intent_fingerprint,
+            resume_result,
+        )
+        return resume_result
