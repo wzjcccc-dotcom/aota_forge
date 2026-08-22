@@ -226,6 +226,97 @@ class FakeHermesHostClient:
         return {"resumed": True, "status": "running"}
 
 
+class RouteProbeAdapter(ExecutorAdapter):
+    """Tagged in-memory adapter for proving route binding across registry rebinds."""
+
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+        self._capabilities = ExecutorCapabilities(
+            executor_id="X",
+            adapter_kind=f"route_probe_{tag}",
+            supported_execution_modes=("sync",),
+            supports_streaming_events=False,
+            supports_task_cancellation=True,
+            supports_task_resume=True,
+            supports_structured_result=True,
+            supported_canonical_roles=tuple(CANONICAL_ROLES),
+            supported_isolation_modes=("none",),
+            supports_working_directory=False,
+            supports_artifact_transport=False,
+            max_timeout_seconds=3600,
+            concurrency_limit=1,
+        )
+        self.calls: dict[tuple[str, str], int] = {}
+
+    def _record(self, operation: str, canonical_task_id: str) -> None:
+        key = (operation, canonical_task_id)
+        self.calls[key] = self.calls.get(key, 0) + 1
+
+    def calls_for_task(self, canonical_task_id: str) -> int:
+        return sum(
+            count
+            for (operation, task_id), count in self.calls.items()
+            if task_id == canonical_task_id and operation != "dispatch"
+        )
+
+    def capabilities(self) -> ExecutorCapabilities:
+        return self._capabilities
+
+    def validate_package(self, package: ExecutionPackage) -> ValidationResult:
+        self._record("validate", package.canonical_task_id)
+        return ValidationResult(valid=True)
+
+    def dispatch(self, package: ExecutionPackage) -> DispatchResult:
+        self._record("dispatch", package.canonical_task_id)
+        return DispatchResult(
+            canonical_task_id=package.canonical_task_id,
+            adapter_handle=f"{self.tag}-handle-{package.canonical_task_id}",
+            initial_state=CanonicalTaskState.RUNNING,
+            dispatch_time="2026-08-22T00:00:00Z",
+        )
+
+    def status(self, canonical_task_id: str, adapter_handle: str) -> TaskStatusResult:
+        self._record("status", canonical_task_id)
+        return TaskStatusResult(
+            canonical_task_id=canonical_task_id,
+            state=CanonicalTaskState.RUNNING,
+            details=f"status from {self.tag}",
+        )
+
+    def result(self, canonical_task_id: str, adapter_handle: str) -> CanonicalResult:
+        self._record("result", canonical_task_id)
+        return CanonicalResult.failure(
+            canonical_task_id=canonical_task_id,
+            executor_id="X",
+            error_code="TASK_STILL_RUNNING",
+            error_message=f"result from {self.tag} is still active",
+            retryable=True,
+            status="unknown",
+            canonical_task_state=CanonicalTaskState.RUNNING.value,
+            correlation_id=f"corr-{canonical_task_id}",
+        )
+
+    def cancel(self, canonical_task_id: str, adapter_handle: str) -> CancelResult:
+        self._record("cancel", canonical_task_id)
+        return CancelResult(
+            canonical_task_id=canonical_task_id,
+            cancelled=True,
+            state=CanonicalTaskState.CANCELLED,
+        )
+
+    def resume(
+        self,
+        canonical_task_id: str,
+        adapter_handle: str,
+        resume_package: ExecutionPackage,
+    ) -> ResumeResult:
+        self._record("resume", canonical_task_id)
+        return ResumeResult(
+            canonical_task_id=canonical_task_id,
+            state=CanonicalTaskState.RUNNING,
+        )
+
+
 def run_cli_in_process(argv: list[str]) -> tuple[int, dict[str, Any] | str]:
     """Execute CLI in-process and capture exit code + output."""
     stdout_buf = io.StringIO()
@@ -1343,6 +1434,281 @@ class TestFailureInjectionAndRouteIsolation(unittest.TestCase):
         self.assertEqual(ingress_err2["error"]["code"], "TASK_NOT_FOUND")
         self.assertTrue(isinstance(cli_err2, dict))
         self.assertEqual(cli_err2["error"]["code"], "TASK_NOT_FOUND")
+
+
+class TestR1DPostRepairConvergence(unittest.TestCase):
+    """Post-repair convergence probes for M5-R F01 through F04."""
+
+    def setUp(self) -> None:
+        reset_execution_dispatcher()
+
+    def tearDown(self) -> None:
+        reset_execution_dispatcher()
+
+    @staticmethod
+    def _package(canonical_task_id: str, instruction: str = "r1d convergence") -> ExecutionPackage:
+        return ExecutionPackage.create(
+            canonical_task_id=canonical_task_id,
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction=instruction,
+        )
+
+    @staticmethod
+    def _start_params(canonical_task_id: str, executor: str) -> dict[str, str]:
+        return {
+            "canonical_task_id": canonical_task_id,
+            "executor": executor,
+            "role": "coder",
+            "instruction": "r1d ingress convergence",
+            "project_id": "aota_forge",
+        }
+
+    @staticmethod
+    def _hermes_dispatcher() -> tuple[ExecutionDispatcher, FakeHermesHostClient]:
+        host = FakeHermesHostClient()
+        registry = ExecutorRegistry()
+        registry.register(HermesAdapter(host_client=host))
+        return ExecutionDispatcher(registry), host
+
+    @staticmethod
+    def _reference_dispatcher(
+        initial_state: CanonicalTaskState = CanonicalTaskState.ACCEPTED,
+        auto_complete: bool = False,
+    ) -> ExecutionDispatcher:
+        registry = ExecutorRegistry()
+        registry.register(
+            ReferenceFakeExecutorAdapter(
+                default_initial_state=initial_state,
+                auto_complete=auto_complete,
+            )
+        )
+        return ExecutionDispatcher(registry)
+
+    def test_r1d_f01_hermes_nonterminal_result_convergence(self) -> None:
+        """F01: Non-terminal Hermes results never project to a terminal failure."""
+        host = FakeHermesHostClient()
+        adapter = HermesAdapter(host_client=host)
+        handle = "r1d-f01-handle"
+
+        active_cases = (
+            ("running", CanonicalTaskState.RUNNING),
+            ("pending", CanonicalTaskState.QUEUED),
+            ("waiting_for_input", CanonicalTaskState.WAITING),
+            ("unreachable", CanonicalTaskState.UNKNOWN),
+        )
+        for index, (raw_status, expected_state) in enumerate(active_cases):
+            task_id = f"r1d-f01-active-{index}"
+            host.results[handle] = {
+                "status": raw_status,
+                "error": {"message": "result is not available yet"},
+            }
+            result = adapter.result(task_id, handle)
+            self.assertEqual(result.canonical_task_state, expected_state.value)
+            self.assertNotEqual(result.status, "failed")
+            if expected_state == CanonicalTaskState.UNKNOWN:
+                self.assertEqual(result.error["code"], "TASK_STATE_UNKNOWN")
+            else:
+                self.assertEqual(result.error["code"], "TASK_STILL_RUNNING")
+
+        host.results[handle] = {
+            "status": "failed",
+            "error": {"code": "EXECUTION_FAILED", "message": "host failure"},
+        }
+        failed = adapter.result("r1d-f01-failed", handle)
+        self.assertEqual(failed.canonical_task_state, CanonicalTaskState.FAILED.value)
+        self.assertEqual(failed.status, "failed")
+
+        host.results[handle] = {
+            "status": "done",
+            "result_data": {"answer": "complete"},
+        }
+        completed = adapter.result("r1d-f01-completed", handle)
+        self.assertEqual(completed.canonical_task_state, CanonicalTaskState.COMPLETED.value)
+        self.assertEqual(completed.status, "completed")
+
+    def test_r1d_f02_resume_identity_convergence(self) -> None:
+        """F02: A mismatched resume package is rejected before the host call."""
+        dispatcher, host = self._hermes_dispatcher()
+        original = self._package("r1d-f02-a", "original task")
+        dispatch_result = dispatcher.dispatch(original, target_executor_id="hermes")
+        mismatched = self._package("r1d-f02-b", "mismatched resume")
+
+        with self.assertRaises(HermesAdapterError) as mismatch:
+            dispatcher.resume("r1d-f02-a", mismatched)
+        self.assertEqual(mismatch.exception.code, "TASK_ID_MISMATCH")
+        self.assertEqual(len(host.resumes), 0)
+
+        valid_resume = self._package("r1d-f02-a", "valid resume")
+        resumed = dispatcher.resume("r1d-f02-a", valid_resume)
+        self.assertEqual(resumed.canonical_task_id, "r1d-f02-a")
+        self.assertEqual(resumed.state, CanonicalTaskState.RUNNING)
+        self.assertEqual(len(host.resumes), 1)
+        self.assertEqual(
+            host.resumes[0][1]["context"]["canonical_task_id"],
+            original.canonical_task_id,
+        )
+        self.assertEqual(dispatch_result.canonical_task_id, original.canonical_task_id)
+
+    def test_r1d_f03_route_binding_convergence(self) -> None:
+        """F03: Rebinding X leaves old tasks on A while new tasks use B."""
+        adapter_a = RouteProbeAdapter("A")
+        adapter_b = RouteProbeAdapter("B")
+        registry = ExecutorRegistry()
+        registry.register(adapter_a)
+        dispatcher = ExecutionDispatcher(registry)
+
+        old_package = self._package("r1d-f03-old", "old route")
+        dispatcher.dispatch(old_package, target_executor_id="X")
+
+        registry.unregister("X")
+        registry.register(adapter_b)
+        new_package = self._package("r1d-f03-new", "new route")
+        dispatcher.dispatch(new_package, target_executor_id="X")
+
+        dispatcher.status("r1d-f03-old")
+        old_result = dispatcher.result("r1d-f03-old")
+        self.assertEqual(old_result.canonical_task_state, CanonicalTaskState.RUNNING.value)
+        dispatcher.cancel("r1d-f03-old")
+        dispatcher.resume("r1d-f03-old", self._package("r1d-f03-old", "old resume"))
+
+        dispatcher.status("r1d-f03-new")
+
+        self.assertEqual(adapter_a.calls[("status", "r1d-f03-old")], 1)
+        self.assertEqual(adapter_a.calls[("result", "r1d-f03-old")], 1)
+        self.assertEqual(adapter_a.calls[("cancel", "r1d-f03-old")], 1)
+        self.assertEqual(adapter_a.calls[("resume", "r1d-f03-old")], 1)
+        self.assertEqual(adapter_b.calls_for_task("r1d-f03-old"), 0)
+        self.assertGreater(adapter_b.calls_for_task("r1d-f03-new"), 0)
+
+        object_count = 0
+        callable_count = 0
+
+        def count_public_leaks(value: Any) -> None:
+            nonlocal object_count, callable_count
+            if isinstance(value, ExecutorAdapter):
+                object_count += 1
+            elif callable(value):
+                callable_count += 1
+            elif isinstance(value, Mapping):
+                for nested in value.values():
+                    count_public_leaks(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    count_public_leaks(nested)
+
+        for route in dispatcher.list_routes():
+            count_public_leaks(route.to_dict())
+        self.assertEqual(object_count, 0)
+        self.assertEqual(callable_count, 0)
+
+    def test_r1d_f04a_ingress_cancel_replay_convergence(self) -> None:
+        """F04A: Unified Ingress replays cancellation without a second adapter effect."""
+        dispatcher, host = self._hermes_dispatcher()
+        bind_execution_dispatcher(dispatcher)
+        task_id = "r1d-f04a-replay"
+        started = execute("execution.task_start", self._start_params(task_id, "hermes"))
+        self.assertTrue(started["ok"])
+
+        cancel_params = {"executor": "hermes", "task_id": task_id}
+        replay_results = [execute("execution.task_cancel", cancel_params) for _ in range(3)]
+        self.assertEqual(
+            [(result["ok"], result["data"]["state"]) for result in replay_results],
+            [(True, "CANCELLED")] * 3,
+        )
+        self.assertEqual(len(host.cancels), 1)
+
+        completed_dispatcher = self._reference_dispatcher(auto_complete=True)
+        bind_execution_dispatcher(completed_dispatcher)
+        completed_id = "r1d-f04a-completed"
+        self.assertTrue(execute("execution.task_start", self._start_params(completed_id, "reference-fake"))["ok"])
+        completed_cancel = execute(
+            "execution.task_cancel",
+            {"executor": "reference-fake", "task_id": completed_id},
+        )
+        self.assertFalse(completed_cancel["ok"])
+        self.assertEqual(completed_cancel["error"]["code"], "TASK_ALREADY_TERMINAL")
+
+        failed_dispatcher = self._reference_dispatcher(initial_state=CanonicalTaskState.FAILED)
+        bind_execution_dispatcher(failed_dispatcher)
+        failed_id = "r1d-f04a-failed"
+        self.assertTrue(execute("execution.task_start", self._start_params(failed_id, "reference-fake"))["ok"])
+        failed_cancel = execute(
+            "execution.task_cancel",
+            {"executor": "reference-fake", "task_id": failed_id},
+        )
+        self.assertFalse(failed_cancel["ok"])
+        self.assertEqual(failed_cancel["error"]["code"], "TASK_ALREADY_TERMINAL")
+
+        mismatch_dispatcher, mismatch_host = self._hermes_dispatcher()
+        bind_execution_dispatcher(mismatch_dispatcher)
+        mismatch_id = "r1d-f04a-mismatch"
+        self.assertTrue(execute("execution.task_start", self._start_params(mismatch_id, "hermes"))["ok"])
+        mismatch_cancel = execute(
+            "execution.task_cancel",
+            {"executor": "wrong-executor", "task_id": mismatch_id},
+        )
+        self.assertFalse(mismatch_cancel["ok"])
+        self.assertEqual(mismatch_cancel["error"]["code"], "ROUTE_EXECUTOR_MISMATCH")
+        self.assertEqual(len(mismatch_host.cancels), 0)
+
+        unknown_cancel = execute(
+            "execution.task_cancel",
+            {"executor": "hermes", "task_id": "r1d-f04a-unknown"},
+        )
+        self.assertFalse(unknown_cancel["ok"])
+        self.assertEqual(unknown_cancel["error"]["code"], "TASK_NOT_FOUND")
+
+    def test_r1d_f04b_dispatcher_cancel_replay_and_surface_parity(self) -> None:
+        """F04B: Direct Core and Ingress cancellation replay have identical mechanics."""
+        ingress_dispatcher, ingress_host = self._hermes_dispatcher()
+        bind_execution_dispatcher(ingress_dispatcher)
+        ingress_id = "r1d-f04b-ingress"
+        self.assertTrue(execute("execution.task_start", self._start_params(ingress_id, "hermes"))["ok"])
+        ingress_replays = [
+            execute("execution.task_cancel", {"executor": "hermes", "task_id": ingress_id})
+            for _ in range(3)
+        ]
+
+        direct_dispatcher, direct_host = self._hermes_dispatcher()
+        direct_id = "r1d-f04b-direct"
+        direct_dispatcher.dispatch(self._package(direct_id), target_executor_id="hermes")
+        direct_replays = [direct_dispatcher.cancel(direct_id) for _ in range(3)]
+
+        ingress_projection = [
+            (result["ok"], result["data"]["state"]) for result in ingress_replays
+        ]
+        direct_projection = [
+            (result.cancelled, result.state.value) for result in direct_replays
+        ]
+        self.assertEqual(ingress_projection, direct_projection)
+        self.assertEqual(ingress_projection, [(True, "CANCELLED")] * 3)
+        self.assertEqual(len(ingress_host.cancels), 1)
+        self.assertEqual(len(direct_host.cancels), 1)
+
+        completed_dispatcher = self._reference_dispatcher(auto_complete=True)
+        completed_id = "r1d-f04b-completed"
+        completed_dispatcher.dispatch(
+            self._package(completed_id), target_executor_id="reference-fake"
+        )
+        with self.assertRaisesRegex(ValueError, "TASK_ALREADY_TERMINAL"):
+            completed_dispatcher.cancel(completed_id)
+
+        failed_dispatcher = self._reference_dispatcher(initial_state=CanonicalTaskState.FAILED)
+        failed_id = "r1d-f04b-failed"
+        failed_dispatcher.dispatch(self._package(failed_id), target_executor_id="reference-fake")
+        with self.assertRaisesRegex(ValueError, "TASK_ALREADY_TERMINAL"):
+            failed_dispatcher.cancel(failed_id)
+
+        mismatch_dispatcher, mismatch_host = self._hermes_dispatcher()
+        mismatch_id = "r1d-f04b-mismatch"
+        mismatch_dispatcher.dispatch(self._package(mismatch_id), target_executor_id="hermes")
+        with self.assertRaisesRegex(ValueError, "ROUTE_EXECUTOR_MISMATCH"):
+            mismatch_dispatcher.cancel(mismatch_id, executor="wrong-executor")
+        self.assertEqual(len(mismatch_host.cancels), 0)
+
+        with self.assertRaises(TaskNotFoundError):
+            direct_dispatcher.cancel("r1d-f04b-unknown")
 
 
 if __name__ == "__main__":

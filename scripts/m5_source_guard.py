@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M5-6 Source Implementation Guard (SG01 .. SG15).
+"""M5 source and post-repair provenance guard (SG01 .. SG28).
 
 Deterministic, read-only mechanical guard verifying:
 - SG01: Required accepted M5 production files exist
@@ -17,6 +17,19 @@ Deterministic, read-only mechanical guard verifying:
 - SG13: Source ownership intact
 - SG14: M5-6 did not mutate production source
 - SG15: No live/deploy artifacts in M5 source scope
+- SG16: Exact repaired-source ancestry is present
+- SG17: The final repair delta contains exactly six paths
+- SG18: R1C2 serial provenance is exact
+- SG19: No generic or wildcard repair allowlist exists
+- SG20: Future unauthorized production/test paths are rejected
+- SG21: Critical guard claims are non-tautological
+- SG22: M5-6 R1/R2 lifecycle protections remain bounded
+- SG23: M4 test scope remains frozen
+- SG24: R1D changed paths are exact and authorized
+- SG25: R1D evidence remains under the exact evidence root
+- SG26: Historical blocked review evidence remains untouched
+- SG27: The guard is an authorized R1D path
+- SG28: No unauthorized current source mutation is accepted
 """
 
 from __future__ import annotations
@@ -49,7 +62,68 @@ from aota_forge.core.ingress import (
     get_execution_dispatcher,
 )
 
-ACCEPTED_BASE = "3b2796188e4f88047215fc7ee5271dc06a9b1be4"
+M5_6_ACCEPTED_BASE = "3b2796188e4f88047215fc7ee5271dc06a9b1be4"
+PRE_REPAIR_SOURCE_BASE = "c32d2c4eac5cb99aec529787473fd88fc9646521"
+FINAL_REPAIRED_SOURCE_BASE = "f89874b0f419184de88c39f5ccc25ae473c707f1"
+BLOCKED_INTEGRATION_CANDIDATE = "31a63c7e1dbdbf99217fe98b770842152a16ac55"
+R1A_SOURCE = "d1a25c141c2da4b134f2fb20690526a4909dda92"
+R1B_SOURCE = "435437d67fa2ad355b55b373597e7358ddfa8d1c"
+R1C_SOURCE = "5ff86933a7c2676c8e3a573b23c1a24a99b0a896"
+R1C2_SOURCE = FINAL_REPAIRED_SOURCE_BASE
+
+R1D_EVIDENCE_ROOT = "deploy/evidence/issues/9/m5-source/"
+R1D_EXACT_CHANGED_PATHS = frozenset(
+    {
+        "tests/test_m5_6_convergence.py",
+        "scripts/m5_source_guard.py",
+    }
+)
+
+AUTHORIZED_REPAIR_PRODUCTION_PATHS = frozenset(
+    {
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/core/execution/dispatcher.py",
+        "aota_forge/core/ingress.py",
+    }
+)
+AUTHORIZED_REPAIR_TEST_PATHS = frozenset(
+    {
+        "tests/test_m5_4_hermes_adapter.py",
+        "tests/test_m5_3_dispatcher.py",
+        "tests/test_m5_5_cli_dispatch.py",
+    }
+)
+AUTHORIZED_REPAIR_DELTA_PATHS = (
+    AUTHORIZED_REPAIR_PRODUCTION_PATHS | AUTHORIZED_REPAIR_TEST_PATHS
+)
+R1C2_SERIAL_PATHS = frozenset(
+    {
+        "aota_forge/core/execution/dispatcher.py",
+        "tests/test_m5_3_dispatcher.py",
+    }
+)
+
+REPAIR_COMMIT_PATHS = {
+    R1A_SOURCE: frozenset(
+        {
+            "aota_forge/adapters/hermes/executor.py",
+            "tests/test_m5_4_hermes_adapter.py",
+        }
+    ),
+    R1B_SOURCE: frozenset(
+        {
+            "aota_forge/core/execution/dispatcher.py",
+            "tests/test_m5_3_dispatcher.py",
+        }
+    ),
+    R1C_SOURCE: frozenset(
+        {
+            "aota_forge/core/ingress.py",
+            "tests/test_m5_5_cli_dispatch.py",
+        }
+    ),
+    R1C2_SOURCE: R1C2_SERIAL_PATHS,
+}
 
 REQUIRED_PRODUCTION_FILES = [
     "aota_forge/core/execution/__init__.py",
@@ -80,11 +154,6 @@ REQUIRED_TEST_FILES = [
     "tests/test_m5_6_convergence.py",
 ]
 
-ALLOWED_CHANGED_PATTERNS = {
-    "tests/test_m5_6_convergence.py",
-    "scripts/m5_source_guard.py",
-}
-
 AUTHORIZED_POST_ACCEPTANCE_REPAIRS = {
     "M5-6-R1-F01": {
         "path": "tests/test_m5_5_cli_dispatch.py",
@@ -93,6 +162,7 @@ AUTHORIZED_POST_ACCEPTANCE_REPAIRS = {
         "target_method": "test_q15_m5_6_not_started",
     }
 }
+M5_6_R2_PROTECTION_ID = "M5-6-R2-F01"
 
 
 def git(*args: str) -> str:
@@ -103,6 +173,57 @@ def git(*args: str) -> str:
         check=True,
     )
     return res.stdout.strip()
+
+
+def git_succeeds(*args: str) -> bool:
+    res = subprocess.run(
+        ["git", "-C", str(ROOT), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return res.returncode == 0
+
+
+def diff_paths(base: str, head: str | None = None) -> frozenset[str]:
+    args = ["diff", "--name-only", base]
+    if head is not None:
+        args.append(head)
+    return frozenset(line for line in git(*args).splitlines() if line.strip())
+
+
+def current_changed_paths() -> frozenset[str]:
+    paths = set(diff_paths(FINAL_REPAIRED_SOURCE_BASE))
+    status = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--short", "--untracked-files=all"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for line in status.stdout.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        paths.add(path)
+    return frozenset(paths)
+
+
+def is_ancestor(ancestor: str, descendant: str) -> bool:
+    return git_succeeds("merge-base", "--is-ancestor", ancestor, descendant)
+
+
+def commit_parent(commit: str) -> str:
+    return git("rev-parse", f"{commit}^")
+
+
+def blob(commit: str, path: str) -> str:
+    return git("show", f"{commit}:{path}")
+
+
+def is_authorized_r1d_path(path: str) -> bool:
+    return path in R1D_EXACT_CHANGED_PATHS or path.startswith(R1D_EVIDENCE_ROOT)
 
 
 def verify_authorized_regression_repair(
@@ -201,9 +322,9 @@ def verify_authorized_repair_for_file(rel_path: str) -> tuple[bool, str]:
         return False, f"Repair {repair_id} missing target_class or target_method metadata"
 
     try:
-        base_source = git("show", f"{ACCEPTED_BASE}:{rel_path}")
+        base_source = git("show", f"{M5_6_ACCEPTED_BASE}:{rel_path}")
     except Exception as exc:
-        return False, f"Failed to read base version of {rel_path} at {ACCEPTED_BASE}: {exc}"
+        return False, f"Failed to read base version of {rel_path} at {M5_6_ACCEPTED_BASE}: {exc}"
 
     curr_path = ROOT / rel_path
     if not curr_path.is_file():
@@ -215,6 +336,28 @@ def verify_authorized_repair_for_file(rel_path: str) -> tuple[bool, str]:
         return False, f"Failed to read current version of {rel_path}: {exc}"
 
     return verify_authorized_regression_repair(base_source, curr_source, target_class, target_method)
+
+
+def verify_authorized_repair_between(
+    rel_path: str,
+    base_commit: str,
+    candidate_commit: str,
+) -> tuple[bool, str]:
+    """Verify one bounded historical repair between two exact commits."""
+    repair_info = AUTHORIZED_POST_ACCEPTANCE_REPAIRS.get("M5-6-R1-F01")
+    if repair_info is None or repair_info.get("path") != rel_path:
+        return False, f"Historical repair metadata does not authorize {rel_path}"
+    try:
+        base_source = blob(base_commit, rel_path)
+        candidate_source = blob(candidate_commit, rel_path)
+    except Exception as exc:
+        return False, f"Failed to read historical repair sources: {exc}"
+    return verify_authorized_regression_repair(
+        base_source,
+        candidate_source,
+        str(repair_info["target_class"]),
+        str(repair_info["target_method"]),
+    )
 
 
 def _self_validate_guard_repair_logic() -> tuple[bool, str]:
@@ -408,17 +551,10 @@ def check_sg11_no_forbidden_m5_6_production_path() -> tuple[bool, str]:
     if not self_ok:
         return False, f"Guard quality verification failed: {self_msg}"
 
-    diff_names = [line.strip() for line in git("diff", "--name-only", ACCEPTED_BASE).splitlines() if line.strip()]
-    for name in diff_names:
-        if name in ALLOWED_CHANGED_PATTERNS or name.startswith("deploy/evidence/issues/9/m5-source/"):
-            continue
-        if any(info.get("path") == name for info in AUTHORIZED_POST_ACCEPTANCE_REPAIRS.values()):
-            ok, msg = verify_authorized_repair_for_file(name)
-            if not ok:
-                return False, f"Authorized repair verification failed for {name}: {msg}"
-        else:
-            return False, f"Forbidden file modified in M5-6: {name}"
-    return True, "Only authorized M5-6 files modified"
+    forbidden = sorted(path for path in current_changed_paths() if not is_authorized_r1d_path(path))
+    if forbidden:
+        return False, f"Forbidden file modified after repaired base: {forbidden}"
+    return True, "Only exact R1D paths are modified after the repaired base"
 
 
 def check_sg12_no_unresolved_semantic_todo() -> tuple[bool, str]:
@@ -452,28 +588,207 @@ def check_sg13_source_ownership_intact() -> tuple[bool, str]:
     if not self_ok:
         return False, f"Guard quality verification failed: {self_msg}"
 
-    diff_names = [line.strip() for line in git("diff", "--name-only", ACCEPTED_BASE).splitlines() if line.strip()]
-    for name in diff_names:
+    for name in current_changed_paths():
         if name.startswith("aota_forge/"):
             return False, f"Production source touched: {name}"
         if name.startswith("tests/test_m4_"):
             return False, f"Previous test touched: {name}"
         if name.startswith("tests/test_m5_") and name != "tests/test_m5_6_convergence.py":
-            if any(info.get("path") == name for info in AUTHORIZED_POST_ACCEPTANCE_REPAIRS.values()):
-                ok, msg = verify_authorized_repair_for_file(name)
-                if not ok:
-                    return False, f"Previous test touched without verified authorized repair ({name}): {msg}"
-            else:
-                return False, f"Previous test touched: {name}"
+            return False, f"Previous test touched: {name}"
     return True, "Source ownership partitions fully intact"
 
 
 def check_sg14_m5_6_did_not_mutate_production_source() -> tuple[bool, str]:
-    diff_prod = git("diff", "--name-only", ACCEPTED_BASE, "--", "aota_forge").splitlines()
-    prod_files = [f for f in diff_prod if f.strip()]
+    prod_files = sorted(path for path in current_changed_paths() if path.startswith("aota_forge/"))
     if prod_files:
         return False, f"Production files mutated: {prod_files}"
-    return True, "Production source mutation count is 0"
+    return True, "Production source mutation count after repaired base is 0"
+
+
+def check_sg16_repaired_source_lineage() -> tuple[bool, str]:
+    ancestor_pairs = (
+        (PRE_REPAIR_SOURCE_BASE, R1A_SOURCE),
+        (PRE_REPAIR_SOURCE_BASE, R1B_SOURCE),
+        (PRE_REPAIR_SOURCE_BASE, R1C_SOURCE),
+        (PRE_REPAIR_SOURCE_BASE, BLOCKED_INTEGRATION_CANDIDATE),
+        (BLOCKED_INTEGRATION_CANDIDATE, FINAL_REPAIRED_SOURCE_BASE),
+        (R1B_SOURCE, BLOCKED_INTEGRATION_CANDIDATE),
+        (R1C_SOURCE, BLOCKED_INTEGRATION_CANDIDATE),
+    )
+    for ancestor, descendant in ancestor_pairs:
+        if not is_ancestor(ancestor, descendant):
+            return False, f"Missing Git ancestor relation: {ancestor} -> {descendant}"
+
+    for commit, expected_paths in REPAIR_COMMIT_PATHS.items():
+        actual_paths = diff_paths(commit_parent(commit), commit)
+        if actual_paths != expected_paths:
+            return False, f"Repair commit {commit} changed {sorted(actual_paths)}, expected {sorted(expected_paths)}"
+    return True, "R1A/R1B/R1C/R1C2 Git lineage and commit path attribution are exact"
+
+
+def check_sg17_final_repair_delta_exact() -> tuple[bool, str]:
+    actual_paths = diff_paths(PRE_REPAIR_SOURCE_BASE, FINAL_REPAIRED_SOURCE_BASE)
+    if actual_paths != AUTHORIZED_REPAIR_DELTA_PATHS:
+        return False, f"Final repair delta mismatch: {sorted(actual_paths)}"
+    return True, "Final repair delta is exactly six authorized production/test paths"
+
+
+def check_sg18_r1c2_serial_provenance() -> tuple[bool, str]:
+    if commit_parent(R1C2_SOURCE) != BLOCKED_INTEGRATION_CANDIDATE:
+        return False, "R1C2 parent is not the blocked integration candidate"
+    if diff_paths(BLOCKED_INTEGRATION_CANDIDATE, R1C2_SOURCE) != R1C2_SERIAL_PATHS:
+        return False, "R1C2 changed paths are not exactly dispatcher.py and test_m5_3_dispatcher.py"
+    for path in R1C2_SERIAL_PATHS:
+        if blob(R1B_SOURCE, path) != blob(BLOCKED_INTEGRATION_CANDIDATE, path):
+            return False, f"Blocked integration does not contain the R1B state for {path}"
+    return True, "R1C2 is a serial child of blocked integration with exact two-path provenance"
+
+
+def check_sg19_no_generic_or_wildcard_allowlist() -> tuple[bool, str]:
+    if AUTHORIZED_REPAIR_PRODUCTION_PATHS != {
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/core/execution/dispatcher.py",
+        "aota_forge/core/ingress.py",
+    }:
+        return False, "Production repair authorization is not the exact three-path set"
+    if AUTHORIZED_REPAIR_TEST_PATHS != {
+        "tests/test_m5_4_hermes_adapter.py",
+        "tests/test_m5_3_dispatcher.py",
+        "tests/test_m5_5_cli_dispatch.py",
+    }:
+        return False, "Repair-test authorization is not the exact three-path set"
+    all_path_values = (
+        set(AUTHORIZED_REPAIR_PRODUCTION_PATHS)
+        | set(AUTHORIZED_REPAIR_TEST_PATHS)
+        | set(R1D_EXACT_CHANGED_PATHS)
+    )
+    if any("*" in path or "?" in path for path in all_path_values):
+        return False, "Wildcard repair path is present"
+    if any(path.startswith("aota_forge/") for path in R1D_EXACT_CHANGED_PATHS):
+        return False, "R1D exact path set contains a generic production allowance"
+    return True, "GENERIC_PRODUCTION_ALLOWLIST_PRESENT=no; WILDCARD_REPAIR_ALLOWLIST_PRESENT=no"
+
+
+def check_sg20_future_unauthorized_mutations_rejected() -> tuple[bool, str]:
+    conceptual_unauthorized_paths = (
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/core/execution/dispatcher.py",
+        "aota_forge/core/ingress.py",
+        "aota_forge/core/execution/extra.py",
+        "tests/test_m5_3_dispatcher.py",
+        "tests/test_m5_7_extra.py",
+        "scripts/other_guard.py",
+    )
+    accepted = [path for path in conceptual_unauthorized_paths if is_authorized_r1d_path(path)]
+    if accepted:
+        return False, f"Conceptual unauthorized paths were accepted: {accepted}"
+    if not all(is_authorized_r1d_path(path) for path in R1D_EXACT_CHANGED_PATHS):
+        return False, "An exact R1D path was rejected"
+    return True, "POST_REPAIR_UNAUTHORIZED_PRODUCTION_MUTATION_REJECTED=yes; POST_REPAIR_UNAUTHORIZED_TEST_MUTATION_REJECTED=yes"
+
+
+def check_sg21_guard_non_tautological() -> tuple[bool, str]:
+    source = (ROOT / "scripts" / "m5_source_guard.py").read_text(encoding="utf-8")
+    required_mechanical_tokens = ("ast.parse", "merge-base", "diff_paths", "FINAL_REPAIRED_SOURCE_BASE")
+    missing = [token for token in required_mechanical_tokens if token not in source]
+    if missing:
+        return False, f"Guard is missing mechanical validation structure: {missing}"
+    self_ok, self_msg = _self_validate_guard_repair_logic()
+    if not self_ok:
+        return False, self_msg
+    return True, "Critical provenance claims derive from Git, exact paths, and AST checks"
+
+
+def check_sg22_m5_6_lifecycle_protection_preserved() -> tuple[bool, str]:
+    repair_ok, repair_msg = verify_authorized_repair_between(
+        "tests/test_m5_5_cli_dispatch.py",
+        M5_6_ACCEPTED_BASE,
+        PRE_REPAIR_SOURCE_BASE,
+    )
+    if not repair_ok:
+        return False, f"M5-6-R1-F01 historical repair no longer verifies: {repair_msg}"
+
+    historical_guard = blob(PRE_REPAIR_SOURCE_BASE, "scripts/m5_source_guard.py")
+    current_guard = (ROOT / "scripts" / "m5_source_guard.py").read_text(encoding="utf-8")
+    historical_required = (
+        "M5-6-R1-F01",
+        "TestM55NegativeAndArchitecturalInvariants",
+        "test_q15_m5_6_not_started",
+        "verify_authorized_regression_repair",
+        "_self_validate_guard_repair_logic",
+    )
+    current_required = historical_required + (M5_6_R2_PROTECTION_ID,)
+    for source_name, source, required in (
+        ("accepted M5-6 guard", historical_guard, historical_required),
+        ("current guard", current_guard, current_required),
+    ):
+        missing = [token for token in required if token not in source]
+        if missing:
+            return False, f"{source_name} lost lifecycle protection tokens: {missing}"
+    return True, "M5-6-R1-F01 exact AST repair and M5-6-R2-F01 bounded guard protection preserved"
+
+
+def check_sg23_m4_scope_frozen() -> tuple[bool, str]:
+    historical_m4 = sorted(
+        path
+        for path in diff_paths(PRE_REPAIR_SOURCE_BASE, FINAL_REPAIRED_SOURCE_BASE)
+        if path.startswith("tests/test_m4_")
+    )
+    current_m4 = sorted(path for path in current_changed_paths() if path.startswith("tests/test_m4_"))
+    if historical_m4 or current_m4:
+        return False, f"M4 test scope changed: historical={historical_m4}, current={current_m4}"
+    return True, "M4 frozen scope is unchanged"
+
+
+def check_sg24_r1d_changed_paths_exact() -> tuple[bool, str]:
+    current = current_changed_paths()
+    unexpected = sorted(path for path in current if not is_authorized_r1d_path(path))
+    if unexpected:
+        return False, f"R1D unauthorized changed paths: {unexpected}"
+    if not R1D_EXACT_CHANGED_PATHS.issubset(current):
+        return False, "R1D convergence test and guard are not both present in the candidate"
+    return True, "R1D changed paths are exact; evidence may only be under the exact M5 source root"
+
+
+def check_sg25_evidence_root_authorized() -> tuple[bool, str]:
+    evidence_paths = [
+        path for path in current_changed_paths() if path.startswith("deploy/evidence/issues/9/")
+    ]
+    unauthorized = [path for path in evidence_paths if not path.startswith(R1D_EVIDENCE_ROOT)]
+    if unauthorized:
+        return False, f"Evidence changed outside the authorized M5 source root: {unauthorized}"
+    return True, "All current evidence changes are under deploy/evidence/issues/9/m5-source/"
+
+
+def check_sg26_historical_review_untouched() -> tuple[bool, str]:
+    current_review_paths = [
+        path
+        for path in current_changed_paths()
+        if path.startswith("deploy/evidence/issues/9/m5-r-review/")
+    ]
+    if current_review_paths:
+        return False, f"Historical blocked review evidence changed: {current_review_paths}"
+    return True, "Historical blocked M5-R review evidence is untouched"
+
+
+def check_sg27_guard_path_authorized() -> tuple[bool, str]:
+    if "scripts/m5_source_guard.py" not in current_changed_paths():
+        return False, "R1D guard path is missing from the candidate"
+    return True, "scripts/m5_source_guard.py is an exact authorized R1D path"
+
+
+def check_sg28_current_source_mutation_rejected() -> tuple[bool, str]:
+    current_production = sorted(
+        path for path in current_changed_paths() if path.startswith("aota_forge/")
+    )
+    current_previous_tests = sorted(
+        path
+        for path in current_changed_paths()
+        if path.startswith("tests/test_m5_") and path != "tests/test_m5_6_convergence.py"
+    )
+    if current_production or current_previous_tests:
+        return False, f"Unauthorized current mutation: production={current_production}, tests={current_previous_tests}"
+    return True, "New unauthorized production and previous-test mutations are rejected"
 
 
 def check_sg15_no_live_deploy_artifacts() -> tuple[bool, str]:
@@ -500,6 +815,19 @@ CHECKS = [
     ("SG13", check_sg13_source_ownership_intact),
     ("SG14", check_sg14_m5_6_did_not_mutate_production_source),
     ("SG15", check_sg15_no_live_deploy_artifacts),
+    ("SG16", check_sg16_repaired_source_lineage),
+    ("SG17", check_sg17_final_repair_delta_exact),
+    ("SG18", check_sg18_r1c2_serial_provenance),
+    ("SG19", check_sg19_no_generic_or_wildcard_allowlist),
+    ("SG20", check_sg20_future_unauthorized_mutations_rejected),
+    ("SG21", check_sg21_guard_non_tautological),
+    ("SG22", check_sg22_m5_6_lifecycle_protection_preserved),
+    ("SG23", check_sg23_m4_scope_frozen),
+    ("SG24", check_sg24_r1d_changed_paths_exact),
+    ("SG25", check_sg25_evidence_root_authorized),
+    ("SG26", check_sg26_historical_review_untouched),
+    ("SG27", check_sg27_guard_path_authorized),
+    ("SG28", check_sg28_current_source_mutation_rejected),
 ]
 
 

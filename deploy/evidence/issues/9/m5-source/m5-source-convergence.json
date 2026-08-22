@@ -1,21 +1,74 @@
 {
-  "schema_version": 1,
-  "title": "M5 Source Convergence Report",
+  "schema_version": 2,
+  "title": "M5-R-R1D Post-Repair Convergence Report",
   "project_id": "aota_forge",
   "repository": "wzjcccc-dotcom/aota_forge",
   "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
   "milestone": "M5",
-  "work_item": "M5-6",
-  "accepted_base_sha": "3b2796188e4f88047215fc7ee5271dc06a9b1be4",
+  "work_item": "M5-R-R1D",
+  "accepted_base_sha": "f89874b0f419184de88c39f5ccc25ae473c707f1",
+  "pre_repair_source_base": "c32d2c4eac5cb99aec529787473fd88fc9646521",
   "source_convergence_status": "CONVERGED",
-  "summary": {
-    "positive_matrix": "24/24 PASS",
-    "negative_matrix": "24/24 PASS",
-    "failure_injection_matrix": "5/5 PASS",
-    "m5_source_guard": "15/15 PASS",
-    "m4_regression": "129/129 PASS",
-    "m5_regression": "274/274 PASS",
-    "full_regression": "403/403 PASS"
+  "repair_findings": {
+    "M5_R_F01_CONVERGENCE": "PASS",
+    "M5_R_F02_CONVERGENCE": "PASS",
+    "M5_R_F03_CONVERGENCE": "PASS",
+    "M5_R_F04A_INGRESS_CONVERGENCE": "PASS",
+    "M5_R_F04B_DISPATCHER_CONVERGENCE": "PASS",
+    "POST_REPAIR_FINDING_CONVERGENCE": "PASS",
+    "M5_R_F05_DISPOSITION": "non_blocking_carry_forward"
+  },
+  "f01_nonterminal_result_projection": {
+    "running": "TASK_STILL_RUNNING",
+    "queued": "TASK_STILL_RUNNING",
+    "waiting": "TASK_STILL_RUNNING",
+    "unknown": "TASK_STATE_UNKNOWN",
+    "failed": "FAILED",
+    "completed": "COMPLETED",
+    "live_hermes_host_used": "no"
+  },
+  "f02_resume_identity": {
+    "mismatched_task_id_fails_closed": "yes",
+    "host_resume_call_count_on_mismatch": 0,
+    "matching_task_id_resume": "PASS",
+    "host_resume_call_count_on_valid_resume": 1
+  },
+  "f03_route_binding": {
+    "executor_id": "X",
+    "old_route_adapter": "A",
+    "replacement_adapter": "B",
+    "OLD_ROUTE_STATUS_USES_ORIGINAL_ADAPTER": "PASS",
+    "OLD_ROUTE_RESULT_USES_ORIGINAL_ADAPTER": "PASS",
+    "OLD_ROUTE_CANCEL_USES_ORIGINAL_ADAPTER": "PASS",
+    "OLD_ROUTE_RESUME_USES_ORIGINAL_ADAPTER": "PASS",
+    "NEW_ROUTE_USES_REPLACEMENT_ADAPTER": "PASS",
+    "B_OLD_ROUTE_CALL_COUNT": 0,
+    "CROSS_ADAPTER_ROUTE_BROADCAST_COUNT": 0,
+    "public_route_adapter_object_count": 0,
+    "public_route_callable_count": 0
+  },
+  "f04_cancel_replay": {
+    "ingress": {
+      "first": "PASS",
+      "second_identical": "PASS",
+      "third_identical": "PASS",
+      "adapter_cancel_call_count": 1,
+      "completed_before_cancel": "FAIL_CLOSED",
+      "failed_before_cancel": "FAIL_CLOSED",
+      "wrong_executor": "FAIL_CLOSED",
+      "unknown_task": "FAIL_CLOSED"
+    },
+    "dispatcher": {
+      "first": "PASS",
+      "second_identical": "PASS",
+      "third_identical": "PASS",
+      "adapter_cancel_call_count": 1,
+      "completed_before_cancel": "FAIL_CLOSED",
+      "failed_before_cancel": "FAIL_CLOSED",
+      "wrong_executor": "FAIL_CLOSED",
+      "unknown_task": "FAIL_CLOSED"
+    },
+    "DIRECT_CORE_INGRESS_CANCEL_REPLAY_PARITY": "PASS"
   },
   "three_way_parity": {
     "direct_core": "VERIFIED",
@@ -23,38 +76,84 @@
     "canonical_cli": "VERIFIED",
     "semantic_drift_count": 0
   },
+  "acceptance_matrices": {
+    "positive": {
+      "invocation": "python -m pytest -q tests/test_m5_6_convergence.py -k 'test_pos_m5_'",
+      "pass": 24,
+      "total": 24,
+      "fail": 0
+    },
+    "negative": {
+      "invocation": "python -m pytest -q tests/test_m5_6_convergence.py -k 'test_n'",
+      "pass": 24,
+      "total": 24,
+      "fail": 0
+    }
+  },
+  "regressions": {
+    "pre_r1d_convergence": "53/53 PASS",
+    "post_r1d_convergence": "58/58 PASS",
+    "r1d_new_convergence_test_count": 5,
+    "dispatcher_focused": "47/47 PASS",
+    "hermes_focused": "62/62 PASS",
+    "m5_5_focused": "37/37 PASS",
+    "m5": "298/298 PASS",
+    "m4": "129/129 PASS",
+    "full": "427/427 PASS"
+  },
   "idempotency_verification": {
     "replay_outcome": "REPLAY_VERIFIED",
     "conflict_injection_outcome": "CONFLICT_VERIFIED",
-    "duplicate_physical_dispatch_count": 0
+    "duplicate_physical_dispatch_count": 0,
+    "f04_ingress_adapter_cancel_call_count": 1,
+    "f04_dispatcher_adapter_cancel_call_count": 1
   },
-  "cross_adapter_route_isolation": {
-    "broadcast_count": 0,
-    "isolation_status": "PASS"
+  "source_guard": {
+    "status": "PASS",
+    "check_total": 28,
+    "check_pass": 28,
+    "check_fail": 0,
+    "pre_r1d_result": "12/15 PASS; 3 authorized repair provenance mismatches",
+    "non_tautological": "PASS",
+    "generic_production_allowlist_present": "no",
+    "wildcard_repair_allowlist_present": "no",
+    "post_repair_unauthorized_production_mutation_rejected": "yes",
+    "post_repair_unauthorized_test_mutation_rejected": "yes",
+    "m5_6_r1_r2_guard_protection_preserved": "yes"
+  },
+  "provenance": {
+    "R1A_SOURCE": "d1a25c141c2da4b134f2fb20690526a4909dda92",
+    "R1B_SOURCE": "435437d67fa2ad355b55b373597e7358ddfa8d1c",
+    "R1C_SOURCE": "5ff86933a7c2676c8e3a573b23c1a24a99b0a896",
+    "BLOCKED_INTEGRATION_CANDIDATE": "31a63c7e1dbdbf99217fe98b770842152a16ac55",
+    "BLOCKED_INTEGRATION_REASON": "M5-R-F04 direct dispatcher cancellation non-idempotency",
+    "SUPERSEDED_BY": "f89874b0f419184de88c39f5ccc25ae473c707f1",
+    "R1C2_SOURCE": "f89874b0f419184de88c39f5ccc25ae473c707f1",
+    "R1C2_PARENT": "31a63c7e1dbdbf99217fe98b770842152a16ac55",
+    "AUTHORIZED_REPAIR_DELTA_PATH_COUNT": 6,
+    "UNAUTHORIZED_REPAIR_DELTA_PATH_COUNT": 0,
+    "R1C2_SERIAL_PROVENANCE": "PASS"
   },
   "invariants": {
     "production_source_mutation_count": 0,
-    "previous_accepted_m5_test_mutation_count": 1,
-    "authorized_previous_test_mutation_count": 1,
-    "unauthorized_previous_test_mutation_count": 0,
+    "previous_repair_test_mutation_count": 0,
     "m4_test_mutation_count": 0,
-    "source_repair_performed": "no",
+    "source_repair_performed_in_r1d": "no",
+    "original_m5_r_review_verdict": "BLOCKED",
+    "original_m5_r_review_evidence_mutated": "no",
+    "m5_r_f05_mutated": "no",
     "live_hermes_dispatch_count": 0,
     "hermes_process_spawn_count": 0,
     "deployment_performed": "no",
     "runtime_activation_performed": "no"
   },
-  "blocking_finding_count": 0,
-  "blocking_findings": [],
-  "provenance": {
-    "source_accepted_base": "3b2796188e4f88047215fc7ee5271dc06a9b1be4",
-    "prior_failed_candidate": "c79f529657cdebc9e0070b173c934f57bab7220d",
-    "r1_repair_id": "M5-6-R1-F01",
-    "r1_repair_class": "temporal_regression_invariant_defect",
-    "r1_disposition": "resolved",
-    "r2_repair_id": "M5-6-R2-F01",
-    "r2_repair_class": "source_guard_lifecycle_authorization_defect",
-    "r2_disposition": "resolved",
-    "production_source_repair_performed": "no"
+  "candidate": {
+    "R1D_SOURCE_ACCEPTANCE_CANDIDATE": "yes",
+    "R1D_GOVERNANCE_ACCEPTED": "no",
+    "M5_KNOWN_GOOD_CHECKPOINT_ESTABLISHED": "no",
+    "M5_COMPLETED": "no",
+    "PUSH_PERFORMED": "no",
+    "ISSUE_9_GOVERNANCE_MUTATED": "no",
+    "M5_R_RERUN_PERFORMED": "no"
   }
 }

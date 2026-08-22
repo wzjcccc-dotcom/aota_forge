@@ -1,12 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "title": "M5 Positive Acceptance Test Results (POS-M5-01 .. POS-M5-24)",
   "project_id": "aota_forge",
   "repository": "wzjcccc-dotcom/aota_forge",
   "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
   "milestone": "M5",
-  "work_item": "M5-6",
+  "work_item": "M5-R-R1D",
   "status": "PASS",
+  "authoritative_invocation": "python -m pytest -q tests/test_m5_6_convergence.py -k 'test_pos_m5_'",
   "total_cases": 24,
   "passed_cases": 24,
   "failed_cases": 0,
@@ -35,5 +36,6 @@
     "POS_M5_22": "PASS",
     "POS_M5_23": "PASS",
     "POS_M5_24": "PASS"
-  }
+  },
+  "frozen_acceptance_criteria_preserved": "yes"
 }
