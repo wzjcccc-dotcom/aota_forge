@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "milestone": "M6",
+  "work_item": "M6-1",
+  "work_item_title": "Contract and No-Change Proof",
+  "m5_known_good_checkpoint": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "m5_kgc_tree": "dfb3b24ef6069c7c079d250c9af69223c4051584",
+  "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "candidate_head": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "generator": "m6_1_evidence_generator (derived from scripts/m6_1_contract_guard.py)",
+  "contract_guard_sha256": "fceea843a0c938d8691fe2e491b8c24513f0dfa9feb3513f4b40d03cc5879fa4",
+  "scope_note": "M6-1 construction result only; does not claim M6 completed, Codex proof completed, surface reduction completed, or an M6 known-good checkpoint",
+  "title": "M6-1 Regression Summary",
+  "pre_m6_1_baseline": {
+    "m6_0_plan_guard": "26/26 PASS",
+    "full_regression": "499/499 PASS",
+    "pre_m6_1_runtime_source_delta_count": 0
+  },
+  "post_construction": {
+    "m6_0_plan_guard": "26/26 PASS",
+    "m6_1_focused_tests": "15/15 PASS",
+    "m5_regression": "370/370 PASS",
+    "m4_regression": "129/129 PASS",
+    "full_regression": "514/514 PASS",
+    "full_regression_arithmetic": "499 baseline + 15 new M6-1 tests = 514",
+    "m6_1_new_test_count": 15
+  }
+}

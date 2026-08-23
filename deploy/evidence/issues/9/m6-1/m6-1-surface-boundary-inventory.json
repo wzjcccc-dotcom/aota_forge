@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "milestone": "M6",
+  "work_item": "M6-1",
+  "work_item_title": "Contract and No-Change Proof",
+  "m5_known_good_checkpoint": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "m5_kgc_tree": "dfb3b24ef6069c7c079d250c9af69223c4051584",
+  "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "candidate_head": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "generator": "m6_1_evidence_generator (derived from scripts/m6_1_contract_guard.py)",
+  "contract_guard_sha256": "fceea843a0c938d8691fe2e491b8c24513f0dfa9feb3513f4b40d03cc5879fa4",
+  "scope_note": "M6-1 construction result only; does not claim M6 completed, Codex proof completed, surface reduction completed, or an M6 known-good checkpoint",
+  "title": "M6-1 Surface Boundary Inventory (baseline derived from accepted M6-0 inventory)",
+  "surface_boundary_inventory_count": 18,
+  "derivation": "joined m6-0-surface-inventory.json surfaces with frozen contract identities and M6 mutation lanes",
+  "m6_0_plan_artifact_owner": "M6-0",
+  "m6_0_plan_artifact_mutated": false,
+  "surfaces": [
+    {
+      "surface": "ExecutorCapabilities",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "ExecutorCapabilities",
+      "owner": "aota_forge/core/execution/capabilities.py",
+      "source_paths": [
+        "aota_forge/core/execution/capabilities.py"
+      ],
+      "public_mechanical_role": "Canonical frozen contract; executor-neutral vocabulary",
+      "m5_kgc_identity": "3ab531f4cc0550f24ca6fa0b4090749b5e05e90a",
+      "m6_planning_base_identity": "3ab531f4cc0550f24ca6fa0b4090749b5e05e90a",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "ExecutionPackage",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "ExecutionPackage",
+      "owner": "aota_forge/core/execution/package.py",
+      "source_paths": [
+        "aota_forge/core/execution/package.py"
+      ],
+      "public_mechanical_role": "Canonical executor-neutral envelope; must stay executor-private-field-free",
+      "m5_kgc_identity": "27ec502edab8ab880317410506c5fdcae5b8435e",
+      "m6_planning_base_identity": "27ec502edab8ab880317410506c5fdcae5b8435e",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "CanonicalTaskState",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "CanonicalTaskState",
+      "owner": "aota_forge/core/execution/state.py",
+      "source_paths": [
+        "aota_forge/core/execution/state.py"
+      ],
+      "public_mechanical_role": "Frozen state vocabulary; UNKNOWN explicit",
+      "m5_kgc_identity": "2477d9e2b64bb289d1ded72fefea8963ae63b6f1",
+      "m6_planning_base_identity": "2477d9e2b64bb289d1ded72fefea8963ae63b6f1",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "CanonicalResult",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "CanonicalResult",
+      "owner": "aota_forge/core/execution/results.py",
+      "source_paths": [
+        "aota_forge/core/execution/results.py"
+      ],
+      "public_mechanical_role": "Frozen structured outcome; no generic collapse",
+      "m5_kgc_identity": "4ba4a4a01d5af67e4aeeee27210007cd2dcbc662",
+      "m6_planning_base_identity": "4ba4a4a01d5af67e4aeeee27210007cd2dcbc662",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "RoleMapping",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "RoleMapping",
+      "owner": "aota_forge/core/execution/roles.py",
+      "source_paths": [
+        "aota_forge/core/execution/roles.py"
+      ],
+      "public_mechanical_role": "Executor-neutral role abstraction; Hermes profile != canonical role",
+      "m5_kgc_identity": "4aa7f8d3be395608c3381bf5c6fc742c8343853d",
+      "m6_planning_base_identity": "4aa7f8d3be395608c3381bf5c6fc742c8343853d",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "ExecutorAdapter (capabilities/validate_package/dispatch/status/result/cancel/resume)",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "ExecutorAdapter",
+      "owner": "aota_forge/core/execution/adapter.py",
+      "source_paths": [
+        "aota_forge/core/execution/adapter.py"
+      ],
+      "public_mechanical_role": "Frozen abstract typed boundary",
+      "m5_kgc_identity": "fa83086aa66648b2da66072342077431d4919348",
+      "m6_planning_base_identity": "fa83086aa66648b2da66072342077431d4919348",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "ExecutorRegistry",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "ExecutorRegistry",
+      "owner": "aota_forge/core/execution/registry.py",
+      "source_paths": [
+        "aota_forge/core/execution/registry.py"
+      ],
+      "public_mechanical_role": "Deterministic 0/1/>1 resolution; no fallback",
+      "m5_kgc_identity": "2c3ca370b97dd53c1f9a4883bd65f713bdd69591",
+      "m6_planning_base_identity": "2c3ca370b97dd53c1f9a4883bd65f713bdd69591",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "ExecutionDispatcher",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "ExecutionDispatcher",
+      "owner": "aota_forge/core/execution/dispatcher.py",
+      "source_paths": [
+        "aota_forge/core/execution/dispatcher.py"
+      ],
+      "public_mechanical_role": "Deterministic dispatch/status/result/cancel/resume via stored route",
+      "m5_kgc_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "m6_planning_base_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "mutation_policy": "structural_frozen_lane_gated",
+      "future_m6_owner_if_any": "M6-3"
+    },
+    {
+      "surface": "Unified Ingress execution descriptors",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "Unified Ingress execution descriptors",
+      "owner": "aota_forge/core/ingress.py: TASK_START/STATUS/RESULT/CANCEL + EXECUTOR_LIST/CAPABILITIES descriptors",
+      "source_paths": [
+        "aota_forge/core/ingress.py"
+      ],
+      "public_mechanical_role": "Single ingress for all adapters; no adapter-specific authority",
+      "m5_kgc_identity": "ca2a05b25fbe08da91b2021a2a66c3621e4eabef",
+      "m6_planning_base_identity": "ca2a05b25fbe08da91b2021a2a66c3621e4eabef",
+      "mutation_policy": "structural_frozen_lane_gated",
+      "future_m6_owner_if_any": "M6-5"
+    },
+    {
+      "surface": "CLI execution projection (aota task ..., aota executor ...)",
+      "m6_0_category": "A stable M5 public surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "CLI execution projection",
+      "owner": "aota_forge/cli/commands/execution.py + aota_forge/cli/__main__.py",
+      "source_paths": [
+        "aota_forge/cli/commands/execution.py",
+        "aota_forge/cli/__main__.py"
+      ],
+      "public_mechanical_role": "Canonical machine adapter; parity preserved",
+      "m5_kgc_identity": "063d03c253ca9862adce794170296f1e55c61d64",
+      "m6_planning_base_identity": "063d03c253ca9862adce794170296f1e55c61d64",
+      "mutation_policy": "structural_frozen_lane_gated",
+      "future_m6_owner_if_any": "M6-5"
+    },
+    {
+      "surface": "Hermes adapter (aota_forge/adapters/hermes/executor.py)",
+      "m6_0_category": "C Hermes-specific adapter surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "Hermes adapter",
+      "owner": "aota_forge/adapters/hermes/executor.py",
+      "source_paths": [
+        "aota_forge/adapters/hermes/executor.py"
+      ],
+      "public_mechanical_role": "Proven M5 adapter; Hermes remains Host-only compatibility runtime",
+      "m5_kgc_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "m6_planning_base_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "Reference fake adapter (aota_forge/adapters/execution/reference.py)",
+      "m6_0_category": "D reference/fake surface",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "Reference adapter",
+      "owner": "aota_forge/adapters/execution/reference.py",
+      "source_paths": [
+        "aota_forge/adapters/execution/reference.py"
+      ],
+      "public_mechanical_role": "Deterministic in-memory double for contract testing; test-only",
+      "m5_kgc_identity": "702384674e0e519aebf19a772107b83afb0f2552",
+      "m6_planning_base_identity": "702384674e0e519aebf19a772107b83afb0f2552",
+      "mutation_policy": "byte_frozen",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "Internal mechanical surfaces (RouteRecord, dispatch_attempt_id, idempotency_index, _dispatch_replays, _handle_tasks)",
+      "m6_0_category": "B internal mechanical surfaces",
+      "m6_0_disposition": "retain",
+      "canonical_contract": "none (internal)",
+      "owner": "aota_forge/core/execution/dispatcher.py, aota_forge/adapters/hermes/*",
+      "source_paths": [
+        "aota_forge/core/execution/dispatcher.py"
+      ],
+      "public_mechanical_role": "Private mechanics; not public API",
+      "m5_kgc_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "m6_planning_base_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "mutation_policy": "retained_internal_mechanical",
+      "future_m6_owner_if_any": "M6-3"
+    },
+    {
+      "surface": "Duplicate capability-requirement handling across Registry vs Hermes validate_package",
+      "m6_0_category": "F duplicate or redundant surfaces",
+      "m6_0_disposition": "prove",
+      "canonical_contract": null,
+      "owner": "aota_forge/core/execution/registry.py:check_compatibility vs aota_forge/adapters/hermes/executor.py:validate_package",
+      "source_paths": [
+        "aota_forge/adapters/hermes/executor.py"
+      ],
+      "public_mechanical_role": "Both must remain but must be proven consistent — Registry is canonical gate, adapter validate_package is defense-in-depth; duplication is intentional not redundant",
+      "m5_kgc_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "m6_planning_base_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "mutation_policy": "frozen_consistency_pair_registry_canonical",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "Legacy Hermes-specific tool/profile registration surface (if any) not via RoleMapping",
+      "m6_0_category": "E legacy compatibility surfaces",
+      "m6_0_disposition": "defer",
+      "canonical_contract": null,
+      "owner": "legacy aota-hermes-tools Toolset/Profile registrations (migration evidence only)",
+      "source_paths": [
+        "aota_forge/adapters/hermes/executor.py"
+      ],
+      "public_mechanical_role": "Already not in aota_forge Core; if any remnants exist they are adapter-private — M6 measures, M7 retires only after evidence",
+      "m5_kgc_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "m6_planning_base_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "mutation_policy": "legacy_out_of_repository_evidence_only",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "CLI executor select (aota executor select) — candidate command not in M5 frozen CLI",
+      "m6_0_category": "G M6 candidate reduction target (not yet implemented — must not drift)",
+      "m6_0_disposition": "defer",
+      "canonical_contract": null,
+      "owner": "Issue #9 CLI candidates listing mentions 'aota executor select' but M5 implemented list/capabilities only",
+      "source_paths": [
+        "aota_forge/adapters/hermes/executor.py"
+      ],
+      "public_mechanical_role": "Not part of frozen M5 surface; introducing it in M6 would expand semantic surface against M6 non-goals unless Issue authority explicitly requires",
+      "m5_kgc_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "m6_planning_base_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "mutation_policy": "not_introduced_deferred_beyond_m6",
+      "future_m6_owner_if_any": null
+    },
+    {
+      "surface": "Model-facing procedural Skill choreography (legacy Hermes deployment coupling docs/skills)",
+      "m6_0_category": "E legacy compatibility surfaces",
+      "m6_0_disposition": "reduce",
+      "canonical_contract": null,
+      "owner": "deploy/ + legacy docs (not aota_forge Core)",
+      "source_paths": [
+        "aota_forge/adapters/hermes/executor.py"
+      ],
+      "public_mechanical_role": "Measurable in M6: model-facing tool count / Skill complexity / deployment coupling after Codex proof appears; reduction only after replacement evidence",
+      "m5_kgc_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "m6_planning_base_identity": "e0aeb907a5657bf624c4f23755b047fb12397dae",
+      "mutation_policy": "reduce_after_replacement_evidence_owned_by_m6_4_measurement",
+      "future_m6_owner_if_any": "M6-4"
+    },
+    {
+      "surface": "Dispatcher resume-package identity validation gap (private hardening)",
+      "m6_0_category": "B internal mechanical + carry-forward M5-R-R2-F01",
+      "m6_0_disposition": "prove",
+      "canonical_contract": "ExecutionDispatcher (resume path)",
+      "owner": "aota_forge/core/execution/dispatcher.py: resume()",
+      "source_paths": [
+        "aota_forge/core/execution/dispatcher.py"
+      ],
+      "public_mechanical_role": "Currently adapter-enforced; multi-executor makes Core defense-in-depth mandatory — M6 adds bounded validation, not a surface removal",
+      "m5_kgc_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "m6_planning_base_identity": "40ae1cf67f9f30a0396e5dd4b8216eb34d556c4e",
+      "mutation_policy": "structural_frozen_lane_gated",
+      "future_m6_owner_if_any": "M6-3"
+    }
+  ]
+}

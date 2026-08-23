@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "milestone": "M6",
+  "work_item": "M6-1",
+  "work_item_title": "Contract and No-Change Proof",
+  "m5_known_good_checkpoint": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "m5_kgc_tree": "dfb3b24ef6069c7c079d250c9af69223c4051584",
+  "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "candidate_head": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "generator": "m6_1_evidence_generator (derived from scripts/m6_1_contract_guard.py)",
+  "contract_guard_sha256": "fceea843a0c938d8691fe2e491b8c24513f0dfa9feb3513f4b40d03cc5879fa4",
+  "scope_note": "M6-1 construction result only; does not claim M6 completed, Codex proof completed, surface reduction completed, or an M6 known-good checkpoint",
+  "title": "M6-1 Negative Acceptance Probe Results (N-M6-01/N-M6-02/N-M6-21)",
+  "method": "temporary copied fixture trees under tempfile.TemporaryDirectory; no production source mutated",
+  "production_source_mutation_remaining": 0,
+  "probes": [
+    {
+      "case_id": "N-M6-01",
+      "name": "negative_probe_n_m6_01_core_schema_widening_rejected",
+      "rejected": true,
+      "detail": "failed_checks=['byte_frozen_contracts_identical_to_m5_kgc', 'core_schema_rewrite_count_zero', 'executor_capabilities_field_set_frozen']"
+    },
+    {
+      "case_id": "N-M6-02",
+      "name": "negative_probe_n_m6_02_executor_private_field_rejected",
+      "rejected": true,
+      "detail": "failed_checks=['byte_frozen_contracts_identical_to_m5_kgc', 'core_schema_rewrite_count_zero', 'execution_package_executor_neutral_field_count_zero', 'execution_package_field_set_frozen']"
+    },
+    {
+      "case_id": "N-M6-21",
+      "name": "negative_probe_n_m6_21_m4_mutation_redefinition_rejected",
+      "rejected": true,
+      "detail": "failed_checks=['m4_mutation_surface_frozen']"
+    }
+  ],
+  "n_m6_01": "PASS",
+  "n_m6_02": "PASS",
+  "n_m6_21": "PASS",
+  "m6_1_negative_executed_count": 3,
+  "m6_1_negative_pass_count": 3
+}
