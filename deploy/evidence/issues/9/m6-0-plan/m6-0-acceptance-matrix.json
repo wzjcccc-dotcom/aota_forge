@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "title": "M6 Positive Acceptance Test Matrix",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "cases": [
+    {
+      "case_id": "POS-M6-01",
+      "name": "Codex ExecutorCapabilities serialization",
+      "precondition": "No live dispatch; Codex capabilities declared in adapter",
+      "action": "Call CodexAdapter.capabilities() and serialize to JSON deterministically",
+      "expected_mechanical_outcome": "Deterministic JSON without callable identity; no forbidden semantic fields",
+      "layer": "core/execution/capabilities",
+      "evidence": "tests/test_m6_2_codex_adapter.py::test_capabilities_serializable"
+    },
+    {
+      "case_id": "POS-M6-02",
+      "name": "ExecutionPackage remains executor-neutral for Codex",
+      "precondition": "Package constructed via ExecutionPackage.create() with Codex-targeting constraints",
+      "action": "Create package for canonical_role=coder targeting codex; inspect dict",
+      "expected_mechanical_outcome": "No Hermes-private or codex-private fields; intent_fingerprint deterministic",
+      "layer": "core/execution/package",
+      "evidence": "tests/test_m6_1_contract_freeze.py + test_m6_2_codex_adapter.py"
+    },
+    {
+      "case_id": "POS-M6-03",
+      "name": "Codex status maps to CanonicalTaskState",
+      "precondition": "Codex adapter bound to fake host client returning status strings",
+      "action": "Dispatch task then query status(); map each host status",
+      "expected_mechanical_outcome": "Every codex host status maps to exactly one CanonicalTaskState; UNKNOWN never collapsed to COMPLETED",
+      "layer": "adapters/codex mapping",
+      "evidence": "tests/test_m6_2_codex_adapter.py::test_status_mapping"
+    },
+    {
+      "case_id": "POS-M6-04",
+      "name": "Codex output maps to CanonicalResult",
+      "precondition": "Codex host fetch_result returns envelopes",
+      "action": "Invoke CodexAdapter.result() for completed/failed/cancelled/unknown envelopes",
+      "expected_mechanical_outcome": "CanonicalResult with ok/status/state consistency; no codex-private escape; error envelope typed",
+      "layer": "adapters/codex mapping",
+      "evidence": "tests/test_m6_2_codex_adapter.py::test_result_mapping"
+    },
+    {
+      "case_id": "POS-M6-05",
+      "name": "Codex RoleMapping resolution",
+      "precondition": "Codex adapter has deterministic RoleMapping",
+      "action": "Resolve canonical role 'coder' via Codex role mapping",
+      "expected_mechanical_outcome": "Returns deterministic codex profile; unknown role raises ROLE_MAPPING_NOT_FOUND fail-closed",
+      "layer": "core/execution/roles",
+      "evidence": "tests/test_m6_2_codex_adapter.py::test_role_mapping"
+    },
+    {
+      "case_id": "POS-M6-06",
+      "name": "Codex adapter offline dispatch",
+      "precondition": "Codex adapter bound to injected fake host client (no live daemon)",
+      "action": "Dispatch ExecutionPackage via CodexAdapter.dispatch()",
+      "expected_mechanical_outcome": "Returns DispatchResult with canonical_task_id preserved, adapter_handle distinct, initial_state deterministic",
+      "layer": "adapters/codex",
+      "evidence": "tests/test_m6_2_codex_adapter.py::test_dispatch"
+    },
+    {
+      "case_id": "POS-M6-07",
+      "name": "Capability matching success for Codex",
+      "precondition": "Registry contains reference-fake, hermes, codex descriptors",
+      "action": "Resolve package requiring supported mode/isolation against Codex",
+      "expected_mechanical_outcome": "check_compatibility returns (True, ()) and resolve returns RESOLVED for Codex",
+      "layer": "core/execution/registry",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py::test_capability_match"
+    },
+    {
+      "case_id": "POS-M6-08",
+      "name": "Registry registers three executors without handler leak",
+      "precondition": "Fresh registry, three adapters conforming to ExecutorAdapter",
+      "action": "Register reference, hermes, codex and list_descriptors()",
+      "expected_mechanical_outcome": "3 descriptors deterministically sorted; descriptors contain no callable/memory address; no duplicate accepted",
+      "layer": "core/execution/registry",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py::test_registry_three"
+    },
+    {
+      "case_id": "POS-M6-09",
+      "name": "Single executor deterministic resolution",
+      "precondition": "Package capability_requirements match only Codex",
+      "action": "Resolve package explicitly targeting codex",
+      "expected_mechanical_outcome": "ResolutionOutcome.RESOLVED with selected_executor_id=codex; dispatcher.dispatch routes to Codex",
+      "layer": "core/execution/registry+dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-10",
+      "name": "Zero executors fail closed",
+      "precondition": "Registry empty or no executor matches capability_requirements",
+      "action": "Resolve package with impossible requirement (e.g., isolation=quantum)",
+      "expected_mechanical_outcome": "EXECUTOR_NOT_FOUND fail closed; dispatcher raises ExecutorNotFoundError; no heuristic fallback",
+      "layer": "core/execution/registry+dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py::test_zero_executors"
+    },
+    {
+      "case_id": "POS-M6-11",
+      "name": ">1 executors requires semantic choice",
+      "precondition": "Package with no explicit target matches both hermes and codex",
+      "action": "Resolve package with generic sync+process requirements",
+      "expected_mechanical_outcome": "NEEDS_SEMANTIC_CHOICE with sorted candidate_executor_ids; dispatcher raises NeedsSemanticChoiceError",
+      "layer": "core/execution/registry+dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py::test_ambiguous"
+    },
+    {
+      "case_id": "POS-M6-12",
+      "name": "Explicit target executor resolution",
+      "precondition": "Capability-matched explicit target Codex",
+      "action": "Pass target_executor_id='codex' to dispatcher.dispatch",
+      "expected_mechanical_outcome": "RESOLVED to codex; dispatcher does not search other adapters",
+      "layer": "core/execution/registry+dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-13",
+      "name": "Codex synchronous dispatch flow",
+      "precondition": "Codex adapter with auto_complete capability",
+      "action": "Dispatch with execution_mode=sync via Codex",
+      "expected_mechanical_outcome": "Dispatch returns COMPLETED path; result() returns ok=True completed result",
+      "layer": "core/execution/dispatcher+adapter",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-14",
+      "name": "Codex asynchronous dispatch flow",
+      "precondition": "Codex adapter default async",
+      "action": "Dispatch async then poll status() until terminal",
+      "expected_mechanical_outcome": "Initial state ACCEPTED/QUEUED; status() returns canonical state progression; reconcile preserves UNKNOWN",
+      "layer": "core/execution/dispatcher+adapter",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-15",
+      "name": "Codex task status query via dispatcher",
+      "precondition": "Route exists via prior dispatch to Codex",
+      "action": "Call dispatcher.status(canonical_task_id)",
+      "expected_mechanical_outcome": "Returns TaskStatusResult with canonical state; route not broadcast to other adapters",
+      "layer": "core/execution/dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-16",
+      "name": "Codex task result query",
+      "precondition": "Terminal Codex task via simulate_completion",
+      "action": "Call dispatcher.result(canonical_task_id)",
+      "expected_mechanical_outcome": "Returns CanonicalResult with matching canonical_task_id and executor_id=codex",
+      "layer": "core/execution/dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py"
+    },
+    {
+      "case_id": "POS-M6-17",
+      "name": "Codex cancellation or typed unsupported",
+      "precondition": "Active Codex task; capability declares supports_task_cancellation",
+      "action": "Call dispatcher.cancel(canonical_task_id)",
+      "expected_mechanical_outcome": "If supported: CANCELLED; if unsupported: typed CANCEL_UNSUPPORTED fail-closed, not silent success",
+      "layer": "core/execution/dispatcher+adapter",
+      "evidence": "tests/test_m6_2_codex_adapter.py / test_m6_3"
+    },
+    {
+      "case_id": "POS-M6-18",
+      "name": "Codex resume or typed unsupported",
+      "precondition": "Waiting Codex task; respect supports_task_resume",
+      "action": "Call dispatcher.resume(canonical_task_id, resume_package)",
+      "expected_mechanical_outcome": "If supported: transitions to RUNNING; if unsupported: typed RESUME_UNSUPPORTED fail-closed",
+      "layer": "core/execution/dispatcher+adapter",
+      "evidence": "tests/test_m6_2_codex_adapter.py / test_m6_3"
+    },
+    {
+      "case_id": "POS-M6-19",
+      "name": "Dispatcher resume identity defense-in-depth (F01)",
+      "precondition": "Adapter is permissive (accepts any task id); route exists for task-a",
+      "action": "Call dispatcher.resume('task-a', package_for_task_b)",
+      "expected_mechanical_outcome": "Core dispatcher fails closed with TASK_ID_MISMATCH before adapter; does not depend solely on adapter defense",
+      "layer": "core/execution/dispatcher",
+      "evidence": "tests/test_m6_3_multi_executor_dispatcher.py::test_f01_defense"
+    },
+    {
+      "case_id": "POS-M6-20",
+      "name": "Direct Core dispatch parity for Codex",
+      "precondition": "Dispatcher bound, Codex registered",
+      "action": "Call direct dispatcher.dispatch(package targeting codex)",
+      "expected_mechanical_outcome": "DispatchResult identical to ingress path; audit not required but result envelope identical",
+      "layer": "direct Core",
+      "evidence": "tests/test_m6_5_cli_ingress_parity.py"
+    },
+    {
+      "case_id": "POS-M6-21",
+      "name": "Unified Ingress dispatch parity for Codex",
+      "precondition": "Dispatcher bound via ingress._BOUND_EXECUTION_DISPATCHER",
+      "action": "Call ingress.execute_execution('execution.task_start', params for codex)",
+      "expected_mechanical_outcome": "Success envelope with audit tracking; data matches Direct Core result",
+      "layer": "core/ingress",
+      "evidence": "tests/test_m6_5_cli_ingress_parity.py"
+    },
+    {
+      "case_id": "POS-M6-22",
+      "name": "CLI dispatch parity for Codex",
+      "precondition": "CLI commands wired to ingress with executor=codex",
+      "action": "Invoke CLI aota task start --executor codex ... --json",
+      "expected_mechanical_outcome": "CLI JSON output maps identically to Ingress success envelope; exit code derived from envelope",
+      "layer": "cli",
+      "evidence": "tests/test_m6_5_cli_ingress_parity.py"
+    },
+    {
+      "case_id": "POS-M6-23",
+      "name": "CLI executor listing includes Codex",
+      "precondition": "Three executors registered",
+      "action": "Call ingress execution.executor_list and CLI aota executor list --json",
+      "expected_mechanical_outcome": "List contains reference-fake, hermes, codex descriptors deterministically sorted",
+      "layer": "cli+ingress",
+      "evidence": "tests/test_m6_5_cli_ingress_parity.py"
+    },
+    {
+      "case_id": "POS-M6-24",
+      "name": "CLI executor capabilities for Codex",
+      "precondition": "Codex registered",
+      "action": "Call execution.executor_capabilities with executor=codex",
+      "expected_mechanical_outcome": "Returns Codex capabilities descriptor matching capabilities() without leak",
+      "layer": "cli+ingress",
+      "evidence": "tests/test_m6_5_cli_ingress_parity.py"
+    },
+    {
+      "case_id": "POS-M6-25",
+      "name": "M4 regression retained 129/129",
+      "precondition": "M6-0 base b24893e all M4 tests green",
+      "action": "Run M4 regression suite",
+      "expected_mechanical_outcome": "129/129 PASS, 0 failures, no regression",
+      "layer": "regression/M4",
+      "evidence": "tests/test_m4_*.py"
+    },
+    {
+      "case_id": "POS-M6-26",
+      "name": "M5 regression retained 370/370",
+      "precondition": "M6-0 base all M5 tests green",
+      "action": "Run M5 test suites",
+      "expected_mechanical_outcome": "370/370 PASS (including 24/24 positive, 24/24 negative, 34/34 source guard slices)",
+      "layer": "regression/M5",
+      "evidence": "tests/test_m5_*.py"
+    },
+    {
+      "case_id": "POS-M6-27",
+      "name": "M5 matrices retained: positive 24/24, negative 24/24",
+      "precondition": "M5 acceptance matrices frozen",
+      "action": "Run M5 convergence checks",
+      "expected_mechanical_outcome": "M5 positive 24/24 and negative 24/24 still PASS; no drift from frozen contracts",
+      "layer": "regression/M5 acceptance",
+      "evidence": "deploy/evidence/issues/9/m5-source/m5-positive-matrix-result.json etc."
+    },
+    {
+      "case_id": "POS-M6-28",
+      "name": "Surface reduction measurement evidence",
+      "precondition": "M6-1 baseline inventory exists",
+      "action": "After M6-4, emit before/after metrics",
+      "expected_mechanical_outcome": "Numbers recorded: model-facing tool count, procedural Skill complexity, duplicated deterministic logic instances, Hermes deployment coupling points, control-plane choreography steps required from LLM",
+      "layer": "evidence/surface",
+      "evidence": "deploy/evidence/issues/9/m6-4/surface-metrics.json"
+    }
+  ],
+  "invariants": {
+    "M6_POSITIVE_ACCEPTANCE_DEFINED": "yes",
+    "M6_POSITIVE_ACCEPTANCE_TOTAL": 28
+  }
+}

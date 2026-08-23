@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "title": "M6 Negative Acceptance Test Matrix",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "negative_cases": [
+    {
+      "case_id": "N-M6-01",
+      "name": "New executor requires Core schema rewrite",
+      "precondition": "Codex adapter introduces new field required on ExecutionPackage or ExecutorCapabilities",
+      "action": "Attempt to add executor-private field to ExecutionPackage or widen capabilities schema for Codex",
+      "expected_mechanical_outcome": "REJECT — guard fails; MULTI_EXECUTOR_CORE_SCHEMA_REWRITE_REQUIRED must remain no; adaptation must be adapter-local only",
+      "layer": "core/execution contracts",
+      "evidence": "m6_0_plan_guard.py G01"
+    },
+    {
+      "case_id": "N-M6-02",
+      "name": "Executor-private field enters ExecutionPackage",
+      "precondition": "ExecutionPackage.from_dict contains codex_private or hermes_private key",
+      "action": "Call ExecutionPackage.from_dict with codex_session_object payload",
+      "expected_mechanical_outcome": "REJECT — FORBIDDEN_HERMES_FIELDS or new private check raises ValueError",
+      "layer": "core/execution/package",
+      "evidence": "m6_0_plan_guard.py G02"
+    },
+    {
+      "case_id": "N-M6-03",
+      "name": "Executor selection uses heuristic ranking",
+      "precondition": "Package matches >1 executors (hermes + codex)",
+      "action": "Dispatcher attempts to rank by heuristic_quality_rating or latest timestamp",
+      "expected_mechanical_outcome": "REJECT — must return NEEDS_SEMANTIC_CHOICE with sorted candidates, never heuristic winner",
+      "layer": "core/execution/registry",
+      "evidence": "m6_0_plan_guard.py G03"
+    },
+    {
+      "case_id": "N-M6-04",
+      "name": "Executor-specific canonical role introduced",
+      "precondition": "Codex adapter requests new canonical_role='codex_specialist'",
+      "action": "Attempt to dispatch with canonical_role codex_specialist or declare it in executor capabilities",
+      "expected_mechanical_outcome": "REJECT — validate_canonical_role raises ValueError; capabilities role set unchanged",
+      "layer": "core/execution/roles",
+      "evidence": "m6_0_plan_guard.py G04"
+    },
+    {
+      "case_id": "N-M6-05",
+      "name": "Silent capability downgrade",
+      "precondition": "Package requires requires_streaming_events=true but Codex false",
+      "action": "Dispatch to Codex without validation; downgrade requirement silently",
+      "expected_mechanical_outcome": "REJECT — check_compatibility returns CAPABILITY_MISMATCH; dispatcher fail-closed",
+      "layer": "core/execution/registry+d",
+      "evidence": "m6_0_plan_guard.py G05"
+    },
+    {
+      "case_id": "N-M6-06",
+      "name": "Fallback from Codex to Hermes",
+      "precondition": "Explicit target codex is incompatible (CAPABILITY_MISMATCH) and hermes compatible",
+      "action": "Dispatcher falls back to Hermes on Codex incompatibility",
+      "expected_mechanical_outcome": "REJECT — explicit target incompatible must remain CAPABILITY_MISMATCH, never search other adapters",
+      "layer": "core/execution/dispatcher",
+      "evidence": "m6_0_plan_guard.py G06"
+    },
+    {
+      "case_id": "N-M6-07",
+      "name": "Unsupported operation reported as success",
+      "precondition": "Codex capability declares supports_task_resume=false",
+      "action": "Call cancel/resume that capability says unsupported but return ok=True",
+      "expected_mechanical_outcome": "REJECT — must return typed CANCEL_UNSUPPORTED or RESUME_UNSUPPORTED fail-closed, never success",
+      "layer": "adapters/codex",
+      "evidence": "m6_0_plan_guard.py G07"
+    },
+    {
+      "case_id": "N-M6-08",
+      "name": "Surface removed while still consumed",
+      "precondition": "ExecutionPackage or CLI execution projection still consumed by dispatcher or ingress",
+      "action": "Retire surface classified as retain/prove without replacement linkage",
+      "expected_mechanical_outcome": "REJECT — guard detects consumer still references retired path; retired surface must have replacement and typed retirement evidence",
+      "layer": "surface reduction",
+      "evidence": "m6_0_plan_guard.py G08"
+    },
+    {
+      "case_id": "N-M6-09",
+      "name": "Surface alias bypasses canonical Ingress",
+      "precondition": "New adapter or CLI adds alias path not via Unified Ingress",
+      "action": "Call Codex adapter dispatch directly bypassing execute_execution or introduce alias without descriptor",
+      "expected_mechanical_outcome": "REJECT — all execution surfaces must go via Ingress with validated descriptor; alias path not allowed",
+      "layer": "core/ingress+cli",
+      "evidence": "m6_0_plan_guard.py G09"
+    },
+    {
+      "case_id": "N-M6-10",
+      "name": "Second executor directly bypasses Core",
+      "precondition": "Codex host client callable outside ExecutorAdapter",
+      "action": "Dispatch to Codex via host protocol without Registry resolution",
+      "expected_mechanical_outcome": "REJECT — dispatch must be via Registry.resolve + Dispatcher route; direct bypass denied",
+      "layer": "core/execution/dispatcher",
+      "evidence": "m6_0_plan_guard.py G10"
+    },
+    {
+      "case_id": "N-M6-11",
+      "name": "New adapter gains semantic decision authority",
+      "precondition": "Codex adapter attempts to choose project, plan scope change, or milestone closure",
+      "action": "Codex adapter writes to Plan or selects followup subject",
+      "expected_mechanical_outcome": "REJECT — adapter is mechanical execution only; M6_NEW_SEMANTIC_AUTHORITY_COUNT must remain 0",
+      "layer": "adapter boundary",
+      "evidence": "m6_0_plan_guard.py G11"
+    },
+    {
+      "case_id": "N-M6-12",
+      "name": "CLI gets executor-specific branch",
+      "precondition": "CLI adds codex-only flag that bypasses executor-neutral descriptor",
+      "action": "Add aota task start --codex-model option that rewrites instruction without descriptor validation",
+      "expected_mechanical_outcome": "REJECT — CLI must remain executor-neutral projection; executor-specific semantic branch prohibited",
+      "layer": "cli/projection",
+      "evidence": "m6_0_plan_guard.py G12"
+    },
+    {
+      "case_id": "N-M6-13",
+      "name": "Legacy surface remains active after declared retirement",
+      "precondition": "M6-4 declares surface deprecated/removed but code path still executes",
+      "action": "Invoke retired surface and obtain success without deprecated marker",
+      "expected_mechanical_outcome": "REJECT — retired deprecated surface must be typed deprecated with deprecation envelope or hard removed with fail-closed; silent active violates plan",
+      "layer": "surface retirement",
+      "evidence": "m6_0_plan_guard.py G13"
+    },
+    {
+      "case_id": "N-M6-14",
+      "name": "Retired surface silently aliases to new behavior",
+      "precondition": "Retired command silently forwards to new command with different semantics",
+      "action": "Call retired CLI alias which forwards without explicit compatibility projection marker",
+      "expected_mechanical_outcome": "REJECT — retirement must be hard removal or explicit compatibility projection with audit; silent alias denied",
+      "layer": "surface retirement",
+      "evidence": "m6_0_plan_guard.py G14"
+    },
+    {
+      "case_id": "N-M6-15",
+      "name": "Cross-executor identity collision",
+      "precondition": "Two tasks dispatched to hermes and codex with same adapter_handle or canonical_task_id",
+      "action": "Dispatch package with duplicate canonical_task_id across executors",
+      "expected_mechanical_outcome": "REJECT — DUPLICATE_CANONICAL_TASK_ID fail-closed; dispatch_attempt_id and route isolation preserved per executor",
+      "layer": "core/execution/dispatcher",
+      "evidence": "m6_0_plan_guard.py G15"
+    },
+    {
+      "case_id": "N-M6-16",
+      "name": "Executor-local ID becomes canonical ID",
+      "precondition": "Codex host returns task_id unrelated to canonical_task_id",
+      "action": "Use returned host task ID as canonical_task_id in subsequent status/result",
+      "expected_mechanical_outcome": "REJECT — canonical_task_id remains authority; adapter_handle never replaces canonical identity; lookup must fail if swapped",
+      "layer": "core/execution/identity",
+      "evidence": "m6_0_plan_guard.py G16"
+    },
+    {
+      "case_id": "N-M6-17",
+      "name": "Generic shell executor introduced in M6",
+      "precondition": "M6 non-goal: no generic shell executor",
+      "action": "Add generic shell/codex terminal tool as part of M6 proof",
+      "expected_mechanical_outcome": "REJECT — generic terminal/arbitrary command outside M6 scope; planning only allows typed ExecutionPackage",
+      "layer": "scope",
+      "evidence": "m6_0_plan_guard.py G17"
+    },
+    {
+      "case_id": "N-M6-18",
+      "name": "Unknown capability requirement silently ignored",
+      "precondition": "Package contains capability_requirements={'requires_gpu': True}",
+      "action": "Registry check_compatibility returns (True, ())",
+      "expected_mechanical_outcome": "REJECT — unknown requirement key must be treated as CAPABILITY_MISMATCH fail-closed (R2-F06 regression)",
+      "layer": "core/execution/registry",
+      "evidence": "m6_0_plan_guard.py G18"
+    },
+    {
+      "case_id": "N-M6-19",
+      "name": "Unknown Hermes/Codex state collapsed to completed",
+      "precondition": "Adapter status returns unreachable/timeout or unknown host state",
+      "action": "Map unknown host state to CanonicalTaskState.COMPLETED",
+      "expected_mechanical_outcome": "REJECT — unknown must map to UNKNOWN and result must be typed unknown, never completed",
+      "layer": "adapters mapping",
+      "evidence": "m6_0_plan_guard.py G19"
+    },
+    {
+      "case_id": "N-M6-20",
+      "name": "CLI exclusive entrypoint",
+      "precondition": "Core execution only reachable via CLI binary",
+      "action": "Remove direct Core callable path and require CLI",
+      "expected_mechanical_outcome": "REJECT — FORGE_CORE_CALLABLE_WITHOUT_CLI must remain yes; CLI_EXCLUSIVE_ENTRYPOINT=no",
+      "layer": "architecture",
+      "evidence": "m6_0_plan_guard.py G20"
+    },
+    {
+      "case_id": "N-M6-21",
+      "name": "M4 mutation surface redefined in M6",
+      "precondition": "No M6 authority to change plan_init/plan_retirement",
+      "action": "Alter M4 mutation descriptors or handlers in M6 lanes",
+      "expected_mechanical_outcome": "REJECT — M6_M5_FROZEN_CONTRACT_REDEFINITION_COUNT must remain 0 for M4 surface; M4 contracts frozen",
+      "layer": "scope",
+      "evidence": "m6_0_plan_guard.py G21"
+    },
+    {
+      "case_id": "N-M6-22",
+      "name": "Deployment or live dispatch in planning",
+      "precondition": "Planning phase M6-0..M6 planning guard",
+      "action": "Planning artifact or guard spawns live Hermes/Codex daemon",
+      "expected_mechanical_outcome": "REJECT — LIVE_HERMES_DISPATCH_PERFORMED and DEPLOY_PERFORMED must remain no in planning",
+      "layer": "phase boundary",
+      "evidence": "m6_0_plan_guard.py G22"
+    }
+  ],
+  "invariants": {
+    "M6_NEGATIVE_ACCEPTANCE_DEFINED": "yes",
+    "M6_NEGATIVE_ACCEPTANCE_TOTAL": 22
+  }
+}

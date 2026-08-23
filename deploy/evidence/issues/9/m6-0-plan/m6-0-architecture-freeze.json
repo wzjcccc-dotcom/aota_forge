@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "title": "M6 Architecture Freeze — M5 Frozen Contracts and Invariants",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "m5_frozen_contracts_recovered": "yes",
+  "m6_m5_frozen_contract_redefinition_count": 0,
+  "frozen_core_execution_contracts": [
+    {
+      "contract": "ExecutorCapabilities",
+      "path": "aota_forge/core/execution/capabilities.py",
+      "frozen_shape": "executor_id, adapter_kind, supported_execution_modes, supports_streaming_events, supports_task_cancellation, supports_task_resume, supports_structured_result, supported_canonical_roles, supported_isolation_modes, supports_working_directory, supports_artifact_transport, max_timeout_seconds, concurrency_limit; forbids semantic decision fields"
+    },
+    {
+      "contract": "ExecutionPackage",
+      "path": "aota_forge/core/execution/package.py",
+      "frozen_shape": "executor-neutral envelope with protocol_version, contract_hash, canonical_task_id, subject_ref, project_id, canonical_role, instruction, input_artifacts, working_context, capability_requirements, constraints, idempotency_key, intent_fingerprint, correlation_id, result_expectations; forbids Hermes-private fields"
+    },
+    {
+      "contract": "CanonicalTaskState",
+      "path": "aota_forge/core/execution/state.py",
+      "frozen_shape": "CREATED, ACCEPTED, QUEUED, RUNNING, WAITING, COMPLETED, FAILED, CANCELLED, UNKNOWN; UNKNOWN is explicit never silent success; terminal={COMPLETED,FAILED,CANCELLED}"
+    },
+    {
+      "contract": "CanonicalResult",
+      "path": "aota_forge/core/execution/results.py",
+      "frozen_shape": "executor-neutral envelope: ok, status, canonical_task_id, executor_id, canonical_task_state, exit_code, result_data, output_artifacts, stdout/stderr_summary, error, execution_stats, correlation_id; forbids Hermes-private escape"
+    },
+    {
+      "contract": "RoleMapping",
+      "path": "aota_forge/core/execution/roles.py",
+      "frozen_shape": "executor-neutral canonical_roles={planner,coder,reviewer,steward,executor}; canonical role != Hermes profile; mapping is deterministic, fails closed, no heuristic ranking"
+    },
+    {
+      "contract": "ExecutorAdapter",
+      "path": "aota_forge/core/execution/adapter.py",
+      "frozen_shape": "capabilities, validate_package, dispatch, status, result, cancel, resume; pure mechanical, no shell/command, no semantic retry, no heuristic ranking"
+    },
+    {
+      "contract": "ExecutorRegistry",
+      "path": "aota_forge/core/execution/registry.py",
+      "frozen_shape": "registration, deterministic descriptors, capability validation, cardinality 0->EXECUTOR_NOT_FOUND, 1->RESOLVED, >1->NEEDS_SEMANTIC_CHOICE; no silent downgrade/fallback"
+    },
+    {
+      "contract": "ExecutionDispatcher",
+      "path": "aota_forge/core/execution/dispatcher.py",
+      "frozen_shape": "idempotency replay/conflict, route-bound status/result/cancel/resume via stored route, UNKNOWN preserved never false completion; no Hermes dependency"
+    },
+    {
+      "contract": "Unified Ingress execution descriptors",
+      "path": "aota_forge/core/ingress.py",
+      "frozen_shape": "execution.task_start, execution.task_status, execution.task_result, execution.task_cancel, execution.executor_list, execution.executor_capabilities with typed validation and typed failures"
+    },
+    {
+      "contract": "CLI execution projection",
+      "path": "aota_forge/cli/commands/execution.py + aota_forge/cli/__main__.py",
+      "frozen_shape": "aota task start/status/result/cancel, aota executor list/capabilities are mechanical projections; CLI is canonical machine adapter not exclusive entrypoint"
+    },
+    {
+      "contract": "Hermes adapter",
+      "path": "aota_forge/adapters/hermes/executor.py",
+      "frozen_shape": "mechanical translation adapter; canonical role != Hermes profile; canonical_task_id != executor-local id; UNKNOWN never silent success; zero Hermes-private object escape"
+    },
+    {
+      "contract": "Reference adapter",
+      "path": "aota_forge/adapters/execution/reference.py",
+      "frozen_shape": "in-memory deterministic test double; test-only, never production default"
+    }
+  ],
+  "architecture_invariants_presumptively_frozen": {
+    "llm_is_semantic_authority": "yes",
+    "core_control_cli_adapters_are_deterministic_mechanical": "yes",
+    "cli_is_canonical_machine_adapter_not_exclusive_entrypoint": "yes",
+    "hermes_is_adapter_not_core_authority": "yes",
+    "execution_package_executor_neutral": "yes",
+    "canonical_role_not_hermes_profile": "yes",
+    "canonical_task_id_not_executor_local_id": "yes",
+    "unknown_explicit_never_silent_success": "yes",
+    "zero_executors_fail_closed": "yes",
+    "one_executor_deterministic": "yes",
+    "many_executors_needs_semantic_choice": "yes",
+    "heuristic_executor_choice_prohibited": "yes",
+    "silent_fallback_prohibited": "yes",
+    "silent_capability_downgrade_prohibited": "yes",
+    "semantic_retry_prohibited": "yes",
+    "generic_terminal_git_github_semantic_escape_prohibited": "yes",
+    "m4_mutation_surface": "plan_init, plan_retirement (preserved; M6 exception count=0)"
+  },
+  "m6_requested_frozen_contract_exceptions": [],
+  "frozen_contract_verification_notes": "All paths validated at b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1; no M6 exception requested — M6 second executor must be proven without rewriting canonical M5 Core contracts"
+}

@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "title": "M6 Executor Proof Matrix — Reference, Hermes, Codex",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "executors": [
+    {
+      "executor_id": "reference-fake",
+      "adapter_kind": "in_process_test_double",
+      "role": "existing M5 reference surface — not M6 second proof",
+      "capabilities": {
+        "supported_execution_modes": ["async", "batch", "sync"],
+        "supports_streaming_events": true,
+        "supports_task_cancellation": true,
+        "supports_task_resume": true,
+        "supports_structured_result": true,
+        "supported_canonical_roles": ["coder", "executor", "planner", "reviewer", "steward"],
+        "supported_isolation_modes": ["container", "none", "process", "worktree"],
+        "supports_working_directory": true,
+        "supports_artifact_transport": true
+      },
+      "operations": {
+        "dispatch": "supported",
+        "status": "supported",
+        "result": "supported",
+        "cancel": "supported",
+        "resume": "supported"
+      },
+      "execution_semantics": {
+        "sync": "supported",
+        "async": "supported",
+        "batch": "supported",
+        "structured_result": "supported",
+        "working_directory": "supported",
+        "artifact_transport": "supported",
+        "isolation_modes": "supported",
+        "canonical_roles": "supported"
+      },
+      "disposition": "retain — test-only, never production default",
+      "notes": "Already proven at M5; used for contract testing and parity baseline"
+    },
+    {
+      "executor_id": "hermes",
+      "adapter_kind": "hermes_host_adapter",
+      "role": "existing M5 Hermes adapter — proves not-required, not removed",
+      "capabilities": {
+        "supported_execution_modes": ["async", "sync"],
+        "supports_streaming_events": false,
+        "supports_task_cancellation": true,
+        "supports_task_resume": true,
+        "supports_structured_result": true,
+        "supported_canonical_roles": ["coder", "executor", "planner", "reviewer", "steward"],
+        "supported_isolation_modes": ["process", "worktree"],
+        "supports_working_directory": true,
+        "supports_artifact_transport": true
+      },
+      "operations": {
+        "dispatch": "supported",
+        "status": "supported",
+        "result": "supported",
+        "cancel": "supported (typed CANCEL_UNSUPPORTED not expected; Hermes cancels via host)",
+        "resume": "supported"
+      },
+      "execution_semantics": {
+        "sync": "supported",
+        "async": "supported",
+        "batch": "unsupported — typed CAPABILITY_MISMATCH when batch requested",
+        "structured_result": "supported",
+        "working_directory": "supported",
+        "artifact_transport": "supported",
+        "isolation_modes": "supported = {process, worktree}; container/none => CAPABILITY_MISMATCH",
+        "canonical_roles": "supported"
+      },
+      "disposition": "retain — Host-only compatibility runtime; M6 proves forge does not require it",
+      "notes": "Valid unsupported is represented fail-closed, never silent downgrade"
+    },
+    {
+      "executor_id": "codex",
+      "adapter_kind": "codex_host_adapter",
+      "role": "M6 second executor proof — preferred; production-capable mechanical adapter",
+      "capabilities": {
+        "supported_execution_modes": ["async", "sync"],
+        "supports_streaming_events": "deferred — typed unsupported in M6 (declared false), streaming not required for proof",
+        "supports_task_cancellation": true,
+        "supports_task_resume": "supported or typed RESUME_UNSUPPORTED if Codex host lacks resume — declared explicitly",
+        "supports_structured_result": true,
+        "supported_canonical_roles": ["coder", "executor", "planner", "reviewer", "steward"],
+        "supported_isolation_modes": ["process", "worktree"],
+        "supports_working_directory": true,
+        "supports_artifact_transport": true
+      },
+      "operations": {
+        "dispatch": "supported",
+        "status": "supported",
+        "result": "supported",
+        "cancel": "supported or typed CANCEL_UNSUPPORTED fail-closed if capability false",
+        "resume": "supported or typed RESUME_UNSUPPORTED fail-closed if capability false"
+      },
+      "execution_semantics": {
+        "sync": "supported",
+        "async": "supported",
+        "batch": "unsupported — typed CAPABILITY_MISMATCH (Codex does not need batch for M6 proof)",
+        "structured_result": "supported",
+        "working_directory": "supported",
+        "artifact_transport": "supported or typed unsupported with CAPABILITY_MISMATCH when required",
+        "isolation_modes": "supported = {process, worktree}",
+        "canonical_roles": "supported — same canonical roles as Hermes, no executor-specific role"
+      },
+      "disposition": "prove in M6 — must implement ExecutorAdapter without Core schema change",
+      "proof_requirements": [
+        "Codex adapter passes capabilities() without semantic decision fields",
+        "validate_package fail-closed on unknown capability keys (not silently ignored)",
+        "dispatch returns canonical DispatchResult with adapter_handle != canonical_task_id",
+        "status returns canonical state with UNKNOWN never collapsed to completed",
+        "result maps to CanonicalResult with Hermes-private zero escape (now Codex-private zero escape)",
+        "cancel/resume are idempotent replay-safe or typed unsupported",
+        "Dispatcher 0/1/>1 resolution preserved when Codex registered alongside Hermes and reference",
+        "Direct Core / Ingress / CLI produce identical result for same Codex package"
+      ],
+      "unsupported_valid_only_when": "capability declares false and adapter returns typed fail-closed (CANCEL_UNSUPPORTED/RESUME_UNSUPPORTED/CAPABILITY_MISMATCH), never silent success"
+    }
+  ],
+  "invariants": {
+    "executor_matrix_covers_reference_hermes_codex": "yes",
+    "unsupported_is_fail_closed_not_success": "yes",
+    "codex_generalizes_only_from_observed_hermes_differences": "yes",
+    "no_executor_specific_canonical_role": "yes"
+  }
+}

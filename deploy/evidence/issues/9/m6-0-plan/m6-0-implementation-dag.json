@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "title": "M6 Implementation DAG Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "slices": [
+    {
+      "slice_id": "M6-1",
+      "name": "Contract and No-Change Proof",
+      "objective": "Prove M5 frozen contracts unchanged before any executor proof: inventory surfaces, assert zero Core schema rewrite, freeze boundary",
+      "prerequisites": ["M6-0 accepted plan"],
+      "authorized_write_paths": [
+        "tests/test_m6_1_contract_freeze.py",
+        "scripts/m6_1_contract_guard.py",
+        "deploy/evidence/issues/9/m6-1/*"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/adapters/execution/reference.py",
+        "aota_forge/core/ingress.py",
+        "aota_forge/cli/commands/execution.py"
+      ],
+      "input_contracts": ["M6-0 frozen contract list (m6-0-architecture-freeze.json)", "M6-0 surface inventory"],
+      "output_contracts": ["M5 frozen contracts VERIFIED unchanged", "M6 surface inventory baseline", "Zero-rewrite proof"],
+      "focused_tests": ["tests/test_m6_1_contract_freeze.py"],
+      "acceptance_criteria": "MULTI_EXECUTOR_CORE_SCHEMA_REWRITE_REQUIRED=no; ExecutionPackage executor-private field count=0; canonical roles unchanged; all 12 frozen contracts byte-identical to M5 KGC except explicitly authorized M6 hardening",
+      "dependents": ["M6-2", "M6-4"]
+    },
+    {
+      "slice_id": "M6-2",
+      "name": "Second Executor Adapter Proof (Codex)",
+      "objective": "Implement Codex production-capable adapter under ExecutorAdapter; prove CHANGE_EXECUTOR != CHANGE_PLAN without Core schema rewrite",
+      "prerequisites": ["M6-1"],
+      "authorized_write_paths": [
+        "aota_forge/adapters/codex/*",
+        "tests/test_m6_2_codex_adapter.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*"
+      ],
+      "input_contracts": ["M5-1 ExecutorAdapter protocol", "M5-1 RoleMapping", "M6-0 multi-executor proof definition"],
+      "output_contracts": ["CodexAdapter (capabilities/validate_package/dispatch/status/result/cancel/resume)", "Codex capability negotiation", "Codex role mapping"],
+      "focused_tests": ["tests/test_m6_2_codex_adapter.py"],
+      "acceptance_criteria": "Codex implements all 7 adapter methods; typed unsupported where capability false; no Hermes-private or executor-private fields enter Core; no new canonical role",
+      "dependents": ["M6-3", "M6-6"]
+    },
+    {
+      "slice_id": "M6-3",
+      "name": "Multi-Executor Dispatcher and Integration Proof",
+      "objective": "Prove dispatcher/registry handle reference+hermes+codex with deterministic 0/1/>1 resolution, capability negotiation, role mapping, artifact/WD, typed unsupported; add Core defense-in-depth for resume identity (F01)",
+      "prerequisites": ["M6-2"],
+      "authorized_write_paths": [
+        "aota_forge/core/execution/dispatcher.py",
+        "tests/test_m6_3_multi_executor_dispatcher.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/capabilities.py",
+        "aota_forge/core/execution/registry.py",
+        "aota_forge/adapters/execution/reference.py",
+        "aota_forge/adapters/hermes/executor.py",
+        "aota_forge/adapters/codex/*"
+      ],
+      "input_contracts": ["ExecutorRegistry + ExecutionDispatcher contracts", "M6-2 CodexAdapter"],
+      "output_contracts": ["Multi-executor resolution verified", "F01 resume identity defense-in-depth at Core"],
+      "focused_tests": ["tests/test_m6_3_multi_executor_dispatcher.py"],
+      "acceptance_criteria": "0 executors => EXECUTOR_NOT_FOUND fail closed; 1 => deterministic; >1 => NEEDS_SEMANTIC_CHOICE; resume with mismatched canonical_task_id fails at Core even with permissive adapter; idempotent cancel/resume verified across executors",
+      "dependents": ["M6-5", "M6-6"]
+    },
+    {
+      "slice_id": "M6-4",
+      "name": "Surface-Reduction Implementation",
+      "objective": "Classify legacy surfaces and implement bounded reduction with measurement: retain/prove/reduce/retire/defer; each target has replacement, risk, typed retirement mechanism, negative acceptance; reduction only after replacement evidence",
+      "prerequisites": ["M6-1"],
+      "authorized_write_paths": [
+        "deploy/evidence/issues/9/m6-4/*",
+        "tests/test_m6_4_surface_reduction.py",
+        "docs/architecture.md",
+        "deploy/evidence/issues/9/m6-0-plan/m6-0-surface-inventory.json"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/*",
+        "aota_forge/cli/*"
+      ],
+      "input_contracts": ["M6-0 surface inventory", "M6-2/M6-3 replacement evidence"],
+      "output_contracts": ["Surface classification matrix", "Before/after measurements (tool count, Skill complexity, duplicated logic, deployment coupling, choreography steps)", "Deprecated-but-active markers where applicable"],
+      "focused_tests": ["tests/test_m6_4_surface_reduction.py"],
+      "acceptance_criteria": "Every proposed reduction has named target, owner, consumers, why redundant, canonical replacement, compatibility risk, typed retirement (hard removal / typed unsupported / compatibility projection / deprecated-but-active), and negative acceptance; no Hermes-convenience-only removal",
+      "dependents": ["M6-5"]
+    },
+    {
+      "slice_id": "M6-5",
+      "name": "CLI and Ingress Compatibility Convergence",
+      "objective": "Ensure Direct Core / Unified Ingress / CLI produce identical mechanical results for multi-executor dispatch; no new executor-specific CLI branch unless Issue authority requires; preserve parity",
+      "prerequisites": ["M6-3", "M6-4"],
+      "authorized_write_paths": [
+        "aota_forge/core/ingress.py",
+        "aota_forge/cli/commands/execution.py",
+        "aota_forge/cli/__main__.py",
+        "aota_forge/cli/projection.py",
+        "tests/test_m6_5_cli_ingress_parity.py"
+      ],
+      "read_only_dependencies": [
+        "aota_forge/core/execution/*",
+        "aota_forge/adapters/codex/*",
+        "aota_forge/adapters/hermes/*"
+      ],
+      "input_contracts": ["Ingress execution descriptors", "M6-3 dispatcher proof", "M6-4 surface classification"],
+      "output_contracts": ["3-way parity: Direct Core == Ingress == CLI for Codex dispatch", "No executor-specific CLI leak unless authorized"],
+      "focused_tests": ["tests/test_m6_5_cli_ingress_parity.py"],
+      "acceptance_criteria": "Same package via Direct Core, Ingress, and CLI yields identical dispatch/result/error with identical audit; executor param remains explicit; no heuristic selection added",
+      "dependents": ["M6-6"]
+    },
+    {
+      "slice_id": "M6-6",
+      "name": "Source Guard and Regression Convergence",
+      "objective": "Evolve source guard without wildcard allowlist; converge full regression including M4 129 + M5 370 + new M6 corpus; per-work-item provenance",
+      "prerequisites": ["M6-2", "M6-3", "M6-5"],
+      "authorized_write_paths": [
+        "scripts/m6_source_guard.py",
+        "scripts/m6_0_plan_guard.py",
+        "tests/test_m6_6_convergence.py",
+        "deploy/evidence/issues/9/m6-source/*",
+        "deploy/evidence/issues/9/m6-6/*"
+      ],
+      "read_only_dependencies": ["aota_forge/*", "tests/*"],
+      "input_contracts": ["All M6 components", "M5 regression baselines (499 total)"],
+      "output_contracts": ["M6 source guard PASS", "Full regression PASS (M4 129 + M5 370 + M6 new, zero failures)", "Provenance for each work item"],
+      "focused_tests": ["tests/test_m6_6_convergence.py", "scripts/m6_source_guard.py"],
+      "acceptance_criteria": "M4 regression 129/129, M5 regression 370/370, full 499 baseline retained plus new M6 corpus green; source guard rejects wildcard production allowlist and tests/test_m6_*.py blanket bypass",
+      "dependents": ["M6-R"]
+    },
+    {
+      "slice_id": "M6-R",
+      "name": "Milestone Review, Reconciliation, and Known-Good Checkpoint",
+      "objective": "Independent review of M6 multi-executor proof and surface reduction; verify source immutability, closure guard, and KGC advancement",
+      "prerequisites": ["M6-6"],
+      "authorized_write_paths": [
+        "scripts/m6_r_closure_guard.py",
+        "deploy/evidence/issues/9/m6-r/*"
+      ],
+      "read_only_dependencies": ["aota_forge/*", "tests/*"],
+      "input_contracts": ["M6-6 candidate"],
+      "output_contracts": ["M6 Known-Good Checkpoint"],
+      "focused_tests": ["Full regression suite", "m6_r_closure_guard.py"],
+      "acceptance_criteria": "PASS verdict on independent review, 0 blocking findings, full suite passing",
+      "dependents": []
+    }
+  ],
+  "dag_properties": {
+    "node_count": 7,
+    "edges": [
+      ["M6-1", "M6-2"],
+      ["M6-1", "M6-4"],
+      ["M6-2", "M6-3"],
+      ["M6-3", "M6-5"],
+      ["M6-4", "M6-5"],
+      ["M6-3", "M6-6"],
+      ["M6-5", "M6-6"],
+      ["M6-6", "M6-R"]
+    ],
+    "acyclic": "yes",
+    "dag_cycle_count": 0,
+    "unresolved_slice_dependency_count": 0
+  },
+  "parallelization": {
+    "M6_PARALLEL_SOURCE_EXECUTION_ALLOWED": "yes",
+    "MAX_SAFE_PARALLEL_SOURCE_LANES": 2,
+    "parallel_pairs": [
+      ["M6-2 (Codex Adapter)", "M6-4 (Surface-Reduction Implementation)"]
+    ],
+    "parallel_write_conflict_policy": "write overlap = 0 for parallel pair; shared hot files are integration_only and owned by M6-5 / M6-6"
+  },
+  "invariants": {
+    "M6_IMPLEMENTATION_DAG_DEFINED": "yes"
+  }
+}

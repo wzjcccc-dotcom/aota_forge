@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "title": "M6 Phase Boundary and Serial Activation Specification",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "phases": [
+    {
+      "phase": "M6-0 PLANNING",
+      "activities": [
+        "Read-before-write governance check",
+        "M5 frozen contract recovery and architecture freeze review",
+        "M5-0 planning convention recovery (structural precedent only)",
+        "M5 final-state surface inventory (retain/prove/reduce/retire/defer)",
+        "Multi-executor proof definition and executor matrix",
+        "DAG, ownership, positive/negative matrices, source-guard strategy, self-review, plan guard"
+      ],
+      "authorized_writes": [
+        "deploy/evidence/issues/9/m6-0-plan/*",
+        "scripts/m6_0_plan_guard.py"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false,
+      "production_source_mutation_allowed": false
+    },
+    {
+      "phase": "M6 SOURCE CONSTRUCTION (M6-1..M6-6)",
+      "activities": [
+        "M6-1 contract/no-change proof",
+        "M6-2 Codex adapter proof",
+        "M6-3 multi-executor dispatcher/integration proof (includes F01)",
+        "M6-4 surface-reduction implementation with measurement",
+        "M6-5 CLI/Ingress parity convergence",
+        "M6-6 source guard and regression convergence"
+      ],
+      "authorized_writes": [
+        "aota_forge/adapters/codex/*",
+        "aota_forge/core/execution/dispatcher.py",
+        "aota_forge/core/ingress.py",
+        "aota_forge/cli/commands/execution.py",
+        "aota_forge/cli/__main__.py",
+        "aota_forge/cli/projection.py",
+        "tests/test_m6_*.py",
+        "scripts/m6_source_guard.py",
+        "scripts/m6_1_contract_guard.py",
+        "deploy/evidence/issues/9/m6-*/*"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false,
+      "production_source_mutation_allowed": true
+    },
+    {
+      "phase": "M6-R REVIEW AND CHECKPOINT",
+      "activities": [
+        "Independent review of M6 multi-executor proof and surface reduction",
+        "Full suite regression (M4 129 + M5 370 + M6 corpus)",
+        "Closure guard verification",
+        "Known-good checkpoint advancement"
+      ],
+      "authorized_writes": [
+        "scripts/m6_r_closure_guard.py",
+        "deploy/evidence/issues/9/m6-r/*"
+      ],
+      "live_runtime_allowed": false,
+      "deployment_allowed": false,
+      "production_source_mutation_allowed": false
+    },
+    {
+      "phase": "DOWNSTREAM RUNTIME ACTIVATION (post-M6)",
+      "activities": [
+        "Live Codex/Hermes daemon interaction (injectable protocol verification only in M6; live activation deferred)",
+        "Live E2E integration smoke"
+      ],
+      "authorized_writes": ["M7 milestone directories"],
+      "live_runtime_allowed": true,
+      "deployment_allowed": false,
+      "production_source_mutation_allowed": true
+    },
+    {
+      "phase": "PRODUCTION DEPLOYMENT",
+      "activities": ["Host deployment", "Supervisor configuration", "Production cutover"],
+      "authorized_writes": ["Out of scope for M6"],
+      "live_runtime_allowed": true,
+      "deployment_allowed": true,
+      "production_source_mutation_allowed": false
+    }
+  ],
+  "invariants": {
+    "M6_PHASE_BOUNDARY_PLAN": "PASS",
+    "PLANNING_PERFORMS_LIVE_HERMES_DISPATCH": "no",
+    "PLANNING_PERFORMS_LIVE_SECOND_EXECUTOR_DISPATCH": "no",
+    "PLANNING_PERFORMS_DEPLOYMENT": "no",
+    "M6_PRODUCTION_SOURCE_MUTATION_COUNT_IN_M6_0": 0
+  }
+}

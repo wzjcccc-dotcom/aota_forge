@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "title": "M6-0 Planning Self-Review — Independent Challenge Before Commit",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "review_date": "2026-08-23",
+  "challenges": [
+    {
+      "question": "Does this actually prove executor neutrality?",
+      "finding": "PASS — Proof requires Codex mechanical adapter without Core schema rewrite; 0/1/>1 invariants and ExecutionPackage neutrality are explicit acceptance; negative matrix covers schema-rewrite and private-field cases",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Could the second executor be fake proof theater?",
+      "finding": "PASS — plan explicitly states ReferenceFake does NOT count; Codex must be production-capable via bounded mechanical host protocol (offline injectable, not live daemon in M6-0 but capable of real dispatch in M6-2); evidence requires parity across Direct Core/Ingress/CLI",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Does surface reduction accidentally optimize only for Hermes?",
+      "finding": "PASS — plan distinguishes executor-neutral canonical requirement vs Hermes-specific convenience; prohibits removing surface merely because Hermes does not need it; requires compatibility risk and asks 'another valid executor could require it?'",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Does any lane require rewriting M5 canonical schema?",
+      "finding": "PASS — M6-1 proves zero rewrite; M6_M5_FROZEN_CONTRACT_REDEFINITION_COUNT=0; guard G01/G02 reject schema-rewrite mutations; surface inventory shows retain for all 12 frozen contracts",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Can two lanes race on the same contract?",
+      "finding": "PASS — Ownership partitions are exclusive: M6-2 owns adapters/codex/*, M6-3 owns dispatcher.py, M6-5 owns ingress.py/cli; parallel pair M6-2||M6-4 has write overlap 0; hot files are integration_only with serial ordering",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Are negative cases strong enough to reject fallback/heuristics?",
+      "finding": "PASS — Negative matrix has 22 cases including N-M6-03 heuristic ranking, N-M6-05 silent downgrade, N-M6-06 fallback, N-M6-18 unknown capability, all covered by guard G03/G05/G06/G18",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Is unsupported behavior distinguished from failure?",
+      "finding": "PASS — Executor matrix states unsupported is valid only when mechanically represented and fail-closed (typed CANCEL_UNSUPPORTED/RESUME_UNSUPPORTED/CAPABILITY_MISMATCH); N-M6-07 explicitly tests this",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Does the plan accidentally enter M7/deployment scope?",
+      "finding": "PASS — Phase boundaries state planning performs no live dispatch or deployment; live Codex host deferred; guard G22 rejects live dispatch in planning; M6 non-goals list deployment",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Are F01/F08 dispositions explicit?",
+      "finding": "PASS — F01 owned_by_M6 with bounded work item M6-3 defense-in-depth (adapter already enforces, Core becomes mandatory with second adapter); F08 deferred_beyond_M6 retained_non_blocking, not opportunistically fixed; no silent absorption",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Are there unresolved semantic placeholders?",
+      "finding": "PASS — No TODO/TBD/FIXME/decide-later in 24 artifacts expected; implementation details deferred only when ownership and acceptance boundary are explicit (e.g., exact Codex host protocol details deferred to M6-2 with acceptance boundary frozen)",
+      "verdict": "PASS"
+    },
+    {
+      "question": "Is new semantic authority count correctly zero?",
+      "finding": "PASS — Codex adapter is mechanical execution never semantic planning/routing authority; negative N-M6-11 covers adapter gaining semantic authority; M6_NEW_SEMANTIC_AUTHORITY_COUNT=0 stated in architecture freeze and plan",
+      "verdict": "PASS"
+    }
+  ],
+  "summary": {
+    "total_challenges": 11,
+    "pass": 11,
+    "fail": 0,
+    "overall_verdict": "PASS",
+    "record_location": "deploy/evidence/issues/9/m6-0-plan/m6-0-self-review.json (planning evidence, not Issue body)"
+  }
+}

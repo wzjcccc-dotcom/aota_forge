@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "title": "M6 Source Guard Strategy — Bounded Evolution Without Wildcard Allowlist",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "strategy": {
+    "m6_authorized_source_base": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+    "m6_authorized_production_paths": [
+      "aota_forge/adapters/codex/__init__.py",
+      "aota_forge/adapters/codex/executor.py",
+      "aota_forge/adapters/codex/schema.py",
+      "aota_forge/core/execution/dispatcher.py",
+      "aota_forge/core/ingress.py",
+      "aota_forge/cli/commands/execution.py",
+      "aota_forge/cli/__main__.py",
+      "aota_forge/cli/projection.py"
+    ],
+    "m6_authorized_test_paths": [
+      "tests/test_m6_1_contract_freeze.py",
+      "tests/test_m6_2_codex_adapter.py",
+      "tests/test_m6_3_multi_executor_dispatcher.py",
+      "tests/test_m6_4_surface_reduction.py",
+      "tests/test_m6_5_cli_ingress_parity.py",
+      "tests/test_m6_6_convergence.py"
+    ],
+    "m6_authorized_guard_paths": [
+      "scripts/m6_source_guard.py",
+      "scripts/m6_1_contract_guard.py",
+      "scripts/m6_r_closure_guard.py",
+      "scripts/m6_0_plan_guard.py"
+    ],
+    "m6_authorized_evidence_paths": [
+      "deploy/evidence/issues/9/m6-*/*",
+      "deploy/evidence/issues/9/m6-0-plan/*"
+    ],
+    "per_work_item_provenance": {
+      "required": "yes",
+      "mechanism": "Each work item (M6-1..M6-6, M6-R) records its authorized paths, expected output, acceptance, and evidence marker; integration provenance is recorded separately in M6-6"
+    },
+    "integration_provenance": {
+      "required": "yes",
+      "mechanism": "M6-6 records integration evidence showing ownership non-overlap and that no two lanes raced on same canonical contract file"
+    },
+    "future_sensitive_post_m6_rejection": {
+      "required": "yes",
+      "mechanism": "Guard rejects mutations outside the explicitly enumerated authorized path sets; uses positive enumeration, not negative exclusion"
+    },
+    "wildcard_rejection": {
+      "no_wildcard_production_allowlist": "yes",
+      "no_blanket_test_bypass": "yes",
+      "evidence_paths_scoped": "yes",
+      "detail_no_wildcard": "no aota_forge/** or aota_forge/core/** wildcard is allowed; each production file is individually enumerated",
+      "detail_no_blanket": "no tests/test_m6_*.py blanket bypass; each test file is individually enumerated and must correspond to owning work item",
+      "detail_scoped": "deploy/evidence/issues/9/m6-*/* is scoped to m6-* prefix, not deploy/**"
+    },
+    "evolution_from_m5": "M5 guard allowed aota_forge/** in some scopes with contract checks; M6 tightens to explicit per-file enumeration for new Codex and dispatcher changes while preserving frozen M5 paths as read-only",
+    "regression_obligations_retained": {
+      "m4_regression": "129/129",
+      "m5_regression": "370/370",
+      "full_regression_baseline": "499/499",
+      "m5_positive_matrix": "24/24",
+      "m5_negative_matrix": "24/24",
+      "source_guard": "34/34 baseline preserved; M6 extends with new checks; no wildcard"
+    },
+    "source_mutations_during_planning": {
+      "m6_0_production_mutation_count": 0,
+      "m6_0_test_mutation_count": 0,
+      "m6_0_guard_mutation_limited_to": "scripts/m6_0_plan_guard.py and deploy/evidence/issues/9/m6-0-plan/* only"
+    }
+  },
+  "invariants": {
+    "M6_SOURCE_GUARD_STRATEGY_DEFINED": "yes",
+    "WILDCARD_PRODUCTION_ALLOWLIST": "no",
+    "BLANKET_TEST_BYPASS": "no"
+  }
+}

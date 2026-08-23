@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "title": "M6 Multi-Executor Proof Definition — Mechanical Acceptance",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "objective": "證明 Forge 不再 requires Hermes：CHANGE_EXECUTOR != CHANGE_PLAN",
+  "issue_authority": "M6 proves Forge no longer requires Hermes via second executor proof, Codex preferred; generalizes only from observed differences",
+  "what_counts_as_second_executor_proof": {
+    "required_adapter_kind": "production-capable mechanical adapter implementing ExecutorAdapter (not only a test double); Codex preferred; ReferenceFake does not count as M6 second proof",
+    "real_external_executor_required": "yes — adapter must be capable of real dispatch via bounded mechanical protocol; fake-only proof is theater and fails M6",
+    "adapter_must_implement": ["capabilities", "validate_package", "dispatch", "status", "result", "cancel", "resume"],
+    "typed_unsupported_allowed": "yes when capability negotiation declares unsupported and adapter returns typed unsupported / fail-closed (not silent success); unsupported is valid only when mechanically represented",
+    "must_support": {
+      "dispatch": "required",
+      "status": "required",
+      "result": "required",
+      "capability_negotiation": "required (advertised capabilities vs package requirements)",
+      "role_mapping": "required (canonical roles -> adapter-local, no Hermes ontology leak)",
+      "cancel": "required or typed CANCEL_UNSUPPORTED fail-closed if capability declares unsupported",
+      "resume": "required or typed RESUME_UNSUPPORTED fail-closed if capability declares unsupported",
+      "artifact_transport": "required or typed unsupported if capability declares unsupported",
+      "working_directory": "required or typed unsupported if capability declares unsupported",
+      "async_behavior": "required to prove async dispatch/status/result path distinct from sync"
+    },
+    "must_not": [
+      "rewrite canonical M5 Core schemas",
+      "add executor-private fields to ExecutionPackage",
+      "introduce executor-specific canonical roles",
+      "use heuristic ranking or silent fallback",
+      "gain semantic planning/routing authority — adapter is mechanical execution only"
+    ]
+  },
+  "core_schema_rewrite_proof": {
+    "acceptance": "add executor B: Core canonical schemas changed = 0; ExecutionPackage executor-private fields added = 0; canonical roles changed because of executor B = 0; executor-selection heuristic added = 0",
+    "required_result": "MULTI_EXECUTOR_CORE_SCHEMA_REWRITE_REQUIRED=no"
+  },
+  "executor_neutrality_invariants_extended": {
+    "change_executor_not_change_plan": "yes",
+    "new_adapter_semantic_authority_count": 0,
+    "execution_package_stays_executor_neutral": "yes",
+    "unknown_stays_explicit": "yes",
+    "cardinality_invariants_preserved": "0->EXECUTOR_NOT_FOUND fail closed; 1->RESOLVED deterministic; >1->NEEDS_SEMANTIC_CHOICE"
+  },
+  "proof_matrix_reference": "m6-0-executor-matrix.json",
+  "evidence_requirements": [
+    "executor-matrix rows for reference-fake, hermes, codex with per-function supported/unsupported/typed-fail-closed",
+    "multi-executor dispatcher integration tests: same package intent dispatched to Codex yields canonical result via same Forge contract",
+    "parity tests: Direct Core, Unified Ingress, CLI produce identical mechanical outcome for Codex dispatch",
+    "negative tests: heuristic/fallback/silent-downgrade/retired-surface cases explicitly rejected"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "title": "M6 Source Ownership Plan and Path Partitioning",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "milestone": "M6",
+  "work_item": "M6-0-PLANNING",
+  "expected_base_sha": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "status": "PASS",
+  "ownership_partitions": {
+    "EXCLUSIVE_WRITE": [
+      {"path": "aota_forge/adapters/codex/__init__.py", "owner_slice": "M6-2"},
+      {"path": "aota_forge/adapters/codex/executor.py", "owner_slice": "M6-2"},
+      {"path": "aota_forge/adapters/codex/schema.py", "owner_slice": "M6-2"},
+      {"path": "tests/test_m6_2_codex_adapter.py", "owner_slice": "M6-2"},
+      {"path": "aota_forge/core/execution/dispatcher.py", "owner_slice": "M6-3"},
+      {"path": "tests/test_m6_3_multi_executor_dispatcher.py", "owner_slice": "M6-3"},
+      {"path": "tests/test_m6_1_contract_freeze.py", "owner_slice": "M6-1"},
+      {"path": "scripts/m6_1_contract_guard.py", "owner_slice": "M6-1"},
+      {"path": "tests/test_m6_4_surface_reduction.py", "owner_slice": "M6-4"},
+      {"path": "tests/test_m6_5_cli_ingress_parity.py", "owner_slice": "M6-5"},
+      {"path": "tests/test_m6_6_convergence.py", "owner_slice": "M6-6"},
+      {"path": "scripts/m6_source_guard.py", "owner_slice": "M6-6"},
+      {"path": "scripts/m6_r_closure_guard.py", "owner_slice": "M6-R"},
+      {"path": "deploy/evidence/issues/9/m6-1/*", "owner_slice": "M6-1"},
+      {"path": "deploy/evidence/issues/9/m6-4/*", "owner_slice": "M6-4"},
+      {"path": "deploy/evidence/issues/9/m6-6/*", "owner_slice": "M6-6"},
+      {"path": "deploy/evidence/issues/9/m6-source/*", "owner_slice": "M6-6"},
+      {"path": "deploy/evidence/issues/9/m6-r/*", "owner_slice": "M6-R"},
+      {"path": "deploy/evidence/issues/9/m6-0-plan/*", "owner_slice": "M6-0"},
+      {"path": "scripts/m6_0_plan_guard.py", "owner_slice": "M6-0"}
+    ],
+    "SHARED_READ_ONLY": [
+      {"path": "aota_forge/core/execution/capabilities.py", "purpose": "Frozen capability vocabulary — read-only for M6 proof verification in M6-1"},
+      {"path": "aota_forge/core/execution/package.py", "purpose": "Frozen executor-neutral envelope — M6-1 verifies no private fields added"},
+      {"path": "aota_forge/core/execution/state.py", "purpose": "Frozen state vocabulary — M6-1 verifies"},
+      {"path": "aota_forge/core/execution/results.py", "purpose": "Frozen result envelope — M6-1 verifies"},
+      {"path": "aota_forge/core/execution/roles.py", "purpose": "Frozen role set — M6-1 verifies"},
+      {"path": "aota_forge/core/execution/adapter.py", "purpose": "Frozen abstract boundary — all adapters conform"},
+      {"path": "aota_forge/core/execution/registry.py", "purpose": "Capability matching and cardinality — M6-3 extends multi-executor coverage"},
+      {"path": "aota_forge/core/contracts/*", "purpose": "Descriptor/error/validation contracts"},
+      {"path": "aota_forge/core/identity/*", "purpose": "Identity refs"},
+      {"path": "aota_forge/adapters/execution/reference.py", "purpose": "Reference double — read-only baseline for parity"},
+      {"path": "aota_forge/adapters/hermes/executor.py", "purpose": "Hermes adapter — retained, not rewritten except via M6-3 integration reads"},
+      {"path": "aota_forge/adapters/host/*", "purpose": "Host diagnostics — diagnostic plane only"},
+      {"path": "aota_forge/adapters/plan_authority/*", "purpose": "Plan authority adapter — unchanged"}
+    ],
+    "INTEGRATION_ONLY": [
+      {"path": "aota_forge/core/ingress.py", "owner_slice": "M6-5", "purpose": "Wire Codex and converge 3-way parity; mutated exclusively in M6-5 after M6-2/M6-3 are stable"},
+      {"path": "aota_forge/cli/__main__.py", "owner_slice": "M6-5", "purpose": "Attach execution subcommands for multi-executor if needed; integration only"},
+      {"path": "aota_forge/cli/projection.py", "owner_slice": "M6-5", "purpose": "Project executor descriptors for multi-executor"},
+      {"path": "aota_forge/cli/commands/execution.py", "owner_slice": "M6-5", "purpose": "CLI execution projection — integration only, no executor-specific branch unless authorized"}
+    ],
+    "FORBIDDEN": [
+      {"path": "tests/test_m4_*.py", "reason": "M4 regression frozen baseline (129/129 pass) — no mutation"},
+      {"path": "tests/test_m5_1_contracts.py", "reason": "M5 contract tests frozen — M6-1 has its own freeze test"},
+      {"path": "tests/test_m5_2_reference_adapter.py", "reason": "M5 reference tests frozen"},
+      {"path": "tests/test_m5_3_dispatcher.py", "reason": "M5 dispatcher tests frozen"},
+      {"path": "tests/test_m5_4_hermes_adapter.py", "reason": "M5 Hermes tests frozen"},
+      {"path": "tests/test_m5_5_cli_dispatch.py", "reason": "M5 CLI tests frozen"},
+      {"path": "deploy/evidence/issues/9/m1-*/*", "reason": "Historical milestone evidence"},
+      {"path": "deploy/evidence/issues/9/m2-*/*", "reason": "Historical milestone evidence"},
+      {"path": "deploy/evidence/issues/9/m3-*/*", "reason": "Historical milestone evidence"},
+      {"path": "deploy/evidence/issues/9/m4-*/*", "reason": "Historical milestone evidence"},
+      {"path": "deploy/evidence/issues/9/m5-0-plan/*", "reason": "Historical planning evidence — immutable"},
+      {"path": "deploy/evidence/issues/9/m5-source/*", "reason": "M5 source evidence — immutable"},
+      {"path": "scripts/m4_*.py", "reason": "Historical milestone guards"},
+      {"path": "scripts/m5_*.py", "reason": "M5 guards frozen (except M6-0 guard)"}
+    ],
+    "DOWNSTREAM_RUNTIME_ONLY": [
+      {"path": "hermes live daemon launcher", "reason": "Live runtime activation deferred to post-M6 (not in M6-0..M6-R source)"},
+      {"path": "codex live host launcher", "reason": "Live Codex host dispatch deferred; M6 proves via offline injectable protocol only"},
+      {"path": "production deployment scripts", "reason": "Deployment out of scope for M6"}
+    ]
+  },
+  "hot_file_coordination": {
+    "aota_forge/core/execution/dispatcher.py": "Mutated exclusively in M6-3 for F01 defense-in-depth; not mutated in M6-2 or M6-4; M6-5 and M6-6 read-only",
+    "aota_forge/core/ingress.py": "Mutated exclusively in M6-5 after M6-2/M6-3 are stable and merged; M6-3 and M6-4 read-only",
+    "aota_forge/cli/commands/execution.py": "Mutated exclusively in M6-5 if parity requires; otherwise untouched — M6 does not add executor-specific CLI branch"
+  },
+  "invariants": {
+    "M6_SOURCE_OWNERSHIP_PLAN": "PASS",
+    "SOURCE_OWNERSHIP_AMBIGUITY_COUNT": 0,
+    "AMBIGUOUS_WRITE_OWNERSHIP_COUNT": 0,
+    "PARALLEL_WRITE_CONFLICT_COUNT": 0
+  }
+}
