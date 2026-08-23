@@ -1,0 +1,45 @@
+{
+  "construction_base": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "m6_1_test_exclusion_used_m6_4": false,
+  "m6_2": {
+    "authority_pass": true,
+    "authorized_delta": [
+      "aota_forge/adapters/codex/",
+      "tests/test_m6_2_codex_adapter.py",
+      "deploy/evidence/issues/9/m6-2/"
+    ],
+    "candidate": "a5168e1ca608fd7f380ffb3b332fb15016bfa74c",
+    "descendant_contract_guard": "PASS",
+    "frontier_applicability": "not_applicable",
+    "frontier_provenance": "NOT_APPLICABLE",
+    "frozen_failed": [],
+    "sanitized_excluded": [
+      "scripts/m6_1_contract_guard.py"
+    ],
+    "tests_test_m6_1_contract_freeze": "PASS (via descendant projection validation)"
+  },
+  "m6_4": {
+    "authority_pass": true,
+    "authorized_delta": [
+      "docs/architecture.md",
+      "tests/test_m6_4_surface_reduction.py",
+      "deploy/evidence/issues/9/m6-4/"
+    ],
+    "candidate": "09881ec0ff5894129f3e9a293e2723329d0689e8",
+    "descendant_contract_guard": "PASS",
+    "frontier_applicability": "not_applicable",
+    "frontier_provenance": "NOT_APPLICABLE",
+    "frozen_failed": [],
+    "tests_test_m6_1_contract_freeze": "PASS"
+  },
+  "milestone": "M6",
+  "negative_mutation_not_carried": true,
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "sanitized_predecessor_guard_mutation_count": 0,
+  "schema_version": 1,
+  "title": "Projection Results \u2014 Sanitized M6-2 and M6-4 Deltas",
+  "work_item": "M6-1-R1"
+}

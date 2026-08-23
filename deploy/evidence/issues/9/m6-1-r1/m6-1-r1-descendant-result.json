@@ -1,0 +1,226 @@
+{
+  "applicability": "applicable",
+  "checks": [
+    {
+      "detail": "resolved=b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+      "name": "anchors_m5_kgc_present",
+      "passed": true
+    },
+    {
+      "detail": "resolved=d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+      "name": "anchors_planning_base_present",
+      "passed": true
+    },
+    {
+      "detail": "d16b5813d836^ = b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+      "name": "planning_base_direct_parent_of_m5_kgc",
+      "passed": true
+    },
+    {
+      "detail": "loaded deploy/evidence/issues/9/m6-0-plan",
+      "name": "planning_authority_artifacts_loaded",
+      "passed": true
+    },
+    {
+      "detail": "authorized=['deploy/evidence/issues/9/m6-1/*', 'scripts/m6_1_contract_guard.py', 'tests/test_m6_1_contract_freeze.py'] objective_match=True",
+      "name": "m6_1_authorized_paths_match_accepted_dag",
+      "passed": true
+    },
+    {
+      "detail": "M5_FROZEN_CONTRACT_COUNT=12",
+      "name": "frozen_contract_set_is_exact_twelve",
+      "passed": true
+    },
+    {
+      "detail": "all 13 frozen paths present at all three refs",
+      "name": "frozen_contract_sources_exist_at_kgc_head_and_worktree",
+      "passed": true
+    },
+    {
+      "detail": "all byte-frozen paths identical to b24893e82c3c",
+      "name": "byte_frozen_contracts_identical_to_m5_kgc",
+      "passed": true
+    },
+    {
+      "detail": "all structural-mode signatures equal to M5 KGC",
+      "name": "structural_mode_signatures_equal_to_m5_kgc",
+      "passed": true
+    },
+    {
+      "detail": "CORE_SCHEMA_REWRITE_COUNT=0",
+      "name": "core_schema_rewrite_count_zero",
+      "passed": true
+    },
+    {
+      "detail": "fields=['adapter_kind', 'concurrency_limit', 'executor_id', 'max_timeout_seconds', 'supported_canonical_roles', 'supported_execution_modes', 'supported_isolation_modes', 'supports_artifact_transport', 'supports_streaming_events', 'supports_structured_result', 'supports_task_cancellation', 'supports_task_resume', 'supports_working_directory']",
+      "name": "executor_capabilities_field_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "fields=['canonical_role', 'canonical_task_id', 'capability_requirements', 'constraints', 'contract_hash', 'correlation_id', 'idempotency_key', 'input_artifacts', 'instruction', 'intent_fingerprint', 'operation', 'package_id', 'project_id', 'protocol_version', 'result_expectations', 'subject_ref', 'working_context']",
+      "name": "execution_package_field_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "fields=['canonical_task_id', 'canonical_task_state', 'correlation_id', 'error', 'execution_stats', 'executor_id', 'exit_code', 'ok', 'output_artifacts', 'result_data', 'status', 'stderr_summary', 'stdout_summary']",
+      "name": "canonical_result_field_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "states=['ACCEPTED', 'CANCELLED', 'COMPLETED', 'CREATED', 'FAILED', 'QUEUED', 'RUNNING', 'UNKNOWN', 'WAITING']",
+      "name": "canonical_task_state_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "roles=('planner', 'coder', 'reviewer', 'steward', 'executor') EXECUTOR_SPECIFIC_CANONICAL_ROLE_COUNT=0",
+      "name": "canonical_role_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "methods=('capabilities', 'validate_package', 'dispatch', 'status', 'result', 'cancel', 'resume')",
+      "name": "executor_adapter_method_set_frozen",
+      "passed": true
+    },
+    {
+      "detail": "missing_markers=[] preference_hits=[] ranking_hits=[]",
+      "name": "registry_selection_cardinality_contract_intact",
+      "passed": true
+    },
+    {
+      "detail": "missing_current=[] missing_kgc=[] signature_equal=True",
+      "name": "dispatcher_structural_markers_intact",
+      "passed": true
+    },
+    {
+      "detail": "descriptors=('execution.executor_capabilities', 'execution.executor_list', 'execution.task_cancel', 'execution.task_result', 'execution.task_start', 'execution.task_status')",
+      "name": "ingress_execution_descriptor_surface_frozen",
+      "passed": true
+    },
+    {
+      "detail": "routes=[(('executor', 'capabilities'), 'execution.executor_capabilities'), (('executor', 'list'), 'execution.executor_list'), (('task', 'cancel'), 'execution.task_cancel'), (('task', 'result'), 'execution.task_result'), (('task', 'start'), 'execution.task_start'), (('task', 'status'), 'execution.task_status')] executor_specific_flags=[]",
+      "name": "cli_execution_projection_surface_frozen",
+      "passed": true
+    },
+    {
+      "detail": "current_operations=('plan_init', 'plan_retirement') kgc_operations_equal=True missing_required=[]",
+      "name": "m4_mutation_surface_frozen",
+      "passed": true
+    },
+    {
+      "detail": "EXECUTION_PACKAGE_EXECUTOR_PRIVATE_FIELD_COUNT=0 hits=[]",
+      "name": "execution_package_executor_neutral_field_count_zero",
+      "passed": true
+    },
+    {
+      "detail": "runtime_states=('CREATED', 'ACCEPTED', 'QUEUED', 'RUNNING', 'WAITING', 'COMPLETED', 'FAILED', 'CANCELLED', 'UNKNOWN')",
+      "name": "runtime_canonical_task_states_match",
+      "passed": true
+    },
+    {
+      "detail": "runtime_roles=('planner', 'coder', 'reviewer', 'steward', 'executor')",
+      "name": "runtime_canonical_roles_match",
+      "passed": true
+    },
+    {
+      "detail": "runtime_methods=('cancel', 'capabilities', 'dispatch', 'result', 'resume', 'status', 'validate_package')",
+      "name": "runtime_executor_adapter_methods_match",
+      "passed": true
+    },
+    {
+      "detail": "runtime_fields=('package_id', 'protocol_version', 'contract_hash', 'operation', 'canonical_task_id', 'subject_ref', 'project_id', 'canonical_role', 'instruction', 'input_artifacts', 'working_context', 'capability_requirements', 'constraints', 'idempotency_key', 'intent_fingerprint', 'correlation_id', 'result_expectations')",
+      "name": "runtime_execution_package_fields_match",
+      "passed": true
+    },
+    {
+      "detail": "validate_canonical_role('codex_specialist') rejected=True",
+      "name": "runtime_rejects_executor_specific_role",
+      "passed": true
+    },
+    {
+      "detail": "from_dict(hermes_session_object=...) raised ValueError=True",
+      "name": "runtime_rejects_hermes_private_package_field",
+      "passed": true
+    },
+    {
+      "detail": "private_field_count=0 forbidden_keys=[] intent_fingerprint_deterministic=True",
+      "name": "pos_m6_02_package_neutral_for_codex_target",
+      "passed": true
+    },
+    {
+      "detail": "failed_checks=['byte_frozen_contracts_identical_to_m5_kgc', 'core_schema_rewrite_count_zero', 'executor_capabilities_field_set_frozen']",
+      "name": "negative_probe_n_m6_01_core_schema_widening_rejected",
+      "passed": true
+    },
+    {
+      "detail": "failed_checks=['byte_frozen_contracts_identical_to_m5_kgc', 'core_schema_rewrite_count_zero', 'execution_package_executor_neutral_field_count_zero', 'execution_package_field_set_frozen']",
+      "name": "negative_probe_n_m6_02_executor_private_field_rejected",
+      "passed": true
+    },
+    {
+      "detail": "failed_checks=['m4_mutation_surface_frozen']",
+      "name": "negative_probe_n_m6_21_m4_mutation_redefinition_rejected",
+      "passed": true
+    },
+    {
+      "detail": "failed_checks=[] manifest_problems=[]",
+      "name": "future_sensitive_boundary_not_overbroad",
+      "passed": true
+    },
+    {
+      "detail": "problems=['frozen source missing at 000000000000: aota_forge/core/execution/capabilities.py', 'frozen source missing at 000000000000: aota_forge/core/execution/package.py', 'frozen source missing at 000000000000: aota_forge/core/execution/state.py', 'frozen source missing at 000000000000: aota_forge/core/execution/results.py', 'frozen source missing at 000000000000: aota_forge/core/execution/roles.py', 'frozen source missing at 000000000000: aota_forge/core/execution/adapter.py', 'frozen source missing at 000000000000: aota_forge/core/execution/registry.py', 'frozen source missing at 000000000000: aota_forge/core/execution/dispatcher.py', 'frozen source missing at 000000000000: aota_forge/core/ingress.py', 'frozen source missing at 000000000000: aota_forge/cli/commands/execution.py', 'frozen source missing at 000000000000: aota_forge/cli/__main__.py', 'frozen source missing at 000000000000: aota_forge/adapters/hermes/executor.py', 'frozen source missing at 000000000000: aota_forge/adapters/execution/reference.py']",
+      "name": "fail_closed_missing_m5_kgc",
+      "passed": true
+    },
+    {
+      "detail": "problems=['frozen source missing at 000000000000: aota_forge/core/execution/capabilities.py', 'frozen source missing at 000000000000: aota_forge/core/execution/package.py', 'frozen source missing at 000000000000: aota_forge/core/execution/state.py', 'frozen source missing at 000000000000: aota_forge/core/execution/results.py', 'frozen source missing at 000000000000: aota_forge/core/execution/roles.py', 'frozen source missing at 000000000000: aota_forge/core/execution/adapter.py', 'frozen source missing at 000000000000: aota_forge/core/execution/registry.py', 'frozen source missing at 000000000000: aota_forge/core/execution/dispatcher.py', 'frozen source missing at 000000000000: aota_forge/core/ingress.py', 'frozen source missing at 000000000000: aota_forge/cli/commands/execution.py', 'frozen source missing at 000000000000: aota_forge/cli/__main__.py', 'frozen source missing at 000000000000: aota_forge/adapters/hermes/executor.py', 'frozen source missing at 000000000000: aota_forge/adapters/execution/reference.py']",
+      "name": "fail_closed_missing_planning_base",
+      "passed": true
+    },
+    {
+      "detail": "problems=['missing planning artifact: deploy/evidence/issues/9/does-not-exist/m6-0-architecture-freeze.json']",
+      "name": "fail_closed_missing_planning_artifact",
+      "passed": true
+    },
+    {
+      "detail": "raised=RuntimeError: manifest problems: ['frozen source missing in evaluated tree: aota_forge/core/execution/capabilities.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/package.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/state.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/results.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/roles.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/adapter.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/registry.py', 'frozen source missing in evaluated tree: aota_forge/core/execution/dispatcher.py', 'frozen source missing in evaluated tree: aota_forge/core/ingress.py', 'frozen source missing in evaluated tree: aota_forge/cli/commands/execution.py', 'frozen source missing in evaluated tree: aota_forge/cli/__main__.py', 'frozen source missing in evaluated tree: aota_forge/adapters/hermes/executor.py', 'frozen source missing in evaluated tree: aota_forge/adapters/execution/reference.py']",
+      "name": "fail_closed_missing_frozen_source_path",
+      "passed": true
+    },
+    {
+      "detail": "problems=[\"duplicate contract id(s) in accepted freeze authority: ['ExecutorCapabilities']\", \"declared frozen contract set differs from guard authority: missing=['CLI execution projection', 'CanonicalResult', 'CanonicalTaskState', 'ExecutionDispatcher', 'ExecutionPackage', 'ExecutorAdapter', 'ExecutorRegistry', 'Hermes adapter', 'Reference adapter', 'RoleMapping', 'Unified Ingress execution descriptors'] extra=[]\"]",
+      "name": "fail_closed_duplicate_contract_id",
+      "passed": true
+    },
+    {
+      "detail": "problems=[\"unknown freeze mode 'fuzzy' for aota_forge/core/execution/state.py\"]",
+      "name": "fail_closed_unknown_freeze_mode",
+      "passed": true
+    },
+    {
+      "detail": "failed_checks=['byte_frozen_contracts_identical_to_m5_kgc']",
+      "name": "fail_closed_malformed_expected_blob",
+      "passed": true
+    },
+    {
+      "detail": "guard inputs derive solely from Git objects + accepted planning artifacts",
+      "name": "nontautology_independent_of_evidence_content",
+      "passed": true
+    },
+    {
+      "detail": "all M6-1 evidence blobs identical to accepted checkpoint; R1 provenance identities intact",
+      "name": "descendant_m6_1_authority_artifacts_unchanged",
+      "passed": true
+    }
+  ],
+  "domain": "descendant_contract",
+  "fail_count": 0,
+  "meta": {
+    "m5_kgc": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+    "m6_1_accepted_checkpoint": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+    "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b"
+  },
+  "pass_count": 42,
+  "passed": true,
+  "target": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "total": 42
+}

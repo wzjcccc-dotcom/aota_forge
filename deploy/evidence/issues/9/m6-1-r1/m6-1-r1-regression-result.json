@@ -1,0 +1,22 @@
+{
+  "construction_base": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "full_regression_arithmetic": "514 baseline + 18 net new = 532; 514 = 499 pre-M6-1 + 15 original M6-1; R1 focused = 33 (15 preserved + 18 new domain/projection/negative/authority tests); committed tree contains only M6-1-R1 delta, M6-2/M6-4 projections are temporary and not in committed collection",
+  "full_regression_baseline": 514,
+  "full_regression_fail": 0,
+  "full_regression_pass": 532,
+  "full_regression_total": 532,
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "m4_regression": "129/129 PASS",
+  "m5_regression": "370/370 PASS",
+  "m6_1_r1_focused_fail": 0,
+  "m6_1_r1_focused_pass": 33,
+  "m6_1_r1_focused_total": 33,
+  "m6_1_r1_net_new_test_count": 18,
+  "milestone": "M6",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "schema_version": 1,
+  "title": "M6-1-R1 Regression Result \u2014 Full + M5 + M4",
+  "work_item": "M6-1-R1"
+}

@@ -35,10 +35,13 @@ from typing import Any, Callable
 
 M5_KGC = "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1"
 M6_ACCEPTED_PLANNING_BASE = "d16b5813d8363ef28cdde29a68f62b108ad96d4b"
+M6_1_ACCEPTED_CHECKPOINT = "901f5a7e7126bdf399f8d35fb429ec60edc6f421"
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN_DIR = Path("deploy/evidence/issues/9/m6-0-plan")
 M6_1_EVIDENCE_DIR = Path("deploy/evidence/issues/9/m6-1")
+M6_1_R1_EVIDENCE_DIR = Path("deploy/evidence/issues/9/m6-1-r1")
+M6_1_R1_PROVENANCE_FILE = M6_1_R1_EVIDENCE_DIR / "m6-1-r1-provenance.json"
 
 FREEZE_ARTIFACT = "m6-0-architecture-freeze.json"
 DAG_ARTIFACT = "m6-0-implementation-dag.json"
@@ -229,7 +232,21 @@ def git(*args: str, root: Path | None = None) -> str:
         stderr=subprocess.PIPE,
         text=True,
     )
+    # strip() is safe for rev-parse/diff name-only output, but NOT for
+    # status --porcelain lines where the leading column char is significant.
     return result.stdout.strip()
+
+
+def git_raw(*args: str, root: Path | None = None) -> str:
+    """Run git and return stdout verbatim (no strip)."""
+    result = subprocess.run(
+        ["git", "-C", str(root or ROOT), *args],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return result.stdout
 
 
 def try_git(*args: str, root: Path | None = None) -> str | None:
@@ -1232,17 +1249,49 @@ def non_tautology_result() -> CheckResult:
         )
 
 
-def path_isolation_result(inputs: GuardInputs) -> CheckResult:
-    failures: list[str] = []
-    base = inputs.planning_base
-    try:
-        merge_base = git("merge-base", base, "HEAD", root=inputs.repo_root)
-        if merge_base != base:
-            failures.append(f"HEAD is not descendant of planning base ({merge_base})")
-    except subprocess.CalledProcessError as exc:
-        failures.append(f"merge-base failed: {exc}")
+def _collect_changed_paths(inputs: GuardInputs, base: str, explicit_target: str | None = None) -> tuple[set[str], list[str]]:
+    """Collect changed paths relative to *base* comparing the explicit target tree.
 
+    If explicit_target is None, uses working-tree diffs (legacy implicit mode).
+    Returns (changed_set, collect_failures).
+    """
     changed: set[str] = set()
+    failures: list[str] = []
+    if explicit_target is not None:
+        target = explicit_target
+        # Validate target resolves.
+        resolved = try_git("rev-parse", target, root=inputs.repo_root)
+        if resolved is None:
+            failures.append(f"unknown target ref: {target}")
+            return changed, failures
+        # Ensure target is descendant of base (ancestry check).
+        is_anc = subprocess.run(
+            ["git", "-C", str(inputs.repo_root), "merge-base", "--is-ancestor", base, target],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if is_anc.returncode != 0:
+            failures.append(f"target {target[:12]} is not descendant of planning base {base[:12]}")
+            return changed, failures
+        try:
+            out = git("diff", "--name-only", f"{base}..{target}", root=inputs.repo_root)
+            changed.update(filter(None, out.splitlines()))
+        except subprocess.CalledProcessError as exc:
+            failures.append(f"git diff failed for explicit target {target[:12]}: {exc}")
+        return changed, failures
+
+    # Legacy implicit mode: compare base against current working tree / HEAD.
+    try:
+        # Ancestry check against HEAD when in implicit mode
+        merge_result = subprocess.run(
+            ["git", "-C", str(inputs.repo_root), "merge-base", "--is-ancestor", base, "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if merge_result.returncode != 0:
+            head_sha = try_git("rev-parse", "HEAD", root=inputs.repo_root)
+            failures.append(f"HEAD {head_sha} is not descendant of planning base {base[:12]}")
+    except Exception as exc:
+        failures.append(f"merge-base check failed: {exc}")
+
     try:
         for diff_args in (
             ("diff", "--name-only", base),
@@ -1250,20 +1299,22 @@ def path_isolation_result(inputs: GuardInputs) -> CheckResult:
             ("diff", "--name-only"),
         ):
             changed.update(filter(None, git(*diff_args, root=inputs.repo_root).splitlines()))
-        status_out = git("status", "--porcelain", "--untracked-files=all", root=inputs.repo_root)
+        status_out = git_raw("status", "--porcelain", "--untracked-files=all", root=inputs.repo_root)
         for line in status_out.splitlines():
             if len(line) >= 4:
                 changed.add(line[3:].split(" -> ", 1)[-1].strip().strip('"'))
     except subprocess.CalledProcessError as exc:
         failures.append(f"git diff/status failed: {exc}")
+    return changed, failures
 
+
+def _evaluate_path_isolation(changed: set[str], failures: list[str]) -> CheckResult:
     runtime_mutations = sorted(p for p in changed if p.startswith("aota_forge/"))
     plan_mutations = sorted(p for p in changed if p.startswith("deploy/evidence/issues/9/m6-0-plan/"))
     if runtime_mutations:
         failures.append(f"AOTA_FORGE_RUNTIME_SOURCE_MUTATION_COUNT={len(runtime_mutations)}: {runtime_mutations}")
     if plan_mutations:
         failures.append(f"M6_0_PLANNING_ARTIFACT_MUTATION_COUNT={len(plan_mutations)}: {plan_mutations}")
-
     unauthorized: list[str] = []
     for path in sorted(changed):
         if not path or path.endswith(".pyc") or "__pycache__" in path:
@@ -1275,7 +1326,6 @@ def path_isolation_result(inputs: GuardInputs) -> CheckResult:
             unauthorized.append(path)
     if unauthorized:
         failures.append(f"M6_1_UNAUTHORIZED_CHANGED_PATH_COUNT={len(unauthorized)}: {unauthorized}")
-
     return CheckResult(
         name="path_isolation_authorized_writes_only",
         passed=not failures,
@@ -1289,36 +1339,170 @@ def path_isolation_result(inputs: GuardInputs) -> CheckResult:
     )
 
 
-def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
+def path_isolation_result(inputs: GuardInputs) -> CheckResult:
+    changed, failures = _collect_changed_paths(inputs, inputs.planning_base, explicit_target=None)
+    return _evaluate_path_isolation(changed, failures)
+
+
+def frontier_provenance_result(inputs: GuardInputs, target_ref: str) -> list[CheckResult]:
+    """Frontier provenance checks — valid only for exact M6-1 checkpoint.
+
+    Verifies exact authorized paths, evidence integrity, and that the target
+    tree matches the accepted M6-1 checkpoint.
+    """
     results: list[CheckResult] = []
 
-    kgc_sha = try_git("rev-parse", inputs.m5_kgc, root=inputs.repo_root)
-    results.append(
-        CheckResult("anchors_m5_kgc_present", kgc_sha == inputs.m5_kgc, f"resolved={kgc_sha}")
-    )
-    base_sha = try_git("rev-parse", inputs.planning_base, root=inputs.repo_root)
-    results.append(
-        CheckResult(
-            "anchors_planning_base_present",
-            base_sha == inputs.planning_base,
-            f"resolved={base_sha}",
+    resolved = try_git("rev-parse", target_ref, root=inputs.repo_root)
+    if resolved is None:
+        results.append(CheckResult(
+            name="frontier_target_resolves",
+            passed=False,
+            detail=f"unknown target ref: {target_ref}",
+        ))
+        return results
+
+    is_exact = resolved == M6_1_ACCEPTED_CHECKPOINT
+    results.append(CheckResult(
+        name="frontier_is_exact_accepted_checkpoint",
+        passed=is_exact,
+        detail=f"target={resolved[:12]} expected={M6_1_ACCEPTED_CHECKPOINT[:12]}",
+    ))
+
+    changed, collect_failures = _collect_changed_paths(inputs, inputs.planning_base, explicit_target=target_ref)
+    if collect_failures:
+        for f in collect_failures:
+            results.append(CheckResult(name="frontier_path_collection", passed=False, detail=f))
+        return results
+
+    # Path isolation at frontier: only authorized M6-1 delta allowed
+    isolation = _evaluate_path_isolation(set(changed), [])
+    isolation.name = "frontier_path_isolation_authorized_writes_only"
+    results.append(isolation)
+
+    # M6-0 planning artifacts must remain unchanged at frontier (relative to planning base)
+    m6_0_changed = sorted(p for p in changed if p.startswith("deploy/evidence/issues/9/m6-0-plan/"))
+    results.append(CheckResult(
+        name="frontier_m6_0_planning_artifacts_unchanged",
+        passed=not m6_0_changed,
+        detail=f"M6_0_PLANNING_ARTIFACT_MUTATION_COUNT={len(m6_0_changed)}" + (f": {m6_0_changed}" if m6_0_changed else ""),
+    ))
+
+    # Evidence integrity: frontier evidence must be present and untampered — verify via blob identity
+    # M6-1 evidence blobs at target should match what is at the accepted checkpoint
+    evidence_paths = [
+        "deploy/evidence/issues/9/m6-1/m6-1-contract-freeze-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-frozen-contract-manifest.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-guard-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-negative-probe-results.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-regression-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-surface-boundary-inventory.json",
+    ]
+    evidence_ok = True
+    evidence_detail: list[str] = []
+    for ep in evidence_paths:
+        target_blob = try_git("rev-parse", f"{target_ref}:{ep}", root=inputs.repo_root)
+        accepted_blob = try_git("rev-parse", f"{M6_1_ACCEPTED_CHECKPOINT}:{ep}", root=inputs.repo_root)
+        if target_blob is None or accepted_blob is None:
+            evidence_ok = False
+            evidence_detail.append(f"{ep}: missing at target or accepted")
+        elif target_blob != accepted_blob:
+            evidence_ok = False
+            evidence_detail.append(f"{ep}: blob drift at frontier")
+    results.append(CheckResult(
+        name="frontier_m6_1_evidence_integrity",
+        passed=evidence_ok,
+        detail="; ".join(evidence_detail) or "all M6-1 evidence blobs identical to accepted checkpoint",
+    ))
+
+    return results
+
+
+def descendant_authority_guard_result(inputs: GuardInputs) -> CheckResult:
+    """Guard that M6-1 authority artifacts remain unmutated on descendants."""
+    failures: list[str] = []
+    m6_1_evidence_paths = [
+        "deploy/evidence/issues/9/m6-1/m6-1-contract-freeze-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-frozen-contract-manifest.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-guard-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-negative-probe-results.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-regression-result.json",
+        "deploy/evidence/issues/9/m6-1/m6-1-surface-boundary-inventory.json",
+    ]
+    for ep in m6_1_evidence_paths:
+        accepted_blob = try_git("rev-parse", f"{M6_1_ACCEPTED_CHECKPOINT}:{ep}", root=inputs.repo_root)
+        if accepted_blob is None:
+            failures.append(f"{ep}: missing at accepted checkpoint")
+            continue
+        wt_path = inputs.source_root / ep
+        if not wt_path.is_file():
+            head_blob = try_git("rev-parse", f"HEAD:{ep}", root=inputs.repo_root) if inputs.head_commit else None
+            if head_blob is None:
+                failures.append(f"{ep}: missing in worktree and HEAD")
+            elif head_blob != accepted_blob:
+                failures.append(f"{ep}: evidence blob mutated on descendant")
+            continue
+        try:
+            wt_blob = blob_sha(wt_path.read_bytes())
+        except OSError as exc:
+            failures.append(f"{ep}: unreadable: {exc}")
+            continue
+        if wt_blob != accepted_blob:
+            failures.append(f"{ep}: evidence artifact mutated on descendant (wt {wt_blob[:12]} != accepted {accepted_blob[:12]})")
+
+    # Post-R1 guard/test identity: if provenance file exists, enforce that descendant's
+    # guard/test match the accepted R1 identities; during R1 construction the file is
+    # created with the fresh hashes so the check passes on the R1 candidate itself.
+    provenance_path = inputs.source_root / M6_1_R1_PROVENANCE_FILE
+    if provenance_path.is_file():
+        try:
+            prov = json.loads(provenance_path.read_text(encoding="utf-8"))
+            expected = prov.get("accepted_guard_identities", {})
+        except Exception as exc:
+            failures.append(f"m6-1-r1 provenance unreadable: {exc}")
+            expected = {}
+        for rel in ("scripts/m6_1_contract_guard.py", "tests/test_m6_1_contract_freeze.py"):
+            exp_blob = expected.get(rel)
+            if not exp_blob:
+                continue
+            wt_p = inputs.source_root / rel
+            if not wt_p.is_file():
+                failures.append(f"{rel}: missing on descendant (expected {exp_blob[:12]})")
+                continue
+            try:
+                wt_blob = blob_sha(wt_p.read_bytes())
+            except OSError as exc:
+                failures.append(f"{rel}: unreadable: {exc}")
+                continue
+            if wt_blob != exp_blob:
+                failures.append(f"{rel}: accepted R1 identity mutated (wt {wt_blob[:12]} != accepted R1 {exp_blob[:12]})")
+
+    if failures:
+        return CheckResult(
+            name="descendant_m6_1_authority_artifacts_unchanged",
+            passed=False,
+            detail="; ".join(failures),
         )
-    )
-    parent = try_git("rev-parse", f"{inputs.planning_base}^", root=inputs.repo_root)
-    results.append(
-        CheckResult(
-            "planning_base_direct_parent_of_m5_kgc",
-            parent == inputs.m5_kgc,
-            f"{inputs.planning_base[:12]}^ = {parent}",
-        )
+    return CheckResult(
+        name="descendant_m6_1_authority_artifacts_unchanged",
+        passed=True,
+        detail="all M6-1 evidence blobs identical to accepted checkpoint; R1 provenance identities intact" if provenance_path.is_file() else "all M6-1 evidence blobs identical to accepted checkpoint",
     )
 
+
+def _common_anchor_results(inputs: GuardInputs) -> list[CheckResult]:
+    results: list[CheckResult] = []
+    kgc_sha = try_git("rev-parse", inputs.m5_kgc, root=inputs.repo_root)
+    results.append(CheckResult("anchors_m5_kgc_present", kgc_sha == inputs.m5_kgc, f"resolved={kgc_sha}"))
+    base_sha = try_git("rev-parse", inputs.planning_base, root=inputs.repo_root)
+    results.append(CheckResult("anchors_planning_base_present", base_sha == inputs.planning_base, f"resolved={base_sha}"))
+    parent = try_git("rev-parse", f"{inputs.planning_base}^", root=inputs.repo_root)
+    results.append(CheckResult("planning_base_direct_parent_of_m5_kgc", parent == inputs.m5_kgc, f"{inputs.planning_base[:12]}^ = {parent}"))
     freeze_path = inputs.repo_root / inputs.plan_dir / FREEZE_ARTIFACT
     dag_path = inputs.repo_root / inputs.plan_dir / DAG_ARTIFACT
     own_path = inputs.repo_root / inputs.plan_dir / OWNERSHIP_ARTIFACT
     inv_path = inputs.repo_root / inputs.plan_dir / INVENTORY_ARTIFACT
     artifacts_ok = True
-    artifact_detail = []
+    artifact_detail: list[str] = []
     for p in (freeze_path, dag_path, own_path, inv_path):
         if not p.is_file():
             artifacts_ok = False
@@ -1337,14 +1521,7 @@ def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
             if len(contracts) != 12:
                 artifacts_ok = False
                 artifact_detail.append(f"frozen contract count={len(contracts)}")
-    results.append(
-        CheckResult(
-            "planning_authority_artifacts_loaded",
-            artifacts_ok,
-            "; ".join(artifact_detail) or f"loaded {inputs.plan_dir}",
-        )
-    )
-
+    results.append(CheckResult("planning_authority_artifacts_loaded", artifacts_ok, "; ".join(artifact_detail) or f"loaded {inputs.plan_dir}"))
     dag_slice_ok = False
     dag_detail = "M6-1 slice not recovered"
     slices = dag_doc.get("slices", []) if isinstance(dag_doc, dict) else []
@@ -1352,23 +1529,16 @@ def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
     if m61:
         authorized = sorted(m61.get("authorized_write_paths", []))
         expected_paths = sorted(M6_1_DAG_AUTHORIZED_PATHS)
-        dag_slice_ok = (
-            authorized == expected_paths
-            and m61.get("objective") == M6_1_OBJECTIVE
-            and m61.get("prerequisites") == ["M6-0 accepted plan"]
-        )
+        dag_slice_ok = authorized == expected_paths and m61.get("objective") == M6_1_OBJECTIVE and m61.get("prerequisites") == ["M6-0 accepted plan"]
         dag_detail = f"authorized={authorized} objective_match={m61.get('objective') == M6_1_OBJECTIVE}"
     results.append(CheckResult("m6_1_authorized_paths_match_accepted_dag", dag_slice_ok, dag_detail))
+    return results
 
+
+def _descendant_core_results(inputs: GuardInputs) -> list[CheckResult]:
+    results: list[CheckResult] = []
     records, manifest_problems = build_frozen_contract_records(inputs)
-    results.append(
-        CheckResult(
-            "frozen_contract_set_is_exact_twelve",
-            not manifest_problems and len(records) == 12 and inputs.freeze_doc_override is None,
-            "; ".join(manifest_problems) or f"M5_FROZEN_CONTRACT_COUNT={len(records)}",
-        )
-    )
-
+    results.append(CheckResult("frozen_contract_set_is_exact_twelve", not manifest_problems and len(records) == 12 and inputs.freeze_doc_override is None, "; ".join(manifest_problems) or f"M5_FROZEN_CONTRACT_COUNT={len(records)}"))
     missing_sources: list[str] = []
     for rec in records:
         for rel in rec.paths:
@@ -1378,14 +1548,7 @@ def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
                 missing_sources.append(f"{rel}@HEAD")
             if not (inputs.source_root / rel).is_file():
                 missing_sources.append(f"{rel}@worktree")
-    results.append(
-        CheckResult(
-            "frozen_contract_sources_exist_at_kgc_head_and_worktree",
-            not missing_sources,
-            "; ".join(missing_sources) or "all 13 frozen paths present at all three refs",
-        )
-    )
-
+    results.append(CheckResult("frozen_contract_sources_exist_at_kgc_head_and_worktree", not missing_sources, "; ".join(missing_sources) or "all 13 frozen paths present at all three refs"))
     results.extend(evaluate_source_tree(inputs, records))
     results.extend(runtime_contract_results(inputs.source_root))
     results.append(pos_m6_02_result())
@@ -1393,16 +1556,169 @@ def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
     results.append(negative_probe_n_m6_02())
     results.append(negative_probe_n_m6_21())
     results.append(future_sensitivity_result())
-
     def factory(inp: GuardInputs) -> tuple[list[FrozenContractRecord], list[str]]:
         return build_frozen_contract_records(inp)
-
     results.extend(fail_closed_probe_results(factory))
     results.append(non_tautology_result())
-    results.append(path_isolation_result(inputs))
+    # Descendant must also protect M6-1 authority artifacts
+    results.append(descendant_authority_guard_result(inputs))
+    return results
 
+
+def run_descendant_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
+    """Descendant contract guard — valid on all authorized M6 descendants."""
+    results: list[CheckResult] = []
+    results.extend(_common_anchor_results(inputs))
+    results.extend(_descendant_core_results(inputs))
     passed = sum(1 for r in results if r.passed)
     return results, passed
+
+
+def run_frontier_guard(inputs: GuardInputs, target_ref: str) -> tuple[list[CheckResult], int]:
+    """Frontier provenance guard — valid only for exact M6-1 checkpoint."""
+    results: list[CheckResult] = []
+    results.extend(_common_anchor_results(inputs))
+    results.extend(frontier_provenance_result(inputs, target_ref))
+    # Frontier also validates frozen contracts at the frontier tree (evaluate against target tree)
+    # Build records for the target tree is validated via frontier evidence integrity; no need to duplicate descendant core here
+    passed = sum(1 for r in results if r.passed)
+    return results, passed
+
+
+# Backwards-compatible alias: run_full_guard now defaults to descendant-safe behavior
+def run_full_guard(inputs: GuardInputs) -> tuple[list[CheckResult], int]:
+    return run_descendant_guard(inputs)
+
+
+# Explicit domain API
+
+@dataclass
+class GuardDomainResult:
+    domain: str
+    target: str
+    applicability: str  # "applicable" | "not_applicable"
+    passed: bool
+    total: int
+    passed_count: int
+    failed_count: int
+    checks: list[CheckResult]
+
+
+def check_descendant_contracts(
+    candidate_ref: str | None = None,
+    repo_root: Path | None = None,
+    source_root: Path | None = None,
+) -> GuardDomainResult:
+    root = repo_root or ROOT
+    src = source_root or root
+    head = candidate_ref or try_git("rev-parse", "HEAD", root=root)
+    inputs = GuardInputs(repo_root=root, source_root=src, head_commit=head)
+    checks, _ = run_descendant_guard(inputs)
+    passed = all(c.passed for c in checks)
+    return GuardDomainResult(
+        domain="descendant_contract",
+        target=head or "worktree",
+        applicability="applicable",
+        passed=passed,
+        total=len(checks),
+        passed_count=sum(1 for c in checks if c.passed),
+        failed_count=sum(1 for c in checks if not c.passed),
+        checks=checks,
+    )
+
+
+def check_frontier_provenance(
+    target_ref: str,
+    repo_root: Path | None = None,
+    source_root: Path | None = None,
+) -> GuardDomainResult:
+    root = repo_root or ROOT
+    src = source_root or root
+    # Validate target resolves and is a valid object
+    resolved = try_git("rev-parse", "--verify", target_ref, root=root)
+    if resolved is None:
+        # Also try without --verify for short/sha lookups
+        resolved = try_git("rev-parse", target_ref, root=root)
+        # Validate it actually looks like a sha and exists
+        if resolved is None or len(resolved) != 40 or not all(c in "0123456789abcdef" for c in resolved):
+            return GuardDomainResult(
+                domain="frontier_provenance",
+                target=target_ref,
+                applicability="applicable",
+                passed=False,
+                total=1,
+                passed_count=0,
+                failed_count=1,
+                checks=[CheckResult(name="frontier_target_resolves", passed=False, detail=f"unknown target ref: {target_ref}")],
+            )
+        # Verify object exists
+        cat_check = subprocess.run(
+            ["git", "-C", str(root), "cat-file", "-e", resolved],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if cat_check.returncode != 0:
+            return GuardDomainResult(
+                domain="frontier_provenance",
+                target=target_ref,
+                applicability="applicable",
+                passed=False,
+                total=1,
+                passed_count=0,
+                failed_count=1,
+                checks=[CheckResult(name="frontier_target_resolves", passed=False, detail=f"unknown target ref: {target_ref} (object does not exist)")],
+            )
+    if len(resolved) != 40 or not all(c in "0123456789abcdef" for c in resolved):
+        return GuardDomainResult(
+            domain="frontier_provenance",
+            target=target_ref,
+            applicability="applicable",
+            passed=False,
+            total=1,
+            passed_count=0,
+            failed_count=1,
+            checks=[CheckResult(name="frontier_target_resolves", passed=False, detail=f"malformed target hash: {target_ref}")],
+        )
+    if resolved != M6_1_ACCEPTED_CHECKPOINT:
+        # Valid ref but not exact frontier — distinguish unknown vs legitimate descendant
+        cat_check = subprocess.run(
+            ["git", "-C", str(root), "cat-file", "-e", resolved],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if cat_check.returncode != 0:
+            return GuardDomainResult(
+                domain="frontier_provenance",
+                target=target_ref,
+                applicability="applicable",
+                passed=False,
+                total=1,
+                passed_count=0,
+                failed_count=1,
+                checks=[CheckResult(name="frontier_target_resolves", passed=False, detail=f"unknown target ref: {target_ref}")],
+            )
+        return GuardDomainResult(
+            domain="frontier_provenance",
+            target=resolved,
+            applicability="not_applicable",
+            passed=False,
+            total=1,
+            passed_count=0,
+            failed_count=0,
+            checks=[CheckResult(name="frontier_not_applicable_on_descendant", passed=True, detail=f"target {resolved[:12]} is not exact M6-1 checkpoint {M6_1_ACCEPTED_CHECKPOINT[:12]}; frontier provenance NOT_APPLICABLE")],
+        )
+    head = resolved
+    inputs = GuardInputs(repo_root=root, source_root=src, head_commit=head)
+    checks, _ = run_frontier_guard(inputs, target_ref=resolved)
+    passed = all(c.passed for c in checks)
+    return GuardDomainResult(
+        domain="frontier_provenance",
+        target=resolved,
+        applicability="applicable",
+        passed=passed,
+        total=len(checks),
+        passed_count=sum(1 for c in checks if c.passed),
+        failed_count=sum(1 for c in checks if not c.passed),
+        checks=checks,
+    )
 
 
 def emit_report(results: list[CheckResult]) -> int:
@@ -1423,20 +1739,144 @@ def emit_report(results: list[CheckResult]) -> int:
     return 0
 
 
+def _emit_domain_report(domain_result: GuardDomainResult) -> int:
+    print(f"=== M6-1 Contract Freeze Guard ({domain_result.domain}) ===")
+    print(f"domain={domain_result.domain}")
+    print(f"target={domain_result.target}")
+    print(f"applicability={domain_result.applicability}")
+    print(f"M5_KGC={M5_KGC}")
+    print(f"M6_ACCEPTED_PLANNING_BASE={M6_ACCEPTED_PLANNING_BASE}")
+    if domain_result.domain == "frontier_provenance":
+        print(f"M6_1_ACCEPTED_CHECKPOINT={M6_1_ACCEPTED_CHECKPOINT}")
+    for r in domain_result.checks:
+        mark = "PASS" if r.passed else "FAIL"
+        print(f"[{mark}] {r.name}: {r.detail}")
+    if domain_result.applicability == "not_applicable":
+        print(f"FRONTIER_PROVENANCE=NOT_APPLICABLE")
+        print(f"R1_FRONTIER_PROVENANCE_GUARD_TOTAL={domain_result.total}")
+        print(f"R1_DESCENDANT_CONTRACT_GUARD_TOTAL=--")
+        return 0
+    # For applicable domains emit standard totals
+    if domain_result.domain == "frontier_provenance":
+        print(f"R1_FRONTIER_PROVENANCE_GUARD_TOTAL={domain_result.total}")
+        print(f"R1_FRONTIER_PROVENANCE_GUARD_PASS={domain_result.passed_count}")
+        print(f"R1_FRONTIER_PROVENANCE_GUARD_FAIL={domain_result.failed_count}")
+    else:
+        print(f"R1_DESCENDANT_CONTRACT_GUARD_TOTAL={domain_result.total}")
+        print(f"R1_DESCENDANT_CONTRACT_GUARD_PASS={domain_result.passed_count}")
+        print(f"R1_DESCENDANT_CONTRACT_GUARD_FAIL={domain_result.failed_count}")
+    # Backwards-compatible legacy keys
+    print(f"M6_1_CONTRACT_GUARD_TOTAL={domain_result.total}")
+    print(f"M6_1_CONTRACT_GUARD_PASS={domain_result.passed_count}")
+    print(f"M6_1_CONTRACT_GUARD_FAIL={domain_result.failed_count}")
+    if domain_result.applicability == "not_applicable":
+        return 0
+    if domain_result.passed:
+        print("M6_1_CONTRACT_GUARD=PASS")
+        return 0
+    print("M6_1_CONTRACT_GUARD=FAIL")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Deterministic M6-1 Contract Freeze Guard")
+    parser = argparse.ArgumentParser(description="Deterministic M6-1 Contract Freeze Guard (descendant-safe)")
     parser.add_argument(
         "--head",
         dest="head",
         default=None,
         help="Explicit HEAD commit to include in triple-ref comparisons",
     )
+    parser.add_argument(
+        "--mode",
+        dest="mode",
+        choices=["descendant", "frontier"],
+        default=None,
+        help="Guard domain selection: descendant (frozen-contract, default) or frontier (provenance/path-isolation at explicit target)",
+    )
+    parser.add_argument(
+        "--target",
+        dest="target",
+        default=None,
+        help="Explicit target ref for frontier provenance (e.g. 901f5a7e)",
+    )
+    parser.add_argument(
+        "--candidate",
+        dest="candidate",
+        default=None,
+        help="Explicit candidate ref for descendant contract guard (default: HEAD)",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json_out",
+        default=None,
+        help="Optional path to write structured JSON result",
+    )
     args = parser.parse_args(argv)
 
-    head = args.head or try_git("rev-parse", "HEAD")
-    inputs = GuardInputs(repo_root=ROOT, source_root=ROOT, head_commit=head)
-    results, _passed = run_full_guard(inputs)
-    return emit_report(results)
+    # Explicit domain selection required to be distinguishable; heuristic guessing is forbidden
+    # Default (no --mode) is descendant-safe per M6-1-R1 contract
+    if args.mode == "frontier":
+        if not args.target:
+            # Require explicit target for frontier provenance
+            print("ERROR: --mode frontier requires --target <ref> (e.g. 901f5a7e7126bdf399f8d35fb429ec60edc6f421)", file=sys.stderr)
+            return 2
+        domain_result = check_frontier_provenance(target_ref=args.target, repo_root=ROOT, source_root=ROOT)
+        if args.json_out:
+            _write_domain_json(domain_result, Path(args.json_out))
+        return _emit_domain_report(domain_result)
+    elif args.mode == "descendant":
+        candidate = args.candidate or args.head or args.target
+        domain_result = check_descendant_contracts(candidate_ref=candidate, repo_root=ROOT, source_root=ROOT)
+        if args.json_out:
+            _write_domain_json(domain_result, Path(args.json_out))
+        return _emit_domain_report(domain_result)
+    else:
+        # Default: descendant-safe validation of current candidate/tree
+        # --head/--candidate/--target all accepted as explicit candidate for backwards compat
+        candidate = args.candidate or args.head or args.target
+        if candidate:
+            domain_result = check_descendant_contracts(candidate_ref=candidate, repo_root=ROOT, source_root=ROOT)
+        else:
+            # No explicit candidate: validate current source_root worktree against frozen boundary
+            # (legitimate descendants must not be rejected for having extra authorized paths)
+            head = try_git("rev-parse", "HEAD", root=ROOT)
+            inputs = GuardInputs(repo_root=ROOT, source_root=ROOT, head_commit=head)
+            checks, _ = run_descendant_guard(inputs)
+            domain_result = GuardDomainResult(
+                domain="descendant_contract",
+                target=head or "worktree",
+                applicability="applicable",
+                passed=all(c.passed for c in checks),
+                total=len(checks),
+                passed_count=sum(1 for c in checks if c.passed),
+                failed_count=sum(1 for c in checks if not c.passed),
+                checks=checks,
+            )
+        if args.json_out:
+            _write_domain_json(domain_result, Path(args.json_out))
+        return _emit_domain_report(domain_result)
+
+
+def _write_domain_json(domain_result: GuardDomainResult, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "domain": domain_result.domain,
+        "target": domain_result.target,
+        "applicability": domain_result.applicability,
+        "passed": domain_result.passed,
+        "total": domain_result.total,
+        "pass_count": domain_result.passed_count,
+        "fail_count": domain_result.failed_count,
+        "checks": [{"name": c.name, "passed": c.passed, "detail": c.detail} for c in domain_result.checks],
+        "meta": {
+            "m5_kgc": M5_KGC,
+            "m6_accepted_planning_base": M6_ACCEPTED_PLANNING_BASE,
+            "m6_1_accepted_checkpoint": M6_1_ACCEPTED_CHECKPOINT,
+        },
+    }
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write("\n")
 
 
 if __name__ == "__main__":

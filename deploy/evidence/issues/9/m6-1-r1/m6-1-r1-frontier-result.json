@@ -1,0 +1,61 @@
+{
+  "applicability": "applicable",
+  "checks": [
+    {
+      "detail": "resolved=b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+      "name": "anchors_m5_kgc_present",
+      "passed": true
+    },
+    {
+      "detail": "resolved=d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+      "name": "anchors_planning_base_present",
+      "passed": true
+    },
+    {
+      "detail": "d16b5813d836^ = b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+      "name": "planning_base_direct_parent_of_m5_kgc",
+      "passed": true
+    },
+    {
+      "detail": "loaded deploy/evidence/issues/9/m6-0-plan",
+      "name": "planning_authority_artifacts_loaded",
+      "passed": true
+    },
+    {
+      "detail": "authorized=['deploy/evidence/issues/9/m6-1/*', 'scripts/m6_1_contract_guard.py', 'tests/test_m6_1_contract_freeze.py'] objective_match=True",
+      "name": "m6_1_authorized_paths_match_accepted_dag",
+      "passed": true
+    },
+    {
+      "detail": "target=901f5a7e7126 expected=901f5a7e7126",
+      "name": "frontier_is_exact_accepted_checkpoint",
+      "passed": true
+    },
+    {
+      "detail": "AOTA_FORGE_RUNTIME_SOURCE_MUTATION_COUNT=0 M6_0_PLANNING_ARTIFACT_MUTATION_COUNT=0 M6_1_UNAUTHORIZED_CHANGED_PATH_COUNT=0 changed=['deploy/evidence/issues/9/m6-1/m6-1-contract-freeze-result.json', 'deploy/evidence/issues/9/m6-1/m6-1-frozen-contract-manifest.json', 'deploy/evidence/issues/9/m6-1/m6-1-guard-result.json', 'deploy/evidence/issues/9/m6-1/m6-1-negative-probe-results.json', 'deploy/evidence/issues/9/m6-1/m6-1-regression-result.json', 'deploy/evidence/issues/9/m6-1/m6-1-surface-boundary-inventory.json', 'scripts/m6_1_contract_guard.py', 'tests/test_m6_1_contract_freeze.py']",
+      "name": "frontier_path_isolation_authorized_writes_only",
+      "passed": true
+    },
+    {
+      "detail": "M6_0_PLANNING_ARTIFACT_MUTATION_COUNT=0",
+      "name": "frontier_m6_0_planning_artifacts_unchanged",
+      "passed": true
+    },
+    {
+      "detail": "all M6-1 evidence blobs identical to accepted checkpoint",
+      "name": "frontier_m6_1_evidence_integrity",
+      "passed": true
+    }
+  ],
+  "domain": "frontier_provenance",
+  "fail_count": 0,
+  "meta": {
+    "m5_kgc": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+    "m6_1_accepted_checkpoint": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+    "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b"
+  },
+  "pass_count": 9,
+  "passed": true,
+  "target": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "total": 9
+}

@@ -1,0 +1,29 @@
+{
+  "accepted_guard_identities": {
+    "scripts/m6_1_contract_guard.py": "59fd793d4326cf9677ccf1ea32bed652d8b2de7d",
+    "tests/test_m6_1_contract_freeze.py": "e3838374f73c4bd3d5847557828bb5207602978a"
+  },
+  "accepted_m6_1_evidence_blobs": {
+    "deploy/evidence/issues/9/m6-1/m6-1-contract-freeze-result.json": "a7c7d3784315e8d23174fb587fc750fb71661f4d",
+    "deploy/evidence/issues/9/m6-1/m6-1-frozen-contract-manifest.json": "8f701715b7465a90638f7301a429c7b9d70358bb",
+    "deploy/evidence/issues/9/m6-1/m6-1-guard-result.json": "3aeb2d9f133d1c9196daf69d4b4322a8ffdd0f1b",
+    "deploy/evidence/issues/9/m6-1/m6-1-negative-probe-results.json": "cfb0c17b20df6921e862170bda8d6aa8f73e8622",
+    "deploy/evidence/issues/9/m6-1/m6-1-regression-result.json": "2fe6fbbc54ae6801b9bd253504eddd3eab8a6247",
+    "deploy/evidence/issues/9/m6-1/m6-1-surface-boundary-inventory.json": "1ed411fdf8cc0ea2fca9eb591260df9a1c081937"
+  },
+  "construction_base": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "guard_domain_heuristic_selection": false,
+  "guard_domain_selection_explicit": true,
+  "issue": 9,
+  "m5_known_good_checkpoint": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "milestone": "M6",
+  "note": "Committed evidence cannot contain its own future commit hash; provenance records blob identities, not commit SHA",
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "root_finding": "M6-1-R1-F01",
+  "schema_version": 1,
+  "title": "M6-1-R1 Repair Provenance \u2014 Accepted Guard/Test Identities",
+  "work_item": "M6-1-R1"
+}

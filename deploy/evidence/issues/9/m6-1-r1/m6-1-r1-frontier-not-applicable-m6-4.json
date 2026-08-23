@@ -1,0 +1,21 @@
+{
+  "applicability": "not_applicable",
+  "checks": [
+    {
+      "detail": "target 09881ec0ff58 is not exact M6-1 checkpoint 901f5a7e7126; frontier provenance NOT_APPLICABLE",
+      "name": "frontier_not_applicable_on_descendant",
+      "passed": true
+    }
+  ],
+  "domain": "frontier_provenance",
+  "fail_count": 0,
+  "meta": {
+    "m5_kgc": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+    "m6_1_accepted_checkpoint": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+    "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b"
+  },
+  "pass_count": 0,
+  "passed": false,
+  "target": "09881ec0ff5894129f3e9a293e2723329d0689e8",
+  "total": 1
+}

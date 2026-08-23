@@ -1,0 +1,75 @@
+{
+  "authority": {
+    "descendant_global_path_isolation_allowed": false,
+    "frontier_check_not_applicable_representable": true,
+    "frontier_current_head_coupled": false,
+    "future_lane_explicit_allowlist_required": false,
+    "generic_descendant_allowlist_present": false,
+    "guard_domain_heuristic_selection": false,
+    "guard_domain_selection_explicit": true,
+    "porcelain_parsing_fix": {
+      "defect_confirmed": true,
+      "detail": "status --porcelain parsed via git_raw (no strip) preserving leading column",
+      "repair_performed": true
+    },
+    "wildcard_test_allowlist_present": false
+  },
+  "construction_base": "901f5a7e7126bdf399f8d35fb429ec60edc6f421",
+  "domains": {
+    "descendant_contract": {
+      "applicability": "all authorized M6 descendants",
+      "checks_include": [
+        "12 frozen contracts",
+        "core_schema_rewrite_count_zero",
+        "execution_package private fields",
+        "canonical roles/states/adapter",
+        "registry cardinality",
+        "dispatcher markers",
+        "ingress descriptors",
+        "cli projection",
+        "m4 mutation surface",
+        "runtime canonical checks",
+        "negative probes",
+        "future sensitivity",
+        "fail_closed probes",
+        "nontautology",
+        "descendant_m6_1_authority_artifacts_unchanged"
+      ],
+      "global_path_isolation": false,
+      "total": 42
+    },
+    "frontier_provenance": {
+      "applicability": "exact M6-1 checkpoint only",
+      "checks": [
+        "frontier_is_exact_accepted_checkpoint",
+        "frontier_path_isolation_authorized_writes_only",
+        "frontier_m6_0_planning_artifacts_unchanged",
+        "frontier_m6_1_evidence_integrity"
+      ],
+      "incl_common_anchors": 5,
+      "required_on_descendants": false,
+      "total": 9,
+      "valid_target": "901f5a7e7126bdf399f8d35fb429ec60edc6f421"
+    }
+  },
+  "governing_plan_issue": "wzjcccc-dotcom/aota-hermes-tools#9",
+  "issue": 9,
+  "m5_known_good_checkpoint": "b24893e82c3c50d6e6b776efe7f6daaa23e5a5f1",
+  "m6_accepted_planning_base": "d16b5813d8363ef28cdde29a68f62b108ad96d4b",
+  "milestone": "M6",
+  "old_guard_mapping": {
+    "mapping": {
+      "all_other_41_checks": "retained in descendant_contract domain without semantic loss",
+      "descendant_authority_added": "descendant_m6_1_authority_artifacts_unchanged (new, protects m6-1 evidence + R1 provenance identities)",
+      "pre_repair_path_isolation": "moved to frontier_provenance only (frontier_path_isolation_authorized_writes_only)"
+    },
+    "old_guard_check_mapping_complete": true,
+    "old_guard_semantic_loss_count": 0,
+    "pre_repair_total": 42
+  },
+  "project_id": "aota_forge",
+  "repository": "wzjcccc-dotcom/aota_forge",
+  "root_finding": "M6-1-R1-F01",
+  "schema_version": 1,
+  "work_item": "M6-1-R1"
+}
