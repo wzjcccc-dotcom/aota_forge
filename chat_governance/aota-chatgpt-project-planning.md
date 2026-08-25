@@ -62,10 +62,13 @@ fully assumes runtime.
 1. **Live-read governance** — read `GOVERNANCE_INDEX.md` and the shared
    core from the local canonical root; never rely on a ChatGPT Project
    upload snapshot as current truth.
-2. **Hydrate Plan** — in the order strictly defined by the shared core:
+2. **Hydrate Plan** — in the order defined by the shared core:
    Issue body → `milestone_progress_index` (#1) → `development_notes`
-   (#2) → `defect_register` (#3) → local evidence on demand. Cross-
-   subplan hydration: umbrella first, then one relevant Child Plan.
+   (#2) → `defect_register` (#3) → relevant/bounded `plan_appendix`
+   (#4) → local evidence on demand. Cross-subplan hydration: umbrella
+   first, then one relevant Child Plan. `#4` is bounded/relevant only
+   (`PLAN_APPENDIX_RELEVANT_BOUNDED_HYDRATION=yes`); `#5
+   decision_change_log` is not default hydration (see shared core).
 3. **Source reconnaissance** — inspect relevant source/current state.
    Use AOTA Reader or equivalent read-only observation. If deeper local
    inspection is required, request a bounded Codex read-only
@@ -132,16 +135,24 @@ chat conversation without persisting a GitHub comment:
 USER_VISIBLE_SYNC_REPORT != GITHUB_EVENT_LOG_REQUIRED
 ```
 
-Compact materialization to GitHub happens at Milestone boundaries only:
+Routine Work Item progress syncs at Milestone boundaries; material
+durable governance information may update an existing managed comment
+mid-Milestone (see shared core `MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED`):
 
 - Milestone review/closure → update `milestone_progress_index` (#1)
   and, as strictly needed, `#2/#3/#4` (all compact).
+- Mid-Milestone material update (when needed) → update existing
+  `#2`/`#3`/`#4` in place (e.g., true defect → `#3`, valid
+  constraint/debt/risk → `#2`, supporting technical info → `#4`).
 - Only a material Plan amendment updates the Issue body in place and
   appends one entry to `decision_change_log` (#5).
 
 ```text
 MILESTONE_COMPLETION_UPDATES_BODY=no
 MILESTONE_COMPLETION_UPDATES_PROGRESS_INDEX=yes
+ROUTINE_WORK_ITEM_PROGRESS_SYNC_AT_MILESTONE_BOUNDARY=yes
+MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED=yes
+NORMAL_EXECUTION_DOES_NOT_CREATE_NEW_GITHUB_COMMENT=yes
 BODY_MATERIAL_PLAN_AMENDMENT_UPDATE=yes
 ```
 

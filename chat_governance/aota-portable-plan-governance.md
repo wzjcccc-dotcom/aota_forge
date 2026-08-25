@@ -120,17 +120,17 @@ Parent milestone `M` + Workstream `W` dual-namespace is retired.
 
 ### Parent vs child authority boundary
 
-- **Parent owns**: program objective, cross-subplan architecture,
-  S<n> / parent milestone definitions, child Issue mapping,
-  cross-subplan dependencies, program handoff state.
+- **Parent owns**: program objective, cross-subplan architecture/governance,
+  S<n> definitions, Child Plan mapping, cross-subplan dependencies,
+  program-level handoff/coordination state.
 - **Child owns**: child objective/scope, internal milestones M1..Mn,
   work items W1..Wn, acceptance criteria, verification gates, closure.
 
 ```text
-PARENT_OWNS_CROSS_WORKSTREAM_GOVERNANCE=yes
+PARENT_OWNS_CROSS_SUBPLAN_GOVERNANCE=yes
 PARENT_MIRRORS_CHILD_EXECUTION_DETAILS=no
 CHILD_OWNS_INTERNAL_SCOPE_AND_MILESTONES=yes
-CHILD_REDEFINES_PARENT_WORKSTREAM=no
+CHILD_REDEFINES_PARENT_SUBPLAN=no
 PARENT_CHILD_MILESTONE_NAMESPACES_INDEPENDENT=yes
 ```
 
@@ -155,13 +155,13 @@ WORKSTREAM_IS_NOT_MILESTONE_ID=yes
 
 ### Child Plan creation rule
 
-A normal Work Item does not get its own Issue. A Milestone delegates to
+A normal Work Item does not get its own Issue. A Subplan delegates to
 exactly one Child Plan Issue only when the parent explicitly defines that
 S<n> boundary.
 
 ```text
 NORMAL_WORK_ITEM_SEPARATE_ISSUE=no
-MILESTONE_DELEGATES_TO_CHILD_PLAN_ONLY_WHEN_EXPLICIT=yes
+SUBPLAN_DELEGATES_TO_CHILD_PLAN_ONLY_WHEN_EXPLICIT=yes
 ```
 
 ### Hierarchical hydration order
@@ -170,14 +170,18 @@ MILESTONE_DELEGATES_TO_CHILD_PLAN_ONLY_WHEN_EXPLICIT=yes
 2. `milestone_progress_index` (Comment #1)
 3. `development_notes` (Comment #2)
 4. `defect_register` (Comment #3)
-5. Local evidence references (on demand)
+5. relevant/bounded `plan_appendix` (Comment #4) — only sections relevant to the active Milestone / Work Item / technical topic or explicitly pointed to by Body
+6. Local evidence references (on demand)
 
 For cross-subplan context, hydrate the umbrella parent first, then only
 the relevant Child Plan. Do not recursively hydrate all children.
 
 ```text
-HYDRATE_PARENT_FIRST_FOR_CROSS_WORKSTREAM=yes
+HYDRATE_PARENT_FIRST_FOR_CROSS_SUBPLAN=yes
 RECURSIVE_ALL_CHILD_HYDRATION=no
+PLAN_APPENDIX_DEFAULT_FULL_HYDRATION=no
+PLAN_APPENDIX_RELEVANT_BOUNDED_HYDRATION=yes
+DECISION_CHANGE_LOG_DEFAULT_HYDRATION=no
 ```
 
 ## Issue materialization model
@@ -201,11 +205,19 @@ Human ordering is `#1..#5`. Machine identity is always:
 COMMENT_ROLE + stable comment ID
 ```
 
-Ordinal position is never authority. Duplicate role comments are a hard
-stop. Malformed role markers fail closed.
+Ordinal position is never authority. Canonical invariant: one primary
+managed comment per role. Duplicate primary role comments are a hard
+stop. Malformed role markers fail closed. Approved continuation comments
+with the same role but with `CONTINUATION_OF` are not duplicate primaries
+(see Comment creation ceiling and overflow).
 
 ```text
-PLAN_ISSUE_EXPECTED_MANAGED_COMMENT_COUNT=5
+ONE_PRIMARY_MANAGED_COMMENT_PER_ROLE=yes
+DUPLICATE_PRIMARY_ROLE_COMMENT=hard_stop
+PLAN_ISSUE_EXPECTED_PRIMARY_MANAGED_COMMENT_COUNT=5
+APPROVED_CONTINUATION_SAME_ROLE_ALLOWED=yes
+CONTINUATION_OF_REQUIRED=yes
+MANAGED_COMMENT_OVERFLOW_USER_APPROVAL_REQUIRED=yes
 ```
 
 ### Fixed managed-comment roles
@@ -305,8 +317,8 @@ rewritten, and never supersede the Issue body.
 
 ### Comment creation ceiling and overflow
 
-Normal Plan Issue: exactly 5 managed comments. Executor must not create
-`#6/#7/#8`.
+Normal Plan Issue: exactly 5 primary managed comments (one per role).
+Executor must not create `#6/#7/#8` as new primary roles.
 
 If a managed comment approaches the GitHub comment size limit, stop all
 additive materialization:
@@ -314,15 +326,30 @@ additive materialization:
 ```text
 MANAGED_COMMENT_OVERFLOW_AUTO_CREATE=no
 MANAGED_COMMENT_OVERFLOW_USER_APPROVAL_REQUIRED=yes
+PLAN_ISSUE_EXPECTED_PRIMARY_MANAGED_COMMENT_COUNT=5
 ```
 
-Continuation, only with explicit user approval, requires the same role
-plus continuation metadata:
+Continuation, only with explicit user approval, may use the same
+`COMMENT_ROLE` with continuation metadata. A continuation is not a new
+semantic role and must not be created without approval:
 
 ```text
 COMMENT_ROLE=plan_appendix
 CONTINUATION_OF=<stable comment id>
 ```
+
+Classification:
+
+```text
+PRIMARY:      COMMENT_ROLE=<role>  + CONTINUATION_OF=none
+CONTINUATION: COMMENT_ROLE=<same role> + CONTINUATION_OF=<id of primary or prior approved continuation>
+```
+
+An approved continuation must point to its primary or to the prior
+approved continuation in the chain. A second primary with the same role
+without `CONTINUATION_OF`, or a malformed/unauthorized continuation, is a
+hard stop. Continuations do not create a new semantic role and remain
+`COMMENT_PLAN_AUTHORITY=no`.
 
 The eight-field grouping metadata (`RECORD_VERSION`, `UPDATE_ID`,
 `COMMENT_ROLE`, `PARENT_COMMENT_ID`, `APPENDIX_TYPE`,
@@ -415,7 +442,9 @@ CONTROL_COMMENT_VERIFY_AFTER_WRITE=yes
 CONTROL_COMMENT_STALE_WRITE_HARD_STOP=PASS
 ```
 
-Duplicate role comments or malformed markers: hard stop.
+Duplicate primary role comments or malformed markers: hard stop.
+Approved continuation comments with `CONTINUATION_OF` pointing to their
+primary or prior continuation are not duplicate primaries.
 
 ## Body size governance
 
@@ -725,11 +754,44 @@ REVIEW_COUNT_MUST_BE_JUSTIFIED_BY_NEW_INFORMATION=yes
 GITHUB_MATERIALIZATION_MUST_BE_MORE_COMPACT_THAN_LOCAL_EVIDENCE=yes
 NO_NEW_GOVERNANCE_OBJECT_WITHOUT_NEW_SEMANTIC_AUTHORITY=yes
 NORMAL_EXECUTION_DOES_NOT_CREATE_NEW_GITHUB_COMMENT=yes
+ROUTINE_WORK_ITEM_PROGRESS_SYNC_AT_MILESTONE_BOUNDARY=yes
+MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED=yes
 BODY_IS_PLAN_NOT_EXECUTION_HISTORY=yes
 NORMAL_WORK_ITEM_COMMENT_CREATION=no
 ROUTINE_EXECUTION_EVENT_LOG=no
 BODY_ROUTINE_EXECUTION_UPDATE=no
 ```
+
+### GitHub materialization timing
+
+Routine Work Item progress (`W1 PASS`, `W2 PASS`, ...) does not create a
+new GitHub comment, does not write a PASS report to GitHub, and does not
+update a per-Work Item ledger. The compact progress projection is synced
+at the Milestone boundary (update `#1`, and `#2/#3/#4` only as strictly
+needed).
+
+```text
+ROUTINE_WORK_ITEM_PROGRESS_SYNC_AT_MILESTONE_BOUNDARY=yes
+NORMAL_EXECUTION_DOES_NOT_CREATE_NEW_GITHUB_COMMENT=yes
+```
+
+Material durable governance information discovered mid-Milestone may update
+an existing managed comment in place:
+
+- true defect → update `#3 defect_register`
+- still-valid engineering constraint / debt / risk → update `#2 development_notes`
+- supporting technical information valuable to later Work Items → update `#4 plan_appendix`
+- material Plan change → amend Body in place + append `#5 decision_change_log` (+ `#4` if technical support needed)
+
+```text
+MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED=yes
+```
+
+Decision test:
+
+- "What happened during this Work Item?" → usually not materialized to GitHub.
+- "What must later planners/executors know to continue correctly?" → may update `#2/#3/#4`.
+- "What are we building or what counts as success?" → Body amendment + `#5`.
 
 ## Executor portability and worktree boundary
 
@@ -758,7 +820,11 @@ PORTABLE_PLAN_AUTHORITY=yes
 ISSUE_BODY_REMAINS_PLAN_AUTHORITY=yes
 CONTROL_COMMENTS_MUTABLE=yes
 CONTROL_COMMENTS_PLAN_AUTHORITY=no
-PLAN_ISSUE_EXPECTED_MANAGED_COMMENT_COUNT=5
+PLAN_ISSUE_EXPECTED_PRIMARY_MANAGED_COMMENT_COUNT=5
+ONE_PRIMARY_MANAGED_COMMENT_PER_ROLE=yes
+DUPLICATE_PRIMARY_ROLE_COMMENT=hard_stop
+APPROVED_CONTINUATION_SAME_ROLE_ALLOWED=yes
+CONTINUATION_OF_REQUIRED=yes
 MANAGED_COMMENT_OVERFLOW_AUTO_CREATE=no
 MANAGED_COMMENT_OVERFLOW_USER_APPROVAL_REQUIRED=yes
 SPEC_EXECUTOR_SPECIFIC=yes
@@ -772,6 +838,7 @@ EXECUTOR_PORTABILITY=yes
 Stop rather than guess when: Issue body conflicts with historical
 comments, canonical project identity is ambiguous, required acceptance
 or review is missing, an entry tries to turn a private executor artifact
-into Plan authority, duplicate `COMMENT_ROLE` exists, a bounded gate
-would be added without an explicit `IDENTIFIED_RISK`, or body size
-would breach the hard stop without a true boundary split.
+into Plan authority, duplicate primary `COMMENT_ROLE` exists (approved
+continuation with `CONTINUATION_OF` is not a duplicate primary), a
+bounded gate would be added without an explicit `IDENTIFIED_RISK`, or
+body size would breach the hard stop without a true boundary split.
