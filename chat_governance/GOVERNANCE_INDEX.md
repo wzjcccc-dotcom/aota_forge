@@ -11,10 +11,11 @@ SHARED_CORE=aota-portable-plan-governance.md
 
 CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
 
-# P2 adapters (declared, deferred)
 PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
 WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
 LEGACY_GITHUB_ENTRY_ALIAS=aota-github-issue-planning.md
+
+P2_ADAPTERS_CANONICALIZED=yes
 ```
 
 ## Authority declaration
@@ -44,22 +45,20 @@ An old source file may continue to exist during the transitional period
 for read-compatibility, but the repository must not maintain two
 manually-synced normative authorities for the same concern.
 
-## P2 / P3 obligations
+## Canonical map
 
-P2 must complete thin adapter / alias alignment for:
+```text
+SHARED_CORE=aota-portable-plan-governance.md
+CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
+PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
+WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
+LEGACY_GITHUB_ENTRY_ALIAS=aota-github-issue-planning.md
+ONE_SHARED_GOVERNANCE_AUTHORITY=yes
+DUPLICATE_NORMATIVE_AUTHORITY_ALLOWED=no
+```
 
-- `aota-chatgpt-parallel-development.md`
-- `aota-chatgpt-worktree-governance.md`
-- `aota-github-issue-planning.md` (legacy alias)
-
-P2 must also align transitional Hermes-tools sources:
-
-- `aota-project-plan-intake`
-- `aota-worktree-governance`
-- compatibility aliases and validators
-
-P3 must establish wrapper / alias consistency and drift guards so that
-no duplicate normative authority can reappear without detection.
+P2 adapters are canonicalized. P3 owns wrapper/alias consistency and drift
+guards so duplicate normative authority cannot reappear undetected.
 
 This index is the only place that maps canonical roles to files.
 If a file is not listed here, it is not canonical Chat governance.
