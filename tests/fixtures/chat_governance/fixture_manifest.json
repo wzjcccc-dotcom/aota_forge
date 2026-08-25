@@ -1,10 +1,10 @@
 {
   "positive_static": 4,
   "negative_static": 8,
-  "positive_material": 8,
-  "negative_material": 10,
-  "false_positive": 3,
-  "total": 33,
-  "passed": 33,
+  "positive_material": 14,
+  "negative_material": 19,
+  "false_positive": 11,
+  "total": 56,
+  "passed": 56,
   "failed": 0
 }

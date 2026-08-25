@@ -79,6 +79,182 @@ ROLE_LEDGER_SIGNALS = {
     ],
 }
 
+# ---------------------------------------------------------------------------
+# P3 Guard Hardening — deterministic Body governance-state validator
+# Separate from generic execution-ledger heuristic detection.
+# Categories are stable and ordered for deterministic output.
+# ---------------------------------------------------------------------------
+CATEGORY_ORDER = [
+    "MILESTONE_STATUS",
+    "MILESTONE_ACCEPTANCE_RESULT",
+    "MILESTONE_CLOSURE_RESULT",
+    "MILESTONE_KNOWN_GOOD",
+    "MILESTONE_INTEGRATION_RESULT",
+    "WORK_ITEM_OPERATIONAL_RESULT",
+    "MILESTONE_DAG_STATUS_DECORATION",
+    "CURRENT_WORKSTREAM_IDENTITY",
+]
+
+# Operational state values for M<n>_STATUS (bounded, deterministic)
+OPERATIONAL_STATUS_VALUES = {
+    "completed",
+    "planned",
+    "in-progress",
+    "in_progress",
+    "ready",
+    "blocked",
+    "review",
+    "cancelled",
+    "ready_for_construction",
+}
+
+# Dedicated structural patterns — not one giant regex
+_MILESTONE_STATUS_RE = re.compile(r"\bM(\d+)_STATUS\s*=\s*([A-Za-z0-9_\-]+)", re.IGNORECASE)
+_MILESTONE_ACCEPTANCE_RE = re.compile(
+    r"\bM(\d+)_(?:FINAL_ACCEPTANCE|COMPLETION_ACCEPTANCE|ACCEPTANCE)\s*=\s*\S+", re.IGNORECASE
+)
+_MILESTONE_CLOSURE_RE = re.compile(r"\bM(\d+)_CLOSURE_MATERIALIZED\s*=\s*\S+", re.IGNORECASE)
+_MILESTONE_KNOWN_GOOD_RE = re.compile(
+    r"\bM(\d+)_KNOWN_GOOD_[A-Z0-9_]+\s*=\s*\S+", re.IGNORECASE
+)
+_MILESTONE_INTEGRATION_RE = re.compile(
+    r"\bM(\d+)_INTEGRATION_(?:COMMIT|TREE)\s*=\s*\S+", re.IGNORECASE
+)
+# Work Item operational result: legacy letter M3_A_* or normalized M3_W1_* with operational suffix
+_WORK_ITEM_OPERATIONAL_RE = re.compile(
+    r"\bM(\d+)_(?:[A-Z]|W\d+)_(?:STATUS|FINAL_ACCEPTANCE|COMPLETION_ACCEPTANCE|ACCEPTANCE|CLOSURE_MATERIALIZED|KNOWN_GOOD_[A-Z0-9_]+|INTEGRATION_COMMIT|INTEGRATION_TREE)\s*=\s*\S+",
+    re.IGNORECASE,
+)
+# Current Workstream identity (active, not legacy) — filtered for LEGACY_ prefix post-match
+_WORKSTREAM_IDENTITY_RE = re.compile(
+    r"\b(WORKSTREAM|WORKSTREAM_NAME|WORKSTREAM_ID|PARENT_MILESTONE)\s*=\s*\S+"
+)
+# DAG status decoration — per-line structural detection
+_DAG_STATE_TOKEN_RE = re.compile(r"\[\s*(completed|planned|in-progress|in_progress|ready|blocked|review|cancelled)\s*\]", re.IGNORECASE)
+_DAG_LINE_ANCHOR_RE = re.compile(r"^\s*[-*]?\s*M\d+\b")
+# Retired/historical context phrases that tolerate DAG bracket discussion
+_DAG_TOLERATED_CONTEXT_RE = re.compile(r"retired|historical notation|legacy", re.IGNORECASE)
+
+
+def _is_legacy_prefixed_workstream(text: str, match_start: int) -> bool:
+    """Return True if the WORKSTREAM match is part of LEGACY_ compatibility form."""
+    prefix_window = text[max(0, match_start - 30):match_start]
+    # Check for LEGACY_ or LEGACY_PARENT_ directly preceding
+    # e.g., LEGACY_PARENT_MILESTONE=M2 -> match PARENT_MILESTONE preceded by LEGACY_
+    # LEGACY_PARENT_WORKSTREAM=W2 -> match WORKSTREAM preceded by LEGACY_PARENT_
+    # LEGACY_PARENT_WORKSTREAM_NAME -> match WORKSTREAM_NAME preceded similarly
+    # Also LEGACY_W_AS_WORKSTREAM_READ_COMPATIBLE contains WORKSTREAM but not as assignment
+    # We check if prefix_window ends with LEGACY_ or LEGACY_PARENT_
+    if "LEGACY_" in prefix_window:
+        # Find last occurrence of LEGACY_ before match
+        # If the suffix between LEGACY_ and match_start is only letters/underscores (e.g., PARENT_), treat as legacy
+        last_legacy = prefix_window.rfind("LEGACY_")
+        between = prefix_window[last_legacy + len("LEGACY_"):].strip()
+        # between may be "PARENT_" or "" ; if non-empty and only A-Z_/-
+        if between == "" or re.fullmatch(r"[A-Z_]*", between):
+            # Ensure the immediate character before match is _ or directly LEGACY_ prefix
+            # For safety, treat any LEGACY_ within 20 chars as legacy-tolerated
+            return True
+    return False
+
+
+def detect_body_operational_state(body: str) -> list[dict]:
+    """Deterministic Body governance-state validator.
+
+    Returns list of findings: {category, marker, excerpt}
+    Distinct from generic ledger heuristic. Each finding is high-confidence
+    structural operational-state violation scoped to M<n> prefixes or
+    current Workstream identity or DAG decoration.
+
+    Stable ordering by CATEGORY_ORDER then appearance.
+    """
+    findings: list[dict] = []
+    if not body:
+        return findings
+
+    # MILESTONE_STATUS — check value is operational-ish; any STATUS assignment is suspect,
+    # but we enforce bounded operational value set for stricter determinism.
+    for m in _MILESTONE_STATUS_RE.finditer(body):
+        raw_value = m.group(2).strip().strip('"').strip("'").rstrip(",;")
+        low = raw_value.lower()
+        # Normalize in_progress variations: treat yes/no as not operational status
+        # Only flag when value looks like operational state (known set) OR any word that is clearly status-like
+        # For determinism, flag if low in OPERATIONAL_STATUS_VALUES OR matches main forms.
+        # We flag any STATUS assignment where value is operational OR where pattern suggests status line.
+        # To avoid over-flagging arbitrary strings like "foo", require low in set OR low in common statuses.
+        # However spec says M1_STATUS=completed must fail; we also want to catch any clear status value.
+        # Implement: flag if low in set, else if low matches [a-z_\-]+ and not generic nonsense, still flag?
+        # Spec says "Do not rely only on those exact values if existing grammar makes other clearly operational state values deterministic."
+        # So we treat any M<n>_STATUS= as violation, but to preserve determinism we check against a slightly wider set including ready_for_construction.
+        # For safety, flag all M<n>_STATUS occurrences — any STATUS in Body is operational residue.
+        # The value-check guards against false positive like M1_STATUS=unknown where unknown not operational? But we still flag as it is still status marker.
+        # Decision: flag every M<n>_STATUS assignment (high confidence structural).
+        marker = m.group(0).strip()[:120]
+        findings.append({"category": "MILESTONE_STATUS", "marker": marker, "pos": m.start()})
+
+    for m in _MILESTONE_ACCEPTANCE_RE.finditer(body):
+        # Already excludes MEMORY_* because prefix is M\d+
+        marker = m.group(0).strip()[:120]
+        findings.append({"category": "MILESTONE_ACCEPTANCE_RESULT", "marker": marker, "pos": m.start()})
+
+    for m in _MILESTONE_CLOSURE_RE.finditer(body):
+        marker = m.group(0).strip()[:120]
+        findings.append({"category": "MILESTONE_CLOSURE_RESULT", "marker": marker, "pos": m.start()})
+
+    for m in _MILESTONE_KNOWN_GOOD_RE.finditer(body):
+        marker = m.group(0).strip()[:120]
+        findings.append({"category": "MILESTONE_KNOWN_GOOD", "marker": marker, "pos": m.start()})
+
+    for m in _MILESTONE_INTEGRATION_RE.finditer(body):
+        # Avoid double-counting M<n>_KNOWN_GOOD cases already captured (different prefix)
+        marker = m.group(0).strip()[:120]
+        findings.append({"category": "MILESTONE_INTEGRATION_RESULT", "marker": marker, "pos": m.start()})
+
+    # Work Item operational result — ensure not double-counting milestone categories above
+    for m in _WORK_ITEM_OPERATIONAL_RE.finditer(body):
+        raw = m.group(0).strip()[:120]
+        # Filter out normative-but-similar: e.g., M3_E_REVISION_CAS is not in pattern, so not matched
+        # Pattern already restricts to operational suffixes, so any match is high confidence.
+        findings.append({"category": "WORK_ITEM_OPERATIONAL_RESULT", "marker": raw, "pos": m.start()})
+
+    # DAG status decoration — line-structured
+    for idx, line in enumerate(body.splitlines()):
+        if _DAG_LINE_ANCHOR_RE.search(line) and _DAG_STATE_TOKEN_RE.search(line):
+            if _DAG_TOLERATED_CONTEXT_RE.search(line):
+                continue
+            # Only flag if bracket token is trailing/associated with DAG entry
+            # Bounded: line starts with M<n> and contains state bracket
+            marker = line.strip()[:120]
+            # Use line start as position approximation
+            pos = body.find(line) if line.strip() else idx * 1000
+            findings.append({"category": "MILESTONE_DAG_STATUS_DECORATION", "marker": marker, "pos": pos})
+
+    # Current Workstream identity — active metadata
+    for m in _WORKSTREAM_IDENTITY_RE.finditer(body):
+        start = m.start(1)  # start of key
+        if _is_legacy_prefixed_workstream(body, start):
+            continue
+        # Also exclude LEGACY_W_AS_WORKSTREAM_READ_COMPATIBLE pattern which contains WORKSTREAM but not as assignment
+        # Our regex requires "=" after key, so that case already not matched unless it has "="
+        # Check that match is not part of LEGACY_ line; already handled
+        marker = m.group(0).strip()[:120]
+        # Additional guard: ensure not "LEGACY_PARENT_WORKSTREAM_NAME" already excluded
+        findings.append({"category": "CURRENT_WORKSTREAM_IDENTITY", "marker": marker, "pos": m.start()})
+
+    # Deterministic ordering: sort by CATEGORY_ORDER index then pos
+    order_index = {cat: i for i, cat in enumerate(CATEGORY_ORDER)}
+    findings.sort(key=lambda f: (order_index.get(f["category"], 999), f["pos"]))
+    # Strip pos for external use, keep category+marker
+    for f in findings:
+        f.pop("pos", None)
+    return findings
+
+
+def detect_current_workstream_identity(text: str) -> list[dict]:
+    """Thin wrapper for workstream identity subset (used for comment surfaces)."""
+    all_findings = detect_body_operational_state(text)
+    return [f for f in all_findings if f["category"] == "CURRENT_WORKSTREAM_IDENTITY"]
+
 def parse_comment_role(body: str):
     """Extract COMMENT_ROLE and CONTINUATION_OF from comment body."""
     # Look for COMMENT_ROLE=...
@@ -351,6 +527,52 @@ def main() -> int:
         # So if prewrite tries to create unmarked comment with arbitrary content, we reject
         if args.mutation_kind == "comment_create" and args.target_role is None:
             errors.append(("PM005_NORMAL_NEW_COMMENT_FORBIDDEN", "arbitrary routine new GitHub comment forbidden (no managed role)"))
+
+    # ------------------------------------------------------------------
+    # P3 hardening: structural Body governance-state validator
+    # ------------------------------------------------------------------
+    body_struct_findings = detect_body_operational_state(body_text)
+    # Workstream identity also checked in comments (materialization-wide)
+    comment_workstream_findings: list[dict] = []
+    for _c in comments_data:
+        _cb = _c.get("body", "")
+        for _f in detect_current_workstream_identity(_cb):
+            # Annotate with comment id for stable detail
+            comment_workstream_findings.append({**_f, "comment_id": _c.get("id")})
+
+    # Map category to stable error code
+    def _code_for_category(cat: str) -> str:
+        if cat == "CURRENT_WORKSTREAM_IDENTITY":
+            return "PM009_CURRENT_WORKSTREAM_IDENTITY"
+        # DAG and all milestone/work-item operational map to PM008
+        return "PM008_BODY_OPERATIONAL_STATE"
+
+    # Collect structural findings to report
+    structural_findings = []
+    # Body findings (all categories)
+    for _f in body_struct_findings:
+        structural_findings.append({"code": _code_for_category(_f["category"]), **_f, "surface": "body"})
+    # Comment workstream findings (only workstream identity, to avoid double Body-only milestone checks on comments)
+    for _f in comment_workstream_findings:
+        # Avoid duplicating a body finding already counted? They are distinct surfaces, keep both
+        structural_findings.append({"code": _code_for_category(_f["category"]), **_f, "surface": "comment"})
+
+    # Mode semantics: audit-current / prewrite = hard FAIL, audit-legacy = tolerable warning
+    if args.mode in ("audit-current", "prewrite"):
+        for _sf in structural_findings:
+            cat = _sf["category"]
+            marker = _sf["marker"][:80]
+            surface = _sf["surface"]
+            cid = _sf.get("comment_id")
+            extra = f" comment_id={cid}" if surface == "comment" and cid is not None else ""
+            detail = f"category={cat} marker={marker} surface={surface}{extra}"
+            errors.append((_sf["code"], detail))
+    elif args.mode == "audit-legacy":
+        for _sf in structural_findings:
+            cat = _sf["category"]
+            marker = _sf["marker"][:80]
+            surface = _sf["surface"]
+            warnings.append(f"WARNING_CODE={_sf['code']} category={cat} marker={marker} surface={surface}")
 
     # Managed-role content lint (role-aware)
     for c in comments_data:

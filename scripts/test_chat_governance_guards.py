@@ -275,6 +275,127 @@ def test_materialization():
             c["body"] = c["body"] + "\nR1 -> repair -> R2 -> fresh review\n_CONSTRUCTION_RESULT=foo\n_SOURCE_REVIEW_RESULT=bar\n" + "B"*6000
     check("M-N10 #2 R1/R2 dump -> FAIL", good_body, comments_with_ledger_2, "audit-current", [], False, "PM007_BODY_LEDGER_CONTAMINATION")
 
+    # ---- P3 Guard Hardening: new structural Body guards (M-N11..M-N16, M-P09..M-P13) ----
+    # M-N11 prefixed Milestone STATUS
+    check("M-N11 M1_STATUS=completed -> FAIL PM008", good_body + "\nM1_STATUS=completed\n", five_primary_comments(), "audit-current", [], False, "PM008_BODY_OPERATIONAL_STATE")
+    # M-N12 prefixed historical acceptance / closure / known-good
+    check(
+        "M-N12 M1_FINAL_ACCEPTANCE+ CLOSURE+ KNOWN_GOOD -> FAIL PM008",
+        good_body + "\nM1_FINAL_ACCEPTANCE=PASS\nM1_CLOSURE_MATERIALIZED=yes\nM1_KNOWN_GOOD_CHECKPOINT=0bb7cd123abc\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        False,
+        "PM008_BODY_OPERATIONAL_STATE",
+    )
+    # M-N13 Work Item operational result (legacy letter form)
+    check(
+        "M-N13 M3_A_STATUS+ INTEGRATION -> FAIL PM008",
+        good_body + "\nM3_A_STATUS=completed\nM3_A_INTEGRATION_COMMIT=deadbeef123\nM3_A_INTEGRATION_TREE=5cea0c\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        False,
+        "PM008_BODY_OPERATIONAL_STATE",
+    )
+    # M-N14 Milestone DAG status decoration
+    dag_body = good_body + "\nM1 = Foundation [completed]\nM2 = Retrieval [completed]\nM3 = Lifecycle [in-progress]\nM4 = Calibration [planned]\n"
+    check("M-N14 DAG status decoration -> FAIL PM008", dag_body, five_primary_comments(), "audit-current", [], False, "PM008_BODY_OPERATIONAL_STATE")
+    # M-N15 current Workstream identity
+    check(
+        "M-N15 WORKSTREAM identity -> FAIL PM009",
+        good_body + "\nWORKSTREAM=W2\nWORKSTREAM_NAME=Memory MVP\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        False,
+        "PM009_CURRENT_WORKSTREAM_IDENTITY",
+    )
+    # M-N16 current managed/supporting metadata WORKSTREAM_ID / PARENT_MILESTONE
+    check(
+        "M-N16 WORKSTREAM_ID+ PARENT_MILESTONE -> FAIL PM009",
+        good_body + "\nWORKSTREAM_ID=W2\nPARENT_MILESTONE=M2\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        False,
+        "PM009_CURRENT_WORKSTREAM_IDENTITY",
+    )
+    # Also prewrite should fail same structural cases
+    check(
+        "M-N11 prewrite M1_STATUS -> FAIL PM008",
+        good_body + "\nM1_STATUS=completed\n",
+        five_primary_comments(),
+        "prewrite",
+        ["--mutation-kind", "body_update", "--write-class", "semantic_compaction"],
+        False,
+        "PM008_BODY_OPERATIONAL_STATE",
+    )
+    check(
+        "M-N15 prewrite WORKSTREAM -> FAIL PM009",
+        good_body + "\nWORKSTREAM=W2\n",
+        five_primary_comments(),
+        "prewrite",
+        ["--mutation-kind", "body_update", "--write-class", "semantic_compaction"],
+        False,
+        "PM009_CURRENT_WORKSTREAM_IDENTITY",
+    )
+
+    # M-P09 normative acceptance criteria must remain legal
+    check(
+        "M-P09 normative MEMORY_* PASS -> PASS",
+        good_body + "\nMEMORY_ARCHIVE=PASS\nMEMORY_MERGE=PASS\nCONFLICT_DIAGNOSTIC_READ=PASS\nMEMORY_POLICY_CALIBRATION=PASS\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        True,
+    )
+    # M-P10 Plan-level normative acceptance
+    check(
+        "M-P10 plan-level normative PASS -> PASS",
+        good_body + "\nLIVE_MEMORY_RUNTIME_VERIFICATION=PASS\nFINAL_INDEPENDENT_CLOSURE_REVIEW=PASS\nPROJECT_STEWARD_RECONCILIATION=PASS\nKNOWN_GOOD_GIT_CHECKPOINT=PASS\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        True,
+    )
+    # M-P11 legacy mapping allowed
+    check(
+        "M-P11 LEGACY_PARENT_* -> PASS",
+        good_body + "\nLEGACY_PARENT_MILESTONE=M2\nLEGACY_PARENT_WORKSTREAM=W2\nLEGACY_PARENT_WORKSTREAM_NAME=Memory MVP\nPARENT_IDENTIFIER_MIGRATION_DEFERRED_TO_ISSUE_11=yes\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        True,
+    )
+    # M-P12 status-neutral DAG allowed
+    check(
+        "M-P12 status-neutral DAG -> PASS",
+        good_body + "\nM1 = Foundation\nM2 = Retrieval\nM3 = Lifecycle\nM4 = Calibration\n",
+        five_primary_comments(),
+        "audit-current",
+        [],
+        True,
+    )
+    # M-P13 audit-legacy snapshot contains WORKSTREAM+M1_STATUS -> PASS or warning, not hard fail
+    check(
+        "M-P13 audit-legacy tolerates WORKSTREAM+M1_STATUS -> PASS",
+        good_body + "\nWORKSTREAM=W2\nM1_STATUS=completed\n",
+        five_primary_comments(),
+        "audit-legacy",
+        [],
+        True,
+    )
+    # Ensure workstream identity in comments also expected to fail in audit-current but pass in legacy (M-N15/M-N16 comment surface)
+    # Workstream in comment (development_notes) -> audit-current FAIL, audit-legacy PASS
+    comments_ws = five_primary_comments()
+    for c in comments_ws:
+        if "development_notes" in c["body"]:
+            c["body"] = c["body"] + "\nWORKSTREAM=W2\n"
+    check("M-N15-comment WORKSTREAM in comment -> FAIL PM009", good_body, comments_ws, "audit-current", [], False, "PM009_CURRENT_WORKSTREAM_IDENTITY")
+    # audit-legacy should tolerate same comment
+    check("M-P13-comment audit-legacy WORKSTREAM in comment -> PASS", good_body, comments_ws, "audit-legacy", [], True)
+
     return results
 
 def test_false_positives():
@@ -306,6 +427,16 @@ def test_false_positives():
     # Test that body with one PASS word not flagged
     body3 = good_body + " This plan's PASS criteria is X "
     check("FP single PASS -> PASS", body3, five_primary_comments(), "audit-current", [])
+
+    # ---- P3 hardening false-positive explicit coverage ----
+    check("FP planned behavior is deterministic -> PASS", good_body + " planned behavior is deterministic ", five_primary_comments(), "audit-current", [])
+    check("FP completed=false is rejected -> PASS", good_body + " completed=false is rejected ", five_primary_comments(), "audit-current", [])
+    check("FP historical notation [completed] retired -> PASS", good_body + " The historical notation `[completed]` was retired ", five_primary_comments(), "audit-current", [])
+    check("FP MEMORY_ARCHIVE=PASS -> PASS", good_body + " MEMORY_ARCHIVE=PASS ", five_primary_comments(), "audit-current", [])
+    check("FP LEGACY_PARENT_WORKSTREAM=W2 -> PASS", good_body + " LEGACY_PARENT_WORKSTREAM=W2 ", five_primary_comments(), "audit-current", [])
+    check("FP M3_E_REVISION_CAS=PASS -> PASS", good_body + " M3_E_REVISION_CAS=PASS ", five_primary_comments(), "audit-current", [])
+    check("FP LEGACY_W_AS_WORKSTREAM_READ_COMPATIBLE -> PASS", good_body + " LEGACY_W_AS_WORKSTREAM_READ_COMPATIBLE=yes ", five_primary_comments(), "audit-current", [])
+    check("FP neutral DAG already covered but explicit -> PASS", good_body + " M1 = Foundation\nM2 = Retrieval\n ", five_primary_comments(), "audit-current", [])
 
     return results
 
@@ -349,11 +480,12 @@ def main():
 
     print(f"\nFIXTURE_SUITE_RESULT total={total} pass={passed} fail={failed}")
     # Write a small fixture manifest for evidence
+    # Deterministic counts: static unchanged, material expanded with P3 hardening, false_positive expanded
     manifest = {
         "positive_static": 4,
         "negative_static": 8,
-        "positive_material": 8,
-        "negative_material": 10,
+        "positive_material": 14,
+        "negative_material": 19,
         "false_positive": len(res3),
         "total": total,
         "passed": passed,
