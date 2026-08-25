@@ -396,6 +396,50 @@ def test_materialization():
     # audit-legacy should tolerate same comment
     check("M-P13-comment audit-legacy WORKSTREAM in comment -> PASS", good_body, comments_ws, "audit-legacy", [], True)
 
+    # ---- P3 Comment-Surface Repair: bounded scope fixtures (12.1-12.5) ----
+    # 12.1 Positive — unmanaged historical comment must NOT trigger PM009 in audit-current
+    unmanaged_hist_comments = five_primary_comments() + [
+        {"id": 9001, "body": "COMMENT_CLASS=event_log\nCOMMENT_PLAN_AUTHORITY=no\nWORKSTREAM=W1\n"}
+    ]
+    check("M-P14 unmanaged historical event_log WORKSTREAM=W1 -> PASS (no PM009)", good_body, unmanaged_hist_comments, "audit-current", [], True)
+
+    # 12.2 Positive — explicitly normalized historical comment must NOT trigger PM009
+    normalized_hist_comments = five_primary_comments() + [
+        {
+            "id": 9002,
+            "body": "LEGACY_GOVERNANCE_RECORD=yes\nHISTORICAL_ROLE=event_log\nCOMMENT_PLAN_AUTHORITY=no\nMIGRATED_TO_DECISION_CHANGE_LOG=105\nWORKSTREAM=W2\nWORKSTREAM_NAME=Memory MVP\n",
+        }
+    ]
+    check("M-P15 normalized historical LEGACY_GOVERNANCE_RECORD WORKSTREAM=W2 -> PASS (no PM009)", good_body, normalized_hist_comments, "audit-current", [], True)
+
+    # 12.3 Negative — managed development_notes WORKSTREAM_ID still protected (already covered by M-N15-comment, strengthen with explicit ID)
+    comments_dev_notes_id = five_primary_comments()
+    for c in comments_dev_notes_id:
+        if "development_notes" in c["body"]:
+            c["body"] = c["body"] + "\nWORKSTREAM_ID=W2\n"
+    check("M-N15b managed development_notes WORKSTREAM_ID=W2 -> FAIL PM009", good_body, comments_dev_notes_id, "audit-current", [], False, "PM009_CURRENT_WORKSTREAM_IDENTITY")
+
+    # 12.4 Negative — another managed role (plan_appendix) remains protected
+    comments_appendix_ws = five_primary_comments()
+    for c in comments_appendix_ws:
+        if "plan_appendix" in c["body"]:
+            c["body"] = c["body"] + "\nWORKSTREAM=W2\n"
+    check("M-N17 managed plan_appendix WORKSTREAM=W2 -> FAIL PM009", good_body, comments_appendix_ws, "audit-current", [], False, "PM009_CURRENT_WORKSTREAM_IDENTITY")
+
+    # 12.5 Continuation managed comment remains protected
+    # primary plan_appendix id=104 already exists in five_primary_comments
+    cont_managed_ws = five_primary_comments() + [
+        {"id": 204, "body": "COMMENT_ROLE=plan_appendix\nCONTINUATION_OF=104\nWORKSTREAM=W2\n"}
+    ]
+    check("M-N18 managed continuation plan_appendix WORKSTREAM=W2 -> FAIL PM009", good_body, cont_managed_ws, "audit-current", [], False, "PM009_CURRENT_WORKSTREAM_IDENTITY")
+
+    # Also verify unmanaged historical with CONTINUATION-like data but without managed role still passes
+    # (ensures fix not special-cased to a single id)
+    unmanaged_hist_2 = five_primary_comments() + [
+        {"id": 9003, "body": "COMMENT_CLASS=event_log\nCOMMENT_PLAN_AUTHORITY=no\nWORKSTREAM=W2\nPARENT_MILESTONE=M2\n"}
+    ]
+    check("M-P16 second unmanaged historical WORKSTREAM+PARENT_MILESTONE -> PASS", good_body, unmanaged_hist_2, "audit-current", [], True)
+
     return results
 
 def test_false_positives():
@@ -484,8 +528,8 @@ def main():
     manifest = {
         "positive_static": 4,
         "negative_static": 8,
-        "positive_material": 14,
-        "negative_material": 19,
+        "positive_material": 17,
+        "negative_material": 22,
         "false_positive": len(res3),
         "total": total,
         "passed": passed,

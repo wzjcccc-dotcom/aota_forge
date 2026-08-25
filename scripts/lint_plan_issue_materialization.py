@@ -533,12 +533,21 @@ def main() -> int:
     # ------------------------------------------------------------------
     body_struct_findings = detect_body_operational_state(body_text)
     # Workstream identity also checked in comments (materialization-wide)
+    # P3 Guard Hardening repair: scope PM009 comment-surface to recognized managed comments only.
+    # Unmanaged / historical physical comments (no canonical COMMENT_ROLE) are read-only evidence
+    # and must not trigger PM009 hard failure in audit-current / prewrite.
+    # Unknown roles remain rejected via PM004 separately; this filter only gates PM009.
     comment_workstream_findings: list[dict] = []
     for _c in comments_data:
         _cb = _c.get("body", "")
-        for _f in detect_current_workstream_identity(_cb):
-            # Annotate with comment id for stable detail
-            comment_workstream_findings.append({**_f, "comment_id": _c.get("id")})
+        role_for_pm009, _cont_for_pm009 = parse_comment_role(_cb)
+        if role_for_pm009 in KNOWN_ROLES_SET:
+            for _f in detect_current_workstream_identity(_cb):
+                # Annotate with comment id for stable detail
+                comment_workstream_findings.append({**_f, "comment_id": _c.get("id")})
+        else:
+            # Unmanaged / historical physical comment: do not enforce PM009 current identity
+            continue
 
     # Map category to stable error code
     def _code_for_category(cat: str) -> str:
