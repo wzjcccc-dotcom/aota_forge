@@ -1,0 +1,390 @@
+schema_version: 1
+kind: operations
+contracts:
+- name: execution.executor_capabilities
+  description: Displays advertised capabilities of the specified executor adapter
+  inputs:
+  - name: executor
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - EXECUTOR_NOT_FOUND
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: execution.executor_list
+  description: Lists all registered executor adapters and their descriptors
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: execution.task_cancel
+  description: Requests cancellation of an active task
+  inputs:
+  - name: executor
+    type: str
+  - name: task_id
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: execution_task
+  required_authority: caller_execution_intent
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: active
+  valid_successor_state: cancelled
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent
+  result_contract: canonical_cancel_result.v1
+  errors:
+  - TASK_NOT_FOUND
+  - CANCEL_UNSUPPORTED
+  - TASK_ALREADY_TERMINAL
+  - ROUTE_EXECUTOR_MISMATCH
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: execution.task_result
+  description: Fetches the CanonicalResult of a finished task
+  inputs:
+  - name: executor
+    type: str
+  - name: task_id
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - TASK_NOT_FOUND
+  - RESULT_INVALID
+  - TASK_STILL_RUNNING
+  - EXECUTOR_UNAVAILABLE
+  - ROUTE_EXECUTOR_MISMATCH
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: execution.task_start
+  description: Mechanically dispatches a canonical execution task to the specified executor adapter
+  inputs:
+  - name: executor
+    type: str
+  - name: instruction
+    type: str
+  - name: project_id
+    type: str
+  - name: role
+    type: str
+  - name: subject_ref
+    type: str?
+  - name: timeout
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: execution_task
+  required_authority: caller_execution_intent
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: uninitialized
+  valid_successor_state: dispatched
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent under (idempotency_key, intent_fingerprint)
+  result_contract: canonical_dispatch_result.v1
+  errors:
+  - EXECUTOR_NOT_FOUND
+  - EXECUTOR_UNAVAILABLE
+  - CAPABILITY_MISMATCH
+  - PACKAGE_INVALID
+  - ROLE_MAPPING_NOT_FOUND
+  - DISPATCH_REJECTED
+  - DISPATCH_TIMEOUT
+  - NEEDS_SEMANTIC_CHOICE
+  - IDEMPOTENCY_CONFLICT
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: execution.task_status
+  description: Queries the execution status of a dispatched task
+  inputs:
+  - name: executor
+    type: str
+  - name: task_id
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - TASK_NOT_FOUND
+  - EXECUTOR_UNAVAILABLE
+  - TASK_STATE_UNKNOWN
+  - ROUTE_EXECUTOR_MISMATCH
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: git.inspect
+  description: read-only git state inspection within the resolved project boundary (full SHA)
+  inputs:
+  - name: project_id
+    type: str
+  - name: registry_path
+    type: str
+  - name: workspace_id
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: host.status
+  description: host mechanical read-only inspection; requires no Plan/SPEC/Profile Task
+  inputs:
+  - name: pidfile
+    type: str?
+  - name: project_id
+    type: str?
+  - name: receipt
+    type: str?
+  - name: registry_path
+    type: str?
+  - name: workspace_id
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: operations.list
+  description: list canonical operations registered in the ingress contract registry
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: plan_init
+  description: Mechanically initialize one exact Plan Subject after semantic choice.
+  inputs:
+  - name: authority_observed_raw_digest
+    type: str
+  - name: authority_source_revision
+    type: str
+  - name: plan_ref
+    type: str
+  - name: project_binding
+    type: dict
+  - name: semantic_inputs
+    type: dict
+  - name: subject_expected_revision
+    type: int
+  required_context:
+  - principal
+  optional_context:
+  - project_binding
+  internal_ids_required:
+  - subject
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: plan_subject
+  required_authority: semantic_authorization_and_operation_lease
+  approval_required: true
+  decision_required: true
+  valid_predecessor_state: uninitialized
+  valid_successor_state: initialized
+  subject_revision_precondition: true
+  external_authority_precondition: true
+  idempotency: same intent replays; changed intent conflicts
+  result_contract: canonical_mutation_result.v1
+  errors:
+  - PROJECT_NOT_FOUND
+  - NEEDS_SEMANTIC_CHOICE
+  - PROJECT_BINDING_REQUIRED
+  - PLAN_INIT_INVALID_PREDECESSOR
+  - PLAN_INIT_ALREADY_INITIALIZED
+  - PLAN_INIT_STALE_SUBJECT_REVISION
+  - PLAN_INIT_STALE_AUTHORITY_PRECONDITION
+  protocol_version: '1.0'
+- name: plan_retirement
+  description: Mechanically retire one exact Plan selected from a bounded snapshot.
+  inputs:
+  - name: authority_observed_raw_digest
+    type: str
+  - name: authority_source_revision
+    type: str
+  - name: plan_ref
+    type: str
+  - name: retirement_kind
+    type: str
+  - name: snapshot_identity
+    type: str
+  - name: subject_expected_revision
+    type: int
+  - name: successor_ref
+    type: str?
+  required_context:
+  - principal
+  optional_context:
+  - project_binding
+  internal_ids_required:
+  - subject
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: plan_subject
+  required_authority: semantic_authorization_and_operation_lease
+  approval_required: true
+  decision_required: true
+  valid_predecessor_state: initialized
+  valid_successor_state: cancelled|superseded
+  subject_revision_precondition: true
+  external_authority_precondition: true
+  idempotency: same intent replays; changed intent conflicts
+  result_contract: canonical_mutation_result.v1
+  errors:
+  - RETIREMENT_NO_CANDIDATE
+  - RETIREMENT_NEEDS_SEMANTIC_CHOICE
+  - RETIREMENT_STALE_SNAPSHOT
+  - RETIREMENT_TARGET_PROTECTED
+  - RETIREMENT_RUNNING_TASK_PROTECTED
+  - RETIREMENT_SUCCESSOR_REQUIRED
+  - RETIREMENT_SUCCESSOR_INVALID
+  - RETIREMENT_SELF_SUCCESSOR
+  - RETIREMENT_STALE_AUTHORITY_PRECONDITION
+  protocol_version: '1.0'
+- name: project.resolve
+  description: resolve exactly one registered project deterministically (0/1/many fail-closed)
+  inputs:
+  - name: project_id
+    type: str
+  - name: registry_path
+    type: str
+  - name: workspace_id
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: runtime.status
+  description: executor-neutral runtime process status by pid
+  inputs:
+  - name: pid
+    type: int
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'

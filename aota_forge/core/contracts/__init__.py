@@ -12,12 +12,9 @@ for M1 compatibility; it is NOT contract authority anymore.
 """
 
 from aota_forge.core.contracts.descriptor import (
-    LIFECYCLE_DESCRIPTORS,
     OperationContractDescriptor,
     InputSpec,
-    PLAN_INIT_DESCRIPTOR,
     PLAN_INIT_OPERATION,
-    PLAN_RETIREMENT_DESCRIPTOR,
     PLAN_RETIREMENT_OPERATION,
     READ_ONLY,
     READ_WRITE,
@@ -79,6 +76,25 @@ from aota_forge.core.contracts.errors import (
     SubjectRevisionStaleAuthorizationError,
     error_from_dict,
 )
+
+def __getattr__(name: str):
+    # Lazy projection for lifecycle descriptors (YAML-backed).
+    # This avoids circular import: catalog imports descriptor, descriptor package
+    # __init__ would otherwise eagerly import catalog before catalog finishes.
+    if name in ("PLAN_INIT_DESCRIPTOR", "PLAN_RETIREMENT_DESCRIPTOR", "LIFECYCLE_DESCRIPTORS"):
+        from aota_forge.core.catalog import (
+            LIFECYCLE_DESCRIPTORS as _LD,
+            PLAN_INIT_DESCRIPTOR as _PID,
+            PLAN_RETIREMENT_DESCRIPTOR as _PRD,
+        )
+
+        if name == "PLAN_INIT_DESCRIPTOR":
+            return _PID
+        if name == "PLAN_RETIREMENT_DESCRIPTOR":
+            return _PRD
+        return _LD
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "OperationContractDescriptor",

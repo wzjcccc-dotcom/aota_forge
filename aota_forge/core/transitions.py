@@ -49,7 +49,25 @@ from aota_forge.core.context import (
     TrustedContext,
     prepare_project_binding,
 )
-from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
+from aota_forge.core.contracts.descriptor import (
+    PLAN_INIT_OPERATION,
+    PLAN_RETIREMENT_OPERATION,
+)
+
+# YAML-backed lifecycle descriptors (projection, not hard-coded)
+# Import lazily via catalog to avoid cycle at import time; expose as module
+# attributes for compatibility.  ``descriptor.py`` no longer owns instances.
+def _lifecycle_descriptor(operation: str):
+    from aota_forge.core.catalog import get_catalog_descriptor
+
+    desc = get_catalog_descriptor(operation)
+    if desc is None:
+        raise ValueError(f"unknown lifecycle descriptor: {operation}")
+    return desc
+
+
+PLAN_INIT_DESCRIPTOR = _lifecycle_descriptor(PLAN_INIT_OPERATION)  # type: ignore
+PLAN_RETIREMENT_DESCRIPTOR = _lifecycle_descriptor(PLAN_RETIREMENT_OPERATION)  # type: ignore
 from aota_forge.core.contracts.mutation import MutationEffect, MutationIntent, MutationPreconditions
 from aota_forge.core.contracts.results import LifecycleResult, lifecycle_result
 from aota_forge.core.contracts.validation import validate_lifecycle_preconditions

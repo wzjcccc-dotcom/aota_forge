@@ -48,7 +48,7 @@ def _make_target(name="tgt"):
 def _contract_hash_for(op: str) -> str:
     # Use real descriptor hashes where possible; fallback to sha
     try:
-        from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
+        from aota_forge.core.catalog import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
         if op == "plan_init":
             return PLAN_INIT_DESCRIPTOR.contract_hash()
         if op == "plan_retirement":

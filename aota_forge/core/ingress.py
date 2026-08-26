@@ -40,7 +40,6 @@ from aota_forge.core.contracts.descriptor import (
     PLAN_RETIREMENT_OPERATION,
     READ_ONLY,
     WRITE_ONLY,
-    InputSpec,
     OperationContractDescriptor,
 )
 from aota_forge.core.contracts.errors import ForgeError, UnsupportedOperationError
@@ -79,157 +78,11 @@ _RESOLVER = ContextResolver()
 
 
 # ---------------------------------------------------------------------------
-# M5 Canonical Execution Descriptors & Registration
+# M5 Canonical Execution Descriptors — YAML Projection (S1/M2/W2)
 # ---------------------------------------------------------------------------
-
-TASK_START_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.task_start",
-    description="Mechanically dispatches a canonical execution task to the specified executor adapter",
-    inputs=(
-        InputSpec("executor", "str"),
-        InputSpec("role", "str"),
-        InputSpec("instruction", "str"),
-        InputSpec("project_id", "str"),
-        InputSpec("subject_ref", "str?"),
-        InputSpec("timeout", "int?"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=WRITE_ONLY,
-    mutation_scope="execution_task",
-    required_authority="caller_execution_intent",
-    approval_required=False,
-    decision_required=False,
-    valid_predecessor_state="uninitialized",
-    valid_successor_state="dispatched",
-    subject_revision_precondition=False,
-    external_authority_precondition=False,
-    idempotency="idempotent under (idempotency_key, intent_fingerprint)",
-    result_contract="canonical_dispatch_result.v1",
-    errors=(
-        "EXECUTOR_NOT_FOUND",
-        "EXECUTOR_UNAVAILABLE",
-        "CAPABILITY_MISMATCH",
-        "PACKAGE_INVALID",
-        "ROLE_MAPPING_NOT_FOUND",
-        "DISPATCH_REJECTED",
-        "DISPATCH_TIMEOUT",
-        "NEEDS_SEMANTIC_CHOICE",
-        "IDEMPOTENCY_CONFLICT",
-        "INTERNAL_MECHANICAL_ERROR",
-    ),
-    protocol_version=PROTOCOL_VERSION,
-)
-
-TASK_STATUS_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.task_status",
-    description="Queries the execution status of a dispatched task",
-    inputs=(
-        InputSpec("task_id", "str"),
-        InputSpec("executor", "str"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=READ_ONLY,
-    errors=(
-        "TASK_NOT_FOUND",
-        "EXECUTOR_UNAVAILABLE",
-        "TASK_STATE_UNKNOWN",
-        "ROUTE_EXECUTOR_MISMATCH",
-        "INTERNAL_MECHANICAL_ERROR",
-    ),
-    protocol_version=PROTOCOL_VERSION,
-)
-
-TASK_RESULT_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.task_result",
-    description="Fetches the CanonicalResult of a finished task",
-    inputs=(
-        InputSpec("task_id", "str"),
-        InputSpec("executor", "str"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=READ_ONLY,
-    errors=(
-        "TASK_NOT_FOUND",
-        "RESULT_INVALID",
-        "TASK_STILL_RUNNING",
-        "EXECUTOR_UNAVAILABLE",
-        "ROUTE_EXECUTOR_MISMATCH",
-        "INTERNAL_MECHANICAL_ERROR",
-    ),
-    protocol_version=PROTOCOL_VERSION,
-)
-
-TASK_CANCEL_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.task_cancel",
-    description="Requests cancellation of an active task",
-    inputs=(
-        InputSpec("task_id", "str"),
-        InputSpec("executor", "str"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=WRITE_ONLY,
-    mutation_scope="execution_task",
-    required_authority="caller_execution_intent",
-    approval_required=False,
-    decision_required=False,
-    valid_predecessor_state="active",
-    valid_successor_state="cancelled",
-    subject_revision_precondition=False,
-    external_authority_precondition=False,
-    idempotency="idempotent",
-    result_contract="canonical_cancel_result.v1",
-    errors=(
-        "TASK_NOT_FOUND",
-        "CANCEL_UNSUPPORTED",
-        "TASK_ALREADY_TERMINAL",
-        "ROUTE_EXECUTOR_MISMATCH",
-        "INTERNAL_MECHANICAL_ERROR",
-    ),
-    protocol_version=PROTOCOL_VERSION,
-)
-
-EXECUTOR_LIST_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.executor_list",
-    description="Lists all registered executor adapters and their descriptors",
-    inputs=(),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=READ_ONLY,
-    errors=("INTERNAL_MECHANICAL_ERROR",),
-    protocol_version=PROTOCOL_VERSION,
-)
-
-EXECUTOR_CAPABILITIES_DESCRIPTOR = OperationContractDescriptor(
-    name="execution.executor_capabilities",
-    description="Displays advertised capabilities of the specified executor adapter",
-    inputs=(
-        InputSpec("executor", "str"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write=READ_ONLY,
-    errors=(
-        "EXECUTOR_NOT_FOUND",
-        "INTERNAL_MECHANICAL_ERROR",
-    ),
-    protocol_version=PROTOCOL_VERSION,
-)
+# Execution descriptors are now projection-only over operations.yaml.
+# No hard-coded OperationContractDescriptor instances remain.
+# Topology preserved: these route via ExecutionDispatcher, not DEFAULT_REGISTRY.
 
 CANONICAL_EXECUTION_OPERATIONS: tuple[str, ...] = (
     "execution.task_start",
@@ -240,18 +93,39 @@ CANONICAL_EXECUTION_OPERATIONS: tuple[str, ...] = (
     "execution.executor_capabilities",
 )
 
-EXECUTION_DESCRIPTORS: dict[str, OperationContractDescriptor] = {
-    desc.name: desc
-    for desc in (
-        TASK_START_DESCRIPTOR,
-        TASK_STATUS_DESCRIPTOR,
-        TASK_RESULT_DESCRIPTOR,
-        TASK_CANCEL_DESCRIPTOR,
-        EXECUTOR_LIST_DESCRIPTOR,
-        EXECUTOR_CAPABILITIES_DESCRIPTOR,
-    )
-}
 EXECUTION_OPERATIONS: frozenset[str] = frozenset(CANONICAL_EXECUTION_OPERATIONS)
+
+def _load_execution_descriptor_map() -> dict[str, OperationContractDescriptor]:
+    from aota_forge.core.contracts.loader import (
+        discover_canonical_project_root,
+        load_operation_descriptor_map,
+    )
+
+    root = discover_canonical_project_root()
+    full = load_operation_descriptor_map(root)
+    missing = [n for n in CANONICAL_EXECUTION_OPERATIONS if n not in full]
+    if missing:
+        from aota_forge.core.contracts.loader import DeclarativeContractError
+
+        raise DeclarativeContractError(
+            "DECLARATIVE_CONTRACT_NOT_FOUND", f"execution descriptors missing in YAML: {missing}"
+        )
+    return {name: full[name] for name in CANONICAL_EXECUTION_OPERATIONS}
+
+
+# Single canonical projection — fail-closed if YAML missing/invalid/duplicate
+_EXECUTION_DESCRIPTOR_MAP: dict[str, OperationContractDescriptor] = _load_execution_descriptor_map()
+
+# Individual descriptor projections (for legacy import compatibility)
+TASK_START_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.task_start"]
+TASK_STATUS_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.task_status"]
+TASK_RESULT_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.task_result"]
+TASK_CANCEL_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.task_cancel"]
+EXECUTOR_LIST_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.executor_list"]
+EXECUTOR_CAPABILITIES_DESCRIPTOR: OperationContractDescriptor = _EXECUTION_DESCRIPTOR_MAP["execution.executor_capabilities"]
+
+# Public execution projection map (must be derived, not hard-coded)
+EXECUTION_DESCRIPTORS: dict[str, OperationContractDescriptor] = dict(_EXECUTION_DESCRIPTOR_MAP)
 
 _CANONICAL_EXECUTION_ERROR_CODES = frozenset(
     {code.value for code in ExecutionErrorCode}

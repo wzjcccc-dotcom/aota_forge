@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import unittest
 
-from aota_forge.core.contracts.descriptor import PLAN_RETIREMENT_DESCRIPTOR
+from aota_forge.core.catalog import PLAN_RETIREMENT_DESCRIPTOR
 from aota_forge.core.contracts.mutation import MutationEffect
 from aota_forge.core.ingress import MutationIngressRequest, execute_mutation
 from aota_forge.core.project.resolver import resolve_project_candidates
@@ -169,7 +169,7 @@ class M43WriteIngressTests(unittest.TestCase):
                 authorization = _issue_authorization(fixture)
                 pre = authorization.lease  # placeholder
                 # Use the actual preconditions from _plan_init_request helper via fixture's default
-                from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR
+                from aota_forge.core.catalog import PLAN_INIT_DESCRIPTOR
 
                 request = _bound_request(
                     _plan_init_request(fixture, intent=authorization.intent, lease=authorization.lease),

@@ -255,17 +255,69 @@ def load_results(project_root: Path) -> dict[str, Any]:
     return load_document(project_root, DOCUMENT_KIND_RESULTS)
 
 
+def _discover_canonical_project_root() -> Path:
+    """Discover the canonical project root deterministically from package location.
+
+    Walks parents of this file until ``.aota/project.yaml`` is found.
+    This is project-bounded, not CWD/ENV/host-absolute.  It reuses the
+    existing manifest marker as the canonical project identity.
+
+    Used by production runtime projections (catalog/ingress) to locate the
+    single canonical ``operations.yaml`` without inventing a new path
+    authority.  Tests with isolated fixtures call ``load_*`` directly with
+    an explicit ``project_root``.
+    """
+    start = Path(__file__).resolve()
+    for parent in [start.parent] + list(start.parents):
+        if (parent / ".aota" / "project.yaml").is_file():
+            # parent is candidate; verify it contains the manifest that
+            # identifies as project root (contains .aota/project.yaml)
+            # For the aota_forge repo, the repo root itself is the project
+            # root (parent that contains .aota).
+            # Walk continues upward but first match from file upward is
+            # closest project root (correct for nested workspaces).
+            # Need to find the outermost that still contains .aota? The
+            # closest parent that has .aota/project.yaml is the project
+            # root when starting inside package.
+            # Return the directory that contains .aota.
+            return parent
+            # Note: we do not resolve further to workspace discovery; the
+            # project root is the directory that contains .aota.
+    # Fallback: walk from file's parents that correspond to package layout
+    # ``aota_forge/core/contracts`` -> repo root is 3 levels up from
+    # ``aota_forge`` package directory.  Prove via manifest existence above.
+    raise DeclarativeContractError(ERR_NOT_FOUND, "canonical project root not found via package location")
+
+
+def discover_canonical_project_root() -> Path:
+    """Public wrapper for canonical project root discovery."""
+    return _discover_canonical_project_root()
+
+
 def load_operation_descriptors(project_root: Path) -> tuple[OperationContractDescriptor, ...]:
     """Convert the validated ``operations`` document into existing descriptors.
 
     Conversion reuses ``OperationContractDescriptor.from_dict`` so the
     existing canonical descriptor validation remains the authority.
+    Duplicate operation identities fail closed before any map is formed.
     """
     document = load_operations(project_root)
     entries = document.get("contracts")
     if not isinstance(entries, list):
         raise DeclarativeContractError(ERR_INVALID, "operations document contracts must be a list")
-    return tuple(_build_operation_descriptor(entry) for entry in entries)
+    descriptors = tuple(_build_operation_descriptor(entry) for entry in entries)
+    seen: set[str] = set()
+    for desc in descriptors:
+        if desc.name in seen:
+            raise DeclarativeContractError(ERR_INVALID, f"duplicate operation identity: {desc.name}")
+        seen.add(desc.name)
+    return descriptors
+
+
+def load_operation_descriptor_map(project_root: Path) -> dict[str, OperationContractDescriptor]:
+    """Deterministic name -> descriptor map with duplicate fail-closed."""
+    descriptors = load_operation_descriptors(project_root)
+    return {desc.name: desc for desc in descriptors}
 
 
 def _build_operation_descriptor(entry: Any) -> OperationContractDescriptor:

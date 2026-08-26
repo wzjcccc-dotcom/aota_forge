@@ -118,7 +118,7 @@ def _run(fixture, request):
 
 
 def _behavior_checks() -> None:
-    from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
+    from aota_forge.core.catalog import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
     from aota_forge.core.contracts.mutation import MutationEffect
     from aota_forge.core.ingress import MutationIngressRequest, execute_mutation
     from aota_forge.core.bootstrap import ensure_handlers_bound

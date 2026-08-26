@@ -66,10 +66,12 @@ from aota_forge.adapters.plan_authority.port import (
 from aota_forge.cli.__main__ import _build_parser, _main, ROUTES
 from aota_forge.cli.projection import operation_schema, semantic_input_specs
 from aota_forge.core.contracts.descriptor import (
-    PLAN_INIT_DESCRIPTOR,
-    PLAN_RETIREMENT_DESCRIPTOR,
     READ_ONLY,
     WRITE_ONLY,
+)
+from aota_forge.core.catalog import (
+    PLAN_INIT_DESCRIPTOR,
+    PLAN_RETIREMENT_DESCRIPTOR,
 )
 from aota_forge.core.contracts.errors import (
     AuthorizationContractDriftError,

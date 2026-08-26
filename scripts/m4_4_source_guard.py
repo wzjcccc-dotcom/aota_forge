@@ -17,7 +17,7 @@ from aota_forge.core.context import (
     ProjectBinding,
     prepare_project_binding,
 )
-from aota_forge.core.contracts.descriptor import (
+from aota_forge.core.catalog import (
     PLAN_INIT_DESCRIPTOR,
     PLAN_RETIREMENT_DESCRIPTOR,
 )

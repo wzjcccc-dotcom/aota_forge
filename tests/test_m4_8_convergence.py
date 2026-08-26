@@ -67,11 +67,13 @@ from aota_forge.core.context import (
     bind_trusted_context,
 )
 from aota_forge.core.contracts.descriptor import (
+    READ_ONLY,
+    WRITE_ONLY,
+)
+from aota_forge.core.catalog import (
     LIFECYCLE_DESCRIPTORS,
     PLAN_INIT_DESCRIPTOR,
     PLAN_RETIREMENT_DESCRIPTOR,
-    READ_ONLY,
-    WRITE_ONLY,
 )
 from aota_forge.core.contracts.errors import (
     AuthorizationContractDriftError,

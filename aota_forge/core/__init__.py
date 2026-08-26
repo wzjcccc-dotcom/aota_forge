@@ -30,7 +30,7 @@ from aota_forge.core.authorization import (
 )
 from aota_forge.core.capability_lease import CapabilityLease
 from aota_forge.core.context import Principal, TrustedContext, bind_trusted_context
-from aota_forge.core.contracts.descriptor import (
+from aota_forge.core.catalog import (
     LIFECYCLE_DESCRIPTORS,
     PLAN_INIT_DESCRIPTOR,
     PLAN_RETIREMENT_DESCRIPTOR,

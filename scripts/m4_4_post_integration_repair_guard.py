@@ -29,7 +29,7 @@ from test_m4_2_m4_4_integration import (  # noqa: E402
     _retirement_request,
 )
 from aota_forge.core.authority import AuthorityDecision  # noqa: E402
-from aota_forge.core.contracts.descriptor import (  # noqa: E402
+from aota_forge.core.catalog import (
     PLAN_INIT_DESCRIPTOR,
     PLAN_RETIREMENT_DESCRIPTOR,
 )

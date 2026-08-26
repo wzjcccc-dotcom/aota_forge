@@ -107,7 +107,7 @@ def _make_generic_descriptor(
 
 def _make_forge_lifecycle_descriptor() -> OperationContractDescriptor:
     # Reuse real lifecycle values to prove Forge-specific values are allowed but not required
-    from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR
+    from aota_forge.core.catalog import PLAN_INIT_DESCRIPTOR
     return PLAN_INIT_DESCRIPTOR
 
 

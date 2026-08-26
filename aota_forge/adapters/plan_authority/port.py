@@ -14,8 +14,6 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from aota_forge.core.contracts.descriptor import (
-    PLAN_INIT_DESCRIPTOR,
-    PLAN_RETIREMENT_DESCRIPTOR,
     PLAN_INIT_OPERATION,
     PLAN_RETIREMENT_OPERATION,
 )

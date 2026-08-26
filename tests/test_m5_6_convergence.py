@@ -64,10 +64,12 @@ from aota_forge.cli.exit_codes import (
 )
 from aota_forge.core.contracts.canonical import canonical_json
 from aota_forge.core.contracts.descriptor import (
-    LIFECYCLE_DESCRIPTORS,
     OperationContractDescriptor,
     READ_ONLY,
     WRITE_ONLY,
+)
+from aota_forge.core.catalog import (
+    LIFECYCLE_DESCRIPTORS,
 )
 from aota_forge.core.contracts.errors import ForgeError
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY

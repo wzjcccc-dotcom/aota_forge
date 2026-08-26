@@ -31,7 +31,10 @@ from aota_forge.adapters.host import process as host_process
 from aota_forge.adapters.host import resources as host_resources
 from aota_forge.adapters.host import runtime as host_runtime
 from aota_forge.core.context import OperationContext
-from aota_forge.core.contracts.descriptor import PLAN_INIT_DESCRIPTOR, PLAN_RETIREMENT_DESCRIPTOR
+from aota_forge.core.contracts.descriptor import (
+    PLAN_INIT_OPERATION,
+    PLAN_RETIREMENT_OPERATION,
+)
 from aota_forge.core.contracts.errors import (
     ForgeError,
     ProjectBindingMissingError,
@@ -246,6 +249,24 @@ def _get_m43_aux_map(store) -> dict:
     return aux
 
 
+def _contract_hash(operation: str) -> str:
+    """YAML-backed contract hash for lifecycle operations (projection)."""
+    desc = DEFAULT_REGISTRY.get(operation)
+    if desc is not None:
+        return desc.contract_hash()
+    # Fallback to direct YAML lookup (covers isolated test fixtures where
+    # DEFAULT_REGISTRY may not yet have been populated in that process)
+    try:
+        from aota_forge.core.catalog import get_catalog_descriptor
+
+        d = get_catalog_descriptor(operation)
+        if d is not None:
+            return d.contract_hash()
+    except Exception:
+        pass
+    raise ValueError(f"unknown canonical descriptor for {operation}")
+
+
 def _plan_init_complete_identity(req, principal: str | None) -> str:
     """Canonical complete mutation identity for PLAN_INIT (M4-3).
 
@@ -260,7 +281,7 @@ def _plan_init_complete_identity(req, principal: str | None) -> str:
         "target": req.plan_ref.serialize() if hasattr(req.plan_ref, "serialize") else str(req.plan_ref),
         "principal": principal or "",
         "mutation_scope": dict(req.intent.mutation_scope) if hasattr(req.intent, "mutation_scope") else {},
-        "contract_hash": PLAN_INIT_DESCRIPTOR.contract_hash(),
+        "contract_hash": _contract_hash(PLAN_INIT_OPERATION),
         "intent_fingerprint": req.intent.intent_fingerprint(),
         "subject_expected_revision": req.preconditions.subject_expected_revision,
         "external_authority_precondition": req.external_authority_precondition,
@@ -284,7 +305,7 @@ def _retirement_complete_identity(req, principal: str | None) -> str:
         "target": req.plan_ref.serialize() if hasattr(req.plan_ref, "serialize") else str(req.plan_ref),
         "principal": principal or "",
         "mutation_scope": dict(req.intent.mutation_scope) if hasattr(req.intent, "mutation_scope") else {},
-        "contract_hash": PLAN_RETIREMENT_DESCRIPTOR.contract_hash(),
+        "contract_hash": _contract_hash(PLAN_RETIREMENT_OPERATION),
         "intent_fingerprint": req.intent.intent_fingerprint(),
         "subject_expected_revision": req.preconditions.subject_expected_revision,
         "external_authority_precondition": req.external_authority_precondition,

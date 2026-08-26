@@ -56,7 +56,7 @@ from aota_forge.adapters.execution.reference import (
     REFERENCE_EXECUTOR_TEST_ONLY,
 )
 from aota_forge.cli.__main__ import ROUTES, _build_parser
-from aota_forge.core.contracts.descriptor import LIFECYCLE_DESCRIPTORS
+from aota_forge.core.catalog import LIFECYCLE_DESCRIPTORS
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.execution import (
     CANONICAL_ROLES,
