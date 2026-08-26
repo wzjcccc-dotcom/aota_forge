@@ -1,0 +1,24 @@
+schema_version: 1
+kind: capabilities
+contracts:
+- name: aota.capability.executor
+  description: Canonical executor capability compatibility declaration derived from stable Hermes adapter advertisement
+  adapter_kind: hermes_host_adapter
+  supported_execution_modes:
+  - async
+  - sync
+  supports_streaming_events: false
+  supports_task_cancellation: true
+  supports_task_resume: true
+  supports_structured_result: true
+  supported_canonical_roles:
+  - coder
+  - executor
+  - planner
+  - reviewer
+  - steward
+  supported_isolation_modes:
+  - process
+  - worktree
+  supports_working_directory: true
+  supports_artifact_transport: true

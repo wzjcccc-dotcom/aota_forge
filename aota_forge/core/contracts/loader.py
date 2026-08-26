@@ -88,6 +88,86 @@ _OPERATION_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
     }
 )
 
+# W3: capabilities reuse ExecutorCapabilities fields but with distinct semantic identity
+# Capability semantic identity (name) is NOT executor_id; runtime fields like
+# max_timeout_seconds / concurrency_limit are excluded from canonical declaration.
+_CAPABILITY_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "description",
+        "adapter_kind",
+        "supported_execution_modes",
+        "supports_streaming_events",
+        "supports_task_cancellation",
+        "supports_task_resume",
+        "supports_structured_result",
+        "supported_canonical_roles",
+        "supported_isolation_modes",
+        "supports_working_directory",
+        "supports_artifact_transport",
+    }
+)
+
+# Legacy W1 fixture keys for backward compatibility (tests use isolated tmp_path)
+_LEGACY_CAPABILITY_KEYS: Final[frozenset[str]] = frozenset(
+    {"capability_id", "semantic_operation_ref", "capability", "id"}
+)
+
+# W3: minimal result-contract identity + compatibility mapping
+_RESULT_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "description",
+        "compatible_operations",
+        "protocol",
+        "protocol_version",
+    }
+)
+
+_LEGACY_RESULT_KEYS: Final[frozenset[str]] = frozenset(
+    {"result_contract", "result_contract_id", "contract"}
+)
+
+# Forbidden semantics that must never appear in capability declarations
+_FORBIDDEN_CAPABILITY_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "preferred_executor",
+        "best_role",
+        "task_priority_recommendation",
+        "semantic_routing_score",
+        "heuristic_quality_rating",
+        "preferred",
+        "ranking",
+        "score",
+        "priority",
+        "handler",
+        "callable",
+        "profile",
+        "routing",
+        "runtime_state",
+        "secret",
+    }
+)
+
+_FORBIDDEN_RESULT_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "correlation_id",
+        "evidence",
+        "artifact",
+        "provenance",
+        "retention",
+        "handler",
+        "callable",
+        "secret",
+        "warnings",
+        "errors",
+        "data",
+        "status",
+        "result",
+        "runtime",
+    }
+)
+
 
 class DeclarativeContractError(ForgeError):
     """Bounded fail-closed error raised by declarative contract loading."""
@@ -247,12 +327,222 @@ def load_operations(project_root: Path) -> dict[str, Any]:
 
 def load_capabilities(project_root: Path) -> dict[str, Any]:
     """Load the validated ``capabilities`` document as plain declarative data."""
-    return load_document(project_root, DOCUMENT_KIND_CAPABILITIES)
+    document = load_document(project_root, DOCUMENT_KIND_CAPABILITIES)
+    _validate_capability_contracts(document)
+    return document
 
 
 def load_results(project_root: Path) -> dict[str, Any]:
     """Load the validated ``results`` document as plain declarative data."""
-    return load_document(project_root, DOCUMENT_KIND_RESULTS)
+    document = load_document(project_root, DOCUMENT_KIND_RESULTS)
+    _validate_result_contracts(document)
+    return document
+
+
+def _validate_capability_contracts(document: dict[str, Any]) -> None:
+    entries = document.get("contracts")
+    if not isinstance(entries, list):
+        raise DeclarativeContractError(ERR_INVALID, "capabilities document contracts must be a list")
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise DeclarativeContractError(ERR_INVALID, "capabilities document entries must be objects")
+        # Legacy W1 fixture compatibility: allow minimal placeholder entries
+        if _LEGACY_CAPABILITY_KEYS & set(entry.keys()) and "name" not in entry:
+            # Legacy fixture uses capability_id; treat capability_id as identity for duplicate check
+            legacy_id = entry.get("capability_id") or entry.get("capability") or entry.get("id")
+            if not isinstance(legacy_id, str) or not legacy_id.strip():
+                raise DeclarativeContractError(ERR_INVALID, "legacy capability entry capability_id is missing")
+            if legacy_id in seen:
+                raise DeclarativeContractError(ERR_INVALID, f"duplicate capability identity: {legacy_id}")
+            seen.add(legacy_id)
+            # Forbidden checks still apply
+            for field in _FORBIDDEN_CAPABILITY_FIELDS:
+                if field in entry:
+                    raise DeclarativeContractError(ERR_INVALID, f"forbidden capability field: {field}")
+            from aota_forge.core.execution.capabilities import FORBIDDEN_SEMANTIC_FIELDS
+
+            for field in FORBIDDEN_SEMANTIC_FIELDS:
+                if field in entry:
+                    raise DeclarativeContractError(ERR_INVALID, f"forbidden capability semantic field: {field}")
+            continue
+        # Forbidden routing/profile/handler fields fail closed
+        for field in _FORBIDDEN_CAPABILITY_FIELDS:
+            if field in entry:
+                raise DeclarativeContractError(ERR_INVALID, f"forbidden capability field: {field}")
+        # Also check ExecutorCapabilities forbidden semantics
+        from aota_forge.core.execution.capabilities import FORBIDDEN_SEMANTIC_FIELDS
+
+        for field in FORBIDDEN_SEMANTIC_FIELDS:
+            if field in entry:
+                raise DeclarativeContractError(ERR_INVALID, f"forbidden capability semantic field: {field}")
+        unknown = sorted(set(entry) - _CAPABILITY_ENTRY_KEYS)
+        if unknown:
+            raise DeclarativeContractError(ERR_INVALID, f"unknown capability entry field: {unknown[0]}")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise DeclarativeContractError(ERR_INVALID, "capability entry name is missing")
+        if name in seen:
+            raise DeclarativeContractError(ERR_INVALID, f"duplicate capability identity: {name}")
+        seen.add(name)
+        # executor_id must NOT be used as capability identity; ensure name is not conflated
+        # (we do not accept executor_id as identity, but if present it must not equal name check is not needed;
+        # we simply ensure duplicate check is on name, not executor_id)
+        if not isinstance(entry.get("description"), str) or not entry["description"].strip():
+            raise DeclarativeContractError(ERR_INVALID, f"capability entry description is missing: {name}")
+        # Validate strict types for capability fields using ExecutorCapabilities helpers
+        _validate_capability_entry_types(entry)
+
+    # Additional distinctness check: capability name must not be mere executor inventory key
+    # (documented separately in tests)
+
+
+def _validate_capability_entry_types(entry: dict[str, Any]) -> None:
+    name = entry.get("name", "<unknown>")
+    # adapter_kind
+    if not isinstance(entry.get("adapter_kind"), str) or not entry["adapter_kind"].strip():
+        raise DeclarativeContractError(ERR_INVALID, f"capability entry adapter_kind is missing: {name}")
+    # bool fields must be bool exactly
+    for bf in (
+        "supports_streaming_events",
+        "supports_task_cancellation",
+        "supports_task_resume",
+        "supports_structured_result",
+        "supports_working_directory",
+        "supports_artifact_transport",
+    ):
+        if bf not in entry:
+            raise DeclarativeContractError(ERR_INVALID, f"capability entry missing field {bf}: {name}")
+        if type(entry[bf]) is not bool:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry field {bf} must be a bool: {name} got {type(entry[bf]).__name__}"
+            )
+    # sequence fields must be list/tuple of strings, not string
+    for seq_field in (
+        "supported_execution_modes",
+        "supported_canonical_roles",
+        "supported_isolation_modes",
+    ):
+        if seq_field not in entry:
+            raise DeclarativeContractError(ERR_INVALID, f"capability entry missing field {seq_field}: {name}")
+        val = entry[seq_field]
+        if isinstance(val, (str, bytes)):
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry field {seq_field} must be a list: {name}"
+            )
+        if not isinstance(val, (list, tuple)) or len(val) == 0:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry field {seq_field} must be a non-empty list: {name}"
+            )
+        for item in val:
+            if not isinstance(item, str) or not item.strip():
+                raise DeclarativeContractError(
+                    ERR_INVALID, f"capability entry field {seq_field} members must be non-empty strings: {name}"
+                )
+    # Validate against canonical vocabularies
+    from aota_forge.core.execution.capabilities import (
+        ALLOWED_EXECUTION_MODES,
+        ALLOWED_ISOLATION_MODES,
+    )
+    from aota_forge.core.execution.roles import validate_canonical_role
+
+    for mode in entry["supported_execution_modes"]:
+        if mode not in ALLOWED_EXECUTION_MODES:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry contains non-canonical execution mode {mode!r}: {name}"
+            )
+    for mode in entry["supported_isolation_modes"]:
+        if mode not in ALLOWED_ISOLATION_MODES:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry contains non-canonical isolation mode {mode!r}: {name}"
+            )
+    for role in entry["supported_canonical_roles"]:
+        try:
+            validate_canonical_role(role)
+        except Exception as exc:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"capability entry contains invalid canonical role {role!r}: {name}"
+            ) from exc
+    # Deterministic normalization check: ensure no runtime handler etc.
+    # No further normalization needed here; ExecutorCapabilities will normalize on construction if needed
+
+
+def _validate_result_contracts(document: dict[str, Any]) -> None:
+    entries = document.get("contracts")
+    if not isinstance(entries, list):
+        raise DeclarativeContractError(ERR_INVALID, "results document contracts must be a list")
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise DeclarativeContractError(ERR_INVALID, "results document entries must be objects")
+        # Legacy W1 fixture compatibility
+        if _LEGACY_RESULT_KEYS & set(entry.keys()) and "name" not in entry:
+            legacy_id = entry.get("result_contract") or entry.get("result_contract_id") or entry.get("contract")
+            if not isinstance(legacy_id, str) or not legacy_id.strip():
+                raise DeclarativeContractError(ERR_INVALID, "legacy result entry result_contract is missing")
+            if legacy_id in seen:
+                raise DeclarativeContractError(ERR_INVALID, f"duplicate result-contract identity: {legacy_id}")
+            seen.add(legacy_id)
+            for field in _FORBIDDEN_RESULT_FIELDS:
+                if field in entry and field in ("correlation_id", "evidence", "artifact", "provenance"):
+                    raise DeclarativeContractError(ERR_INVALID, f"forbidden result field: {field}")
+            continue
+        for field in _FORBIDDEN_RESULT_FIELDS:
+            if field in entry:
+                # Allow description/protocol but not runtime instance fields
+                # we already forbid specific runtime fields
+                if field in ("correlation_id", "evidence", "artifact", "provenance"):
+                    raise DeclarativeContractError(ERR_INVALID, f"forbidden result field: {field}")
+        # Check for provenance/artifact governance fields explicitly
+        for gov_field in ("provenance", "evidence", "artifact_manifest", "retention_policy", "receipt"):
+            if gov_field in entry:
+                raise DeclarativeContractError(ERR_INVALID, f"forbidden S5 governance field: {gov_field}")
+        unknown = sorted(set(entry) - _RESULT_ENTRY_KEYS)
+        if unknown:
+            raise DeclarativeContractError(ERR_INVALID, f"unknown result entry field: {unknown[0]}")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise DeclarativeContractError(ERR_INVALID, "result entry name is missing")
+        if name in seen:
+            raise DeclarativeContractError(ERR_INVALID, f"duplicate result-contract identity: {name}")
+        seen.add(name)
+        if not isinstance(entry.get("description"), str) or not entry["description"].strip():
+            raise DeclarativeContractError(ERR_INVALID, f"result entry description is missing: {name}")
+        comp = entry.get("compatible_operations")
+        if not isinstance(comp, (list, tuple)) or len(comp) == 0:
+            raise DeclarativeContractError(
+                ERR_INVALID, f"result entry compatible_operations must be a non-empty list: {name}"
+            )
+        for op in comp:
+            if not isinstance(op, str) or not op.strip():
+                raise DeclarativeContractError(
+                    ERR_INVALID, f"result entry compatible_operations members must be non-empty strings: {name}"
+                )
+        # protocol must be active legacy if present
+        protocol = entry.get("protocol")
+        if protocol is not None:
+            if not isinstance(protocol, str) or not protocol.strip():
+                raise DeclarativeContractError(ERR_INVALID, f"result entry protocol must be a non-empty string: {name}")
+            # Must be active legacy protocol, not generic
+            from aota_forge.core.contracts.version import OPERATION_CONTRACT_PROTOCOL
+
+            if protocol != OPERATION_CONTRACT_PROTOCOL:
+                # Allow only legacy active protocol; generic is not active
+                raise DeclarativeContractError(
+                    ERR_INVALID, f"result entry protocol must be active legacy protocol: {name}"
+                )
+        version = entry.get("protocol_version")
+        if version is not None:
+            if not isinstance(version, str) or not version.strip():
+                raise DeclarativeContractError(
+                    ERR_INVALID, f"result entry protocol_version must be a non-empty string: {name}"
+                )
+            from aota_forge.core.contracts.version import PROTOCOL_VERSION
+
+            if version != PROTOCOL_VERSION:
+                raise DeclarativeContractError(
+                    ERR_INVALID, f"result entry protocol_version must be active version {PROTOCOL_VERSION}: {name}"
+                )
 
 
 def _discover_canonical_project_root() -> Path:

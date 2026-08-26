@@ -1,0 +1,22 @@
+schema_version: 1
+kind: results
+contracts:
+- name: canonical_mutation_result.v1
+  description: Canonical mutation result contract for plan lifecycle operations
+  compatible_operations:
+  - plan_init
+  - plan_retirement
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: canonical_dispatch_result.v1
+  description: Canonical dispatch result contract for execution task start
+  compatible_operations:
+  - execution.task_start
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: canonical_cancel_result.v1
+  description: Canonical cancel result contract for execution task cancellation
+  compatible_operations:
+  - execution.task_cancel
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'

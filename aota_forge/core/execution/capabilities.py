@@ -151,6 +151,36 @@ class ExecutorCapabilities:
             if field in data:
                 raise ValueError(f"Forbidden semantic decision field rejected: {field!r}")
 
+        # Fail closed on unknown fields for declarative correctness
+        allowed_fields = frozenset(
+            {
+                "executor_id",
+                "adapter_kind",
+                "supported_execution_modes",
+                "supports_streaming_events",
+                "supports_task_cancellation",
+                "supports_task_resume",
+                "supports_structured_result",
+                "supported_canonical_roles",
+                "supported_isolation_modes",
+                "supports_working_directory",
+                "supports_artifact_transport",
+                "max_timeout_seconds",
+                "concurrency_limit",
+            }
+        )
+        unknown = sorted(set(data.keys()) - allowed_fields - FORBIDDEN_SEMANTIC_FIELDS)
+        # Forbidden already rejected above, but unknown beyond allowed must also fail
+        # Note: we computed allowed_fields without forbidden, so need to check strict unknown
+        strict_unknown = sorted(set(data.keys()) - allowed_fields)
+        # If strict_unknown contains forbidden, it was already raised; otherwise it's truly unknown
+        if strict_unknown:
+            # Check if any strict_unknown is not in forbidden (forbidden already raised)
+            # but we still need to fail on any unknown not in allowed
+            non_forbidden_unknown = [k for k in strict_unknown if k not in FORBIDDEN_SEMANTIC_FIELDS]
+            if non_forbidden_unknown:
+                raise ValueError(f"Unknown field in ExecutorCapabilities: {non_forbidden_unknown[0]!r}")
+
         # Check required fields
         required = (
             "executor_id",
@@ -169,18 +199,61 @@ class ExecutorCapabilities:
             if req not in data:
                 raise ValueError(f"Missing required field in ExecutorCapabilities: {req!r}")
 
+        # Strict declarative type validation — fail closed on invalid types
+        # executor_id and adapter_kind must be str exactly
+        if type(data["executor_id"]) is not str:
+            raise TypeError(f"executor_id must be a str, got {type(data['executor_id']).__name__}")
+        if type(data["adapter_kind"]) is not str:
+            raise TypeError(f"adapter_kind must be a str, got {type(data['adapter_kind']).__name__}")
+
+        # Bool fields must be bool exactly (not int, not str)
+        for bool_field in (
+            "supports_streaming_events",
+            "supports_task_cancellation",
+            "supports_task_resume",
+            "supports_structured_result",
+            "supports_working_directory",
+            "supports_artifact_transport",
+        ):
+            if type(data[bool_field]) is not bool:
+                raise TypeError(f"{bool_field} must be a bool, got {type(data[bool_field]).__name__}")
+
+        # Sequence fields must be list/tuple, not str/bytes, and not empty
+        for seq_field in (
+            "supported_execution_modes",
+            "supported_canonical_roles",
+            "supported_isolation_modes",
+        ):
+            val = data[seq_field]
+            if isinstance(val, (str, bytes)):
+                raise TypeError(f"{seq_field} must be a list/tuple of strings, got {type(val).__name__}")
+            if not isinstance(val, (list, tuple)):
+                raise TypeError(f"{seq_field} must be a list/tuple of strings, got {type(val).__name__}")
+
+        # Optional ints must be int exactly if present (and not bool)
+        if "max_timeout_seconds" in data and data["max_timeout_seconds"] is not None:
+            if type(data["max_timeout_seconds"]) is not int:
+                raise TypeError(
+                    f"max_timeout_seconds must be an int, got {type(data['max_timeout_seconds']).__name__}"
+                )
+        if "concurrency_limit" in data and data["concurrency_limit"] is not None:
+            if type(data["concurrency_limit"]) is not int:
+                raise TypeError(
+                    f"concurrency_limit must be an int, got {type(data['concurrency_limit']).__name__}"
+                )
+
         return cls(
-            executor_id=str(data["executor_id"]),
-            adapter_kind=str(data["adapter_kind"]),
+            executor_id=data["executor_id"],
+            adapter_kind=data["adapter_kind"],
             supported_execution_modes=tuple(data["supported_execution_modes"]),
-            supports_streaming_events=bool(data["supports_streaming_events"]),
-            supports_task_cancellation=bool(data["supports_task_cancellation"]),
-            supports_task_resume=bool(data["supports_task_resume"]),
-            supports_structured_result=bool(data["supports_structured_result"]),
+            supports_streaming_events=data["supports_streaming_events"],
+            supports_task_cancellation=data["supports_task_cancellation"],
+            supports_task_resume=data["supports_task_resume"],
+            supports_structured_result=data["supports_structured_result"],
             supported_canonical_roles=tuple(data["supported_canonical_roles"]),
             supported_isolation_modes=tuple(data["supported_isolation_modes"]),
-            supports_working_directory=bool(data["supports_working_directory"]),
-            supports_artifact_transport=bool(data["supports_artifact_transport"]),
+            supports_working_directory=data["supports_working_directory"],
+            supports_artifact_transport=data["supports_artifact_transport"],
             max_timeout_seconds=data.get("max_timeout_seconds"),
             concurrency_limit=data.get("concurrency_limit"),
         )
