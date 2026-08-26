@@ -18,7 +18,18 @@ Freezes (source-level constants for machine tests):
     TASK_IDENTITY_DISTINCT_FROM_EXECUTION_ATTEMPT_IDENTITY = yes
     CAPABILITY_FIRST_CLASS = yes, CAPABILITY_IS_PROFILE = no, CAPABILITY_IS_EXECUTOR = no
     RESULT_CONTRACT_IDENTITY_DEFINED = yes, RESULT_INSTANCE_DISTINCT = yes
-    HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY = yes
+    HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY = yes (Plan acceptance; implemented generically)
+
+NewType semantics (corrected):
+
+    NEWTYPE_RUNTIME_REPRESENTATION = str
+    NEWTYPE_STATIC_DOMAIN_SEPARATION = yes
+    NEWTYPE_RUNTIME_NOMINAL_SEPARATION = no
+
+    Python typing.NewType provides static nominal typing distinction only.
+    At runtime values remain plain strings.  ``isinstance(TaskRef(...), TaskRef)``
+    does not distinguish domains and ``type(TaskRef("x")) is str``.  Domain
+    separation is contractual/static-semantic, not encoded in runtime object type.
 
 Design choices (reuse-first):
 
@@ -28,6 +39,15 @@ Design choices (reuse-first):
 - Execution attempt identity = execution attempt reference (opaque, distinct type)
 - Capability = ExecutorCapabilities (first-class, not profile, not executor)
 - Result contract identity = OperationContractDescriptor.result_contract (opaque reference)
+
+Runtime locator principle (generic):
+
+    RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY = yes
+
+    A runtime locator (process handle, worker handle, session handle, etc.)
+    must never be required as canonical identity.  Canonical Core defines
+    only the generic principle and does not enumerate executor-specific
+    runtime systems.
 
 No TaskDescriptor, ExecutionDescriptor, ID broker, dispatch, lifecycle,
 or YAML catalog is created here.  Existing ExecutionPackage,
@@ -63,7 +83,14 @@ CAPABILITY_IS_EXECUTOR: bool = False
 RESULT_CONTRACT_IDENTITY_DEFINED: bool = True
 RESULT_INSTANCE_DISTINCT: bool = True
 
+# Plan acceptance statement — must remain true.  Implementation is proven
+# via the generic principle below, not via Hermes-specific knowledge.
 HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY: bool = True
+
+# Generic architectural rule — runtime locator is not canonical identity.
+RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY: bool = True
+RUNTIME_LOCATOR_IS_NOT_CANONICAL_IDENTITY: bool = True
+
 CANONICAL_VOCABULARY_DEFINED: bool = True
 OPERATION_TASK_EXECUTION_DISTINCT: bool = True
 
@@ -76,13 +103,21 @@ W2_IMPLEMENTED: bool = False
 W3_IMPLEMENTED: bool = False
 M2_IMPLEMENTED: bool = False
 
+# NewType runtime semantics — explicit machine-testable flags
+NEWTYPE_RUNTIME_REPRESENTATION: str = "str"
+NEWTYPE_STATIC_DOMAIN_SEPARATION: bool = True
+NEWTYPE_RUNTIME_NOMINAL_SEPARATION: bool = False
+
 # ---------------------------------------------------------------------------
-# Vocabulary type aliases — distinct semantic domains (no alias collapse)
+# Vocabulary type aliases — distinct semantic domains (static only)
 # ---------------------------------------------------------------------------
 
-# Opaque canonical references — nominal typing via NewType so type checkers
-# and runtime isinstance checks can distinguish domains when desired, while
-# remaining plain strings at runtime for serialization compatibility.
+# Opaque canonical references — NewType provides static nominal typing
+# distinction for type checkers only.  At runtime values are plain ``str``
+# objects (NEWTYPE_RUNTIME_REPRESENTATION=str).  Runtime ``isinstance`` or
+# ``type()`` checks cannot distinguish TaskRef from ExecutionAttemptRef;
+# domain separation is contractual/static-semantic
+# (NEWTYPE_STATIC_DOMAIN_SEPARATION=yes, NEWTYPE_RUNTIME_NOMINAL_SEPARATION=no).
 TaskRef = NewType("TaskRef", str)
 ExecutionAttemptRef = NewType("ExecutionAttemptRef", str)
 ResultContractRef = NewType("ResultContractRef", str)
@@ -95,6 +130,7 @@ CapabilityRef = NewType("CapabilityRef", str)
 # ---------------------------------------------------------------------------
 # Operation semantic identity vs contract revision fingerprint
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class OperationSemanticIdentity:
@@ -186,20 +222,29 @@ def semantic_identity_distinct_from_revision(
 # Task vs Execution identity boundary
 # ---------------------------------------------------------------------------
 
+
 def task_ref(value: str) -> TaskRef:
-    """Create an opaque canonical Task reference (stable across attempts)."""
+    """Create an opaque canonical Task reference (stable across attempts).
+
+    Validates only generic structural requirements appropriate for an opaque
+    canonical reference: must be ``str``, non-empty after stripping.  No
+    string-prefix inference is performed — whether a runtime locator is
+    incorrectly being used as a Task identity is caught at the
+    integration/mapping boundary, not by hard-coded prefix parsing in
+    canonical Core.
+    """
     if not isinstance(value, str) or not value.strip():
         raise ValueError("task identity must be a non-empty string")
-    # Reject obvious runtime identifiers being smuggled as task identity
-    lowered = value.strip().lower()
-    for forbidden in ("pid:", "hermes:", "worker:", "process_registry:"):
-        if lowered.startswith(forbidden):
-            raise ValueError(f"task identity must not be a runtime locator: {value!r}")
     return TaskRef(value.strip())
 
 
 def execution_attempt_ref(value: str) -> ExecutionAttemptRef:
-    """Create an opaque Execution-attempt reference (distinct from Task)."""
+    """Create an opaque Execution-attempt reference (distinct from Task).
+
+    Validates only generic structural requirements: non-empty string.
+    Domain distinction from Task is static-semantic, not runtime type or
+    string inequality.
+    """
     if not isinstance(value, str) or not value.strip():
         raise ValueError("execution attempt identity must be a non-empty string")
     return ExecutionAttemptRef(value.strip())
@@ -220,50 +265,35 @@ def result_contract_ref(value: str | None) -> ResultContractRef | None:
     return ResultContractRef(value.strip())
 
 
-def task_and_execution_distinct(task: TaskRef, execution: ExecutionAttemptRef) -> bool:
-    """Guard: task identity domain is distinct from execution attempt domain."""
-    if not isinstance(task, str) or not isinstance(execution, str):
-        raise TypeError("task and execution must be string-typed refs")
-    # Nominal type distinction plus value inequality for the guard;
-    # even if string values were equal by construction, the domains differ.
-    return True  # domains are distinct by type, not merely value
-
-
 # ---------------------------------------------------------------------------
-# Runtime locator vs semantic identity isolation
+# Runtime locator vs semantic identity isolation (generic)
 # ---------------------------------------------------------------------------
 
-# Hermes / runtime-private locators that must never be required as canonical ids.
-HERMES_RUNTIME_LOCATORS: frozenset[str] = frozenset({
-    "hermes_profile",
-    "hermes_worker",
-    "hermes_session",
-    "ProcessRegistry",
-    "PID",
-    "worker_id",
-    "adapter_handle",
-    "package_id_as_execution_identity",
-})
+CANONICAL_IDENTITY_FIELDS: frozenset[str] = frozenset(
+    {
+        "task_ref",
+        "execution_attempt_ref",
+        "operation_semantic_identity",
+        "result_contract_ref",
+    }
+)
 
-CANONICAL_IDENTITY_FIELDS: frozenset[str] = frozenset({
-    "task_ref",
-    "execution_attempt_ref",
-    "operation_semantic_identity",
-    "result_contract_ref",
-})
-
-RUNTIME_LOCATOR_FIELDS: frozenset[str] = frozenset({
-    "PID",
-    "hermes_profile",
-    "ProcessRegistry",
-    "worker_id",
-    "package_id",  # as execution identity alias (forbidden equivalence)
-    "correlation_id_as_execution_identity",
-})
+# Generic runtime locator field examples — intentionally generic categories,
+# not an exhaustive executor-specific enumeration.  Canonical Core does not
+# enumerate Hermes / OpenCode / Codex / other adapter names.
+RUNTIME_LOCATOR_FIELDS: frozenset[str] = frozenset(
+    {
+        "process_id",
+        "worker_handle",
+        "session_handle",
+        "package_id",
+        "correlation_id_as_execution_identity",
+    }
+)
 
 
 def is_runtime_locator(field_name: str) -> bool:
-    return field_name in RUNTIME_LOCATOR_FIELDS or field_name in HERMES_RUNTIME_LOCATORS
+    return field_name in RUNTIME_LOCATOR_FIELDS
 
 
 def is_canonical_identity_field(field_name: str) -> bool:

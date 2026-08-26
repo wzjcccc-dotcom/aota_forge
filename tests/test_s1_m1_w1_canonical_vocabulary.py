@@ -1,12 +1,14 @@
 """S1/M1/W1 — Canonical Vocabulary & Identity (minimum boundary).
 
 Tests are deterministic, no network, no live Hermes runtime.
-Covers required distinctions A-F from W1 spec.
+Covers required distinctions A-F from W1 spec plus R1 repairs.
 """
 
 from __future__ import annotations
 
 import importlib
+import inspect
+import pathlib
 
 import pytest
 
@@ -20,16 +22,20 @@ from aota_forge.core.contracts.vocabulary import (
     CAPABILITY_IS_PROFILE,
     CONTRACT_HASH_REMAINS_REVISION_FINGERPRINT,
     HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY,
-    HERMES_RUNTIME_LOCATORS,
     M2_IMPLEMENTED,
     NEW_EXECUTION_DESCRIPTOR_CREATED,
     NEW_ID_BROKER_CREATED,
     NEW_TASK_DESCRIPTOR_CREATED,
+    NEWTYPE_RUNTIME_NOMINAL_SEPARATION,
+    NEWTYPE_RUNTIME_REPRESENTATION,
+    NEWTYPE_STATIC_DOMAIN_SEPARATION,
     OPERATION_SEMANTIC_IDENTITY_DISTINCT_FROM_CONTRACT_REVISION,
     OPERATION_TASK_EXECUTION_DISTINCT,
     RESULT_CONTRACT_IDENTITY_DEFINED,
     RESULT_INSTANCE_DISTINCT,
     RUNTIME_LOCATOR_FIELDS,
+    RUNTIME_LOCATOR_IS_NOT_CANONICAL_IDENTITY,
+    RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY,
     TASK_FULL_MODEL_DEFERRED_TO_S2,
     TASK_IDENTITY_DISTINCT_FROM_EXECUTION_ATTEMPT_IDENTITY,
     TASK_IDENTITY_STABLE_ACROSS_EXECUTION_ATTEMPTS,
@@ -37,8 +43,12 @@ from aota_forge.core.contracts.vocabulary import (
     VOCABULARY_DOMAINS,
     W2_IMPLEMENTED,
     W3_IMPLEMENTED,
+    CapabilityRef,
     ContractRevisionFingerprint,
+    ExecutionAttemptRef,
     OperationSemanticIdentity,
+    ResultContractRef,
+    TaskRef,
     contract_revision_of,
     execution_attempt_ref,
     is_canonical_identity_field,
@@ -46,7 +56,6 @@ from aota_forge.core.contracts.vocabulary import (
     operation_semantic_identity_of,
     result_contract_ref,
     semantic_identity_distinct_from_revision,
-    task_and_execution_distinct,
     task_ref,
 )
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
@@ -85,13 +94,109 @@ class TestVocabularyDistinction:
         assert M2_IMPLEMENTED is False
 
     def test_domain_strings_are_not_aliases(self):
-        # Operation != Task != Execution etc. by string identity
         domains = list(VOCABULARY_DOMAINS)
         assert len(set(domains)) == len(domains)
         assert "Operation" != "Task"
         assert "Task" != "Execution"
         assert "Execution" != "Capability"
         assert "Capability" != "Result"
+
+
+# ---------------------------------------------------------------------------
+# A2. NewType runtime semantics — truthful separation
+# ---------------------------------------------------------------------------
+
+
+class TestNewTypeRuntimeSemantics:
+    def test_newtype_runtime_representation_is_str(self):
+        assert NEWTYPE_RUNTIME_REPRESENTATION == "str"
+        assert NEWTYPE_STATIC_DOMAIN_SEPARATION is True
+        assert NEWTYPE_RUNTIME_NOMINAL_SEPARATION is False
+
+    def test_task_ref_behaves_as_runtime_str(self):
+        t = task_ref("x")
+        # NewType values remain ordinary runtime strings
+        assert isinstance(t, str)
+        assert type(t) is str
+        assert t == "x"
+        assert str(t) == "x"
+
+    def test_execution_attempt_ref_behaves_as_runtime_str(self):
+        e = execution_attempt_ref("x")
+        assert isinstance(e, str)
+        assert type(e) is str
+        assert e == "x"
+        assert str(e) == "x"
+
+    def test_runtime_type_is_not_domain_discriminator(self):
+        t = task_ref("same")
+        e = execution_attempt_ref("same")
+        # Both are plain str at runtime — type identity cannot distinguish domains
+        assert type(t) is str
+        assert type(e) is str
+        assert type(t) is type(e)
+        # isinstance against NewType is not meaningful for nominal separation;
+        # at runtime both are just str instances.
+        assert isinstance(t, str) and isinstance(e, str)
+
+    def test_static_domain_separation_via_newtype_declarations(self):
+        # Static distinction is via the NewType declarations themselves, not runtime values.
+        assert TaskRef is not ExecutionAttemptRef
+        assert TaskRef is not ResultContractRef
+        assert ExecutionAttemptRef is not ResultContractRef
+        assert CapabilityRef is not TaskRef
+        # Functions that construct the refs are also distinct objects
+        assert task_ref is not execution_attempt_ref
+        # NewType supertypes are str (static typing layer)
+        # Use __supertype__ where available (Python 3.10+)
+        for nt in (TaskRef, ExecutionAttemptRef, ResultContractRef, CapabilityRef):
+            # NewType objects expose __supertype__ == str
+            assert getattr(nt, "__supertype__", str) is str
+
+    def test_always_true_domain_guard_removed(self):
+        import aota_forge.core.contracts.vocabulary as vocab
+
+        assert not hasattr(vocab, "task_and_execution_distinct"), (
+            "task_and_execution_distinct must be removed — it was an always-True guard"
+        )
+
+
+# ---------------------------------------------------------------------------
+# A3. Same lexical value cross-domain case
+# ---------------------------------------------------------------------------
+
+
+class TestSameLexicalValueCrossDomain:
+    def test_same_string_across_task_and_execution_domains(self):
+        task = task_ref("same-id")
+        attempt = execution_attempt_ref("same-id")
+
+        # Lexical equality does NOT collapse conceptual domains.
+        # With NewType (runtime str), values with same text are equal as strings.
+        assert str(task) == str(attempt)
+        assert task == attempt  # type: ignore[comparison-overlap]  # expected: runtime str equality
+        # Domain distinction is static-semantic, not string inequality.
+        # Code must NOT rely on str(task) != str(attempt) to prove separation.
+        assert TaskRef is not ExecutionAttemptRef
+
+    def test_same_string_across_result_contract_and_task(self):
+        task = task_ref("shared-lexical")
+        rc = result_contract_ref("shared-lexical")
+        assert rc is not None
+        assert str(task) == str(rc)
+        assert task == rc  # runtime str equality holds
+        # Yet TaskRef and ResultContractRef remain distinct static domains
+        assert TaskRef is not ResultContractRef
+
+    def test_task_stability_with_same_lexical_attempt(self):
+        # Even when lexical value collides, task identity stability holds
+        t = task_ref("collision")
+        e1 = execution_attempt_ref("collision")
+        e2 = execution_attempt_ref("other-attempt")
+        assert str(t) == str(e1)
+        assert t != e2
+        # Task identity remains stable across attempts — no requirement that lexical values differ
+        assert t == task_ref("collision")
 
 
 # ---------------------------------------------------------------------------
@@ -113,21 +218,17 @@ class TestTaskVsExecutionIdentity:
         assert t == task_ref("task-abc-123")
         assert e1 != e2
         # The same canonical task identity can map to 0..n execution attempts
-        attempts = [e1, e2]
-        for a in attempts:
-            assert task_and_execution_distinct(t, a) is True
-            assert str(t) != str(a)
+        # Domain separation is proven via NewType declarations, not string inequality
+        assert TaskRef is not ExecutionAttemptRef
 
     def test_retry_does_not_require_changing_task_identity(self):
         t = task_ref("stable-task-id")
         first_attempt = execution_attempt_ref("exec-attempt-1")
         retry_attempt = execution_attempt_ref("exec-attempt-2")
-        # Simulate retry: task stays same, execution ref changes
         assert t == task_ref("stable-task-id")
         assert first_attempt != retry_attempt
 
     def test_execution_package_task_vs_package_identity(self):
-        # Existing ExecutionPackage evidence: canonical_task_id != package_id
         pkg1 = ExecutionPackage.create(
             canonical_task_id="task-stable-001",
             project_id="aota_forge",
@@ -142,21 +243,33 @@ class TestTaskVsExecutionIdentity:
             instruction="do work",
             package_id="pkg-attempt-002",
         )
-        # Task identity stable across attempts
         assert pkg1.canonical_task_id == pkg2.canonical_task_id == "task-stable-001"
-        # Execution attempts are distinct
         assert pkg1.package_id != pkg2.package_id
-        # TaskRef vs ExecutionAttemptRef domain distinction holds
-        assert task_ref(pkg1.canonical_task_id) != execution_attempt_ref(pkg1.package_id)
+        # TaskRef vs ExecutionAttemptRef domain distinction is static, not via value check
+        assert TaskRef is not ExecutionAttemptRef
+        assert task_ref(pkg1.canonical_task_id) == "task-stable-001"
+        assert execution_attempt_ref(pkg1.package_id) == "pkg-attempt-001"
 
     def test_task_and_execution_ref_validation(self):
         with pytest.raises(ValueError):
             task_ref("")
         with pytest.raises(ValueError):
             execution_attempt_ref("  ")
-        # Hermes-style runtime locator prefix rejected for task
-        with pytest.raises(ValueError, match="runtime locator"):
-            task_ref("pid:12345")
+        with pytest.raises(ValueError):
+            task_ref("   ")
+        with pytest.raises(ValueError):
+            execution_attempt_ref("")
+
+    def test_task_ref_opaque_generic_allows_prefix_like_strings(self):
+        # W1-R1: canonical Core must not reject pid:/hermes:/worker:/process_registry: prefixes
+        # These are opaque strings — prefix policy is at mapping boundary, not canonical constructor.
+        assert task_ref("pid:12345") == "pid:12345"
+        assert task_ref("hermes:abc") == "hermes:abc"
+        assert task_ref("worker:xyz") == "worker:xyz"
+        assert task_ref("process_registry:123") == "process_registry:123"
+        assert task_ref("PID:9999") == "PID:9999"
+        # Generic validation still requires non-empty after strip
+        assert task_ref("  pid:123  ") == "pid:123"
 
     def test_canonical_result_task_identity_is_task_domain(self):
         res = CanonicalResult.success(
@@ -164,7 +277,6 @@ class TestTaskVsExecutionIdentity:
             executor_id="ref-1",
             correlation_id="corr-1",
         )
-        # CanonicalResult canonical_task_id belongs to Task domain, not execution attempt
         assert res.canonical_task_id == "task-abc-123"
         assert res.executor_id != res.canonical_task_id
 
@@ -211,16 +323,11 @@ class TestOperationSemanticVsRevision:
         r1 = contract_revision_of(d1)
         r2 = contract_revision_of(d2)
 
-        # Semantic identity stable: same protocol family + operation name
         assert s1 == s2
         assert s1.protocol_family == OPERATION_CONTRACT_PROTOCOL
         assert s1.operation_name == "my_op"
-
-        # Revision fingerprint changes when description changes
         assert r1.contract_hash != r2.contract_hash
         assert r1.protocol_version == r2.protocol_version == PROTOCOL_VERSION
-
-        # Distinct type domains
         assert semantic_identity_distinct_from_revision(s1, r1) is True
         assert type(s1) is not type(r1)
         assert s1 != r1  # type: ignore[comparison-overlap]
@@ -229,16 +336,12 @@ class TestOperationSemanticVsRevision:
         d = self._make_descriptor("another_op", "desc")
         sem = operation_semantic_identity_of(d)
         rev = contract_revision_of(d)
-        # contract_hash is not the semantic identity value
         assert rev.contract_hash not in (sem.protocol_family, sem.operation_name)
-        # Changing protocol_version would be captured in revision, not as alias
         assert CONTRACT_HASH_REMAINS_REVISION_FINGERPRINT is True
 
     def test_protocol_namespace_not_redefined_in_w1(self):
-        # W1 must not rename OPERATION_CONTRACT_PROTOCOL
         assert OPERATION_CONTRACT_PROTOCOL == "aota-forge.operation-contract"
         assert PROTOCOL_VERSION == "1.0"
-        # semantic identity uses protocol family constant
         d = self._make_descriptor("x_op", "desc")
         sem = operation_semantic_identity_of(d)
         assert sem.protocol_family == OPERATION_CONTRACT_PROTOCOL
@@ -259,7 +362,6 @@ class TestResultContractVsInstance:
         assert RESULT_CONTRACT_IDENTITY_DEFINED is True
         assert RESULT_INSTANCE_DISTINCT is True
 
-        # Descriptor result_contract is opaque identity/reference
         d = OperationContractDescriptor(
             name="result_op",
             description="has result contract",
@@ -285,14 +387,12 @@ class TestResultContractVsInstance:
         rc_ref = result_contract_ref(d.result_contract)
         assert rc_ref == "canonical_mutation_result.v1"
 
-        # Runtime result instance is a CanonicalResult payload
         inst = CanonicalResult.success(
             canonical_task_id="t-1",
             executor_id="exec-1",
             result_data={"value": 42},
             correlation_id="corr-1",
         )
-        # Contract identity != instance
         assert rc_ref != inst.result_data
         assert isinstance(inst.result_data, dict)
         assert rc_ref != inst
@@ -329,43 +429,55 @@ class TestResultContractVsInstance:
             external_authority_precondition=False,
             result_contract="my.result.v1",
         )
-        # Two instances for same contract can have different payloads
         r1 = CanonicalResult.success(canonical_task_id="t", executor_id="e", result_data={"n": 1}, correlation_id="c1")
         r2 = CanonicalResult.success(canonical_task_id="t", executor_id="e", result_data={"n": 2}, correlation_id="c2")
         assert r1.result_data != r2.result_data
         assert result_contract_ref(d.result_contract) == "my.result.v1"
-        # contract preserved across different instances
         assert result_contract_ref(d.result_contract) is not None
 
 
 # ---------------------------------------------------------------------------
-# E. Runtime identifier isolation
+# E. Runtime identifier isolation (generic)
 # ---------------------------------------------------------------------------
 
 
 class TestRuntimeIdentifierIsolation:
-    def test_hermes_runtime_id_not_canonical(self):
+    def test_runtime_locator_not_canonical_identity(self):
+        assert RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY is True
+        assert RUNTIME_LOCATOR_IS_NOT_CANONICAL_IDENTITY is True
         assert HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY is True
-        # Runtime locators are isolated from canonical identity fields
-        assert is_runtime_locator("PID") is True
-        assert is_runtime_locator("hermes_profile") is True
-        assert is_runtime_locator("ProcessRegistry") is True
-        assert is_runtime_locator("worker_id") is True
+        # Generic principle holds — runtime locators are not canonical identity
+        assert is_runtime_locator("process_id") is True or is_runtime_locator("worker_handle") is True
         assert is_canonical_identity_field("task_ref") is True
         assert is_canonical_identity_field("execution_attempt_ref") is True
-        assert is_runtime_locator("task_ref") is False
-        assert is_canonical_identity_field("PID") is False
 
     def test_canonical_identity_fields_do_not_include_runtime_locators(self):
         assert CANONICAL_IDENTITY_FIELDS.isdisjoint(RUNTIME_LOCATOR_FIELDS)
-        assert CANONICAL_IDENTITY_FIELDS.isdisjoint(HERMES_RUNTIME_LOCATORS)
+        # No Hermes-specific strings in canonical fields
+        for forbidden in ("hermes_profile", "hermes_worker", "hermes_session", "ProcessRegistry"):
+            assert forbidden not in CANONICAL_IDENTITY_FIELDS
+            assert forbidden not in RUNTIME_LOCATOR_FIELDS
+        # Generic check: canonical fields are exactly the expected set
+        assert CANONICAL_IDENTITY_FIELDS == frozenset(
+            {"task_ref", "execution_attempt_ref", "operation_semantic_identity", "result_contract_ref"}
+        )
+
+    def test_hermes_as_external_example_not_canonical(self):
+        # Hermes identifiers are used only as external negative examples — not required as canonical
+        external_hermes_examples = ["hermes_profile", "ProcessRegistry", "PID", "hermes_worker"]
+        for ex in external_hermes_examples:
+            assert is_canonical_identity_field(ex) is False
+            assert ex not in CANONICAL_IDENTITY_FIELDS
+        # Canonical task identity is generic — external runtime IDs are not canonical
+        assert HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY is True
+        assert RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY is True
 
     def test_pid_not_equal_canonical_execution_identity(self):
-        # PID is not required and not equal to execution attempt ref
-        pid_like = "9999"
-        exec_ref = execution_attempt_ref("exec-uuid-abc")
-        assert pid_like != exec_ref
-        # Hermes profile not same as Capability
+        # PID is external runtime locator, not required canonical execution identity
+        # Use generic vocabulary to prove: generic runtime fields != canonical fields
+        assert "process_id" not in CANONICAL_IDENTITY_FIELDS
+        assert is_canonical_identity_field("process_id") is False
+        # Capability is not profile: no profile field on caps
         caps = ExecutorCapabilities(
             executor_id="hermes-fake",
             adapter_kind="hermes",
@@ -380,22 +492,64 @@ class TestRuntimeIdentifierIsolation:
             supports_artifact_transport=True,
         )
         assert caps.executor_id == "hermes-fake"
-        # Capability is not profile: no profile field on caps
         assert not hasattr(caps, "hermes_profile")
         assert not hasattr(caps, "profile")
 
     def test_forbidden_equivalences(self):
-        # Operation == Tool call -> false (descriptor is not tool call)
         d = OperationContractDescriptor(name="op", description="d", read_write="read")
         assert not hasattr(d, "tool_call")
-        # Task == Worker -> false (task ref is not worker id)
         assert task_ref("t-1") != "worker-1"
-        # Execution == Hermes process -> false (execution ref distinct from PID)
-        assert execution_attempt_ref("exec-1") != "PID:1234"
-        # Capability == Hermes profile -> false
+        # ExecutionAttemptRef with same lexical text as Hermes PID would still be distinct domain statically
+        exec_ref = execution_attempt_ref("PID:1234")
+        # At runtime it is a plain string equal to "PID:1234", but domain separation is static
+        assert exec_ref == "PID:1234"
+        assert ExecutionAttemptRef is not TaskRef
         assert CAPABILITY_IS_PROFILE is False
-        # PID == canonical execution identity -> false
         assert HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY is True
+
+
+# ---------------------------------------------------------------------------
+# E2. Canonical Core Hermes leakage guard
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalCoreHermesLeakage:
+    def test_production_vocabulary_does_not_expose_hermes_locator_sets(self):
+        import aota_forge.core.contracts.vocabulary as vocab
+
+        assert not hasattr(vocab, "HERMES_RUNTIME_LOCATORS"), "canonical Core must not expose HERMES_RUNTIME_LOCATORS"
+        # Production API must not require Hermes-specific fields
+        assert "hermes_profile" not in CANONICAL_IDENTITY_FIELDS
+        assert "hermes_worker" not in CANONICAL_IDENTITY_FIELDS
+        assert "hermes_session" not in CANONICAL_IDENTITY_FIELDS
+        assert "ProcessRegistry" not in CANONICAL_IDENTITY_FIELDS
+
+    def test_production_source_contains_no_hermes_specific_runtime_vocab(self):
+        # Focused architectural guard: read production source file directly
+        vocab_path = pathlib.Path(inspect.getfile(importlib.import_module("aota_forge.core.contracts.vocabulary")))
+        source = vocab_path.read_text(encoding="utf-8")
+        # Forbidden Hermes-specific knowledge that must not appear in canonical Core
+        forbidden_substrings = [
+            "hermes_profile",
+            "hermes_worker",
+            "hermes_session",
+            "ProcessRegistry",
+            "hermes:",
+            "process_registry:",
+        ]
+        for needle in forbidden_substrings:
+            # Allow the flag name HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY which contains "HERMES" uppercase,
+            # but not the lowercase hermes_profile etc. enumerated above.
+            assert needle not in source, f"vocabulary.py must not contain Hermes-specific knowledge: {needle!r}"
+
+    def test_runtime_locator_fields_are_generic(self):
+        # RUNTIME_LOCATOR_FIELDS must be generic, not Hermes-specific enumeration
+        for forbidden in ("hermes_profile", "hermes_worker", "hermes_session", "ProcessRegistry"):
+            assert forbidden not in RUNTIME_LOCATOR_FIELDS
+        # Generic principle flag must be present
+        assert RUNTIME_LOCATOR_NOT_CANONICAL_IDENTITY is True
+        # Canonical identity fields remain disjoint from generic runtime locators
+        assert CANONICAL_IDENTITY_FIELDS.isdisjoint(RUNTIME_LOCATOR_FIELDS)
 
 
 # ---------------------------------------------------------------------------
@@ -412,9 +566,7 @@ class TestExistingExecutionContractCompatibility:
             instruction="compat test",
         )
         assert pkg.canonical_task_id == "task-compat-1"
-        # package_id is not the canonical_task_id
         assert pkg.package_id != pkg.canonical_task_id
-        # round-trip still works
         rebuilt = ExecutionPackage.from_dict(pkg.to_dict())
         assert rebuilt == pkg
 
@@ -446,13 +598,10 @@ class TestExistingExecutionContractCompatibility:
         assert caps.supports_mode("sync") is True
         assert CAPABILITY_FIRST_CLASS is True
         assert CAPABILITY_IS_EXECUTOR is False
-        # Not a profile: no profile-specific attributes
         assert not hasattr(caps, "profile")
         assert not hasattr(caps, "hermes_profile")
 
     def test_no_duplicate_replacement_classes_created(self):
-        # W1 must not duplicate these classes: vocabulary reuses them
-        # Ensure the vocab module does not define its own ExecutionPackage etc.
         import aota_forge.core.contracts.vocabulary as vocab
 
         assert not hasattr(vocab, "ExecutionPackage")
@@ -483,6 +632,5 @@ class TestExistingExecutionContractCompatibility:
             external_authority_precondition=False,
             result_contract="my.result.v1",
         )
-        # Should remain a plain string (opaque reference), not renamed
         assert isinstance(d.result_contract, str)
         assert d.result_contract == "my.result.v1"
