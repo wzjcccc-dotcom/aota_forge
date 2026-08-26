@@ -99,9 +99,151 @@ NEW_TASK_DESCRIPTOR_CREATED: bool = False
 NEW_EXECUTION_DESCRIPTOR_CREATED: bool = False
 NEW_ID_BROKER_CREATED: bool = False
 
-W2_IMPLEMENTED: bool = False
+W2_IMPLEMENTED: bool = True
 W3_IMPLEMENTED: bool = False
 M2_IMPLEMENTED: bool = False
+
+# ---------------------------------------------------------------------------
+# W2 — Canonical Descriptor Primitives reconciliation flags
+# ---------------------------------------------------------------------------
+
+# Strategy flags (W2 acceptance)
+EXISTING_CONTRACT_RECONCILIATION_FIRST: bool = True
+EXISTING_EXECUTION_CONTRACTS_REUSED_FIRST: bool = True
+NEW_PRIMITIVE_ONLY_IF_PROVEN_GAP: bool = True
+
+OPERATION_CONTRACT_DESCRIPTOR_RETAINED: bool = True
+BULK_OPERATION_DESCRIPTOR_RENAME: bool = False
+
+CAPABILITY_TAXONOMY_DEFERRED: bool = True
+
+EXECUTION_REQUEST_SEMANTICS_REQUIRED: bool = True
+EXECUTION_RESULT_SEMANTICS_REQUIRED: bool = True
+REUSE_EXECUTION_PACKAGE_FIRST: bool = True
+REUSE_CANONICAL_RESULT_FIRST: bool = True
+
+NEW_CAPABILITY_DESCRIPTOR_CREATED: bool = False
+NEW_EXECUTION_REQUEST_CLASS_CREATED: bool = False
+NEW_EXECUTION_RESULT_CLASS_CREATED: bool = False
+
+AUTHORITY_REQUIREMENT_EXPRESSIBLE: bool = True
+NEW_AUTHORITY_REQUIREMENT_CLASS_REQUIRED: bool = False
+
+CANONICAL_ERROR_CODE_REQUIRED: bool = True
+NEW_ERROR_DESCRIPTOR_CLASS_REQUIRED: bool = False
+NEW_PARALLEL_ERROR_TAXONOMY: bool = False
+
+RESULT_CONTRACT_IDENTITY_EXPRESSIBLE: bool = True
+RESULT_CONTRACT_IS_OPAQUE_IDENTITY: bool = True
+
+HANDLER_IDENTITY_EXCLUDED: bool = True
+HANDLER_REGISTRY_RUNTIME_LOCAL: bool = True
+
+NO_HERMES_SPECIFIC_FIELD_IN_CANONICAL_CONTRACT: bool = True
+
+FORGE_POLICY_SPECIFIC_FIELDS_IDENTIFIED: bool = True
+FORGE_POLICY_NOT_MANDATORY_CANONICAL_CORE: bool = True
+NEW_GENERIC_POLICY_REFERENCE_FRAMEWORK_REQUIRED: bool = False
+
+W3_DEPENDENCY_REQUIRED: bool = False
+M2_DEPENDENCY_REQUIRED: bool = False
+
+PROVEN_PRIMITIVE_GAP: bool = False
+NEW_PRIMITIVE_CLASS_COUNT: int = 0
+
+# Descriptor field classification vocabulary (W2 §7)
+GENERIC_CANONICAL: str = "GENERIC_CANONICAL"
+GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES: str = "GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES"
+FORGE_COMPATIBILITY_FIELD: str = "FORGE_COMPATIBILITY_FIELD"
+UNRESOLVED: str = "UNRESOLVED"
+
+DESCRIPTOR_FIELD_CLASSIFICATION_VALUES: frozenset[str] = frozenset(
+    {
+        GENERIC_CANONICAL,
+        GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+        FORGE_COMPATIBILITY_FIELD,
+        UNRESOLVED,
+    }
+)
+
+# Audited descriptor fields (20) — S1/M1/W2 §7 live source-backed classification
+DESCRIPTOR_AUDITED_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "inputs",
+    "required_context",
+    "optional_context",
+    "internal_ids_required",
+    "internal_ids_created",
+    "read_write",
+    "mutation_scope",
+    "required_authority",
+    "approval_required",
+    "decision_required",
+    "valid_predecessor_state",
+    "valid_successor_state",
+    "idempotency",
+    "errors",
+    "protocol_version",
+    "subject_revision_precondition",
+    "external_authority_precondition",
+    "result_contract",
+)
+
+# Source-backed classification: each audited field maps to exactly one bucket.
+# Rationale notes (short):
+# - GENERIC_CANONICAL: portable operation semantics required for any executor.
+# - GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES: mechanism is generic
+#   (state-machine precondition, authority/scope, approval gating), but the
+#   concrete values in current source are Forge policy (e.g. "uninitialized",
+#   "plan_subject", "semantic_authorization_and_operation_lease").
+# - FORGE_COMPATIBILITY_FIELD: internal_ids_* refer to Forge internal subject
+#   tracking ("subject") and remain compatibility-only during migration; not
+#   mandatory canonical core.
+# - UNRESOLVED: none — reconciliation proves no remaining unresolved for audited set.
+DESCRIPTOR_FIELD_CLASSIFICATION: dict[str, str] = {
+    "name": GENERIC_CANONICAL,
+    "description": GENERIC_CANONICAL,
+    "inputs": GENERIC_CANONICAL,
+    "required_context": GENERIC_CANONICAL,
+    "optional_context": GENERIC_CANONICAL,
+    "read_write": GENERIC_CANONICAL,
+    "errors": GENERIC_CANONICAL,
+    "protocol_version": GENERIC_CANONICAL,
+    "result_contract": GENERIC_CANONICAL,
+    "mutation_scope": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "required_authority": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "approval_required": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "decision_required": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "valid_predecessor_state": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "valid_successor_state": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "subject_revision_precondition": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "external_authority_precondition": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "idempotency": GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES,
+    "internal_ids_required": FORGE_COMPATIBILITY_FIELD,
+    "internal_ids_created": FORGE_COMPATIBILITY_FIELD,
+}
+
+
+def get_descriptor_field_classification(field_name: str) -> str:
+    """Return classification for an audited descriptor field; raises KeyError if not audited."""
+    if not isinstance(field_name, str) or not field_name:
+        raise ValueError("field_name must be a non-empty string")
+    if field_name not in DESCRIPTOR_FIELD_CLASSIFICATION:
+        raise KeyError(f"field {field_name!r} is not an audited descriptor field")
+    return DESCRIPTOR_FIELD_CLASSIFICATION[field_name]
+
+
+def is_forge_compatibility_field(field_name: str) -> bool:
+    return get_descriptor_field_classification(field_name) == FORGE_COMPATIBILITY_FIELD
+
+
+def is_generic_canonical_field(field_name: str) -> bool:
+    return get_descriptor_field_classification(field_name) == GENERIC_CANONICAL
+
+
+def is_generic_mechanism_field(field_name: str) -> bool:
+    return get_descriptor_field_classification(field_name) == GENERIC_MECHANISM_WITH_POLICY_SPECIFIC_VALUES
 
 # NewType runtime semantics — explicit machine-testable flags
 NEWTYPE_RUNTIME_REPRESENTATION: str = "str"

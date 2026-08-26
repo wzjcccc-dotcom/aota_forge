@@ -89,7 +89,7 @@ class TestVocabularyDistinction:
         assert NEW_ID_BROKER_CREATED is False
 
     def test_w2_w3_m2_not_implemented(self):
-        assert W2_IMPLEMENTED is False
+        assert W2_IMPLEMENTED is True
         assert W3_IMPLEMENTED is False
         assert M2_IMPLEMENTED is False
 
