@@ -121,11 +121,10 @@ CURRENT_PROTOCOL_IDENTITY: Final[ProtocolIdentity] = ProtocolIdentity(
     version=PROTOCOL_VERSION,
 )
 
-# Non-active target identity — direction only, never replaces CURRENT
-GENERIC_TARGET_PROTOCOL_IDENTITY: Final[ProtocolIdentity] = ProtocolIdentity(
-    family=GENERIC_AOTA_PROTOCOL_FAMILY,
-    version=PROTOCOL_VERSION,
-)
+# Generic direction remains family-only in W3; no version is committed
+# for the future generic family (GENERIC_TARGET_PROTOCOL_ACTIVE=no).
+# Do not construct a ProtocolIdentity for the generic target until its
+# version is actually decided.
 
 
 # ---------------------------------------------------------------------------

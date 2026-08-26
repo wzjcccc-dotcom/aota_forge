@@ -31,7 +31,6 @@ from aota_forge.core.contracts.version import (
     GENERIC_PROTOCOL_DIRECTION_DEFINED,
     GENERIC_PROTOCOL_IDENTITY_MODEL_DEFINED,
     GENERIC_TARGET_PROTOCOL_ACTIVE,
-    GENERIC_TARGET_PROTOCOL_IDENTITY,
     LEGACY_COMPATIBILITY_STRATEGY_DEFINED,
     LEGACY_FORGE_PROTOCOL_PRESERVED,
     OPERATION_CONTRACT_PROTOCOL,
@@ -186,9 +185,18 @@ class TestBIdentityDistinction:
         assert GENERIC_PROTOCOL_IDENTITY_MODEL_DEFINED is True
 
     def test_current_and_generic_identities_are_distinct(self):
-        assert CURRENT_PROTOCOL_IDENTITY.family != GENERIC_TARGET_PROTOCOL_IDENTITY.family
-        assert CURRENT_PROTOCOL_IDENTITY.version == GENERIC_TARGET_PROTOCOL_IDENTITY.version == "1.0"
-        assert CURRENT_PROTOCOL_IDENTITY != GENERIC_TARGET_PROTOCOL_IDENTITY
+        # Current identity is concrete: legacy family + 1.0
+        assert CURRENT_PROTOCOL_IDENTITY.family == OPERATION_CONTRACT_PROTOCOL == "aota-forge.operation-contract"
+        assert CURRENT_PROTOCOL_IDENTITY.version == PROTOCOL_VERSION == "1.0"
+        # Generic direction is family-only, inactive, no version committed in W3
+        assert GENERIC_AOTA_PROTOCOL_FAMILY == "aota.operation-contract"
+        assert GENERIC_AOTA_PROTOCOL_FAMILY != CURRENT_PROTOCOL_IDENTITY.family
+        assert GENERIC_TARGET_PROTOCOL_ACTIVE is False
+        # No ProtocolIdentity exists for generic target — version undecided in W3
+        import aota_forge.core.contracts.version as ver
+
+        assert not hasattr(ver, "GENERIC_TARGET_PROTOCOL_IDENTITY")
+        assert is_supported_protocol_family(GENERIC_AOTA_PROTOCOL_FAMILY) is False
 
 
 # ---------------------------------------------------------------------------
@@ -380,11 +388,18 @@ class TestFLegacyGenericBoundary:
     def test_generic_direction_does_not_replace_legacy_automatically(self):
         assert GENERIC_TARGET_PROTOCOL_ACTIVE is False
         assert DESTRUCTIVE_PROTOCOL_NAMESPACE_MIGRATION is False
-        # Current identity is still legacy
+        # Current identity is still legacy (family + 1.0)
         assert CURRENT_PROTOCOL_IDENTITY.family == OPERATION_CONTRACT_PROTOCOL
-        # Generic identity is a separate object, not the current one
-        assert GENERIC_TARGET_PROTOCOL_IDENTITY.family == GENERIC_AOTA_PROTOCOL_FAMILY
-        assert CURRENT_PROTOCOL_IDENTITY != GENERIC_TARGET_PROTOCOL_IDENTITY
+        assert CURRENT_PROTOCOL_IDENTITY.version == PROTOCOL_VERSION == "1.0"
+        # Generic direction is family string only, not an active ProtocolIdentity
+        assert GENERIC_AOTA_PROTOCOL_FAMILY == "aota.operation-contract"
+        assert GENERIC_AOTA_PROTOCOL_DIRECTION == GENERIC_AOTA_PROTOCOL_FAMILY
+        assert is_generic_direction_family(GENERIC_AOTA_PROTOCOL_FAMILY) is True
+        assert GENERIC_AOTA_PROTOCOL_FAMILY != CURRENT_PROTOCOL_IDENTITY.family
+        # No ProtocolIdentity for generic target — version not decided in W3
+        import aota_forge.core.contracts.version as ver
+
+        assert not hasattr(ver, "GENERIC_TARGET_PROTOCOL_IDENTITY")
         # No silent mass migration: generic family is not implicitly supported
         assert is_supported_protocol_family(GENERIC_AOTA_PROTOCOL_FAMILY) is False
 
@@ -409,6 +424,68 @@ class TestFLegacyGenericBoundary:
         sem = operation_semantic_identity_of(d)
         assert sem.protocol_family == OPERATION_CONTRACT_PROTOCOL
         assert sem.protocol_family != GENERIC_AOTA_PROTOCOL_FAMILY
+
+
+# ---------------------------------------------------------------------------
+# F2. Generic target version non-commitment — W3-R1 regression
+# ---------------------------------------------------------------------------
+
+
+class TestF2GenericVersionNonCommitment:
+    """W3-R1: future generic family version is NOT committed in W3.
+
+    API-level semantic check — not brittle source grep. Proves W3 does NOT
+    establish ``aota.operation-contract / 1.0`` as the selected future
+    generic protocol identity. Generic direction remains family-only and
+    inactive; only CURRENT_PROTOCOL_IDENTITY is a concrete ProtocolIdentity.
+    """
+
+    def test_generic_target_version_not_committed(self):
+        import aota_forge.core.contracts.version as ver
+
+        # No ProtocolIdentity for generic target — version undecided
+        assert not hasattr(ver, "GENERIC_TARGET_PROTOCOL_IDENTITY")
+        # No generic version constant is materialized in W3
+        for forbidden in (
+            "GENERIC_TARGET_PROTOCOL_VERSION",
+            "GENERIC_PROTOCOL_VERSION",
+            "GENERIC_TARGET_VERSION",
+        ):
+            assert not hasattr(ver, forbidden)
+        # Generic family remains a separate direction constant, inactive
+        assert GENERIC_AOTA_PROTOCOL_FAMILY == "aota.operation-contract"
+        assert GENERIC_TARGET_PROTOCOL_ACTIVE is False
+        assert is_supported_protocol_family(GENERIC_AOTA_PROTOCOL_FAMILY) is False
+
+    def test_only_current_is_concrete_active_protocol_identity(self):
+        import aota_forge.core.contracts.version as ver
+
+        # Enumerate all ProtocolIdentity values exported by version module
+        identities = [
+            v for v in vars(ver).values() if isinstance(v, ProtocolIdentity)
+        ]
+        # Only CURRENT_PROTOCOL_IDENTITY should exist as concrete identity
+        assert len(identities) == 1
+        assert identities[0] == CURRENT_PROTOCOL_IDENTITY
+        assert identities[0].family == OPERATION_CONTRACT_PROTOCOL
+        assert identities[0].version == PROTOCOL_VERSION == "1.0"
+        # Generic direction is string-only, not a ProtocolIdentity
+        assert isinstance(GENERIC_AOTA_PROTOCOL_FAMILY, str)
+        assert GENERIC_AOTA_PROTOCOL_FAMILY != CURRENT_PROTOCOL_IDENTITY.family
+
+    def test_generic_family_has_no_authoritative_version_in_w3(self):
+        # Project helper remains family-only; it never assigns a version
+        assert project_to_generic_family(OPERATION_CONTRACT_PROTOCOL) == GENERIC_AOTA_PROTOCOL_FAMILY
+        # Generic direction does not carry version "1.0" via any API
+        import aota_forge.core.contracts.version as ver
+
+        assert not hasattr(ver, "GENERIC_TARGET_PROTOCOL_IDENTITY")
+        # Ensure no accidental version leakage via ProtocolIdentity construction
+        # for generic family with "1.0" exists in module
+        for name in dir(ver):
+            obj = getattr(ver, name)
+            if isinstance(obj, ProtocolIdentity):
+                assert obj.family != GENERIC_AOTA_PROTOCOL_FAMILY
 
 
 # ---------------------------------------------------------------------------
