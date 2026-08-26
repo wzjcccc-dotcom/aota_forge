@@ -459,6 +459,114 @@ def test_contract_root_manifest_pointer_honored(tmp_path: pathlib.Path) -> None:
     assert descriptor.name == "fixture.op.status"
 
 
+def test_contract_root_custom_project_local_override(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: config/contracts\n")
+    root = resolve_contract_root(tmp_path)
+    assert root == tmp_path / "config" / "contracts"
+    assert root.resolve().is_relative_to(tmp_path.resolve())
+
+
+def test_contract_root_absolute_override_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, f"schema_version: 1\ncontracts:\n  root: {tmp_path}/../outside\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_parent_traversal_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: ../../outside\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_nested_traversal_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: .aota/../../outside\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_symlink_escape_rejected(tmp_path: pathlib.Path) -> None:
+    outside = pathlib.Path("/tmp") / f"aota_w1_r1_escape_{tmp_path.name}"
+    outside.mkdir(exist_ok=True)
+    try:
+        link = tmp_path / "outside_link"
+        link.symlink_to(outside, target_is_directory=True)
+        write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: outside_link/contracts\n")
+        with pytest.raises(DeclarativeContractError) as exc:
+            resolve_contract_root(tmp_path)
+        assert_error(exc, ERR_INVALID)
+    finally:
+        outside.rmdir()
+
+
+def test_contract_root_default_symlink_parent_escape_rejected(
+    tmp_path: pathlib.Path,
+) -> None:
+    outside = pathlib.Path("/tmp") / f"aota_w1_r1_default_{tmp_path.name}"
+    outside.mkdir(exist_ok=True)
+    try:
+        (tmp_path / ".aota").symlink_to(outside, target_is_directory=True)
+        with pytest.raises(DeclarativeContractError) as exc:
+            resolve_contract_root(tmp_path)
+        assert_error(exc, ERR_INVALID)
+    finally:
+        outside.rmdir()
+
+
+def test_contract_root_nonexistent_project_local_leaf_allowed(
+    tmp_path: pathlib.Path,
+) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: custom/contracts\n")
+    target = tmp_path / "custom" / "contracts"
+    assert not target.exists()
+    assert resolve_contract_root(tmp_path) == target
+    with pytest.raises(DeclarativeContractError) as exc:
+        load_operations(tmp_path)
+    assert_error(exc, ERR_NOT_FOUND)
+
+
+def test_contract_root_invalid_explicit_type_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: 123\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_empty_explicit_value_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, 'schema_version: 1\ncontracts:\n  root: ""\n')
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_whitespace_explicit_value_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: '   '\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_null_explicit_value_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: null\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contracts_non_mapping_explicit_metadata_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, 'schema_version: 1\ncontracts: "foo"\n')
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_malformed_manifest_preserves_default_fallback(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: [\n")
+    assert resolve_contract_root(tmp_path) == tmp_path / FIXED_DEFAULT_CONTRACT_ROOT_NAME
+
+
 def test_unknown_document_kind_argument_rejected(tmp_path: pathlib.Path) -> None:
     write_contract(tmp_path, "operations.yaml", VALID_OPERATIONS_DOC)
     with pytest.raises(ValueError):

@@ -16,8 +16,10 @@ Document envelope (declarative document format only):
 * ``contracts`` — list of plain declarative entries
 
 Contract-root discovery is a single deterministic rule: project manifest
-``contracts.root`` metadata if explicitly present, otherwise the fixed
-default ``.aota/contracts``.
+``contracts.root`` metadata if explicitly and cleanly present, otherwise
+the fixed default ``.aota/contracts``.  The resolved root must stay inside
+the project boundary; an explicit invalid ``contracts.root`` fails closed
+rather than silently falling back.
 
 The strict SafeLoader and duplicate-mapping-key rejection pattern are
 reused from ``aota_forge.core.project.manifest``.
@@ -124,25 +126,59 @@ def _parse_yaml_document(path: Path) -> dict[str, Any]:
     return data
 
 
+def _contract_root_candidate(root: Path, relative: str) -> Path:
+    """Return ``root / relative`` only if it resolves inside the project.
+
+    Containment is evaluated on resolved canonical paths so lexical
+    ``..`` traversal, absolute overrides and symlink-based escapes all
+    fail closed.  ``resolve(strict=False)`` keeps a non-existent
+    project-local leaf valid; document loading later reports
+    ``DECLARATIVE_CONTRACT_NOT_FOUND``.
+    """
+    project = root.resolve()
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(project)
+    except ValueError as exc:
+        raise DeclarativeContractError(
+            ERR_INVALID, f"contract root escapes project boundary: {relative}"
+        ) from exc
+    return root / relative
+
+
 def resolve_contract_root(project_root: Path) -> Path:
     """Resolve the single deterministic canonical contract root for a project.
 
     Rule: project manifest ``contracts.root`` metadata if explicitly and
     cleanly present, otherwise the fixed default ``.aota/contracts``.
+
+    Both the override and the default must resolve inside the project
+    boundary.  An explicit ``contracts.root`` that is present but invalid
+    (wrong type, empty, escaping the project) fails closed; it never
+    silently falls back to the default.  A project manifest that is not
+    parseable at all preserves the existing fallback-to-default semantics.
     """
     root = Path(project_root)
     manifest = root / ".aota" / "project.yaml"
-    try:
-        if manifest.is_file():
+    if manifest.is_file():
+        try:
             data = _parse_yaml_document(manifest)
+        except DeclarativeContractError:
+            data = None
+        if data is not None:
             contracts = data.get("contracts")
-            if isinstance(contracts, dict):
-                explicit = contracts.get("root")
-                if isinstance(explicit, str) and explicit.strip():
-                    return root / explicit
-    except DeclarativeContractError:
-        pass
-    return root / FIXED_DEFAULT_CONTRACT_ROOT_NAME
+            if contracts is not None and not isinstance(contracts, dict):
+                raise DeclarativeContractError(
+                    ERR_INVALID, "project manifest contracts must be a mapping"
+                )
+            if isinstance(contracts, dict) and "root" in contracts:
+                explicit = contracts["root"]
+                if not isinstance(explicit, str) or not explicit.strip():
+                    raise DeclarativeContractError(
+                        ERR_INVALID, "project manifest contracts.root must be a non-empty string"
+                    )
+                return _contract_root_candidate(root, explicit)
+    return _contract_root_candidate(root, FIXED_DEFAULT_CONTRACT_ROOT_NAME)
 
 
 def _document_path(contract_root: Path, kind: str) -> Path:
