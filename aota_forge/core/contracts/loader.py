@@ -17,9 +17,11 @@ Document envelope (declarative document format only):
 
 Contract-root discovery is a single deterministic rule: project manifest
 ``contracts.root`` metadata if explicitly and cleanly present, otherwise
-the fixed default ``.aota/contracts``.  The resolved root must stay inside
-the project boundary; an explicit invalid ``contracts.root`` fails closed
-rather than silently falling back.
+the fixed default ``.aota/contracts``.  The manifest value is a portable
+project-relative logical path only: host absolute paths are always
+rejected, even when they happen to point inside the project.  The
+resolved root must stay inside the project boundary; an explicit invalid
+``contracts.root`` fails closed rather than silently falling back.
 
 The strict SafeLoader and duplicate-mapping-key rejection pattern are
 reused from ``aota_forge.core.project.manifest``.
@@ -127,14 +129,22 @@ def _parse_yaml_document(path: Path) -> dict[str, Any]:
 
 
 def _contract_root_candidate(root: Path, relative: str) -> Path:
-    """Return ``root / relative`` only if it resolves inside the project.
+    """Return ``root / relative`` only if ``relative`` is a project-relative
+    logical path that stays inside the project.
 
-    Containment is evaluated on resolved canonical paths so lexical
-    ``..`` traversal, absolute overrides and symlink-based escapes all
-    fail closed.  ``resolve(strict=False)`` keeps a non-existent
+    Host absolute paths are rejected up front regardless of whether they
+    happen to point inside the project, outside the project or at the
+    project root itself: the manifest value is a portable project-relative
+    logical path, never a host path.  Containment is evaluated on resolved
+    canonical paths so lexical ``..`` traversal and symlink-based escapes
+    both fail closed.  ``resolve(strict=False)`` keeps a non-existent
     project-local leaf valid; document loading later reports
     ``DECLARATIVE_CONTRACT_NOT_FOUND``.
     """
+    if Path(relative).is_absolute():
+        raise DeclarativeContractError(
+            ERR_INVALID, "contract root must be a project-relative path, not a host absolute path"
+        )
     project = root.resolve()
     candidate = (root / relative).resolve()
     try:
@@ -152,11 +162,13 @@ def resolve_contract_root(project_root: Path) -> Path:
     Rule: project manifest ``contracts.root`` metadata if explicitly and
     cleanly present, otherwise the fixed default ``.aota/contracts``.
 
-    Both the override and the default must resolve inside the project
-    boundary.  An explicit ``contracts.root`` that is present but invalid
-    (wrong type, empty, escaping the project) fails closed; it never
-    silently falls back to the default.  A project manifest that is not
-    parseable at all preserves the existing fallback-to-default semantics.
+    The manifest value must be a project-relative logical path.  An
+    explicit ``contracts.root`` that is present but invalid (wrong type,
+    empty, host absolute, or escaping the project) fails closed; it never
+    silently falls back to the default.  Both the override and the default
+    must resolve inside the project boundary.  A project manifest that is
+    not parseable at all preserves the existing fallback-to-default
+    semantics.
     """
     root = Path(project_root)
     manifest = root / ".aota" / "project.yaml"

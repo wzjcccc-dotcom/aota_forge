@@ -473,6 +473,31 @@ def test_contract_root_absolute_override_rejected(tmp_path: pathlib.Path) -> Non
     assert_error(exc, ERR_INVALID)
 
 
+def test_contract_root_absolute_inside_project_rejected(tmp_path: pathlib.Path) -> None:
+    project_local = tmp_path / "custom" / "contracts"
+    project_local.mkdir(parents=True)
+    write_manifest(tmp_path, f"schema_version: 1\ncontracts:\n  root: {project_local}\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
+def test_contract_root_same_directory_relative_form_accepted(
+    tmp_path: pathlib.Path,
+) -> None:
+    project_local = tmp_path / "custom" / "contracts"
+    project_local.mkdir(parents=True)
+    write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: custom/contracts\n")
+    assert resolve_contract_root(tmp_path) == project_local
+
+
+def test_contract_root_absolute_project_root_rejected(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, f"schema_version: 1\ncontracts:\n  root: {tmp_path}\n")
+    with pytest.raises(DeclarativeContractError) as exc:
+        resolve_contract_root(tmp_path)
+    assert_error(exc, ERR_INVALID)
+
+
 def test_contract_root_parent_traversal_rejected(tmp_path: pathlib.Path) -> None:
     write_manifest(tmp_path, "schema_version: 1\ncontracts:\n  root: ../../outside\n")
     with pytest.raises(DeclarativeContractError) as exc:
@@ -553,6 +578,11 @@ def test_contract_root_null_explicit_value_rejected(tmp_path: pathlib.Path) -> N
     with pytest.raises(DeclarativeContractError) as exc:
         resolve_contract_root(tmp_path)
     assert_error(exc, ERR_INVALID)
+
+
+def test_contracts_null_manifest_treated_as_unset(tmp_path: pathlib.Path) -> None:
+    write_manifest(tmp_path, "schema_version: 1\ncontracts: null\n")
+    assert resolve_contract_root(tmp_path) == tmp_path / FIXED_DEFAULT_CONTRACT_ROOT_NAME
 
 
 def test_contracts_non_mapping_explicit_metadata_rejected(tmp_path: pathlib.Path) -> None:
