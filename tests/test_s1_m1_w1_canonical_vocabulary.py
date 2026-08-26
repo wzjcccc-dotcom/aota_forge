@@ -22,7 +22,6 @@ from aota_forge.core.contracts.vocabulary import (
     CAPABILITY_IS_PROFILE,
     CONTRACT_HASH_REMAINS_REVISION_FINGERPRINT,
     HERMES_RUNTIME_ID_NOT_CANONICAL_IDENTITY,
-    M2_IMPLEMENTED,
     NEW_EXECUTION_DESCRIPTOR_CREATED,
     NEW_ID_BROKER_CREATED,
     NEW_TASK_DESCRIPTOR_CREATED,
@@ -41,8 +40,6 @@ from aota_forge.core.contracts.vocabulary import (
     TASK_IDENTITY_STABLE_ACROSS_EXECUTION_ATTEMPTS,
     VOCABULARY_DISTINCT,
     VOCABULARY_DOMAINS,
-    W2_IMPLEMENTED,
-    W3_IMPLEMENTED,
     CapabilityRef,
     ContractRevisionFingerprint,
     ExecutionAttemptRef,
@@ -87,11 +84,6 @@ class TestVocabularyDistinction:
         assert NEW_TASK_DESCRIPTOR_CREATED is False
         assert NEW_EXECUTION_DESCRIPTOR_CREATED is False
         assert NEW_ID_BROKER_CREATED is False
-
-    def test_w2_w3_m2_not_implemented(self):
-        assert W2_IMPLEMENTED is True
-        assert W3_IMPLEMENTED is False
-        assert M2_IMPLEMENTED is False
 
     def test_domain_strings_are_not_aliases(self):
         domains = list(VOCABULARY_DOMAINS)

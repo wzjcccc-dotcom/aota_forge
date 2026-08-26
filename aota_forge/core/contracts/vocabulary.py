@@ -99,10 +99,6 @@ NEW_TASK_DESCRIPTOR_CREATED: bool = False
 NEW_EXECUTION_DESCRIPTOR_CREATED: bool = False
 NEW_ID_BROKER_CREATED: bool = False
 
-W2_IMPLEMENTED: bool = True
-W3_IMPLEMENTED: bool = False
-M2_IMPLEMENTED: bool = False
-
 # ---------------------------------------------------------------------------
 # W2 — Canonical Descriptor Primitives reconciliation flags
 # ---------------------------------------------------------------------------
@@ -144,12 +140,6 @@ NO_HERMES_SPECIFIC_FIELD_IN_CANONICAL_CONTRACT: bool = True
 FORGE_POLICY_SPECIFIC_FIELDS_IDENTIFIED: bool = True
 FORGE_POLICY_NOT_MANDATORY_CANONICAL_CORE: bool = True
 NEW_GENERIC_POLICY_REFERENCE_FRAMEWORK_REQUIRED: bool = False
-
-W3_DEPENDENCY_REQUIRED: bool = False
-M2_DEPENDENCY_REQUIRED: bool = False
-
-PROVEN_PRIMITIVE_GAP: bool = False
-NEW_PRIMITIVE_CLASS_COUNT: int = 0
 
 # Descriptor field classification vocabulary (W2 §7)
 GENERIC_CANONICAL: str = "GENERIC_CANONICAL"

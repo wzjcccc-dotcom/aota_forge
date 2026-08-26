@@ -44,18 +44,15 @@ from aota_forge.core.contracts.vocabulary import (
     NEW_EXECUTION_RESULT_CLASS_CREATED,
     NEW_GENERIC_POLICY_REFERENCE_FRAMEWORK_REQUIRED,
     NEW_PARALLEL_ERROR_TAXONOMY,
-    NEW_PRIMITIVE_CLASS_COUNT,
     NEW_PRIMITIVE_ONLY_IF_PROVEN_GAP,
     NO_HERMES_SPECIFIC_FIELD_IN_CANONICAL_CONTRACT,
     OPERATION_CONTRACT_DESCRIPTOR_RETAINED,
-    PROVEN_PRIMITIVE_GAP,
     REUSE_CANONICAL_RESULT_FIRST,
     REUSE_EXECUTION_PACKAGE_FIRST,
     RESULT_CONTRACT_IDENTITY_EXPRESSIBLE,
     RESULT_CONTRACT_IS_OPAQUE_IDENTITY,
     RESULT_INSTANCE_DISTINCT,
     UNRESOLVED,
-    W2_IMPLEMENTED,
     AUTHORITY_REQUIREMENT_EXPRESSIBLE,
     get_descriptor_field_classification,
     is_forge_compatibility_field,
@@ -771,18 +768,13 @@ class TestJNoHermesLeakage:
         assert reg.names() == ("j.op",)
 
     def test_w2_flags_consistent(self):
-        # W2 should be implemented, W3/M2 not
+        # Permanent semantic flags — time-invariant, no progress coupling
         import aota_forge.core.contracts.vocabulary as vocab
-        assert vocab.W2_IMPLEMENTED is True
-        assert vocab.W3_IMPLEMENTED is False
-        assert vocab.M2_IMPLEMENTED is False
         assert vocab.EXISTING_CONTRACT_RECONCILIATION_FIRST is True
         assert vocab.EXISTING_EXECUTION_CONTRACTS_REUSED_FIRST is True
         assert vocab.NEW_PRIMITIVE_ONLY_IF_PROVEN_GAP is True
         assert vocab.OPERATION_CONTRACT_DESCRIPTOR_RETAINED is True
         assert vocab.BULK_OPERATION_DESCRIPTOR_RENAME is False
-        assert vocab.PROVEN_PRIMITIVE_GAP is False
-        assert vocab.NEW_PRIMITIVE_CLASS_COUNT == 0
 
 
 # ---------------------------------------------------------------------------
@@ -808,8 +800,6 @@ class TestW2OverallAcceptance:
         assert EXECUTION_RESULT_SEMANTICS_REQUIRED is True
 
     def test_no_new_primitive_classes(self):
-        assert PROVEN_PRIMITIVE_GAP is False
-        assert NEW_PRIMITIVE_CLASS_COUNT == 0
         assert NEW_PRIMITIVE_ONLY_IF_PROVEN_GAP is True
         assert NEW_CAPABILITY_DESCRIPTOR_CREATED is False
         assert NEW_EXECUTION_REQUEST_CLASS_CREATED is False
@@ -820,9 +810,5 @@ class TestW2OverallAcceptance:
         assert NEW_GENERIC_POLICY_REFERENCE_FRAMEWORK_REQUIRED is False
 
     def test_protocol_not_changed(self):
-        # W3 must not be implemented via W2
         assert OPERATION_CONTRACT_PROTOCOL == "aota-forge.operation-contract"
         assert PROTOCOL_VERSION == "1.0"
-        import aota_forge.core.contracts.vocabulary as vocab
-        assert vocab.W3_IMPLEMENTED is False
-        assert vocab.M2_IMPLEMENTED is False
