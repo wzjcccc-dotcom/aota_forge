@@ -580,4 +580,19 @@ def _build_operation_descriptor(entry: Any) -> OperationContractDescriptor:
         raise DeclarativeContractError(ERR_INVALID, "operation entry name is missing")
     if not isinstance(entry.get("description"), str) or not entry["description"].strip():
         raise DeclarativeContractError(ERR_INVALID, f"operation entry description is missing: {entry.get('name')}")
-    return OperationContractDescriptor.from_dict(entry)
+    # Fail closed on unsupported operation protocol version (distinct from document schema_version)
+    from aota_forge.core.contracts.version import PROTOCOL_VERSION
+
+    pv = entry.get("protocol_version")
+    if pv is not None and pv != PROTOCOL_VERSION:
+        raise DeclarativeContractError(
+            ERR_INVALID, f"unsupported operation protocol_version: {pv!r} (expected {PROTOCOL_VERSION!r})"
+        )
+    # Even when missing, descriptor validation will handle required check, but we
+    # also enforce explicit version authority here via descriptor post-check below.
+    descriptor = OperationContractDescriptor.from_dict(entry)
+    if descriptor.protocol_version != PROTOCOL_VERSION:
+        raise DeclarativeContractError(
+            ERR_INVALID, f"unsupported operation protocol_version: {descriptor.protocol_version!r}"
+        )
+    return descriptor
