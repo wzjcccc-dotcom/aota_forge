@@ -108,11 +108,6 @@ _CAPABILITY_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Legacy W1 fixture keys for backward compatibility (tests use isolated tmp_path)
-_LEGACY_CAPABILITY_KEYS: Final[frozenset[str]] = frozenset(
-    {"capability_id", "semantic_operation_ref", "capability", "id"}
-)
-
 # W3: minimal result-contract identity + compatibility mapping
 _RESULT_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -122,10 +117,6 @@ _RESULT_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
         "protocol",
         "protocol_version",
     }
-)
-
-_LEGACY_RESULT_KEYS: Final[frozenset[str]] = frozenset(
-    {"result_contract", "result_contract_id", "contract"}
 )
 
 # Forbidden semantics that must never appear in capability declarations
@@ -347,25 +338,6 @@ def _validate_capability_contracts(document: dict[str, Any]) -> None:
     for entry in entries:
         if not isinstance(entry, dict):
             raise DeclarativeContractError(ERR_INVALID, "capabilities document entries must be objects")
-        # Legacy W1 fixture compatibility: allow minimal placeholder entries
-        if _LEGACY_CAPABILITY_KEYS & set(entry.keys()) and "name" not in entry:
-            # Legacy fixture uses capability_id; treat capability_id as identity for duplicate check
-            legacy_id = entry.get("capability_id") or entry.get("capability") or entry.get("id")
-            if not isinstance(legacy_id, str) or not legacy_id.strip():
-                raise DeclarativeContractError(ERR_INVALID, "legacy capability entry capability_id is missing")
-            if legacy_id in seen:
-                raise DeclarativeContractError(ERR_INVALID, f"duplicate capability identity: {legacy_id}")
-            seen.add(legacy_id)
-            # Forbidden checks still apply
-            for field in _FORBIDDEN_CAPABILITY_FIELDS:
-                if field in entry:
-                    raise DeclarativeContractError(ERR_INVALID, f"forbidden capability field: {field}")
-            from aota_forge.core.execution.capabilities import FORBIDDEN_SEMANTIC_FIELDS
-
-            for field in FORBIDDEN_SEMANTIC_FIELDS:
-                if field in entry:
-                    raise DeclarativeContractError(ERR_INVALID, f"forbidden capability semantic field: {field}")
-            continue
         # Forbidden routing/profile/handler fields fail closed
         for field in _FORBIDDEN_CAPABILITY_FIELDS:
             if field in entry:
@@ -475,18 +447,6 @@ def _validate_result_contracts(document: dict[str, Any]) -> None:
     for entry in entries:
         if not isinstance(entry, dict):
             raise DeclarativeContractError(ERR_INVALID, "results document entries must be objects")
-        # Legacy W1 fixture compatibility
-        if _LEGACY_RESULT_KEYS & set(entry.keys()) and "name" not in entry:
-            legacy_id = entry.get("result_contract") or entry.get("result_contract_id") or entry.get("contract")
-            if not isinstance(legacy_id, str) or not legacy_id.strip():
-                raise DeclarativeContractError(ERR_INVALID, "legacy result entry result_contract is missing")
-            if legacy_id in seen:
-                raise DeclarativeContractError(ERR_INVALID, f"duplicate result-contract identity: {legacy_id}")
-            seen.add(legacy_id)
-            for field in _FORBIDDEN_RESULT_FIELDS:
-                if field in entry and field in ("correlation_id", "evidence", "artifact", "provenance"):
-                    raise DeclarativeContractError(ERR_INVALID, f"forbidden result field: {field}")
-            continue
         for field in _FORBIDDEN_RESULT_FIELDS:
             if field in entry:
                 # Allow description/protocol but not runtime instance fields

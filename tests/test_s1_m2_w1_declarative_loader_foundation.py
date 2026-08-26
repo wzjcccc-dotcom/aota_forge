@@ -59,15 +59,29 @@ VALID_CAPABILITIES_DOC = """\
 schema_version: 1
 kind: capabilities
 contracts:
-  - capability_id: fixture.capability
-    semantic_operation_ref: fixture.op.status
+  - name: fixture.capability
+    description: Fixture capability.
+    adapter_kind: hermes_host_adapter
+    supported_execution_modes: [sync]
+    supports_streaming_events: false
+    supports_task_cancellation: true
+    supports_task_resume: true
+    supports_structured_result: true
+    supported_canonical_roles: [coder]
+    supported_isolation_modes: [process]
+    supports_working_directory: true
+    supports_artifact_transport: true
 """
 
 VALID_RESULTS_DOC = """\
 schema_version: 1
 kind: results
 contracts:
-  - result_contract: fixture.result.v1
+  - name: fixture.result.v1
+    description: Fixture result.
+    compatible_operations: [fixture.op.status]
+    protocol: aota-forge.operation-contract
+    protocol_version: '1.0'
 """
 
 

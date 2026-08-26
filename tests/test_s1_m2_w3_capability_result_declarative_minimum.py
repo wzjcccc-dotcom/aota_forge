@@ -609,3 +609,129 @@ def test_result_load_has_no_runtime_side_effect():
     assert env["ok"] is True
     err = failure("test.op", "ERR_CODE", "msg")
     assert err["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# §20-24 W3-R1 canonical schema uniqueness (no legacy fixture compatibility)
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_capability_shape_rejected(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: capabilities
+contracts:
+  - capability_id: old.fixture.capability
+    semantic_operation_ref: something
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "capabilities.yaml", doc_text)
+    with pytest.raises(DeclarativeContractError) as exc:
+        load_capabilities(tmp_path)
+    assert exc.value.code == ERR_INVALID
+
+
+def test_legacy_result_shape_rejected(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: results
+contracts:
+  - result_contract: old.fixture.result.v1
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "results.yaml", doc_text)
+    with pytest.raises(DeclarativeContractError) as exc:
+        load_results(tmp_path)
+    assert exc.value.code == ERR_INVALID
+
+
+def test_canonical_capability_minimal_accepted(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: capabilities
+contracts:
+  - name: fixture.canonical.capability
+    description: Fixture canonical capability.
+    adapter_kind: hermes_host_adapter
+    supported_execution_modes: [sync]
+    supports_streaming_events: false
+    supports_task_cancellation: true
+    supports_task_resume: true
+    supports_structured_result: true
+    supported_canonical_roles: [coder]
+    supported_isolation_modes: [process]
+    supports_working_directory: true
+    supports_artifact_transport: true
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "capabilities.yaml", doc_text)
+    doc = load_capabilities(tmp_path)
+    assert doc["contracts"][0]["name"] == "fixture.canonical.capability"
+
+
+def test_canonical_result_minimal_accepted(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: results
+contracts:
+  - name: fixture.canonical.result.v1
+    description: Fixture canonical result.
+    compatible_operations: [fixture.op.status]
+    protocol: aota-forge.operation-contract
+    protocol_version: '1.0'
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "results.yaml", doc_text)
+    doc = load_results(tmp_path)
+    assert doc["contracts"][0]["name"] == "fixture.canonical.result.v1"
+
+
+def test_mixed_capability_schema_fails_closed(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: capabilities
+contracts:
+  - name: valid.capability
+    description: valid
+    adapter_kind: hermes_host_adapter
+    supported_execution_modes: [sync]
+    supports_streaming_events: false
+    supports_task_cancellation: true
+    supports_task_resume: true
+    supports_structured_result: true
+    supported_canonical_roles: [coder]
+    supported_isolation_modes: [process]
+    supports_working_directory: true
+    supports_artifact_transport: true
+    capability_id: legacy_extra
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "capabilities.yaml", doc_text)
+    with pytest.raises(DeclarativeContractError) as exc:
+        load_capabilities(tmp_path)
+    assert exc.value.code == ERR_INVALID
+
+
+def test_mixed_result_schema_fails_closed(tmp_path: pathlib.Path):
+    doc_text = """\
+schema_version: 1
+kind: results
+contracts:
+  - name: valid.result.v1
+    description: valid
+    compatible_operations: [fixture.op.status]
+    protocol: aota-forge.operation-contract
+    protocol_version: '1.0'
+    result_contract: legacy_extra
+"""
+    (tmp_path / ".aota" / "contracts").mkdir(parents=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(MINIMAL_MANIFEST, encoding="utf-8")
+    write_contract(tmp_path, "results.yaml", doc_text)
+    with pytest.raises(DeclarativeContractError) as exc:
+        load_results(tmp_path)
+    assert exc.value.code == ERR_INVALID
