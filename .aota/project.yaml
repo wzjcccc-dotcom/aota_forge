@@ -34,5 +34,6 @@ plan:
   active_plan_id: null
 constraints:
   - canonical source repository for AOTA Forge Core
-  - aota-hermes-tools remains legacy migration and regression evidence only
-  - governing Portable Plan remains wzjcccc-dotcom/aota-hermes-tools issue 9
+  - Generic Architecture Program authority is wzjcccc-dotcom/aota-hermes-tools#16
+  - child Subplans are governed by Program-authorized child Portable Plan Issues
+  - wzjcccc-dotcom/aota-hermes-tools#9 is legacy implementation, migration, and regression evidence only
