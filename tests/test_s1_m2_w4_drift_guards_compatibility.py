@@ -843,6 +843,220 @@ desc = OperationContractDescriptor(name="test", description="d", inputs=(InputSp
 
 
 # ---------------------------------------------------------------------------
+# W4-R1 — AST canonical-authority detection completeness
+# ---------------------------------------------------------------------------
+
+def test_guard_detects_import_alias_descriptor_construction():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor as OCD
+
+CANONICAL = OCD(
+    name="evil.operation",
+    description="duplicate authority",
+    inputs=(),
+    required_context=(),
+    optional_context=(),
+    internal_ids_required=(),
+    internal_ids_created=(),
+    read_write="read",
+    mutation_scope=None,
+    required_authority=(),
+    approval_required=False,
+    decision_required=False,
+    valid_predecessor_state=(),
+    valid_successor_state=(),
+    subject_revision_precondition=False,
+    external_authority_precondition=False,
+    idempotency="read",
+    result_contract=None,
+    errors=(),
+    protocol_version="1.0",
+)
+'''
+    vios = analyze_source(src, "aota_forge/core/fake_module.py")
+    assert len(vios) >= 1, vios
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_detects_import_alias_legacy_operation_construction():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+from aota_forge.core.contracts.operations import OperationContract as OC
+
+X = OC(
+    name="evil.operation",
+    description="duplicate legacy authority",
+    read_only=True,
+    inputs={},
+)
+'''
+    vios = analyze_source(src, "aota_forge/core/fake_module.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_detects_module_alias_descriptor_construction():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+import aota_forge.core.contracts.descriptor as descriptor_mod
+
+X = descriptor_mod.OperationContractDescriptor(
+    name="evil.operation",
+    description="module alias duplicate authority",
+    inputs=(),
+    read_write="read",
+    errors=(),
+    protocol_version="1.0",
+)
+'''
+    vios = analyze_source(src, "aota_forge/core/fake_module.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_detects_direct_module_attribute_construction():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+import aota_forge.core.contracts.descriptor
+
+X = aota_forge.core.contracts.descriptor.OperationContractDescriptor(
+    name="evil.operation",
+    description="dotted duplicate authority",
+    inputs=(),
+    read_write="read",
+    errors=(),
+    protocol_version="1.0",
+)
+'''
+    vios = analyze_source(src, "aota_forge/core/fake_module.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_detects_module_alias_legacy_operation_construction():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+import aota_forge.core.contracts.operations as operations_mod
+
+X = operations_mod.OperationContract(
+    name="evil.operation",
+    description="legacy module alias authority",
+    read_only=True,
+    inputs={},
+)
+'''
+    vios = analyze_source(src, "aota_forge/core/fake_module.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_check_function_name_no_longer_bypasses():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+
+def check_contract():
+    return OperationContractDescriptor(
+        name="evil.operation",
+        description="hard-coded canonical authority",
+        inputs=(),
+        read_write="read",
+        errors=(),
+        protocol_version="1.0",
+    )
+'''
+    vios = analyze_source(src, "aota_forge/core/some_module.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_guard_function_name_no_longer_bypasses():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+
+def guard_contract():
+    return OperationContractDescriptor(
+        name="evil.operation",
+        description="script-local canonical authority",
+        inputs=(),
+        read_write="read",
+        errors=(),
+        protocol_version="1.0",
+    )
+'''
+    vios = analyze_source(src, "scripts/new_guard.py")
+    assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_fixture_probe_function_names_no_longer_bypass():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    for fname in ("probe_contract", "fixture_contract", "proof_contract", "regression_contract"):
+        src = f'''
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+
+def {fname}():
+    return OperationContractDescriptor(
+        name="evil.operation",
+        description="function-name blanket exemption must be gone",
+        inputs=(),
+        read_write="read",
+        errors=(),
+        protocol_version="1.0",
+    )
+'''
+        vios = analyze_source(src, "aota_forge/core/fake_module.py")
+        assert any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), (fname, vios)
+
+
+def test_guard_permits_from_dict_via_alias():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor as OCD
+
+def build(data):
+    return OCD.from_dict(data)
+'''
+    vios = analyze_source(src, "aota_forge/core/contracts/loader.py")
+    assert not any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_permits_operations_projection_from_derived_values():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+canonical = load_canonical()
+
+def get_contract(name):
+    return OperationContract(name=canonical.name, description=canonical.description, read_only=True, inputs={})
+'''
+    vios = analyze_source(src, "aota_forge/core/contracts/operations.py")
+    assert not any(v["code"] == "LEGACY_VS_YAML_DUPLICATE_AUTHORITY" for v in vios), vios
+
+
+def test_guard_permits_required_authority_and_secret_input_names():
+    from scripts.s1_m2_contract_drift_guard import analyze_source
+
+    src = '''
+REQUIRED_AUTHORITY = "github_issue_write"
+pid_input = {"name": "pid", "type": "int"}
+token_input = {"name": "api_token", "type": "str"}
+EXECUTION_TASK_START = "execution.task_start"
+BASE_SHA = "0123456789abcdef0123456789abcdef01234567"
+'''
+    vios = analyze_source(src, "aota_forge/core/fake.py")
+    assert not any(
+        v["code"] in ("LEGACY_VS_YAML_DUPLICATE_AUTHORITY", "SCRIPT_LOCAL_CONTRACT_DICT", "SCRIPT_LOCAL_CONTRACT_HASH_TABLE")
+        for v in vios
+    ), vios
+
+
+# ---------------------------------------------------------------------------
 # 48/49. Canonical file count & package duplicate
 # ---------------------------------------------------------------------------
 

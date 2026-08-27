@@ -13,8 +13,12 @@ Checks:
   - protocol freeze (legacy aota-forge.operation-contract / 1.0)
   - capability routing / S5 governance fields absent
   - result coverage (operation -> result mapping)
-  - production source drift via AST (OperationContract/Descriptor hard-coded)
-  - contract-like hard-coded dict & hash-table drift
+   - production source drift via AST with static import-symbol-table
+     resolution of canonical constructor identities
+     (OperationContractDescriptor / OperationContract), covering import
+     aliases, module aliases, and full dotted-attribute forms; no
+     function-name diagnostic exemption (tests are excluded by path only)
+   - contract-like hard-coded dict & hash-table drift
 
 The guard is read-only: it never writes YAML, git state, or evidence.
 
@@ -156,89 +160,122 @@ _LEGACY_FIXTURE_SCRIPTS = frozenset({
     "m5_source_guard.py",
 })
 
-# Production allowlisted locations for OperationContractDescriptor constructions
-# Classification per §40: these are not CANONICAL_INSTANCE_AUTHORITY.
-# - descriptor.py: SCHEMA_CLASS_DEFINITION
-# - loader.py: YAML_TO_MODEL_CONVERSION (from_dict, not direct)
-# - operations.py:_descriptor_from_legacy: RUNTIME_NON_CANONICAL_VALUE (transient verification)
-# - catalog.py / ingress.py: projection via loader, no direct literal construction
-def _is_allowed_descriptor_call(
-    file_rel: str, func_name: str, node: ast.Call, source: str, ancestors: list[ast.AST]
-) -> bool:
-    # from_dict calls are YAML→model conversion, always allowed
-    if isinstance(node.func, ast.Attribute) and node.func.attr == "from_dict":
-        # check value is OperationContractDescriptor
-        val = node.func.value
-        if isinstance(val, ast.Name) and val.id == "OperationContractDescriptor":
-            return True
-        if isinstance(val, ast.Attribute) and getattr(val, "attr", None) == "OperationContractDescriptor":
-            return True
-    # Direct constructor OperationContractDescriptor(...)
-    if func_name not in ("OperationContractDescriptor", "OperationContract"):
-        return False
+# Canonical constructor identities (semantic, import-resolution independent)
+_CANONICAL_CONSTRUCTOR_IDENTITIES = frozenset({
+    "aota_forge.core.contracts.descriptor.OperationContractDescriptor",
+    "aota_forge.core.contracts.operations.OperationContract",
+})
 
-    # Check ancestors for context
-    # If inside class definition for descriptor.py, allow (schema)
-    if "descriptor.py" in file_rel and any(isinstance(a, ast.ClassDef) for a in ancestors):
+_CANONICAL_CLASS_LEAF_NAMES = frozenset(
+    identity.rsplit(".", 1)[-1] for identity in _CANONICAL_CONSTRUCTOR_IDENTITIES
+)
+
+# Legacy projection contexts in operations.py (variable-derived, W2-cutover accepted)
+_OPERATIONS_PROJECTION_FUNCTIONS = frozenset({
+    "_descriptor_from_legacy",
+    "register",
+    "get_contract",
+    "available_operations",
+})
+
+
+def _build_import_symbol_table(tree: ast.AST) -> dict[str, str]:
+    """Static AST-only import symbol map: local symbol -> fully qualified identity.
+
+    Does NOT execute imports. Handles:
+      - ``from X.Y import Z as W``   -> W -> X.Y.Z
+      - ``import X.Y.Z as W``        -> W -> X.Y.Z (module alias)
+    Plain ``import X.Y.Z`` needs no entry: attribute-chain resolution starts
+    from the raw leftmost segment and rebuilds the dotted path.
+    Relative imports are outside the bounded static scope (level != 0 ignored).
+    """
+    symbols: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level or not node.module:
+                continue
+            for alias in node.names:
+                local = alias.asname or alias.name
+                symbols[local] = f"{node.module}.{alias.name}"
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    symbols[alias.asname] = alias.name
+    return symbols
+
+
+def _resolve_dotted_name(expr: ast.AST, symbols: dict[str, str]) -> str | None:
+    """Resolve a Name / Attribute-chain expression to its fully qualified identity.
+
+    Purely syntactic + import-symbol-table based; never executes imports.
+    """
+    parts: list[str] = []
+    node: ast.AST = expr
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    parts.reverse()
+    base = symbols.get(parts[0], parts[0])
+    return ".".join([base, *parts[1:]])
+
+
+def _canonical_call_candidate(resolved: str | None) -> tuple[str, str] | None:
+    """Classify a resolved call target.
+
+    Returns (kind, identity) when the call semantically targets a canonical
+    constructor or the accepted from_dict conversion path, else None.
+    """
+    if not resolved:
+        return None
+    if resolved.endswith(".from_dict"):
+        cls = resolved[: -len(".from_dict")]
+        if cls in _CANONICAL_CONSTRUCTOR_IDENTITIES:
+            return ("from_dict", cls)
+        return None
+    if resolved in _CANONICAL_CONSTRUCTOR_IDENTITIES:
+        return ("ctor", resolved)
+    leaf = resolved.rsplit(".", 1)[-1]
+    if leaf in _CANONICAL_CLASS_LEAF_NAMES:
+        # Locally defined / unimported usage written under a canonical class
+        # name still presents canonical-constructor identity (e.g. the
+        # OperationContract shim class defined inside operations.py itself).
+        return ("ctor", leaf)
+    return None
+
+
+def _has_hardcoded_contract_payload(node: ast.Call) -> bool:
+    """High-confidence hard-coded canonical semantic payload detection."""
+    literal_fields = 0
+    name_literal = False
+    positional_literals = sum(1 for arg in node.args if isinstance(arg, ast.Constant))
+    for kw in node.keywords:
+        if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str) and kw.value.value.strip():
+            if kw.arg == "name":
+                name_literal = "." in kw.value.value
+            if kw.arg in _CONTRACT_LIKE_KEYS:
+                literal_fields += 1
+    return name_literal or literal_fields >= 3 or positional_literals >= 3
+
+
+def _is_allowed_constructor_call(file_rel: str, node: ast.Call, ancestors: list[ast.AST]) -> bool:
+    # Schema class internals inside the canonical descriptor module
+    if file_rel.endswith("core/contracts/descriptor.py") and any(isinstance(a, ast.ClassDef) for a in ancestors):
         return True
-    # loader.py direct construction is not expected; but allow if inside _build_operation_descriptor with variable args
-    if file_rel.endswith("loader.py"):
-        # loader should only use from_dict, direct ctor would be suspicious
-        return False
-    # operations.py
+    # Variable-derived legacy projection in operations.py (accepted W2 cutover);
+    # hard-coded literal payload in these contexts remains drift.
     if file_rel.endswith("core/contracts/operations.py"):
-        # _descriptor_from_legacy: transient helper comparing legacy vs yaml
-        for a in ancestors:
-            if isinstance(a, ast.FunctionDef) and a.name == "_descriptor_from_legacy":
-                return True
-            if isinstance(a, ast.FunctionDef) and a.name in ("register", "get_contract", "available_operations"):
-                # These build OperationContract projection from canonical variables, not literals
-                # Check if kwargs are variable references (not string literals for canonical names)
-                has_literal_name = False
-                for kw in node.keywords:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str) and "." in kw.value.value:
-                        has_literal_name = True
-                # If literal name present, it's hard-coded authority -> not allowed
-                # If name is derived (Name/Attribute), it's projection -> allowed
-                if not has_literal_name:
-                    return True
-        # Module-level legacy REGISTRY projection also variable-derived -> allowed via above
-        # Fall through to strict check below
-        pass
-
-    # Check if call is inside a diagnostic/test function (fixture/probe/demo)
-    for a in ancestors:
-        if isinstance(a, ast.FunctionDef):
-            fname = a.name.lower()
-            if any(k in fname for k in ("test", "probe", "demo", "fixture", "check", "proof", "regression", "guard")):
-                # These are diagnostic fixtures, not production authority
-                return True
-
-    # Check if file is legacy fixture script -> allow
-    filename = pathlib.Path(file_rel).name
-    if filename in _LEGACY_FIXTURE_SCRIPTS:
-        return True
-
-    # For remaining, apply high-confidence heuristic:
-    # Flag only if call has multiple literal contract keys (high confidence)
-    kw_args = {kw.arg for kw in node.keywords if kw.arg}
-    # Count how many contract-like keys appear as kwargs
-    overlap = kw_args & _CONTRACT_LIKE_KEYS
-    if len(overlap) >= 3:
-        # If kwargs contain literal strings for name/description etc, it's canonical instance authority
-        for kw in node.keywords:
-            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
-                if kw.arg in _CONTRACT_LIKE_KEYS and kw.value.value.strip():
-                    # literal contract field suggests hard-coded instance
-                    return False
-        # If kwargs are all variable references, might be transient helper still allowed? But we already handled
-        # For safety, if overlap >=4 and all values are variables, still not high-confidence drift
-        if all(not isinstance(kw.value, ast.Constant) for kw in node.keywords):
+        in_projection_context = any(
+            isinstance(a, ast.FunctionDef) and a.name in _OPERATIONS_PROJECTION_FUNCTIONS
+            for a in ancestors
+        )
+        if in_projection_context and not _has_hardcoded_contract_payload(node):
             return True
-
-    # Default: not allowed -> will be flagged if overlap high; otherwise not flagged
-    # If overlap <3, not high-confidence contraction, treat as OTHER/normal
-    if len(overlap) < 3:
+    # Explicitly enumerated historical TEST/DIAGNOSTIC scripts. Exact filename
+    # literals only: no globs, no wildcards, no automatic future exemption.
+    if pathlib.Path(file_rel).name in _LEGACY_FIXTURE_SCRIPTS:
         return True
     return False
 
@@ -296,43 +333,31 @@ def analyze_source(source: str, file_rel: str) -> list[dict[str, Any]]:
 
     ParentVisitor().visit(tree)
 
+    # Static AST-only import symbol table for canonical constructor resolution
+    symbols = _build_import_symbol_table(tree)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            func = node.func
-            fname = ""
-            if isinstance(func, ast.Name):
-                fname = func.id
-            elif isinstance(func, ast.Attribute):
-                fname = func.attr
-            # Handle from_dict vs direct
-            is_descr_call = fname in ("OperationContractDescriptor", "OperationContract")
-            is_from_dict = isinstance(func, ast.Attribute) and func.attr == "from_dict"
-            if is_from_dict:
-                # Check if it's OperationContractDescriptor.from_dict
-                val = func.value
-                is_descr_from_dict = False
-                if isinstance(val, ast.Name) and val.id == "OperationContractDescriptor":
-                    is_descr_from_dict = True
-                elif isinstance(val, ast.Attribute) and getattr(val, "attr", None) == "OperationContractDescriptor":
-                    is_descr_from_dict = True
-                if is_descr_from_dict:
-                    # YAML_TO_MODEL_CONVERSION – allowed, but still verify not outside loader
-                    # Already allowed per _is_allowed_descriptor_call, but we check
-                    continue
-            if is_descr_call:
-                ancestors = parent_map.get(id(node), [])
-                if _is_allowed_descriptor_call(file_rel, fname, node, source, ancestors):
-                    continue
-                # High-confidence drift: direct constructor outside allowed path
-                line = getattr(node, "lineno", 0)
-                violations.append(
-                    _violation(
-                        "LEGACY_VS_YAML_DUPLICATE_AUTHORITY",
-                        file_rel,
-                        line,
-                        f"production canonical descriptor construction outside YAML authority: {fname}(...) at {file_rel}:{line}",
-                    )
+            resolved = _resolve_dotted_name(node.func, symbols)
+            candidate = _canonical_call_candidate(resolved)
+            if candidate is None:
+                continue
+            kind, identity = candidate
+            if kind == "from_dict":
+                # YAML -> validated loader -> existing model conversion path
+                continue
+            ancestors = parent_map.get(id(node), [])
+            if _is_allowed_constructor_call(file_rel, node, ancestors):
+                continue
+            line = getattr(node, "lineno", 0)
+            violations.append(
+                _violation(
+                    "LEGACY_VS_YAML_DUPLICATE_AUTHORITY",
+                    file_rel,
+                    line,
+                    f"production canonical descriptor construction outside YAML authority: {identity}(...) at {file_rel}:{line}",
                 )
+            )
         elif isinstance(node, ast.Assign):
             # Check for script-local contract hash table (high-confidence only)
             for target in node.targets:
@@ -370,20 +395,12 @@ def analyze_source(source: str, file_rel: str) -> list[dict[str, Any]]:
                             )
         elif isinstance(node, ast.Dict):
             if _is_contract_like_dict(node):
-                ancestors = parent_map.get(id(node), [])
-                # Ignore dicts inside test/fixture functions
-                inside_fixture_func = False
-                for a in ancestors:
-                    if isinstance(a, ast.FunctionDef) and any(k in a.name.lower() for k in ("test","probe","demo","fixture","check","proof","guard","regression")):
-                        inside_fixture_func = True
-                        break
-                if inside_fixture_func:
-                    continue
                 filename = pathlib.Path(file_rel).name
                 if filename in _LEGACY_FIXTURE_SCRIPTS:
                     continue
-                # Also ignore dicts that are clearly not at module level drift? But high-confidence dict at module-level with literals is drift
+                # Ignore dicts that are clearly not at module level drift? But high-confidence dict at module-level with literals is drift
                 # Check if any ancestor is AnnAssign/Assign at module level
+                ancestors = parent_map.get(id(node), [])
                 is_module_level = False
                 for a in ancestors:
                     if isinstance(a, ast.Module):
