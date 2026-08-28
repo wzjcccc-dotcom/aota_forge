@@ -135,6 +135,7 @@ def make_package(
     canonical_task_id: str = "task-test-001",
     canonical_role: str = "coder",
     instruction: str = "Run test workload",
+    operation: str = "task_dispatch",
     execution_mode: str = "sync",
     isolation_mode: str = "worktree",
     timeout_seconds: int = 60,
@@ -158,6 +159,7 @@ def make_package(
         project_id=project_id,
         canonical_role=canonical_role,
         instruction=instruction,
+        operation=operation,
         input_artifacts=({"path": "src/module.py", "digest": "sha256:1111"},),
         working_context={"repo_root": "/workspace/aota_forge"},
         capability_requirements=cap_reqs,
@@ -537,6 +539,7 @@ class TestExecutionDispatcherLifecycleOperations:
         resume_pkg = make_package(
             "task-life-001",
             instruction="Provide requested feedback",
+            operation="task_resume",
             idempotency_key="resume-key-001",
         )
         resume_res = dispatcher.resume("task-life-001", resume_pkg)
@@ -642,6 +645,7 @@ class TestExecutionDispatcherLifecycleOperations:
                 task_id,
                 instruction="resume original route",
                 execution_mode="async",
+                operation="task_resume",
                 idempotency_key="resume-original-route",
             ),
         ).state == CanonicalTaskState.RUNNING

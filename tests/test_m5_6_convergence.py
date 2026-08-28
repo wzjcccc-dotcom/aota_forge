@@ -801,6 +801,7 @@ class TestPositiveAcceptanceMatrix(unittest.TestCase):
             project_id="proj",
             canonical_role="coder",
             instruction="resume input data",
+            operation="task_resume",
         )
         r_res = dispatcher.resume("pos-16-task", resume_pkg)
         self.assertIn(r_res.state, (CanonicalTaskState.RUNNING, CanonicalTaskState.COMPLETED))
@@ -1495,12 +1496,18 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
         reset_execution_dispatcher()
 
     @staticmethod
-    def _package(canonical_task_id: str, instruction: str = "r1d convergence") -> ExecutionPackage:
+    def _package(
+        canonical_task_id: str,
+        instruction: str = "r1d convergence",
+        *,
+        operation: str = "task_dispatch",
+    ) -> ExecutionPackage:
         return ExecutionPackage.create(
             canonical_task_id=canonical_task_id,
             project_id="aota_forge",
             canonical_role="coder",
             instruction=instruction,
+            operation=operation,
         )
 
     @staticmethod
@@ -1583,12 +1590,17 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
         dispatch_result = dispatcher.dispatch(original, target_executor_id="hermes")
         mismatched = self._package("r1d-f02-b", "mismatched resume")
 
-        with self.assertRaises(HermesAdapterError) as mismatch:
+        with self.assertRaises(PackageInvalidError) as mismatch:
             dispatcher.resume("r1d-f02-a", mismatched)
-        self.assertEqual(mismatch.exception.code, "TASK_ID_MISMATCH")
+        self.assertEqual(mismatch.exception.executor_id, "hermes")
+        self.assertTrue(
+            any("canonical_task_id" in error for error in mismatch.exception.errors)
+        )
         self.assertEqual(len(host.resumes), 0)
 
-        valid_resume = self._package("r1d-f02-a", "valid resume")
+        valid_resume = self._package(
+            "r1d-f02-a", "valid resume", operation="task_resume"
+        )
         resumed = dispatcher.resume("r1d-f02-a", valid_resume)
         self.assertEqual(resumed.canonical_task_id, "r1d-f02-a")
         self.assertEqual(resumed.state, CanonicalTaskState.RUNNING)
@@ -1618,8 +1630,11 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
         dispatcher.status("r1d-f03-old")
         old_result = dispatcher.result("r1d-f03-old")
         self.assertEqual(old_result.canonical_task_state, CanonicalTaskState.RUNNING.value)
+        dispatcher.resume(
+            "r1d-f03-old",
+            self._package("r1d-f03-old", "old resume", operation="task_resume"),
+        )
         dispatcher.cancel("r1d-f03-old")
-        dispatcher.resume("r1d-f03-old", self._package("r1d-f03-old", "old resume"))
 
         dispatcher.status("r1d-f03-new")
 

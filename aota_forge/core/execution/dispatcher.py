@@ -424,6 +424,28 @@ class ExecutionDispatcher:
                 f"resume_package must be an ExecutionPackage, got {type(resume_package).__name__}"
             )
         route = self._get_internal_route(canonical_task_id)
+        if resume_package.canonical_task_id != canonical_task_id:
+            raise PackageInvalidError(
+                route.executor_id,
+                (
+                    "resume package canonical_task_id "
+                    f"{resume_package.canonical_task_id!r} does not match target "
+                    f"{canonical_task_id!r}",
+                ),
+            )
+        if resume_package.operation != "task_resume":
+            raise PackageInvalidError(
+                route.executor_id,
+                (
+                    "resume package operation must be 'task_resume', got "
+                    f"{resume_package.operation!r}",
+                ),
+            )
+        if route.last_known_state.is_terminal:
+            raise DispatcherError(
+                f"TASK_ALREADY_TERMINAL: Task {canonical_task_id!r} is already in terminal state "
+                f"{route.last_known_state.value}"
+            )
         adapter = route._adapter
         resume_res = adapter.resume(canonical_task_id, route.adapter_handle, resume_package)
         self._validate_response_task_id(resume_res, canonical_task_id, "resume")

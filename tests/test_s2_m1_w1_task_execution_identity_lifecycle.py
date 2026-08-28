@@ -140,6 +140,7 @@ def make_package(
     task_id: str,
     *,
     instruction: str = "execute task",
+    operation: str = "task_dispatch",
     idempotency_key: str | None = None,
 ) -> ExecutionPackage:
     return ExecutionPackage.create(
@@ -148,6 +149,7 @@ def make_package(
         project_id="aota_forge",
         canonical_role="coder",
         instruction=instruction,
+        operation=operation,
         capability_requirements={"execution_mode": "sync", "isolation_mode": "none"},
         idempotency_key=idempotency_key or f"idempotency-{task_id}",
         correlation_id=f"correlation-{task_id}",
@@ -210,7 +212,10 @@ def test_valid_resume_preserves_the_current_route_and_attempt() -> None:
     dispatcher.dispatch(package, target_executor_id=adapter.executor_id)
     before = dispatcher.get_route(package.canonical_task_id)
 
-    assert dispatcher.resume(package.canonical_task_id, make_package("task-resume", instruction="input")).state == CanonicalTaskState.RUNNING
+    assert dispatcher.resume(
+        package.canonical_task_id,
+        make_package("task-resume", instruction="input", operation="task_resume"),
+    ).state == CanonicalTaskState.RUNNING
     after = dispatcher.get_route(package.canonical_task_id)
     assert len(dispatcher.list_routes()) == 1
     assert after.canonical_task_id == before.canonical_task_id
@@ -319,7 +324,12 @@ def test_resume_response_identity_mismatch_does_not_mutate_route_state() -> None
     adapter.resume_task_id = "wrong-task"
 
     with pytest.raises(AdapterProtocolError):
-        dispatcher.resume(package.canonical_task_id, make_package("task-resume-response", instruction="input"))
+        dispatcher.resume(
+            package.canonical_task_id,
+            make_package(
+                "task-resume-response", instruction="input", operation="task_resume"
+            ),
+        )
     assert dispatcher.get_route(package.canonical_task_id).last_known_state == CanonicalTaskState.WAITING
 
 
