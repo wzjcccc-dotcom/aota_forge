@@ -126,10 +126,12 @@ class MappingProofHermesHost:
         self.statuses: dict[str, Mapping[str, Any]] = {}
         self.results: dict[str, Mapping[str, Any]] = {}
         self.resume_calls: list[tuple[str, dict[str, Any]]] = []
+        self._next_handle = 7
 
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         self.dispatched.append(dict(payload))
-        handle = "hermes-process-registry:proc-7"
+        handle = f"hermes-process-registry:proc-{self._next_handle}"
+        self._next_handle += 1
         self.statuses[handle] = {"status": "pending"}
         return {
             "adapter_handle": handle,

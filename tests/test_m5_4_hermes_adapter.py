@@ -575,28 +575,53 @@ class TestErrorAndUncertainty:
         assert res1.status == "failed"
         assert res1.error["code"] == "RESULT_MALFORMED"
 
-    def test_host_unavailable_handling(self, sample_package):
-        # Adapter with no host client (offline)
-        offline_adapter = HermesAdapter(host_client=None)
+    def test_host_unavailable_handling(self, fake_client, sample_package):
+        # Preserve a valid adapter binding, then simulate host loss.
+        offline_adapter = HermesAdapter(host_client=fake_client)
+        dispatch_res = offline_adapter.dispatch(sample_package)
+        offline_adapter._host_client = None
 
         with pytest.raises(HermesHostUnavailableError, match="EXECUTOR_UNAVAILABLE"):
-            offline_adapter.dispatch(sample_package)
+            offline_adapter.dispatch(
+                ExecutionPackage.create(
+                    canonical_task_id="offline-dispatch",
+                    project_id="aota_forge",
+                    canonical_role="coder",
+                    instruction="Dispatch while host is unavailable",
+                )
+            )
 
-        status_res = offline_adapter.status("t1", "h1")
+        status_res = offline_adapter.status(
+            sample_package.canonical_task_id, dispatch_res.adapter_handle
+        )
         assert status_res.state == CanonicalTaskState.UNKNOWN
         assert "EXECUTOR_UNAVAILABLE" in status_res.details
 
-        result_res = offline_adapter.result("t1", "h1")
+        result_res = offline_adapter.result(
+            sample_package.canonical_task_id, dispatch_res.adapter_handle
+        )
         assert result_res.ok is False
         assert result_res.error["code"] == "EXECUTOR_UNAVAILABLE"
 
-        cancel_res = offline_adapter.cancel("t1", "h1")
+        cancel_res = offline_adapter.cancel(
+            sample_package.canonical_task_id, dispatch_res.adapter_handle
+        )
         assert cancel_res.cancelled is False
         assert cancel_res.state == CanonicalTaskState.UNKNOWN
 
-        resume_pkg = ExecutionPackage.create("t1", "p1", "coder", "inst", operation="task_resume")
+        resume_pkg = ExecutionPackage.create(
+            sample_package.canonical_task_id,
+            "p1",
+            "coder",
+            "inst",
+            operation="task_resume",
+        )
         with pytest.raises(HermesHostUnavailableError):
-            offline_adapter.resume("t1", "h1", resume_pkg)
+            offline_adapter.resume(
+                sample_package.canonical_task_id,
+                dispatch_res.adapter_handle,
+                resume_pkg,
+            )
 
 
 # ==============================================================================

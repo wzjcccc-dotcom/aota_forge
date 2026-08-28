@@ -499,22 +499,46 @@ class HermesAdapter(ExecutorAdapter):
         return self._capabilities
 
     def _verify_task_handle(self, canonical_task_id: str, adapter_handle: str) -> None:
-        """Reject a known handle/task pair that has been rebound."""
+        """Require an existing, exact, bidirectional task/handle binding."""
+        handle_is_known = adapter_handle in self._handle_tasks
+        task_is_known = canonical_task_id in self._task_handles
         known_task_id = self._handle_tasks.get(adapter_handle)
-        if known_task_id is not None and known_task_id != canonical_task_id:
+        known_handle = self._task_handles.get(canonical_task_id)
+
+        if (
+            handle_is_known
+            and task_is_known
+            and known_task_id == canonical_task_id
+            and known_handle == adapter_handle
+        ):
+            return
+
+        if not handle_is_known and not task_is_known:
+            raise HermesAdapterError(
+                f"TASK_HANDLE_NOT_FOUND: No adapter binding exists for canonical task "
+                f"{canonical_task_id!r} and handle {adapter_handle!r}",
+                code="TASK_HANDLE_NOT_FOUND",
+            )
+
+        if handle_is_known and known_task_id != canonical_task_id:
             raise HermesAdapterError(
                 f"TASK_ID_MISMATCH: Adapter handle {adapter_handle!r} belongs to "
                 f"canonical task {known_task_id!r}, not {canonical_task_id!r}",
                 code="TASK_ID_MISMATCH",
             )
 
-        known_handle = self._task_handles.get(canonical_task_id)
-        if known_handle is not None and known_handle != adapter_handle:
+        if task_is_known and known_handle != adapter_handle:
             raise HermesAdapterError(
                 f"TASK_ID_MISMATCH: Canonical task {canonical_task_id!r} is bound to "
                 f"adapter handle {known_handle!r}, not {adapter_handle!r}",
                 code="TASK_ID_MISMATCH",
             )
+
+        raise HermesAdapterError(
+            f"ADAPTER_PROTOCOL_ERROR: Inconsistent task/handle binding for canonical "
+            f"task {canonical_task_id!r} and handle {adapter_handle!r}",
+            code="ADAPTER_PROTOCOL_ERROR",
+        )
 
     def validate_package(self, package: ExecutionPackage) -> ValidationResult:
         """Pure read check whether package can be executed by Hermes adapter."""
@@ -623,6 +647,10 @@ class HermesAdapter(ExecutorAdapter):
                     "already used with different intent fingerprint",
                     code="IDEMPOTENCY_CONFLICT",
                 )
+            self._verify_task_handle(
+                package.canonical_task_id,
+                previous_result.adapter_handle,
+            )
             return previous_result
 
         if self._host_client is None:
@@ -661,6 +689,16 @@ class HermesAdapter(ExecutorAdapter):
             dispatch_time=dispatch_time,
         )
 
+        if (
+            dispatch_result.adapter_handle in self._handle_tasks
+            or dispatch_result.canonical_task_id in self._task_handles
+        ):
+            raise HermesAdapterError(
+                f"TASK_HANDLE_BINDING_CONFLICT: Host returned an already bound "
+                f"task or adapter handle for canonical task {package.canonical_task_id!r}",
+                code="TASK_HANDLE_BINDING_CONFLICT",
+            )
+
         self._dispatch_replays[package.idempotency_key] = (
             package.intent_fingerprint,
             dispatch_result,
@@ -675,6 +713,8 @@ class HermesAdapter(ExecutorAdapter):
             raise ValueError("canonical_task_id must be a non-empty string")
         if not isinstance(adapter_handle, str) or not adapter_handle.strip():
             raise ValueError("adapter_handle must be a non-empty string")
+
+        self._verify_task_handle(canonical_task_id, adapter_handle)
 
         if self._host_client is None:
             return TaskStatusResult(
@@ -718,6 +758,8 @@ class HermesAdapter(ExecutorAdapter):
             raise ValueError("canonical_task_id must be a non-empty string")
         if not isinstance(adapter_handle, str) or not adapter_handle.strip():
             raise ValueError("adapter_handle must be a non-empty string")
+
+        self._verify_task_handle(canonical_task_id, adapter_handle)
 
         if self._host_client is None:
             return CanonicalResult.failure(
