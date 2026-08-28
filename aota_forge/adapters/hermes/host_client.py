@@ -22,6 +22,7 @@ from .executor import HermesHostUnavailableError
 MAX_OUTPUT_BYTES = 64 * 1024
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_RECORDS = 128
+READER_DRAIN_TIMEOUT_SECONDS = 1.0
 _WORKING_DIRECTORY_KEYS = ("cwd", "working_directory", "working_dir", "repo_path", "repo_root", "dir")
 _SUPPORTED_CONSTRAINTS = frozenset({"timeout_seconds", "execution_mode", "isolation", "isolation_mode"})
 _SUPPORTED_REQUIREMENTS = frozenset(
@@ -295,15 +296,35 @@ class HermesHostClient:
             raise KeyError(adapter_handle)
         return record
 
-    def _finalize(self, record: _ExecutionRecord, status: str, exit_code: int | None) -> None:
-        with record.lock:
-            if record.terminal_at is not None:
-                return
-            record.status = status
-            record.exit_code = exit_code
-            record.terminal_at = time.monotonic()
+    def _finalize(self, record: _ExecutionRecord, status: str, exit_code: int | None) -> bool:
+        # W2 ordering invariant: a terminal success/failure observation is
+        # published only after the stdout/stderr reader threads have finished
+        # draining, so fetch_result can never freeze a partially collected
+        # stream into a final result envelope.  Drain waits are bounded and
+        # Hermes-private; if the streams are not stable within the bound, the
+        # terminal observation is deferred and retried on the next status or
+        # result poll.  Timeout/cancellation are terminal by local decision
+        # and publish regardless, but they can never project a success.
+        forced = status in {"timeout", "cancelled"}
+        drain_deadline = time.monotonic() + READER_DRAIN_TIMEOUT_SECONDS
+        drained = True
         for reader in record.readers:
-            reader.join(timeout=1.0)
+            remaining = drain_deadline - time.monotonic()
+            if remaining <= 0:
+                drained = False
+                break
+            reader.join(timeout=remaining)
+            if reader.is_alive():
+                drained = False
+                break
+        if not drained and not forced:
+            return False
+        with record.lock:
+            if record.terminal_at is None:
+                record.status = status
+                record.exit_code = exit_code
+                record.terminal_at = time.monotonic()
+        return True
 
     def _refresh(self, record: _ExecutionRecord) -> str:
         with record.lock:
@@ -322,7 +343,8 @@ class HermesHostClient:
                 record.status = "running"
             return "running"
         status = "done" if returncode == 0 else "failed"
-        self._finalize(record, status, int(returncode))
+        if not self._finalize(record, status, int(returncode)):
+            return "running"
         return status
 
     def _terminate(self, record: _ExecutionRecord, *, timed_out: bool = False) -> None:
