@@ -13,6 +13,7 @@ Core deterministic execution dispatcher responsible for:
 from __future__ import annotations
 
 import uuid
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -112,6 +113,16 @@ class DispatcherError(Exception):
     """Base exception for ExecutionDispatcher errors."""
 
 
+class AdapterProtocolError(DispatcherError, ValueError):
+    """Raised when an adapter contradicts a Core-owned identity or state."""
+
+    code = "ADAPTER_PROTOCOL_ERROR"
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(f"{self.code}: {message}")
+
+
 class TaskNotFoundError(DispatcherError, KeyError):
     """Raised when a requested canonical_task_id has no registered route."""
 
@@ -174,6 +185,51 @@ class ExecutionDispatcher:
         self._idempotency_index: dict[str, tuple[str, str, DispatchResult]] = {}
         # Cached dispatch results for replay
         self._dispatch_results: dict[str, DispatchResult] = {}
+
+    def _get_internal_route(self, canonical_task_id: str) -> RouteRecord:
+        """Lookup the mutable route used only by Core lifecycle operations."""
+        if not isinstance(canonical_task_id, str) or not canonical_task_id.strip():
+            raise ValueError("canonical_task_id must be a non-empty string")
+        if canonical_task_id not in self._routes:
+            raise TaskNotFoundError(canonical_task_id)
+        return self._routes[canonical_task_id]
+
+    @staticmethod
+    def _validate_response_task_id(
+        response: object, expected_task_id: str, operation: str
+    ) -> None:
+        actual_task_id = getattr(response, "canonical_task_id", None)
+        if actual_task_id != expected_task_id:
+            raise AdapterProtocolError(
+                f"{operation} response canonical_task_id {actual_task_id!r} "
+                f"does not match Core task {expected_task_id!r}"
+            )
+
+    @staticmethod
+    def _validated_response_state(
+        route: RouteRecord,
+        response_state: object,
+        operation: str,
+        *,
+        enforce_terminal: bool = True,
+    ) -> CanonicalTaskState:
+        try:
+            state = parse_state(response_state)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise AdapterProtocolError(
+                f"{operation} response has invalid canonical task state: {response_state!r}"
+            ) from exc
+
+        if (
+            enforce_terminal
+            and route.last_known_state.is_terminal
+            and state != route.last_known_state
+        ):
+            raise AdapterProtocolError(
+                f"{operation} response state {state.value!r} contradicts "
+                f"known terminal state {route.last_known_state.value!r}"
+            )
+        return state
 
     def dispatch(
         self,
@@ -249,6 +305,9 @@ class ExecutionDispatcher:
         # 4. Dispatch to adapter
         dispatch_attempt_id = str(uuid.uuid4())
         dispatch_result = adapter.dispatch(package)
+        self._validate_response_task_id(
+            dispatch_result, package.canonical_task_id, "dispatch"
+        )
 
         # 5. Record route with explicit separated identities
         route = RouteRecord(
@@ -283,9 +342,7 @@ class ExecutionDispatcher:
         """
         if not isinstance(canonical_task_id, str) or not canonical_task_id.strip():
             raise ValueError("canonical_task_id must be a non-empty string")
-        if canonical_task_id not in self._routes:
-            raise TaskNotFoundError(canonical_task_id)
-        return self._routes[canonical_task_id]
+        return copy(self._get_internal_route(canonical_task_id))
 
     def has_route(self, canonical_task_id: str) -> bool:
         """Check whether a route exists for canonical_task_id."""
@@ -296,29 +353,38 @@ class ExecutionDispatcher:
     def list_routes(self) -> list[RouteRecord]:
         """List all registered routes sorted deterministically by canonical_task_id."""
         sorted_ids = sorted(self._routes.keys())
-        return [self._routes[cid] for cid in sorted_ids]
+        return [copy(self._routes[cid]) for cid in sorted_ids]
 
     def status(self, canonical_task_id: str) -> TaskStatusResult:
         """Query current execution state of a dispatched task using exact stored route."""
-        route = self.get_route(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
         adapter = route._adapter
         status_res = adapter.status(canonical_task_id, route.adapter_handle)
-        # Update last known state
-        route.last_known_state = status_res.state
+        self._validate_response_task_id(status_res, canonical_task_id, "status")
+        route.last_known_state = self._validated_response_state(
+            route, status_res.state, "status"
+        )
         return status_res
 
     def result(self, canonical_task_id: str) -> CanonicalResult:
         """Fetch terminal CanonicalResult for a dispatched task using exact stored route."""
-        route = self.get_route(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
         adapter = route._adapter
         canonical_res = adapter.result(canonical_task_id, route.adapter_handle)
-        state_enum = parse_state(canonical_res.canonical_task_state)
-        route.last_known_state = state_enum
+        self._validate_response_task_id(canonical_res, canonical_task_id, "result")
+        if canonical_res.executor_id != route.executor_id:
+            raise AdapterProtocolError(
+                f"result response executor_id {canonical_res.executor_id!r} does not "
+                f"match route executor {route.executor_id!r}"
+            )
+        route.last_known_state = self._validated_response_state(
+            route, canonical_res.canonical_task_state, "result"
+        )
         return canonical_res
 
     def cancel(self, canonical_task_id: str, executor: str | None = None) -> CancelResult:
         """Request cancellation using the exact stored route and optional executor identity."""
-        route = self.get_route(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
 
         if executor is not None and route.executor_id != executor:
             raise ValueError(
@@ -339,7 +405,10 @@ class ExecutionDispatcher:
 
         adapter = route._adapter
         cancel_res = adapter.cancel(canonical_task_id, route.adapter_handle)
-        route.last_known_state = cancel_res.state
+        self._validate_response_task_id(cancel_res, canonical_task_id, "cancel")
+        route.last_known_state = self._validated_response_state(
+            route, cancel_res.state, "cancel"
+        )
         if cancel_res.cancelled and cancel_res.state == CanonicalTaskState.CANCELLED:
             setattr(route, "_successful_cancel_result", cancel_res)
         return cancel_res
@@ -354,10 +423,13 @@ class ExecutionDispatcher:
             raise TypeError(
                 f"resume_package must be an ExecutionPackage, got {type(resume_package).__name__}"
             )
-        route = self.get_route(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
         adapter = route._adapter
         resume_res = adapter.resume(canonical_task_id, route.adapter_handle, resume_package)
-        route.last_known_state = resume_res.state
+        self._validate_response_task_id(resume_res, canonical_task_id, "resume")
+        route.last_known_state = self._validated_response_state(
+            route, resume_res.state, "resume", enforce_terminal=False
+        )
         return resume_res
 
     def reconcile_status(self, canonical_task_id: str) -> CanonicalTaskState:
@@ -368,12 +440,19 @@ class ExecutionDispatcher:
         - UNKNOWN is NEVER inferred as completed or successful.
         - Returns reconciled CanonicalTaskState.
         """
-        route = self.get_route(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
         adapter = route._adapter
         try:
             status_res = adapter.status(canonical_task_id, route.adapter_handle)
-            state = status_res.state
+            self._validate_response_task_id(status_res, canonical_task_id, "reconcile_status")
+            state = self._validated_response_state(
+                route, status_res.state, "reconcile_status"
+            )
+        except AdapterProtocolError:
+            raise
         except Exception:
+            if route.last_known_state.is_terminal:
+                return route.last_known_state
             state = CanonicalTaskState.UNKNOWN
 
         route.last_known_state = state
