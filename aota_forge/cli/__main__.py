@@ -53,7 +53,11 @@ from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 from aota_forge.core.contracts.results import failure_from_error
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.contracts.validation import TRUSTED_ADAPTER_KEYS
-from aota_forge.core.ingress import MutationIngressRequest, execute_mutation
+from aota_forge.core.ingress import (
+    MutationIngressRequest,
+    execute_mutation,
+    get_execution_dispatcher,
+)
 
 ParamBuilder = Callable[[argparse.Namespace, AdapterTrustedConfig], dict[str, Any]]
 
@@ -204,6 +208,10 @@ def _main(argv: list[str] | None = None) -> int:
         else None
     )
     if operation.startswith("execution."):
+        if get_execution_dispatcher() is None:
+            from aota_forge.composition.execution import bind_production_execution_dispatcher
+
+            bind_production_execution_dispatcher()
         payload = forge_execute(operation, params, trusted_context=trusted_context)
     else:
         descriptor = DEFAULT_REGISTRY.get(operation)

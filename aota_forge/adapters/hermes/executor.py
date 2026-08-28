@@ -180,7 +180,10 @@ def canonical_role_to_hermes_profile(canonical_role: str) -> str:
     return profile
 
 
-def canonical_to_hermes_payload(package: ExecutionPackage) -> dict[str, Any]:
+def canonical_to_hermes_payload(
+    package: ExecutionPackage,
+    role_mapping: RoleMapping | None = None,
+) -> dict[str, Any]:
     """Translate canonical ExecutionPackage into Hermes dispatch envelope.
 
     Deterministic projection:
@@ -197,7 +200,8 @@ def canonical_to_hermes_payload(package: ExecutionPackage) -> dict[str, Any]:
     if not isinstance(package, ExecutionPackage):
         raise TypeError(f"package must be ExecutionPackage, got {type(package).__name__}")
 
-    profile = canonical_role_to_hermes_profile(package.canonical_role)
+    mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
+    profile = mapping.get_target_role(package.canonical_role)
 
     payload = {
         "profile": profile,
@@ -658,7 +662,7 @@ class HermesAdapter(ExecutorAdapter):
                 "EXECUTOR_UNAVAILABLE: Hermes host client is not configured (offline/test injection required)"
             )
 
-        payload = canonical_to_hermes_payload(package)
+        payload = canonical_to_hermes_payload(package, self._role_mapping)
 
         try:
             host_resp = self._host_client.dispatch(payload)
@@ -906,7 +910,7 @@ class HermesAdapter(ExecutorAdapter):
         if self._host_client is None:
             raise HermesHostUnavailableError("EXECUTOR_UNAVAILABLE: Hermes host client is not configured")
 
-        payload = canonical_to_hermes_payload(resume_package)
+        payload = canonical_to_hermes_payload(resume_package, self._role_mapping)
 
         try:
             host_resp = self._host_client.resume_task(adapter_handle, payload)
