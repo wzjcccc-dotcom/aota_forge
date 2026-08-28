@@ -266,6 +266,43 @@ def _clean_hermes_artifacts(artifacts: Any) -> list[dict[str, Any]]:
     return cleaned_list
 
 
+def _validated_terminal_fields(
+    output: Mapping[str, Any],
+    *,
+    default_exit_code: int,
+) -> tuple[int, dict[str, Any], list[dict[str, Any]]] | None:
+    """Validate terminal fields before projecting a successful/failing result."""
+    if "exit_code" in output:
+        exit_code = output["exit_code"]
+        if type(exit_code) is not int:
+            return None
+    else:
+        exit_code = default_exit_code
+
+    if "result_data" in output:
+        raw_data = output["result_data"]
+        if not isinstance(raw_data, Mapping):
+            return None
+        result_data = _clean_hermes_dict(raw_data)
+    else:
+        result_data = {}
+
+    selected_artifacts: Any = ()
+    for key in ("output_artifacts", "artifacts"):
+        if key not in output:
+            continue
+        raw_artifacts = output[key]
+        if not isinstance(raw_artifacts, (list, tuple)):
+            return None
+        if any(not isinstance(item, Mapping) for item in raw_artifacts):
+            return None
+        if key == "output_artifacts" or selected_artifacts == ():
+            selected_artifacts = raw_artifacts
+
+    artifacts = _clean_hermes_artifacts(selected_artifacts)
+    return exit_code, result_data, artifacts
+
+
 def hermes_output_to_canonical_result(
     output: Mapping[str, Any],
     canonical_task_id: str,
@@ -322,12 +359,17 @@ def hermes_output_to_canonical_result(
 
     # Handle completion (status = done/success)
     if state == CanonicalTaskState.COMPLETED:
-        raw_exit = output.get("exit_code", 0)
-        exit_code = raw_exit if isinstance(raw_exit, int) else 0
-        raw_data = output.get("result_data", {})
-        result_data = _clean_hermes_dict(raw_data) if isinstance(raw_data, Mapping) else {}
-        raw_artifacts = output.get("output_artifacts") or output.get("artifacts", ())
-        artifacts = _clean_hermes_artifacts(raw_artifacts)
+        terminal_fields = _validated_terminal_fields(output, default_exit_code=0)
+        if terminal_fields is None:
+            return CanonicalResult.failure(
+                canonical_task_id=canonical_task_id,
+                executor_id=HERMES_EXECUTOR_ID,
+                error_code="RESULT_MALFORMED",
+                error_message="Hermes terminal result contains malformed fields",
+                retryable=False,
+                correlation_id=cid,
+            )
+        exit_code, result_data, artifacts = terminal_fields
 
         return CanonicalResult.success(
             canonical_task_id=canonical_task_id,
@@ -429,12 +471,17 @@ def hermes_output_to_canonical_result(
         retryable = False
         details = None
 
-    raw_exit = output.get("exit_code", 1)
-    exit_code = raw_exit if isinstance(raw_exit, int) else 1
-    raw_data = output.get("result_data", {})
-    result_data = _clean_hermes_dict(raw_data) if isinstance(raw_data, Mapping) else {}
-    raw_artifacts = output.get("output_artifacts") or output.get("artifacts", ())
-    artifacts = _clean_hermes_artifacts(raw_artifacts)
+    terminal_fields = _validated_terminal_fields(output, default_exit_code=1)
+    if terminal_fields is None:
+        return CanonicalResult.failure(
+            canonical_task_id=canonical_task_id,
+            executor_id=HERMES_EXECUTOR_ID,
+            error_code="RESULT_MALFORMED",
+            error_message="Hermes terminal result contains malformed fields",
+            retryable=False,
+            correlation_id=cid,
+        )
+    exit_code, result_data, artifacts = terminal_fields
 
     return CanonicalResult.failure(
         canonical_task_id=canonical_task_id,
@@ -563,18 +610,28 @@ class HermesAdapter(ExecutorAdapter):
                 f"has no Hermes profile mapping"
             )
 
-        # 2. Check execution mode
-        req_mode = (
-            requirements["execution_mode"]
-            if "execution_mode" in requirements
-            else package.constraints.get("execution_mode")
-        )
-        if req_mode is not None and (
-            not isinstance(req_mode, str) or not self._capabilities.supports_mode(req_mode)
+        # 2. Check both execution-mode sources; neither may be silently dropped.
+        requirement_mode = requirements.get("execution_mode")
+        constraint_mode = package.constraints.get("execution_mode")
+        if (
+            "execution_mode" in requirements
+            and "execution_mode" in package.constraints
+            and requirement_mode != constraint_mode
         ):
             errors.append(
-                f"CAPABILITY_MISMATCH: execution mode {req_mode!r} not supported by Hermes adapter"
+                "PACKAGE_INVALID: conflicting execution_mode requirements between "
+                "capability_requirements and constraints"
             )
+        mode_values = []
+        if "execution_mode" in requirements:
+            mode_values.append(requirement_mode)
+        if "execution_mode" in package.constraints:
+            mode_values.append(constraint_mode)
+        for req_mode in mode_values:
+            if not isinstance(req_mode, str) or not self._capabilities.supports_mode(req_mode):
+                errors.append(
+                    f"CAPABILITY_MISMATCH: execution mode {req_mode!r} not supported by Hermes adapter"
+                )
 
         # 3. Check isolation mode
         isolation_requirements = [

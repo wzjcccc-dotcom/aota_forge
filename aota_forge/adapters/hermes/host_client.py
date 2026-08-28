@@ -134,7 +134,9 @@ class HermesHostClient:
     @staticmethod
     def _validate_cwd(value: str | os.PathLike[str] | None) -> str:
         if value is None:
-            return str(Path.cwd())
+            raise HermesHostClientError(
+                "PACKAGE_INVALID: no canonical or trusted default working directory", "PACKAGE_INVALID"
+            )
         path = Path(value)
         if path.is_symlink() or not path.is_dir():
             raise HermesHostClientError(
@@ -233,7 +235,24 @@ class HermesHostClient:
                 "CAPABILITY_MISMATCH",
             )
 
-        mode = requirements.get("execution_mode", constraints.get("execution_mode", "async"))
+        requirement_mode = requirements.get("execution_mode")
+        constraint_mode = constraints.get("execution_mode")
+        if (
+            "execution_mode" in requirements
+            and "execution_mode" in constraints
+            and requirement_mode != constraint_mode
+        ):
+            raise HermesHostClientError(
+                "PACKAGE_INVALID: conflicting execution_mode requirements between "
+                "capability_requirements and constraints",
+                "PACKAGE_INVALID",
+            )
+        mode_values = []
+        if "execution_mode" in requirements:
+            mode_values.append(requirement_mode)
+        if "execution_mode" in constraints:
+            mode_values.append(constraint_mode)
+        mode = mode_values[0] if mode_values else "async"
         isolation = requirements.get(
             "isolation_mode",
             requirements.get("isolation", constraints.get("isolation_mode", constraints.get("isolation", "process"))),

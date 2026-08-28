@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from os import PathLike
+from pathlib import Path
 from typing import Any, Callable
 
 from aota_forge.adapters.hermes.executor import HermesAdapter
@@ -15,6 +16,8 @@ from aota_forge.core.ingress import bind_execution_dispatcher
 
 PRODUCTION_HERMES_HOST_LAUNCHER = "/home/latios/.local/bin/hermes-host"
 PRODUCTION_HERMES_PROFILE_MAPPING = {"coder": "coder"}
+# Repository root is deterministic and independent of the process launch CWD.
+PRODUCTION_HERMES_DEFAULT_CWD = Path(__file__).resolve().parents[2]
 
 
 def _production_capabilities() -> ExecutorCapabilities:
@@ -38,7 +41,7 @@ def _production_capabilities() -> ExecutorCapabilities:
 def create_production_execution_dispatcher(
     *,
     launcher_path: str | PathLike[str] = PRODUCTION_HERMES_HOST_LAUNCHER,
-    default_cwd: str | PathLike[str] | None = None,
+    default_cwd: str | PathLike[str] | None = PRODUCTION_HERMES_DEFAULT_CWD,
     host_client: Any | None = None,
     host_client_factory: Callable[..., Any] = HermesHostClient,
 ) -> ExecutionDispatcher:
