@@ -88,6 +88,9 @@ class _ExecutionRecord:
     terminal_at: float | None = None
     timed_out: bool = False
     cancelled: bool = False
+    # W3 fail-closed marker: a reader that raised can never re-establish a
+    # complete, stable capture, so exit code 0 must not project as "done".
+    read_failure: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
@@ -157,6 +160,16 @@ class HermesHostClient:
             if isinstance(chunk, str):
                 chunk = chunk.encode("utf-8", errors="replace")
             output.append(bytes(chunk))
+
+    def _drain_stream(self, stream: Any, output: _BoundedOutput, record: _ExecutionRecord) -> None:
+        # A reader that raises can never again establish a complete, stable
+        # capture, so the record is flagged and exit code 0 is not allowed to
+        # project as "done" (W3 fail-closed boundary).  The bounded marker is
+        # a boolean only: raw stream exception text never enters any envelope.
+        try:
+            self._read_stream(stream, output)
+        except Exception:
+            record.read_failure = True
 
     def _resolve_cwd(self, payload: Mapping[str, Any]) -> str:
         context = payload.get("context")
@@ -319,6 +332,11 @@ class HermesHostClient:
                 break
         if not drained and not forced:
             return False
+        if status == "done" and record.read_failure:
+            # W3: every reader finished only because one of them died mid
+            # capture; the stream never stabilized, so exit code 0 is not
+            # success evidence and the terminal observation fails closed.
+            status = "failed"
         with record.lock:
             if record.terminal_at is None:
                 record.status = status
@@ -345,7 +363,10 @@ class HermesHostClient:
         status = "done" if returncode == 0 else "failed"
         if not self._finalize(record, status, int(returncode)):
             return "running"
-        return status
+        with record.lock:
+            # Report what was actually published: a capture that never
+            # stabilized downgrades the completion observation to failed.
+            return record.status
 
     def _terminate(self, record: _ExecutionRecord, *, timed_out: bool = False) -> None:
         with record.lock:
@@ -409,7 +430,7 @@ class HermesHostClient:
         )
         for stream, output in ((getattr(process, "stdout", None), record.stdout), (getattr(process, "stderr", None), record.stderr)):
             if stream is not None:
-                reader = threading.Thread(target=self._read_stream, args=(stream, output), daemon=True)
+                reader = threading.Thread(target=self._drain_stream, args=(stream, output, record), daemon=True)
                 reader.start()
                 record.readers.append(reader)
         with self._records_lock:
@@ -446,7 +467,13 @@ class HermesHostClient:
         elif status == "cancelled":
             response["error"] = {"code": "EXECUTION_CANCELLED", "message": "Hermes worker cancelled"}
         elif status == "failed":
-            response["error"] = {"code": "EXECUTION_FAILED", "message": "Hermes worker exited unsuccessfully"}
+            if record.read_failure and record.exit_code == 0:
+                response["error"] = {
+                    "code": "RESULT_UNAVAILABLE",
+                    "message": "Hermes worker output capture failed before the result stream stabilized",
+                }
+            else:
+                response["error"] = {"code": "EXECUTION_FAILED", "message": "Hermes worker exited unsuccessfully"}
         return response
 
     def cancel_task(self, adapter_handle: str) -> Mapping[str, Any]:
