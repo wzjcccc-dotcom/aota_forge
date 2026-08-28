@@ -1545,7 +1545,6 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
         """F01: Non-terminal Hermes results never project to a terminal failure."""
         host = FakeHermesHostClient()
         adapter = HermesAdapter(host_client=host)
-        handle = "r1d-f01-handle"
 
         active_cases = (
             ("running", CanonicalTaskState.RUNNING),
@@ -1555,6 +1554,7 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
         )
         for index, (raw_status, expected_state) in enumerate(active_cases):
             task_id = f"r1d-f01-active-{index}"
+            handle = adapter.dispatch(self._package(task_id, "active result")).adapter_handle
             host.results[handle] = {
                 "status": raw_status,
                 "error": {"message": "result is not available yet"},
@@ -1567,19 +1567,25 @@ class TestR1DPostRepairConvergence(unittest.TestCase):
             else:
                 self.assertEqual(result.error["code"], "TASK_STILL_RUNNING")
 
-        host.results[handle] = {
+        failed_task_id = "r1d-f01-failed"
+        failed_handle = adapter.dispatch(self._package(failed_task_id, "failed result")).adapter_handle
+        host.results[failed_handle] = {
             "status": "failed",
             "error": {"code": "EXECUTION_FAILED", "message": "host failure"},
         }
-        failed = adapter.result("r1d-f01-failed", handle)
+        failed = adapter.result(failed_task_id, failed_handle)
         self.assertEqual(failed.canonical_task_state, CanonicalTaskState.FAILED.value)
         self.assertEqual(failed.status, "failed")
 
-        host.results[handle] = {
+        completed_task_id = "r1d-f01-completed"
+        completed_handle = adapter.dispatch(
+            self._package(completed_task_id, "completed result")
+        ).adapter_handle
+        host.results[completed_handle] = {
             "status": "done",
             "result_data": {"answer": "complete"},
         }
-        completed = adapter.result("r1d-f01-completed", handle)
+        completed = adapter.result(completed_task_id, completed_handle)
         self.assertEqual(completed.canonical_task_state, CanonicalTaskState.COMPLETED.value)
         self.assertEqual(completed.status, "completed")
 
