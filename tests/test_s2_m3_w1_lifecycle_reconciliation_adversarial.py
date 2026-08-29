@@ -891,47 +891,58 @@ class W1MalformedUnavailableResultTestCase(W1ProductionHermesTestCase):
             CanonicalResult.from_dict({"ok": True, "status": "completed"})
 
     def test_host_malformed_terminal_result_projects_result_malformed(self) -> None:
-        """FINDING W1-F03 evidence (recorded, not repaired)."""
+        """FINDING W1-F03 evidence (history preserved; repaired behavior).
+
+        Pre-repair record: transient malformed projection became sticky
+        terminal FAILED and poisoned the later genuine result. On the S3
+        F03 repair frontier the same observation is recoverable UNKNOWN
+        and the later genuine completion is accepted.
+        """
         task_id = "s2-m3-w1-malformed-terminal"
         handle = self._dispatch(task_id).adapter_handle
         self.host.result_by_handle[handle] = {"status": "done", "exit_code": "not-an-integer"}
         result = self.dispatcher.result(task_id)
         self.assertFalse(result.ok)
         self.assertEqual(result.error["code"], "RESULT_MALFORMED")
-        self.assertEqual(result.canonical_task_state, CanonicalTaskState.FAILED.value)
-        self.assertEqual(
-            self.dispatcher.get_route(task_id).last_known_state,
-            CanonicalTaskState.FAILED,
+        self.assertEqual(result.canonical_task_state, CanonicalTaskState.UNKNOWN.value)
+        self.assertTrue(result.error["retryable"])
+        self.assertFalse(
+            self.dispatcher.get_route(task_id).last_known_state.is_terminal
         )
 
-        # the observed consequence: a transient malformed poll becomes sticky
-        # terminal FAILED and the later genuine completion is permanently
-        # rejected by terminal monotonicity
+        # repaired consequence: a transient malformed poll stays
+        # non-terminal uncertainty and the later genuine completion is
+        # accepted instead of being rejected by poisoned terminal state
         self.host.result_by_handle[handle] = {"status": "done", "exit_code": 0}
-        with self.assertRaises(AdapterProtocolError):
-            self.dispatcher.result(task_id)
+        later = self.dispatcher.result(task_id)
+        self.assertTrue(later.ok)
+        self.assertEqual(
+            later.canonical_task_state, CanonicalTaskState.COMPLETED.value
+        )
         self.assertEqual(
             self.dispatcher.get_route(task_id).last_known_state,
-            CanonicalTaskState.FAILED,
+            CanonicalTaskState.COMPLETED,
         )
 
     def test_host_non_mapping_result_projection(self) -> None:
+        """FINDING W1-F03 evidence (history preserved; repaired behavior)."""
         task_id = "s2-m3-w1-malformed-nonmapping"
         handle = self._dispatch(task_id).adapter_handle
         self.host.result_by_handle[handle] = "junk-not-a-mapping"
         result = self.dispatcher.result(task_id)
         self.assertFalse(result.ok)
         self.assertEqual(result.error["code"], "RESULT_MALFORMED")
-        self.assertEqual(result.canonical_task_state, CanonicalTaskState.FAILED.value)
-        self.assertEqual(
-            self.dispatcher.get_route(task_id).last_known_state,
-            CanonicalTaskState.FAILED,
+        self.assertEqual(result.canonical_task_state, CanonicalTaskState.UNKNOWN.value)
+        self.assertTrue(result.error["retryable"])
+        self.assertFalse(
+            self.dispatcher.get_route(task_id).last_known_state.is_terminal
         )
 
     def test_host_result_transport_failure_projection(self) -> None:
-        """FINDING W1-F03 companion evidence: transport failure during result
-        fetch is projected (via the frozen adapter) as a terminal FAILED
-        ADAPTER_PROTOCOL_ERROR envelope, not a retryable non-terminal state.
+        """FINDING W1-F03 companion evidence (history preserved; repaired
+        behavior): transport failure during result fetch is now projected
+        as a non-terminal UNKNOWN ADAPTER_PROTOCOL_ERROR envelope with the
+        typed error retained and retryable=true, not a terminal FAILED.
         """
         task_id = "s2-m3-w1-malformed-transport"
         handle = self._dispatch(task_id).adapter_handle
@@ -939,11 +950,10 @@ class W1MalformedUnavailableResultTestCase(W1ProductionHermesTestCase):
         result = self.dispatcher.result(task_id)
         self.assertFalse(result.ok)
         self.assertEqual(result.error["code"], "ADAPTER_PROTOCOL_ERROR")
-        self.assertEqual(result.canonical_task_state, CanonicalTaskState.FAILED.value)
-        self.assertEqual(result.error["retryable"], False)
-        self.assertEqual(
-            self.dispatcher.get_route(task_id).last_known_state,
-            CanonicalTaskState.FAILED,
+        self.assertEqual(result.canonical_task_state, CanonicalTaskState.UNKNOWN.value)
+        self.assertTrue(result.error["retryable"])
+        self.assertFalse(
+            self.dispatcher.get_route(task_id).last_known_state.is_terminal
         )
 
     def test_unavailable_result_is_distinct_from_malformed_protocol(self) -> None:

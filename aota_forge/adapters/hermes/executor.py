@@ -16,6 +16,9 @@ Core Invariants:
 - Canonical role != Hermes profile
 - Hermes local task ID != canonical_task_id
 - Unknown Hermes state maps to UNKNOWN (never false completion)
+- Untrustworthy result observation (transient fetch/parse/validate/project failure)
+  maps to UNKNOWN retryable uncertainty; only an authoritative terminal Hermes
+  result envelope may project terminal FAILED (F03)
 - Zero Hermes-private type escape into canonical objects
 - No live Hermes daemon activation; 100% offline injectable host protocol
 """
@@ -303,6 +306,35 @@ def _validated_terminal_fields(
     return exit_code, result_data, artifacts
 
 
+def _result_observation_uncertainty(
+    canonical_task_id: str,
+    error_code: str,
+    error_message: str,
+    correlation_id: str,
+) -> CanonicalResult:
+    """Project an untrustworthy result observation as recoverable uncertainty (F03).
+
+    A transient fetch/parse/validate/project failure is a RESULT_OBSERVATION_FAILURE,
+    not an authoritative terminal EXECUTION_FAILURE. It must never fabricate an
+    unrecoverable terminal task failure, because Core honors contract-valid terminal
+    results as sticky truth. The narrowest existing representation is the accepted
+    non-terminal uncertainty projection shape: status="unknown",
+    canonical_task_state=UNKNOWN, typed error envelope, retryable=True, with no
+    fabricated exit code or result payload.
+    """
+    return CanonicalResult.failure(
+        canonical_task_id=canonical_task_id,
+        executor_id=HERMES_EXECUTOR_ID,
+        error_code=error_code,
+        error_message=error_message,
+        retryable=True,
+        exit_code=None,
+        status="unknown",
+        canonical_task_state=CanonicalTaskState.UNKNOWN.value,
+        correlation_id=correlation_id,
+    )
+
+
 def hermes_output_to_canonical_result(
     output: Mapping[str, Any],
     canonical_task_id: str,
@@ -335,12 +367,10 @@ def hermes_output_to_canonical_result(
         cid = f"corr-{canonical_task_id}"
 
     if not isinstance(output, Mapping):
-        return CanonicalResult.failure(
+        return _result_observation_uncertainty(
             canonical_task_id=canonical_task_id,
-            executor_id=HERMES_EXECUTOR_ID,
             error_code="RESULT_MALFORMED",
             error_message=f"Hermes output must be a mapping, got {type(output).__name__}",
-            retryable=False,
             correlation_id=cid,
         )
 
@@ -361,12 +391,10 @@ def hermes_output_to_canonical_result(
     if state == CanonicalTaskState.COMPLETED:
         terminal_fields = _validated_terminal_fields(output, default_exit_code=0)
         if terminal_fields is None:
-            return CanonicalResult.failure(
+            return _result_observation_uncertainty(
                 canonical_task_id=canonical_task_id,
-                executor_id=HERMES_EXECUTOR_ID,
                 error_code="RESULT_MALFORMED",
                 error_message="Hermes terminal result contains malformed fields",
-                retryable=False,
                 correlation_id=cid,
             )
         exit_code, result_data, artifacts = terminal_fields
@@ -473,12 +501,10 @@ def hermes_output_to_canonical_result(
 
     terminal_fields = _validated_terminal_fields(output, default_exit_code=1)
     if terminal_fields is None:
-        return CanonicalResult.failure(
+        return _result_observation_uncertainty(
             canonical_task_id=canonical_task_id,
-            executor_id=HERMES_EXECUTOR_ID,
             error_code="RESULT_MALFORMED",
             error_message="Hermes terminal result contains malformed fields",
-            retryable=False,
             correlation_id=cid,
         )
     exit_code, result_data, artifacts = terminal_fields
@@ -823,34 +849,28 @@ class HermesAdapter(ExecutorAdapter):
         self._verify_task_handle(canonical_task_id, adapter_handle)
 
         if self._host_client is None:
-            return CanonicalResult.failure(
+            return _result_observation_uncertainty(
                 canonical_task_id=canonical_task_id,
-                executor_id=HERMES_EXECUTOR_ID,
                 error_code="EXECUTOR_UNAVAILABLE",
                 error_message="Hermes host client is not configured",
-                retryable=True,
                 correlation_id=f"corr-{canonical_task_id}",
             )
 
         try:
             host_resp = self._host_client.fetch_result(adapter_handle)
         except Exception as exc:
-            return CanonicalResult.failure(
+            return _result_observation_uncertainty(
                 canonical_task_id=canonical_task_id,
-                executor_id=HERMES_EXECUTOR_ID,
                 error_code="ADAPTER_PROTOCOL_ERROR",
                 error_message=f"fetch_result failed: {exc}",
-                retryable=False,
                 correlation_id=f"corr-{canonical_task_id}",
             )
 
         if not isinstance(host_resp, Mapping):
-            return CanonicalResult.failure(
+            return _result_observation_uncertainty(
                 canonical_task_id=canonical_task_id,
-                executor_id=HERMES_EXECUTOR_ID,
                 error_code="RESULT_MALFORMED",
                 error_message=f"Hermes result must be a mapping, got {type(host_resp).__name__}",
-                retryable=False,
                 correlation_id=f"corr-{canonical_task_id}",
             )
 

@@ -349,10 +349,15 @@ class W1F03ProjectionClassification(unittest.TestCase):
         self.assertTrue(env.error["retryable"])
 
     def test_same_frozen_adapter_splits_identical_transient_fault_inconsistently(self) -> None:
-        # Identical transient transport failure on the same live binding:
-        # status() projects uncertainty, result() projects terminal failure.
-        # The wrong semantic decision is made inside the adapter projection,
-        # upstream of Core; Core only consumes the contract-valid result.
+        # Historical W1-F03 classification evidence (taxonomy unchanged):
+        # the pre-repair frozen adapter split an identical transient
+        # transport failure inconsistently — status() projected
+        # uncertainty while result() projected terminal failure — proving
+        # the wrong semantic decision lived inside the S3 adapter
+        # projection, upstream of Core.
+        # Post-repair behavior asserted here: the accepted S3 F03 repair
+        # makes both projections consistent recoverable UNKNOWN, while
+        # the typed error code remains attributable to the adapter.
         adapter = HermesAdapter(host_client=_HostDouble())
         package = ExecutionPackage.create(
             canonical_task_id="w2-f03-inconsistency",
@@ -368,10 +373,10 @@ class W1F03ProjectionClassification(unittest.TestCase):
         self.assertEqual(status_res.state, CanonicalTaskState.UNKNOWN)
 
         result_res = adapter.result(package.canonical_task_id, handle)
-        self.assertEqual(result_res.canonical_task_state, CanonicalTaskState.FAILED.value)
+        self.assertEqual(result_res.canonical_task_state, CanonicalTaskState.UNKNOWN.value)
         self.assertEqual(result_res.error["code"], "ADAPTER_PROTOCOL_ERROR")
-        self.assertFalse(result_res.error["retryable"])
-        self.assertTrue(CanonicalTaskState(result_res.canonical_task_state).is_terminal)
+        self.assertTrue(result_res.error["retryable"])
+        self.assertFalse(CanonicalTaskState(result_res.canonical_task_state).is_terminal)
 
 
 if __name__ == "__main__":
