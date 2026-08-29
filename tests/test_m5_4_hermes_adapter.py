@@ -569,11 +569,14 @@ class TestErrorAndUncertainty:
         assert res.error["code"] == "TASK_STATE_UNKNOWN"
 
     def test_malformed_output_mapping(self):
-        # Non-mapping input
+        # Non-mapping input: untrustworthy observation is recoverable
+        # uncertainty, never a fabricated terminal failure (F03).
         res1 = hermes_output_to_canonical_result("not a dict", canonical_task_id="task-bad")  # type: ignore
         assert res1.ok is False
-        assert res1.status == "failed"
+        assert res1.status == "unknown"
+        assert res1.canonical_task_state == CanonicalTaskState.UNKNOWN.value
         assert res1.error["code"] == "RESULT_MALFORMED"
+        assert res1.error["retryable"] is True
 
     def test_host_unavailable_handling(self, fake_client, sample_package):
         # Preserve a valid adapter binding, then simulate host loss.
