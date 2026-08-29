@@ -123,6 +123,47 @@ class AdapterProtocolError(DispatcherError, ValueError):
         super().__init__(f"{self.code}: {message}")
 
 
+# Executor-neutral protocol-integrity filter (S2/M3/R1 F02 repair):
+# exceptions carrying one of these ACCEPTED canonical codes are protocol /
+# binding integrity violations, not ordinary runtime uncertainty. Reuses the
+# same `.code` / `.error_code` attribute pattern as the canonical ingress
+# projection; never inspects adapter class identity.
+_CANONICAL_PROTOCOL_INTEGRITY_CODES = frozenset({AdapterProtocolError.code})
+
+
+def _carries_canonical_protocol_violation(exc: BaseException) -> bool:
+    for attribute in ("code", "error_code"):
+        try:
+            candidate = getattr(exc, attribute, None)
+        except Exception:
+            continue
+        if isinstance(candidate, str) and candidate.strip() in _CANONICAL_PROTOCOL_INTEGRITY_CODES:
+            return True
+    return False
+
+
+class DuplicateCanonicalTaskIdError(DispatcherError):
+    """Raised when a fresh dispatch reuses an already-routed canonical_task_id.
+
+    S2/M3/R1 F01 repair: the rejection carries the ACCEPTED canonical ingress
+    code DISPATCH_REJECTED so the canonical ingress projects a typed
+    dispatch rejection instead of INTERNAL_MECHANICAL_ERROR. The
+    DUPLICATE_CANONICAL_TASK_ID detail stays in the message; it is not a new
+    canonical error code, and a duplicate task id with a fresh idempotency
+    key remains a rejection, never a REPLAY.
+    """
+
+    code = "DISPATCH_REJECTED"
+
+    def __init__(self, canonical_task_id: str) -> None:
+        self.canonical_task_id = canonical_task_id
+        self.message = (
+            f"DUPLICATE_CANONICAL_TASK_ID: Task {canonical_task_id!r} "
+            f"has already been dispatched"
+        )
+        super().__init__(self.message)
+
+
 class TaskNotFoundError(DispatcherError, KeyError):
     """Raised when a requested canonical_task_id has no registered route."""
 
@@ -268,11 +309,9 @@ class ExecutionDispatcher:
                 # Idempotency conflict: same key, altered intent fingerprint
                 raise IdempotencyConflictError(idem_key)
 
-        # Duplicate canonical_task_id check
+        # Duplicate canonical_task_id check (typed dispatch rejection, F01)
         if package.canonical_task_id in self._routes:
-            raise DispatcherError(
-                f"DUPLICATE_CANONICAL_TASK_ID: Task {package.canonical_task_id!r} has already been dispatched"
-            )
+            raise DuplicateCanonicalTaskIdError(package.canonical_task_id)
 
         # 2. Registry Mechanical Resolution
         resolution = self.registry.resolve(package, target_executor_id=target_executor_id)
@@ -460,6 +499,9 @@ class ExecutionDispatcher:
         - Definitive adapter states map to canonical state.
         - Adapter unknown, disconnect, or uncertain outcome remains UNKNOWN.
         - UNKNOWN is NEVER inferred as completed or successful.
+        - Typed protocol/binding integrity violations carrying an accepted
+          canonical protocol code (e.g. ADAPTER_PROTOCOL_ERROR) fail closed
+          and propagate; the route is left unmutated (S2/M3/R1 F02).
         - Returns reconciled CanonicalTaskState.
         """
         route = self._get_internal_route(canonical_task_id)
@@ -472,7 +514,9 @@ class ExecutionDispatcher:
             )
         except AdapterProtocolError:
             raise
-        except Exception:
+        except Exception as exc:
+            if _carries_canonical_protocol_violation(exc):
+                raise
             if route.last_known_state.is_terminal:
                 return route.last_known_state
             state = CanonicalTaskState.UNKNOWN

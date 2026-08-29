@@ -344,11 +344,13 @@ class W1DuplicateDispatchTestCase(W1ProductionHermesTestCase):
             self.assertTrue(first["ok"], first)
             duplicate = execute("execution.task_start", w1_start_params(task_id))
             self.assertFalse(duplicate["ok"])
-            # FINDING W1-F01 evidence: dispatcher level is typed
-            # (DUPLICATE_CANONICAL_TASK_ID) but the canonical ingress envelope
-            # surfaces the rejection as INTERNAL_MECHANICAL_ERROR because the
-            # duplicate code is not in the canonical execution error vocabulary.
-            self.assertEqual(duplicate["error"]["code"], "INTERNAL_MECHANICAL_ERROR")
+            # FINDING W1-F01 was: the ingress degraded the typed dispatcher
+            # rejection (DUPLICATE_CANONICAL_TASK_ID) into
+            # INTERNAL_MECHANICAL_ERROR. S2/M3/R1 repaired the projection to
+            # the accepted canonical dispatch-rejection semantic; the
+            # DUPLICATE_CANONICAL_TASK_ID detail survives only in the message.
+            self.assertEqual(duplicate["error"]["code"], "DISPATCH_REJECTED")
+            self.assertIn("DUPLICATE_CANONICAL_TASK_ID", duplicate["error"]["message"])
             self.assertEqual(len(self.host.dispatch_payloads), 1)
             self.assertEqual(len(self.dispatcher.list_routes()), 1)
             self.assertEqual(
@@ -791,16 +793,21 @@ class W1LostAdapterHandleTestCase(W1ProductionHermesTestCase):
         self.assertEqual(ctx.exception.code, "ADAPTER_PROTOCOL_ERROR")
         self.assertEqual(self.host.status_calls, [])
 
-        # FINDING W1-F02 evidence: reconcile_status collapses this typed
-        # adapter binding violation into UNKNOWN, while dispatcher.status
-        # fails closed on the identical state. Recorded; no repair here.
-        self.assertEqual(
-            self.dispatcher.reconcile_status(task_id), CanonicalTaskState.UNKNOWN
+        # FINDING W1-F02 was: reconcile_status collapsed this typed adapter
+        # binding violation into UNKNOWN while dispatcher.status failed
+        # closed on the identical state. S2/M3/R1 repaired reconcile_status
+        # to fail closed on accepted canonical protocol codes; the route is
+        # no longer mutated to UNKNOWN.
+        route_before = self.dispatcher.get_route(task_id)
+        with self.assertRaises(HermesAdapterError) as ctx:
+            self.dispatcher.reconcile_status(task_id)
+        self.assertEqual(ctx.exception.code, "ADAPTER_PROTOCOL_ERROR")
+        route_after = self.dispatcher.get_route(task_id)
+        self.assertNotEqual(
+            route_after.last_known_state, CanonicalTaskState.UNKNOWN
         )
-        self.assertEqual(
-            self.dispatcher.get_route(task_id).last_known_state,
-            CanonicalTaskState.UNKNOWN,
-        )
+        self.assertEqual(route_after.last_known_state, route_before.last_known_state)
+        self.assertEqual(route_after.adapter_handle, route_before.adapter_handle)
         self.assertEqual(self.host.status_calls, [])
 
     def test_never_bound_handle_fails_closed_on_adapter_seam(self) -> None:

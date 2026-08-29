@@ -228,7 +228,15 @@ class W2F01IngressVocabularyClassification(unittest.TestCase):
         self.assertIsNotNone(preserved)
         self.assertEqual(preserved[0], "DISPATCH_REJECTED")
 
-    def test_duplicate_rejection_is_raised_without_a_typed_canonical_code(self) -> None:
+    def test_duplicate_rejection_raise_shape_after_r1_repair(self) -> None:
+        # W2 classification recorded the defect here: the raised error was the
+        # untyped base DispatcherError whose typed semantics lived only in the
+        # message string, so ingress could not project it (first incorrect
+        # semantic decision inside S2, not the canonical contract).
+        # S2/M3/R1 closed the seam: the rejection is now raised as a typed
+        # DispatcherError carrying the ACCEPTED canonical code
+        # DISPATCH_REJECTED, with the DUPLICATE_CANONICAL_TASK_ID detail
+        # preserved in the message; no new canonical code was introduced.
         dispatcher = _probe_dispatcher(RuntimeError("unused"))
         package = _probe_package("w2-f01-duplicate")
         dispatcher.dispatch(package, target_executor_id="w2-filter-probe")
@@ -245,14 +253,15 @@ class W2F01IngressVocabularyClassification(unittest.TestCase):
         )
         with self.assertRaises(DispatcherError) as ctx:
             dispatcher.dispatch(second, target_executor_id="w2-filter-probe")
-        # typed semantics exist only inside the message string; the raised
-        # error is the untyped base class with no canonical code attribute,
-        # so ingress cannot project it: the first incorrect semantic
-        # decision is inside S2 (dispatcher raise shape + ingress mapping),
-        # not in the canonical contract.
-        self.assertIs(type(ctx.exception), DispatcherError)
-        self.assertIsNone(getattr(ctx.exception, "code", None))
+        self.assertEqual(getattr(ctx.exception, "code", None), "DISPATCH_REJECTED")
         self.assertIn("DUPLICATE_CANONICAL_TASK_ID", str(ctx.exception))
+        # the ingress projection accepts it without any vocabulary change
+        projected = ingress._typed_execution_error(ctx.exception)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected[0], "DISPATCH_REJECTED")
+        # fresh key + duplicate task id is still a rejection, never a REPLAY:
+        # no second route was committed
+        self.assertEqual(len(dispatcher.list_routes()), 1)
 
 
 class W2F02ReconcileFilterClassification(unittest.TestCase):
@@ -268,7 +277,14 @@ class W2F02ReconcileFilterClassification(unittest.TestCase):
         with self.assertRaises(AdapterProtocolError):
             dispatcher.reconcile_status("w2-f02-core-typed")
 
-    def test_adapter_emitted_canonical_protocol_code_collapses_to_unknown(self) -> None:
+    def test_adapter_emitted_canonical_protocol_code_fails_closed_after_r1_repair(self) -> None:
+        # W2 classification recorded the collapse here: reconcile_status turned
+        # this ACCEPTED canonical protocol code into ordinary UNKNOWN while
+        # status() propagated the identical exception, proving the minimal
+        # repair lives in S2's exception filter (executor-neutral), not in any
+        # adapter. S2/M3/R1 closed the seam: the filter now fails closed on
+        # the canonical protocol code while the ordinary TASK_HANDLE_NOT_FOUND
+        # contrast below still reconciles to UNKNOWN.
         integrity = _CanonicalCodeBearingError(
             "inconsistent task/handle binding",
             code="ADAPTER_PROTOCOL_ERROR",
@@ -283,13 +299,17 @@ class W2F02ReconcileFilterClassification(unittest.TestCase):
         with self.assertRaises(_CanonicalCodeBearingError):
             dispatcher.status("w2-f02-adapter-code")
 
-        # reconcile_status() collapses it into ordinary UNKNOWN even though
-        # the exception carries an ACCEPTED canonical protocol code. The
-        # distinction is therefore available at the Core seam without any
-        # adapter change: minimal repair lives in S2's exception filter.
+        # repaired: reconcile_status propagates the typed integrity violation
+        # instead of recording UNKNOWN; the route state is left unmutated
+        route_before = dispatcher.get_route("w2-f02-adapter-code")
+        with self.assertRaises(_CanonicalCodeBearingError):
+            dispatcher.reconcile_status("w2-f02-adapter-code")
+        route_after = dispatcher.get_route("w2-f02-adapter-code")
+        self.assertNotEqual(
+            route_after.last_known_state, CanonicalTaskState.UNKNOWN
+        )
         self.assertEqual(
-            dispatcher.reconcile_status("w2-f02-adapter-code"),
-            CanonicalTaskState.UNKNOWN,
+            route_after.last_known_state, route_before.last_known_state
         )
 
     def test_ordinary_handle_absence_reconciles_to_unknown_as_accepted(self) -> None:
