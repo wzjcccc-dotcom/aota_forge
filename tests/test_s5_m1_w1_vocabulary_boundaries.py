@@ -468,18 +468,57 @@ class TestProvenanceVsExecutionIdentity:
             assert f in fields
         # Provenance is a future projection — S5 common provenance must not be defined as execution identity.
         # Pre-existing ProvenanceRecord (M3-B11 migration provenance) is allowed — it is not S5 result governance.
+        # Post-W2, aota_forge/core/result_governance legitimately defines ResultProvenance — descendant-safe.
+        # Verify it remains execution-neutral: only source_ref, operation_ref, content_digest, observed_at.
+        try:
+            from aota_forge.core.result_governance import ResultProvenance
+        except ImportError:
+            ResultProvenance = None  # pre-W2 state — no provenance to validate yet
+        if ResultProvenance is not None:
+            prov_fields = {f.name for f in dataclasses.fields(ResultProvenance)}
+            expected_provenance_fields = {"source_ref", "operation_ref", "content_digest", "observed_at"}
+            assert prov_fields == expected_provenance_fields, (
+                f"ResultProvenance must be execution-neutral with fields {expected_provenance_fields}, got {prov_fields}"
+            )
+            for forbidden in (
+                "canonical_task_id",
+                "executor_id",
+                "canonical_task_state",
+                "adapter_handle",
+                "dispatch_attempt_id",
+                "correlation_id",
+            ):
+                assert forbidden not in prov_fields, f"execution identity field {forbidden!r} must not be in ResultProvenance"
+            for forbidden in ("observation_id", "request_fingerprint"):
+                assert forbidden not in prov_fields, f"reader/runtime field {forbidden!r} must not be in ResultProvenance"
+            for forbidden in (
+                "database_url",
+                "vector_index",
+                "mcp_server",
+                "http_endpoint",
+                "transport_session",
+            ):
+                assert forbidden not in prov_fields, f"backend-private field {forbidden!r} must not be in ResultProvenance"
+        # Guard that no other S5 provenance class is defined as execution identity outside result_governance.
         for py in CORE_ROOT.rglob("*.py"):
             if "__pycache__" in str(py):
                 continue
             # Allow existing migration provenance module
             if str(py).endswith("migration/provenance.py"):
                 continue
+            # W2 legitimately introduces result_governance/common.py with ResultProvenance
+            if "result_governance" in str(py):
+                continue
             try:
                 tree = ast.parse(py.read_text(encoding="utf-8", errors="ignore"))
             except Exception:
                 continue
             for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef) and node.name in ("CommonProvenance", "ResultProvenance", "ProvenanceExtension", "GovernedProvenance"):
+                if isinstance(node, ast.ClassDef) and node.name in (
+                    "CommonProvenance",
+                    "ProvenanceExtension",
+                    "GovernedProvenance",
+                ):
                     pytest.fail(f"{py} must not define S5 provenance class in W1: {node.name}")
 
 
