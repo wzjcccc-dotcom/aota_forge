@@ -558,10 +558,47 @@ class TestProvidersPackageNamespace:
             pytest.fail(f"providers/__init__.py must contain only docstring, found {ast.dump(node)}")
 
     def test_no_w2_w3_files_created_in_w1(self):
-        # W1 must not create context.py / tool.py / types.py
-        for name in ("context.py", "tool.py", "types.py"):
-            p = REPO_ROOT / "aota_forge" / "core" / "providers" / name
-            assert not p.exists(), f"W1 must not create {name}"
+        """W1 historical source scope is Git/provenance evidence, not a descendant invariant.
+
+        Historical proof: `git diff 61c19e30..53ac289e` shows W1 created only
+        `providers/__init__.py`.  Descendants W2/W3 legitimately introduce
+        `context.py`/`tool.py`; the persistent invariants are semantic
+        boundaries, not absence of those files.
+        """
+        # Persistent semantic boundary: providers package must not define
+        # universal abstractions that W1 forbids, regardless of descendant files.
+        src = PROVIDERS_INIT.read_text(encoding="utf-8")
+        for sym in FORBIDDEN_PROVIDER_SYMBOLS:
+            assert sym not in src, f"providers/__init__.py must not define {sym}"
+        # No provider YAML / registry / universal base remains absent
+        assert not (REPO_ROOT / ".aota" / "providers.yaml").exists()
+        assert not (REPO_ROOT / "aota_forge" / "core" / "providers" / "base.py").exists()
+        assert not (REPO_ROOT / "aota_forge" / "core" / "providers" / "registry.py").exists()
+        # ContextProvider and ToolProvider, when present, must remain distinct
+        # (verify distinctness without requiring either to be absent)
+        import importlib.util as _ilu
+
+        context_spec = _ilu.spec_from_file_location(
+            "_w1_ctx_check", str(REPO_ROOT / "aota_forge" / "core" / "providers" / "context.py")
+        )
+        tool_spec = _ilu.spec_from_file_location(
+            "_w1_tool_check", str(REPO_ROOT / "aota_forge" / "core" / "providers" / "tool.py")
+        )
+        if context_spec is not None and tool_spec is not None:
+            # Both may legitimately exist in descendants; verify they are distinct protocols
+            import ast as _ast
+
+            ctx_src = (REPO_ROOT / "aota_forge" / "core" / "providers" / "context.py").read_text(
+                encoding="utf-8", errors="ignore"
+            )
+            tool_src = (REPO_ROOT / "aota_forge" / "core" / "providers" / "tool.py").read_text(
+                encoding="utf-8", errors="ignore"
+            )
+            # No common ProviderRequest/ProviderResult base
+            assert "ProviderRequest" not in ctx_src
+            assert "ProviderRequest" not in tool_src
+            assert "BaseProvider" not in ctx_src
+            assert "BaseProvider" not in tool_src
 
     def test_providers_package_is_importable_namespace(self):
         # Load via spec to avoid outer shadowing; verify git-tracked ns is clean
