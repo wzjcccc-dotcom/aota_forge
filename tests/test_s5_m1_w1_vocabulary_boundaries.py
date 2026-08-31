@@ -45,9 +45,22 @@ AOTA_CONTRACTS_ROOT = REPO_ROOT / ".aota" / "contracts"
 RESULTS_YAML = AOTA_CONTRACTS_ROOT / "results.yaml"
 
 # Forbidden S5 production abstractions (must not be introduced as production definitions in W1)
+# REPAIRED W3-R1: rescoped to allow Plan-authorized W3 symbols (GovernedReference,
+# GovernedReferenceKind, VerificationStatus, SideEffectOutcome) while still
+# forbidding genuine one-giant-result / storage / engine / authority overreach.
 FORBIDDEN_S5_SYMBOLS = (
-    "CommonResultGovernance",
     "UniversalResult",
+    "CanonicalUniversalResult",
+    "BaseResult",
+    "GlobalResult",
+    "ResultRegistry",
+    "GovernanceRegistry",
+    "ArtifactStore",
+    "EvidenceStore",
+    "VerificationEngine",
+    "ResultAuthority",
+    "GovernanceAuthority",
+    "CommonResultGovernance",
     "CommonResult",
     "GovernedResult",
     "ResultEnvelope",
@@ -57,13 +70,8 @@ FORBIDDEN_S5_SYMBOLS = (
     "ContextExtension",
     "ToolExtension",
     "ReaderExtension",
-    "ArtifactRef",
-    "EvidenceRef",
-    "GovernedReference",
     "ProviderResult",
     "ProviderRequest",
-    "ResultRegistry",
-    "GovernanceRegistry",
 )
 
 # Additional forbidden giant-result symbols
@@ -354,29 +362,50 @@ class TestResultArtifactEvidenceDistinctions:
         assert not hasattr(cr, "evidence_digest")
 
     def test_artifact_is_not_evidence_semantic_distinction(self):
-        # Locate authority evidence semantics: ApprovalEvidence vs artifact-like dict
-        from aota_forge.core.authority import ApprovalEvidence, MaterializedDecisionEvidence
-        # Artifact witness: material object reference
-        @dataclasses.dataclass(frozen=True)
-        class _OutcomeWitness:
-            artifact_uri: str
+        # REPAIRED W3-R1: GovernedReference is Plan-authorized W3 type.
+        # Persistent invariant is ARTIFACT_IS_EVIDENCE=no via kind-distinct semantics,
+        # not absence of GovernedReference.
+        from aota_forge.core.result_governance import (
+            GovernedReference,
+            GovernedReferenceKind,
+            ResultGovernanceProjection,
+        )
 
-        # Evidence witness: governance approval
-        # Both are conceptually different even if both could be represented as dicts
-        artifact = _OutcomeWitness(artifact_uri="file://output/coverage.json")
-        # Semantic distinction required, but concrete type split not yet required
-        # So we guard that shape is deferred: no production ArtifactRef/EvidenceRef types exist
-        for py in CORE_ROOT.rglob("*.py"):
-            if "__pycache__" in str(py):
-                continue
-            syms = _parse_ast_symbols(py)
-            assert "ArtifactRef" not in syms, f"{py} must not define ArtifactRef in W1"
-            assert "EvidenceRef" not in syms, f"{py} must not define EvidenceRef in W1"
-            assert "GovernedReference" not in syms
-        # But semantic distinction remains: an artifact uri is not evidence digest
-        assert artifact.artifact_uri != "evidence_digest_placeholder"
-        # REFERENCE_TYPE_SHAPE_DEFERRED_TO_W3=yes — we deliberately do not create distinct Python types here
-        assert True  # shape deferral proven by absence above
+        # GovernedReferenceKind values are distinct
+        assert GovernedReferenceKind.ARTIFACT != GovernedReferenceKind.EVIDENCE
+        assert GovernedReferenceKind.ARTIFACT.value == "artifact"
+        assert GovernedReferenceKind.EVIDENCE.value == "evidence"
+
+        a = GovernedReference(kind=GovernedReferenceKind.ARTIFACT, ref="artifact:opaque:1")
+        e = GovernedReference(kind=GovernedReferenceKind.EVIDENCE, ref="evidence:opaque:1")
+        assert a.kind != e.kind
+        assert a.kind.value != e.kind.value
+
+        # kind-separated projection fields enforce distinction
+        p = ResultGovernanceProjection.success(artifact_refs=(a,), evidence_refs=(e,))
+        assert p.artifact_refs[0].kind == GovernedReferenceKind.ARTIFACT
+        assert p.evidence_refs[0].kind == GovernedReferenceKind.EVIDENCE
+
+        # artifact_refs reject evidence-kind refs
+        bad_for_artifact = GovernedReference(kind=GovernedReferenceKind.EVIDENCE, ref="ev:1")
+        with pytest.raises((ValueError, TypeError)):
+            ResultGovernanceProjection.success(artifact_refs=(bad_for_artifact,))
+        with pytest.raises((ValueError, TypeError)):
+            ResultGovernanceProjection.from_dict(
+                {"governance_version": "1.0", "outcome": "success", "artifact_refs": [{"kind": "evidence", "ref": "ev:1"}]}
+            )
+
+        # evidence_refs reject artifact-kind refs
+        bad_for_evidence = GovernedReference(kind=GovernedReferenceKind.ARTIFACT, ref="art:1")
+        with pytest.raises((ValueError, TypeError)):
+            ResultGovernanceProjection.success(evidence_refs=(bad_for_evidence,))
+        with pytest.raises((ValueError, TypeError)):
+            ResultGovernanceProjection.from_dict(
+                {"governance_version": "1.0", "outcome": "success", "evidence_refs": [{"kind": "artifact", "ref": "art:1"}]}
+            )
+
+        # GOVERNED_REFERENCE_TYPE_ALLOWED=yes, ARTIFACT_EVIDENCE_SEMANTIC_DISTINCTION_PRESERVED=yes
+        assert True
 
     def test_no_distinct_artifact_evidence_types_prematurely_required(self):
         # W1 should NOT encode DISTINCT_ARTIFACT_REFERENCE_TYPE_REQUIRED=yes etc.
@@ -389,46 +418,63 @@ class TestResultArtifactEvidenceDistinctions:
 
 
 class TestVerificationVsExecutionSuccess:
-    """VERIFICATION_IS_EXECUTION_SUCCESS=no"""
+    """VERIFICATION_IS_EXECUTION_SUCCESS=no
+    REPAIRED W3-R1: VerificationStatus is Plan-authorized W3 type — persistent
+    invariant is SUCCESS_DOES_NOT_IMPLY_VERIFIED=yes, not absence.
+    """
 
     def test_execution_success_does_not_imply_verification(self):
+        # Persistent invariant uses W3 public contract: outcome=success can pair
+        # with verification=unverified or verification=failed.
+        from aota_forge.core.result_governance import ResultGovernanceProjection, ResultOutcome, VerificationStatus
+
+        p_unverified = ResultGovernanceProjection.success(verification=VerificationStatus.UNVERIFIED)
+        assert p_unverified.outcome == ResultOutcome.SUCCESS
+        assert p_unverified.verification == VerificationStatus.UNVERIFIED
+
+        p_failed = ResultGovernanceProjection.success(verification=VerificationStatus.FAILED)
+        assert p_failed.outcome == ResultOutcome.SUCCESS
+        assert p_failed.verification == VerificationStatus.FAILED
+
+        # also verified case — still success, distinct verification
+        p_verified = ResultGovernanceProjection.success(verification=VerificationStatus.VERIFIED)
+        assert p_verified.outcome == ResultOutcome.SUCCESS
+        assert p_verified.verification == VerificationStatus.VERIFIED
+
+        # from_dict round-trip for orthogonal combinations
+        for val in (VerificationStatus.UNVERIFIED, VerificationStatus.FAILED):
+            d = {"governance_version": "1.0", "outcome": "success", "verification": val.value}
+            p = ResultGovernanceProjection.from_dict(d)
+            assert p.outcome == ResultOutcome.SUCCESS
+            assert p.verification == val
+
+        # CanonicalResult success remains execution success, not verification
         from aota_forge.core.execution.results import CanonicalResult
 
-        success = CanonicalResult.success(
+        cr_success = CanonicalResult.success(
             canonical_task_id="task-verify",
             executor_id="exec-1",
             result_data={"output": "generated"},
             correlation_id="corr-verify",
         )
-        assert success.ok is True
-        assert success.status == "completed"
-        # Verification witness: execution success alone is not verified
-        @dataclasses.dataclass(frozen=True)
-        class _VerificationWitness:
-            verified: bool
-            verification_digest: str | None
-
-        unverified = _VerificationWitness(verified=False, verification_digest=None)
-        verified = _VerificationWitness(verified=True, verification_digest="sha256:verified")
-        # A successful execution can be unverified
-        assert success.ok is True and unverified.verified is False
-        # And verification state is orthogonal to ok/status
-        assert verified.verified is True
-        # Do NOT create production VerificationStatus — guard that it doesn't exist
-        for py in CORE_ROOT.rglob("*.py"):
-            if "__pycache__" in str(py):
-                continue
-            syms = _parse_ast_symbols(py)
-            assert "VerificationStatus" not in syms
+        assert cr_success.ok is True
+        assert cr_success.status == "completed"
+        assert not hasattr(cr_success, "verification")
+        # VERIFICATION_STATUS_TYPE_ALLOWED=yes, SUCCESS_DOES_NOT_IMPLY_VERIFIED=yes
+        assert True
 
     def test_no_verification_enum_produced(self):
-        for py in CORE_ROOT.rglob("*.py"):
-            if "__pycache__" in str(py):
-                continue
-            text = py.read_text(encoding="utf-8", errors="ignore")
-            # Supplemental guard: no production VerificationStatus enum
-            if "class VerificationStatus" in text:
-                pytest.fail(f"{py} must not define VerificationStatus in W1")
+        # REPAIRED W3-R1: VerificationStatus is allowed — guard is now that
+        # verification remains orthogonal to execution success, not absent.
+        from aota_forge.core.result_governance import ResultGovernanceProjection, ResultOutcome, VerificationStatus
+
+        assert VerificationStatus.UNVERIFIED.value == "unverified"
+        assert VerificationStatus.FAILED.value == "failed"
+        assert VerificationStatus.VERIFIED.value == "verified"
+        # success with unverified still success — proves distinction survives
+        p = ResultGovernanceProjection.success(verification=VerificationStatus.UNVERIFIED)
+        assert p.outcome == ResultOutcome.SUCCESS
+        assert p.verification == VerificationStatus.UNVERIFIED
 
 
 class TestProvenanceVsExecutionIdentity:

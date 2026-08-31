@@ -378,14 +378,72 @@ def test_no_reader_observation_in_common_core():
 
 
 def test_no_w3_fields():
-    fields = {f.name for f in dataclasses.fields(ResultGovernanceProjection)}
-    for forbidden in ("artifact_refs", "evidence_refs", "verification", "side_effect_outcome"):
-        assert forbidden not in fields
-    # also check provenance/completeness
-    for cls in (ResultProvenance, ResultCompleteness):
-        cfields = {f.name for f in dataclasses.fields(cls)}
-        for forbidden in ("artifact_refs", "evidence_refs", "verification", "side_effect_outcome"):
-            assert forbidden not in cfields
+    """REPAIRED W3-R1: W2 phase-state absence is not a descendant invariant.
+    W3 legitimately adds optional artifact_refs / evidence_refs / verification /
+    side_effect_outcome. Persistent W2 invariant is that a W2-only projection
+    remains valid without supplying W3 semantics (W3 fields optional/default-safe).
+    """
+    # W2-only construction remains valid and retains W2 behavior
+    prov = ResultProvenance(source_ref="logical:w2:source")
+    comp = ResultCompleteness(complete=True, reason="all", scope="test_scope")
+    p = ResultGovernanceProjection.success(provenance=prov, completeness=comp)
+    assert p.outcome == ResultOutcome.SUCCESS
+    assert p.provenance.source_ref == "logical:w2:source"
+    assert p.completeness.complete is True
+    # W3-added fields must be optional/default-safe per W3 implementation
+    assert p.artifact_refs == ()
+    assert p.evidence_refs == ()
+    assert p.verification is None
+    assert p.side_effect_outcome is None
+    d = p.to_dict()
+    assert "artifact_refs" not in d
+    assert "evidence_refs" not in d
+    assert "verification" not in d
+    assert "side_effect_outcome" not in d
+    # from_dict without W3 keys preserves W2 semantics
+    p2 = ResultGovernanceProjection.from_dict(d)
+    assert p2.outcome == p.outcome
+    assert p2.provenance.source_ref == p.provenance.source_ref
+    assert p2.completeness.complete == p.completeness.complete
+    assert p2.artifact_refs == ()
+    assert p2.evidence_refs == ()
+    assert p2.verification is None
+    assert p2.side_effect_outcome is None
+    # also via governance_version/outcome only minimal dict
+    p_min = ResultGovernanceProjection.from_dict({"governance_version": "1.0", "outcome": "success"})
+    assert p_min.artifact_refs == ()
+    assert p_min.evidence_refs == ()
+    assert p_min.verification is None
+    assert p_min.side_effect_outcome is None
+    # W2_COMMON_CORE_INDEPENDENT_OF_W3_OPTIONAL_FIELDS=yes
+    # W3_FIELDS_OPTIONAL_FOR_W2_CALLERS=yes
+    # W2_BACKWARD_CONSTRUCTION_COMPATIBILITY=yes
+    assert True
+
+
+def test_w3_fields_optional_for_w2_callers():
+    """W3 fields are optional/default-safe; W2 semantics do not depend on them."""
+    # construct with only W2 fields via success() without W3 args
+    p = ResultGovernanceProjection.success(
+        provenance=ResultProvenance(source_ref="src-w2"),
+        completeness=ResultCompleteness(complete=False, reason="bounded", scope="docs"),
+    )
+    assert p.error is None
+    assert p.provenance.source_ref == "src-w2"
+    assert p.completeness.complete is False
+    # defaults are empty/None per W3 implementation
+    assert p.artifact_refs == ()
+    assert p.evidence_refs == ()
+    assert p.verification is None
+    assert p.side_effect_outcome is None
+    # failure path also W2-compatible without W3 fields
+    from aota_forge.core.contracts.errors import ProjectNotFoundError
+
+    err = ProjectNotFoundError(message="w2-fail")
+    pf = ResultGovernanceProjection.failure(err, provenance=ResultProvenance(source_ref="src2"))
+    assert pf.outcome == ResultOutcome.FAILURE
+    assert pf.artifact_refs == ()
+    assert pf.evidence_refs == ()
 
 
 def test_no_domain_extension_stub_hierarchy():
