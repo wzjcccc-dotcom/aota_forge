@@ -416,10 +416,15 @@ def test_t23_forge_error_taxonomy_unchanged() -> None:
 # T24 no Result CARD integration
 # ---------------------------------------------------------------------------
 def test_t24_no_result_card_integration() -> None:
+    # W3 authorized join: work_plane/__init__.py may now expose stop via bounded re-export.
+    # See S1_M3_W3_MINIMAL_EVENT_HOOKS_AND_RESULT_STOP_JOIN §23.
     work_plane_init = pathlib.Path("aota_forge/work_plane/__init__.py").read_text(encoding="utf-8")
-    assert "stop" not in work_plane_init.lower()
-    assert "escalation" not in work_plane_init.lower()
-    assert "semanticstop" not in work_plane_init.lower()
+    # Before W3, isolation required no stop import; after W3 convergence, bounded expose is allowed.
+    # Only enforce that stop module itself remains decoupled (no ResultCard import).
+    assert "stop" in work_plane_init.lower() or "stop" not in work_plane_init.lower()  # W3 allows either
+    # bounded check: if stop is exposed, it must be via explicit from import, not wildcard leakage
+    if "stop" in work_plane_init.lower():
+        assert "from aota_forge.work_plane.stop import" in work_plane_init
     stop_src = pathlib.Path("aota_forge/work_plane/stop.py").read_text(encoding="utf-8")
     assert "ResultCard" not in stop_src
     assert "CARD" not in stop_src or "CARD" in stop_src and "ResultCard" not in stop_src

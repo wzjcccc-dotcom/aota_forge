@@ -1,10 +1,12 @@
-"""Worker Result CARD projection (S1 M3-W1).
+"""Worker Result CARD projection (S1 M3-W1 / M3-W3).
 
 Bounded immutable compact projection for task-main reconciliation.
+M3-W3 joins W2 stop classification as optional projection.
 
 Flow:
     CanonicalResult
     + ResultGovernanceProjection
+    + optional SemanticStop / MechanicalFailure (W2 reuse)
     -> bounded Worker Result CARD
     -> task-main (hydrates richer details via RESULT_HANDOFF_REF)
 
@@ -17,11 +19,15 @@ Invariants
 * THIRD_RESULT_ONTOLOGY_CREATED=no
 * CARD outcome is governance-backed (from ResultGovernanceProjection.outcome).
 * No duplicate error/completeness/verification/side-effect ontology.
-* No STOP_CLASSIFICATION taxonomy (M3-W2 lane).
+* STOP_CLASSIFICATION reuses W2 types (SemanticStop/MechanicalFailure), no duplicate taxonomy.
+* STOP_CLASSIFICATION_OPTIONAL=yes — ordinary success CARD may omit stop.
 * No retry logic, no telemetry, no Hermes dependency.
 * Bounded summary, refs, next_hint, counts with fail-closed rejects.
 * Deterministic canonical serialization and SHA-256 card digest.
 * CanonicalResult + governance_projection must agree (outcome semantics) or fail closed.
+* Stop classification cannot override governance outcome — FAIL_CLOSED on conflict.
+* semantic_stop escalates to task-main, never grants retry, never plan authority.
+* retryable (mechanical) never grants retry authority.
 
 Public function:
     project_worker_result_card(canonical_result, governance_projection, work_role, ...)
@@ -43,6 +49,7 @@ from aota_forge.core.result_governance import (
     ResultOutcome,
 )
 from aota_forge.work_plane.roles import AgentWorkRole, parse_agent_work_role
+from aota_forge.work_plane.stop import MechanicalFailure, SemanticStop
 
 # ---------------------------------------------------------------------------
 # Bounded capacity constraints
@@ -241,6 +248,9 @@ class WorkerResultCard:
     * primary_evidence_refs — bounded GovernedReference evidence refs
     * output_artifact_refs — bounded GovernedReference artifact refs
     * next_hint — optional bounded plain suggestion, non-authoritative
+    * semantic_stop — optional typed SemanticStop (W2 reuse), escalates to task-main
+    * mechanical_failure — optional typed MechanicalFailure (W2 reuse), retryable != authority
+    At most one of semantic_stop / mechanical_failure may be set; ordinary result may omit both.
     """
 
     task_ref: str
@@ -253,6 +263,8 @@ class WorkerResultCard:
     primary_evidence_refs: tuple[GovernedReference, ...]
     output_artifact_refs: tuple[GovernedReference, ...]
     next_hint: str | None = None
+    semantic_stop: SemanticStop | None = None
+    mechanical_failure: MechanicalFailure | None = None
 
     def __post_init__(self) -> None:
         # task_ref bounded non-empty
@@ -325,6 +337,40 @@ class WorkerResultCard:
             validated_hint = _require_optional_bounded_next_hint(self.next_hint)
             object.__setattr__(self, "next_hint", validated_hint)
 
+        # stop classification — optional, exclusive, reuses W2 types, no duplicate taxonomy
+        if self.semantic_stop is not None and self.mechanical_failure is not None:
+            raise ValueError("WorkerResultCard may carry at most one of semantic_stop / mechanical_failure")
+        if self.semantic_stop is not None:
+            if not isinstance(self.semantic_stop, SemanticStop):
+                raise TypeError(
+                    f"semantic_stop must be SemanticStop, got {type(self.semantic_stop).__name__}"
+                )
+            if self.semantic_stop.task_ref != self.task_ref:
+                raise ValueError(
+                    f"semantic_stop.task_ref {self.semantic_stop.task_ref!r} must equal CARD task_ref {self.task_ref!r}"
+                )
+            if self.semantic_stop.grants_retry is not False:
+                raise ValueError("semantic_stop must not grant retry")
+            if self.semantic_stop.requires_escalation is not True:
+                raise ValueError("semantic_stop must require escalation to task-main")
+        if self.mechanical_failure is not None:
+            if not isinstance(self.mechanical_failure, MechanicalFailure):
+                raise TypeError(
+                    f"mechanical_failure must be MechanicalFailure, got {type(self.mechanical_failure).__name__}"
+                )
+            if self.mechanical_failure.task_ref != self.task_ref:
+                raise ValueError(
+                    f"mechanical_failure.task_ref {self.mechanical_failure.task_ref!r} must equal CARD task_ref {self.task_ref!r}"
+                )
+            if self.mechanical_failure.grants_retry is not False:
+                raise ValueError("mechanical_failure must not grant retry")
+        # outcome governance — stop classification cannot override governed outcome
+        # FAIL_CLOSED on deterministic conflict: success outcome with any stop is contradictory
+        if (self.semantic_stop is not None or self.mechanical_failure is not None) and self.outcome == ResultOutcome.SUCCESS:
+            raise ValueError(
+                f"stop classification {('semantic_stop' if self.semantic_stop else 'mechanical_failure')} conflicts with SUCCESS outcome — FAIL_CLOSED"
+            )
+
     def canonical_dict(self) -> dict[str, Any]:
         """Deterministic canonical dict for digest/serialization."""
         # sort refs deterministically by (ref, digest or "")
@@ -345,6 +391,10 @@ class WorkerResultCard:
         }
         if self.next_hint is not None:
             out["next_hint"] = self.next_hint
+        if self.semantic_stop is not None:
+            out["semantic_stop"] = self.semantic_stop.canonical_dict()
+        if self.mechanical_failure is not None:
+            out["mechanical_failure"] = self.mechanical_failure.canonical_dict()
         return canonicalize(out, path="WorkerResultCard")  # type: ignore[return-value]
 
     def canonical_json(self) -> str:
@@ -372,6 +422,10 @@ class WorkerResultCard:
         }
         if self.next_hint is not None:
             d["next_hint"] = self.next_hint
+        if self.semantic_stop is not None:
+            d["semantic_stop"] = self.semantic_stop.to_dict()
+        if self.mechanical_failure is not None:
+            d["mechanical_failure"] = self.mechanical_failure.to_dict()
         return d
 
     @classmethod
@@ -392,8 +446,8 @@ class WorkerResultCard:
         for req in required:
             if req not in data:
                 raise ValueError(f"Missing required field in WorkerResultCard: {req!r}")
-        # unknown fields fail closed
-        allowed = set(required) | {"next_hint"}
+        # unknown fields fail closed (optional stop projections allowed)
+        allowed = set(required) | {"next_hint", "semantic_stop", "mechanical_failure"}
         extra = set(data.keys()) - allowed
         if extra:
             raise ValueError(f"Unknown field(s) in WorkerResultCard: {sorted(extra)}")
@@ -410,6 +464,24 @@ class WorkerResultCard:
         ev_refs = _validate_evidence_refs(data["primary_evidence_refs"])
         art_refs = _validate_artifact_refs(data["output_artifact_refs"])
         next_hint = data.get("next_hint")
+        semantic_stop = None
+        mechanical_failure = None
+        if "semantic_stop" in data and data["semantic_stop"] is not None:
+            raw = data["semantic_stop"]
+            if isinstance(raw, SemanticStop):
+                semantic_stop = raw
+            elif isinstance(raw, Mapping):
+                semantic_stop = SemanticStop.from_dict(raw)  # type: ignore
+            else:
+                raise TypeError(f"semantic_stop must be mapping or SemanticStop, got {type(raw).__name__}")
+        if "mechanical_failure" in data and data["mechanical_failure"] is not None:
+            raw = data["mechanical_failure"]
+            if isinstance(raw, MechanicalFailure):
+                mechanical_failure = raw
+            elif isinstance(raw, Mapping):
+                mechanical_failure = MechanicalFailure.from_dict(raw)  # type: ignore
+            else:
+                raise TypeError(f"mechanical_failure must be mapping or MechanicalFailure, got {type(raw).__name__}")
         return cls(
             task_ref=task_ref,
             agent_work_role=work_role,
@@ -421,6 +493,8 @@ class WorkerResultCard:
             primary_evidence_refs=ev_refs,
             output_artifact_refs=art_refs,
             next_hint=next_hint,
+            semantic_stop=semantic_stop,
+            mechanical_failure=mechanical_failure,
         )
 
 
@@ -441,6 +515,8 @@ def project_worker_result_card(
     output_artifact_refs: tuple[GovernedReference, ...] | list[GovernedReference] | None = None,
     next_hint: str | None = None,
     result_handoff_ref: ResultHandoffRef | Mapping[str, Any] | str | None = None,
+    semantic_stop: SemanticStop | Mapping[str, Any] | None = None,
+    mechanical_failure: MechanicalFailure | Mapping[str, Any] | None = None,
 ) -> WorkerResultCard:
     """Project bounded Worker Result CARD from authoritative results.
 
@@ -450,6 +526,9 @@ def project_worker_result_card(
 
     Fail-closed if canonical_result and governance_projection disagree on
     outcome semantics where comparison is possible.
+
+    Optional stop classification reuses W2 types (SemanticStop / MechanicalFailure)
+    and is bounded: at most one may be set, success outcome with stop fails closed.
 
     Parameters
     ----------
@@ -469,6 +548,8 @@ def project_worker_result_card(
         Optional bounded plain suggestion, non-authoritative.
     result_handoff_ref: optional bounded ref linking back to authority
         If None, synthesized as ref=canonical_task_id + digest=correlation_id.
+    semantic_stop: optional SemanticStop reuse
+    mechanical_failure: optional MechanicalFailure reuse
 
     Returns
     -------
@@ -533,6 +614,34 @@ def project_worker_result_card(
                 f"result_handoff_ref.ref {handoff_ref.ref!r} must equal canonical_task_id {task_ref!r} for lineage traceability"
             )
 
+    # Stop classification — optional, exclusive, reuses W2, no duplicate taxonomy
+    parsed_semantic: SemanticStop | None = None
+    parsed_mechanical: MechanicalFailure | None = None
+    if semantic_stop is not None and mechanical_failure is not None:
+        raise ValueError("may carry at most one of semantic_stop / mechanical_failure")
+    if semantic_stop is not None:
+        if isinstance(semantic_stop, SemanticStop):
+            parsed_semantic = semantic_stop
+        elif isinstance(semantic_stop, Mapping):
+            parsed_semantic = SemanticStop.from_dict(semantic_stop)  # type: ignore
+        else:
+            raise TypeError(f"semantic_stop must be SemanticStop or mapping, got {type(semantic_stop).__name__}")
+        if parsed_semantic.task_ref != task_ref:
+            raise ValueError(
+                f"semantic_stop.task_ref {parsed_semantic.task_ref!r} must equal canonical_task_id {task_ref!r}"
+            )
+    if mechanical_failure is not None:
+        if isinstance(mechanical_failure, MechanicalFailure):
+            parsed_mechanical = mechanical_failure
+        elif isinstance(mechanical_failure, Mapping):
+            parsed_mechanical = MechanicalFailure.from_dict(mechanical_failure)  # type: ignore
+        else:
+            raise TypeError(f"mechanical_failure must be MechanicalFailure or mapping, got {type(mechanical_failure).__name__}")
+        if parsed_mechanical.task_ref != task_ref:
+            raise ValueError(
+                f"mechanical_failure.task_ref {parsed_mechanical.task_ref!r} must equal canonical_task_id {task_ref!r}"
+            )
+
     return WorkerResultCard(
         task_ref=task_ref,
         agent_work_role=parsed_role,
@@ -544,4 +653,6 @@ def project_worker_result_card(
         primary_evidence_refs=ev_refs,
         output_artifact_refs=art_refs,
         next_hint=bounded_hint,
+        semantic_stop=parsed_semantic,
+        mechanical_failure=parsed_mechanical,
     )
