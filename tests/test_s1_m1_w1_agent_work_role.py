@@ -290,7 +290,7 @@ def test_no_w2_mapping_leakage() -> None:
     import aota_forge.work_plane.roles as wp_roles
     import aota_forge.work_plane as wp
 
-    forbidden = [
+    forbidden_roles = [
         "WorkRoleMapping",
         "resolve_work_role_to_canonical_role",
         "resolve_work_role",
@@ -302,8 +302,17 @@ def test_no_w2_mapping_leakage() -> None:
         "task_kind",
         "executor_selection",
     ]
-    for name in forbidden:
+    for name in forbidden_roles:
         assert not hasattr(wp_roles, name), f"forbidden W2 leakage: {name}"
+    # Package-level export of W2 mapping is intentionally allowed after W4 convergence
+    # per S1 plan §5: W4 may perform minimal public export wiring for accepted
+    # WorkRole mapping, TaskHandoff, and compiler.
+    package_strict_forbidden = [
+        "role_ranking",
+        "heuristic",
+        "executor_selection",
+    ]
+    for name in package_strict_forbidden:
         assert not hasattr(wp, name), f"forbidden W2 leakage at package: {name}"
 
     # file content should not contain mapping semantics
