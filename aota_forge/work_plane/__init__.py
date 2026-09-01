@@ -31,6 +31,20 @@ from aota_forge.work_plane.roles import (  # noqa: F401
     validate_agent_work_role,
 )
 
+from aota_forge.work_plane.lifecycle import ExecutionWorkRoleBinding  # noqa: F401
+from aota_forge.work_plane.soul import Soul  # noqa: F401
+from aota_forge.work_plane.agents_applicability import (  # noqa: F401
+    AgentsPolicyCandidate,
+    resolve_applicable_policies,
+)
+from aota_forge.work_plane.bootstrap import (  # noqa: F401
+    BootstrapBudget,
+    BootstrapBundle,
+    BootstrapComponent,
+    create_task_main_bundle,
+    create_worker_bundle,
+)
+
 __all__ = [
     "AgentWorkRole",
     "WORK_ROLES",
@@ -50,4 +64,13 @@ __all__ = [
     "TrustedExecutionBinding",
     "compile_handoff_to_execution_package",
     "compile_task_handoff",
+    "ExecutionWorkRoleBinding",
+    "Soul",
+    "AgentsPolicyCandidate",
+    "resolve_applicable_policies",
+    "BootstrapBundle",
+    "BootstrapComponent",
+    "BootstrapBudget",
+    "create_task_main_bundle",
+    "create_worker_bundle",
 ]
