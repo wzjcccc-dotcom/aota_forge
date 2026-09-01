@@ -9,6 +9,13 @@ from aota_forge.work_plane.compiler import (  # noqa: F401
     compile_handoff_to_execution_package,
     compile_task_handoff,
 )
+from aota_forge.work_plane.events import (  # noqa: F401
+    EventHook,
+    EventHookError,
+    ExecutionEvent,
+    ExecutionEventType,
+    emit_event,
+)
 from aota_forge.work_plane.handoff import (  # noqa: F401
     FORBIDDEN_MECHANICAL_FIELDS as HANDOFF_FORBIDDEN_MECHANICAL_FIELDS,
     SemanticReference,
@@ -20,6 +27,11 @@ from aota_forge.work_plane.mapping import (  # noqa: F401
     WorkRoleMappingError,
     resolve_work_role_to_canonical_role,
 )
+from aota_forge.work_plane.result_card import (  # noqa: F401
+    ResultHandoffRef,
+    WorkerResultCard,
+    project_worker_result_card,
+)
 from aota_forge.work_plane.roles import (  # noqa: F401
     AGENT_WORK_ROLES,
     VALID_WORK_ROLES,
@@ -29,6 +41,14 @@ from aota_forge.work_plane.roles import (  # noqa: F401
     is_agent_work_role,
     parse_agent_work_role,
     validate_agent_work_role,
+)
+from aota_forge.work_plane.stop import (  # noqa: F401
+    Escalation,
+    MechanicalFailure,
+    RetryRequest,
+    SemanticStop,
+    SemanticStopReason,
+    StopKind,
 )
 
 from aota_forge.work_plane.lifecycle import ExecutionWorkRoleBinding  # noqa: F401
@@ -64,6 +84,7 @@ __all__ = [
     "TrustedExecutionBinding",
     "compile_handoff_to_execution_package",
     "compile_task_handoff",
+    # M2: lifecycle / soul / AGENTS / bootstrap
     "ExecutionWorkRoleBinding",
     "Soul",
     "AgentsPolicyCandidate",
@@ -73,4 +94,21 @@ __all__ = [
     "BootstrapBudget",
     "create_task_main_bundle",
     "create_worker_bundle",
+    # M3-W1
+    "WorkerResultCard",
+    "ResultHandoffRef",
+    "project_worker_result_card",
+    # M3-W2
+    "SemanticStop",
+    "SemanticStopReason",
+    "MechanicalFailure",
+    "Escalation",
+    "StopKind",
+    "RetryRequest",
+    # M3-W3
+    "ExecutionEvent",
+    "ExecutionEventType",
+    "EventHook",
+    "EventHookError",
+    "emit_event",
 ]
