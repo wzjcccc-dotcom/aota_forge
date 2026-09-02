@@ -1,0 +1,2178 @@
+{
+  "schema_version": "1.0.0",
+  "source_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+  "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+  "generated_for": "S3 M3 W2 Legacy Skill Inventory Classification",
+  "generated_at_revision_binding": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+  "legacy_runtime_assembly_is_s3_authority": false,
+  "legacy_profile_alias_mapping_created": false,
+  "legacy_version_invented": false,
+  "legacy_declared_provenance_invented": false,
+  "usage_state_equals_migration_disposition": false,
+  "replace_by_forge_requires_concrete_seam_evidence": true,
+  "unreferenced_alone_implies_retire": false,
+  "unknown_needs_reconciliation_is_final_classification": false,
+  "legacy_inventory_is_runtime_registry": false,
+  "legacy_inventory_grants_authority": false,
+  "legacy_inventory_auto_loads_skill": false,
+  "inventory_order_deterministic": true,
+  "filesystem_order_is_authority": false,
+  "legacy_inventory_revision_bound": true,
+  "legacy_inventory_deterministic": true,
+  "all_tracked_legacy_skills_inventoried": true,
+  "all_inventoried_skill_content_read": true,
+  "content_sha256_recorded": true,
+  "duplicate_legacy_skill_name_silent_resolved": false,
+  "malformed_legacy_skill_silently_skipped": false,
+  "truncated_content_used_for_final_classification": false,
+  "aota_hermes_tools_read_only": true,
+  "aota_hermes_tools_write_performed": false,
+  "legacy_skill_content_modified": false,
+  "profile_runtime_assembly_modified": false,
+  "entries": [
+    {
+      "skill_name": "aota-architecture-review",
+      "source_path": "skills/aota-architecture-review/SKILL.md",
+      "content_sha256": "a7165da595e37fa9f2234d10792403601528847ac6e3930c3a304d42c0f767bf",
+      "content_size": 10013,
+      "frontmatter_name": "aota-architecture-review",
+      "frontmatter_description": "AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven architecture review for design_review and spec_preflight modes.",
+      "frontmatter_category": "architecture",
+      "frontmatter_tags": [
+        "aota",
+        "architecture",
+        "design-review",
+        "spec-preflight",
+        "architect",
+        "pre-construction"
+      ],
+      "declared_metadata": {
+        "name": "aota-architecture-review",
+        "description": "AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven architecture review for design_review and spec_preflight modes.",
+        "category": "architecture",
+        "tags": [
+          "aota",
+          "architecture",
+          "design-review",
+          "spec-preflight",
+          "architect",
+          "pre-construction"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "architect"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "architect"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven architecture review for design_review and spec_preflight modes.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['architect'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-canonical-spec-contract",
+      "source_path": "skills/aota-canonical-spec-contract/SKILL.md",
+      "content_sha256": "fd06275479a9aedd38a1482edd632a0dc95ffb1d0503b9f0fc3b5be30d06e849",
+      "content_size": 16031,
+      "frontmatter_name": "aota-canonical-spec-contract",
+      "frontmatter_description": "Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and binding invariants.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": [
+        "aota",
+        "spec",
+        "contract",
+        "freeze",
+        "approval",
+        "binding"
+      ],
+      "declared_metadata": {
+        "name": "aota-canonical-spec-contract",
+        "description": "Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and binding invariants.",
+        "category": "orchestration",
+        "tags": [
+          "aota",
+          "spec",
+          "contract",
+          "freeze",
+          "approval",
+          "binding"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and binding invariants.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-canonical-spec-pitfalls",
+      "source_path": "skills/aota-canonical-spec-pitfalls/SKILL.md",
+      "content_sha256": "aeae17391a77ee78cdd798ae10021f0b3691200dbb71a9bcfe1adefa399835bc",
+      "content_size": 6387,
+      "frontmatter_name": "aota-canonical-spec-pitfalls",
+      "frontmatter_description": "Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": [
+        "aota",
+        "spec",
+        "pitfalls",
+        "anti-patterns",
+        "validation"
+      ],
+      "declared_metadata": {
+        "name": "aota-canonical-spec-pitfalls",
+        "description": "Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze.",
+        "category": "orchestration",
+        "tags": [
+          "aota",
+          "spec",
+          "pitfalls",
+          "anti-patterns",
+          "validation"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-evidence-first-debugging",
+      "source_path": "skills/aota-evidence-first-debugging/SKILL.md",
+      "content_sha256": "e01e8f146dc3fa20bce2c4f3426900f9eb76ac8152611c0f39de0064de9fc932",
+      "content_size": 6572,
+      "frontmatter_name": "aota-evidence-first-debugging",
+      "frontmatter_description": "AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "forge",
+        "debugger",
+        "diagnosis",
+        "evidence-first"
+      ],
+      "declared_metadata": {
+        "name": "aota-evidence-first-debugging",
+        "description": "AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "forge",
+          "debugger",
+          "diagnosis",
+          "evidence-first"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "debugger"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "debugger"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['debugger'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-github-issue-planning",
+      "source_path": "skills/aota-github-issue-planning/SKILL.md",
+      "content_sha256": "15f6c6d03395c3a47ab6f0145031a9d088332b9b192f2199107cce8ea498d968",
+      "content_size": 2380,
+      "frontmatter_name": "aota-github-issue-planning",
+      "frontmatter_description": "Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portable Plan authority.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-github-issue-planning",
+        "description": "Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portable Plan authority.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portable Plan authority.",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portab"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=UNREFERENCED_BY_CURRENT_ASSEMBLY does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is UNREFERENCED_BY_CURRENT_ASSEMBLY, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "unreferenced alone insufficient for RETIRE per UNREFERENCED_ALONE_IMPLIES_RETIRE=no"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-hermes-host-upgrade-recovery",
+      "source_path": "skills/aota-hermes-host-upgrade-recovery/SKILL.md",
+      "content_sha256": "383d91f5f5175dfe5d6d823864ae616ad46a9bd63735af30d5e74729ac125f84",
+      "content_size": 3086,
+      "frontmatter_name": "aota-hermes-host-upgrade-recovery",
+      "frontmatter_description": "Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a Hermes host-source update.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-hermes-host-upgrade-recovery",
+        "description": "Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a Hermes host-source update.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a Hermes host-source update.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-implementation-review",
+      "source_path": "skills/aota-implementation-review/SKILL.md",
+      "content_sha256": "38d0d07b301e7c053b587772f3a3cdc11cb42928ae955e785ccd9a55bc8735be",
+      "content_size": 8785,
+      "frontmatter_name": "aota-implementation-review",
+      "frontmatter_description": "AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "forge",
+        "reviewer",
+        "review",
+        "implementation-review"
+      ],
+      "declared_metadata": {
+        "name": "aota-implementation-review",
+        "description": "AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "forge",
+          "reviewer",
+          "review",
+          "implementation-review"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "reviewer"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "reviewer"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['reviewer'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-multi-phase-doc-closure",
+      "source_path": "skills/aota-multi-phase-doc-closure/SKILL.md",
+      "content_sha256": "c32d5ec84a1ac088f649a3dbd59762ce955150966b83ee265aea0c46503555ad",
+      "content_size": 3914,
+      "frontmatter_name": "aota-multi-phase-doc-closure",
+      "frontmatter_description": "Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and follow-up SPEC boundaries.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": [
+        "aota",
+        "closure",
+        "documentation",
+        "multi-phase",
+        "evidence"
+      ],
+      "declared_metadata": {
+        "name": "aota-multi-phase-doc-closure",
+        "description": "Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and follow-up SPEC boundaries.",
+        "category": "orchestration",
+        "tags": [
+          "aota",
+          "closure",
+          "documentation",
+          "multi-phase",
+          "evidence"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and follow-up SPEC boundaries.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-native-terminal-completion-runtime-verification",
+      "source_path": "skills/aota-native-terminal-completion-runtime-verification/SKILL.md",
+      "content_sha256": "0c4572f3376f716931a1662bbb0e0fe8a423da4909f02385d0de71484e985950",
+      "content_size": 6627,
+      "frontmatter_name": "aota-native-terminal-completion-runtime-verification",
+      "frontmatter_description": "Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Desktop backend, ProcessRegistry, or session-state changes.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-native-terminal-completion-runtime-verification",
+        "description": "Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Desktop backend, ProcessRegistry, or session-state changes.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Desktop backend, ProcessRegistry, or session-state changes.",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Des"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=UNREFERENCED_BY_CURRENT_ASSEMBLY does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is UNREFERENCED_BY_CURRENT_ASSEMBLY, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "unreferenced alone insufficient for RETIRE per UNREFERENCED_ALONE_IMPLIES_RETIRE=no"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-parallel-development-orchestration",
+      "source_path": "skills/aota-parallel-development-orchestration/SKILL.md",
+      "content_sha256": "b7b30affe9944d7bb45e439d008cfa495feb05a4feed53d1e212fdcbc8e199c8",
+      "content_size": 19499,
+      "frontmatter_name": "aota-parallel-development-orchestration",
+      "frontmatter_description": "AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set scheduling, writable-lane isolation, source ownership, integration gates, and serial activation. Use for large approved plans or milestones with potentially independent work; do not use it as a replacement for task-main orchestration, SPEC lifecycle, reviewer authority, or project lifecycle.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-parallel-development-orchestration",
+        "description": "AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set scheduling, writable-lane isolation, source ownership, integration gates, and serial activation. Use for large approved plans or milestones with potentially independent work; do not use it as a replacement for task-main orchestration, SPEC lifecycle, reviewer authority, or project lifecycle.",
+        "metadata": {
+          "category": "orchestration",
+          "tags": [
+            "aota",
+            "forge",
+            "parallel",
+            "lanes",
+            "worktree",
+            "integration"
+          ]
+        },
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set scheduling, writable-lane isolation, source ownership, integration gates, and serial ",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set sched"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=UNREFERENCED_BY_CURRENT_ASSEMBLY does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is UNREFERENCED_BY_CURRENT_ASSEMBLY, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "unreferenced alone insufficient for RETIRE per UNREFERENCED_ALONE_IMPLIES_RETIRE=no"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-pcf-project-steward",
+      "source_path": "skills/aota-pcf-project-steward/SKILL.md",
+      "content_sha256": "9dcdb27f8b5e2c37c36dfe56fad6a5f0481633ff555595bf4972da1e5a81efe1",
+      "content_size": 8035,
+      "frontmatter_name": "aota-pcf-project-steward",
+      "frontmatter_description": "AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-pcf-project-steward",
+        "description": "AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance",
+        "metadata": {
+          "hermes": {
+            "tags": [
+              "aota",
+              "pcf",
+              "project-steward",
+              "continuity"
+            ]
+          }
+        },
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-plugin-tool-development",
+      "source_path": "skills/aota-plugin-tool-development/SKILL.md",
+      "content_sha256": "c04690e5310da5cd9cb6208a5d2d7f6efaf8bce6c4b1517b9112304f4af01189",
+      "content_size": 7439,
+      "frontmatter_name": "aota-plugin-tool-development",
+      "frontmatter_description": "Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "forge",
+        "tool",
+        "toolset",
+        "lifecycle"
+      ],
+      "declared_metadata": {
+        "name": "aota-plugin-tool-development",
+        "description": "Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification.",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "forge",
+          "tool",
+          "toolset",
+          "lifecycle"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "coder",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "coder",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['coder', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-portable-plan-governance",
+      "source_path": "skills/aota-portable-plan-governance/SKILL.md",
+      "content_sha256": "685b05de2978191dfd7ddcdcab14767be01f218ff1aae29f191b3fee0ddbaec7",
+      "content_size": 1663,
+      "frontmatter_name": "aota-portable-plan-governance",
+      "frontmatter_description": "Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution governance.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-portable-plan-governance",
+        "description": "Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution governance.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution governance.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution "
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-profile-efficiency-rerun",
+      "source_path": "skills/aota-profile-efficiency-rerun/SKILL.md",
+      "content_sha256": "fa36d38f6b8d79285e0d480d968751cc2d0dd6ca46f0f14e5730f1782adbceff",
+      "content_size": 4909,
+      "frontmatter_name": "aota-profile-efficiency-rerun",
+      "frontmatter_description": "Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with conservative scoring and evidence capture. Use when validating AOTA tool/skill/profile changes or comparing a new run with the previous R7 evidence.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-profile-efficiency-rerun",
+        "description": "Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with conservative scoring and evidence capture. Use when validating AOTA tool/skill/profile changes or comparing a new run with the previous R7 evidence.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with conservative scoring and evidence capture. Use when validating AOTA tool/skill/pro",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with co"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=UNREFERENCED_BY_CURRENT_ASSEMBLY does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is UNREFERENCED_BY_CURRENT_ASSEMBLY, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "unreferenced alone insufficient for RETIRE per UNREFERENCED_ALONE_IMPLIES_RETIRE=no"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-profile-skill-routing-index",
+      "source_path": "skills/aota-profile-skill-routing-index/SKILL.md",
+      "content_sha256": "b88a5ed61df68470acb5c7aad6a39aa677dfd1a9f646c921686202a96094f6eb",
+      "content_size": 5695,
+      "frontmatter_name": "aota-profile-skill-routing-index",
+      "frontmatter_description": "Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orchestration guidance.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-profile-skill-routing-index",
+        "description": "Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orchestration guidance.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orchestration guidance.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orc"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-profile-task-orchestration",
+      "source_path": "skills/aota-profile-task-orchestration/SKILL.md",
+      "content_sha256": "4fa0d95c4cdd9fbf8b9c4b53263e9430be7fd2511db51f612523bfed13cd48b0",
+      "content_size": 34031,
+      "frontmatter_name": "aota-profile-task-orchestration",
+      "frontmatter_description": "AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and handoff.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": "[aota, task-main, plan, spec, intake, handoff]",
+      "declared_metadata": {
+        "name": "aota-profile-task-orchestration",
+        "description": "AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and handoff.",
+        "category": "orchestration",
+        "tags": "[aota, task-main, plan, spec, intake, handoff]",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_parse_error": "mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 48:\n     ... TA Forge task-main orchestration: bounded intake, classification ... \n                                         ^",
+        "_frontmatter_malformed": true
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "project-steward",
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "project-steward",
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and handoff.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['project-steward', 'task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and han"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof",
+        "frontmatter defect requires reconciliation: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 48:\n"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "malformed frontmatter requires W3 verification: mapping values are not allowed here\n  in \"<unicode string>\","
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": true
+    },
+    {
+      "skill_name": "aota-project-plan-intake",
+      "source_path": "skills/aota-project-plan-intake/SKILL.md",
+      "content_sha256": "cd8a6fe5745c52015a0eb6090edaac9c742c8e5d8d9de77a54c1850ae282095c",
+      "content_size": 4095,
+      "frontmatter_name": "aota-project-plan-intake",
+      "frontmatter_description": "Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestrators into the shared governance and executor adapter contracts.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-project-plan-intake",
+        "description": "Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestrators into the shared governance and executor adapter contracts.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestrators into the shared governance and executor adapter contracts.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestra"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-runtime-smoke-verification",
+      "source_path": "skills/aota-runtime-smoke-verification/SKILL.md",
+      "content_sha256": "2a49eb32fe6522ce07149737deaee9ad85fd53b0f0420b2ebe521051b5693ec0",
+      "content_size": 5660,
+      "frontmatter_name": "aota-runtime-smoke-verification",
+      "frontmatter_description": "AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "runtime",
+        "smoke",
+        "verification",
+        "deployment"
+      ],
+      "declared_metadata": {
+        "name": "aota-runtime-smoke-verification",
+        "description": "AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks.",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "runtime",
+          "smoke",
+          "verification",
+          "deployment"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-skill-development",
+      "source_path": "skills/aota-skill-development/SKILL.md",
+      "content_sha256": "ea29fad96f8127844925ff53289f18b2e7495d6be5422d208233b8e94b41074e",
+      "content_size": 4594,
+      "frontmatter_name": "aota-skill-development",
+      "frontmatter_description": "Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "forge",
+        "skill",
+        "lifecycle",
+        "profile"
+      ],
+      "declared_metadata": {
+        "name": "aota-skill-development",
+        "description": "Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof.",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "forge",
+          "skill",
+          "lifecycle",
+          "profile"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "coder",
+          "project-steward",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "coder",
+            "project-steward",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['coder', 'project-steward', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-spec-driven-implementation",
+      "source_path": "skills/aota-spec-driven-implementation/SKILL.md",
+      "content_sha256": "b37bf86d75d2e7b59b6eacad578446accbf8c618501c4351e1893232b9c607f7",
+      "content_size": 12277,
+      "frontmatter_name": "aota-spec-driven-implementation",
+      "frontmatter_description": "AOTA Forge coder skill — spec-driven implementation contract for the coder profile",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": [
+        "aota",
+        "forge",
+        "coder",
+        "implementation",
+        "spec-driven"
+      ],
+      "declared_metadata": {
+        "name": "aota-spec-driven-implementation",
+        "description": "AOTA Forge coder skill — spec-driven implementation contract for the coder profile",
+        "category": "forge",
+        "tags": [
+          "aota",
+          "forge",
+          "coder",
+          "implementation",
+          "spec-driven"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "coder"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "coder"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge coder skill — spec-driven implementation contract for the coder profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['coder'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge coder skill — spec-driven implementation contract for the coder profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-task-coordinator-intake",
+      "source_path": "skills/aota-task-coordinator-intake/SKILL.md",
+      "content_sha256": "6dca8cf0563cfbb069da7d21b8b80839fe0bf932a1b423489b0998296b7629e3",
+      "content_size": 2918,
+      "frontmatter_name": "aota-task-coordinator-intake",
+      "frontmatter_description": "Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinator; do not use for code execution or arbitrary GitHub work.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-task-coordinator-intake",
+        "description": "Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinator; do not use for code execution or arbitrary GitHub work.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "task-coordinator"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-coordinator"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinator; do not use for code execution or arbitrary GitHub work.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-coordinator'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinato"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-task-lifecycle",
+      "source_path": "skills/aota-task-lifecycle/SKILL.md",
+      "content_sha256": "e7babb55696bd7f2727054c5bd42a5be2793da5225d728a0e8ad980fb93fbbea",
+      "content_size": 16771,
+      "frontmatter_name": "aota-task-lifecycle",
+      "frontmatter_description": "AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-task-lifecycle",
+        "description": "AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement.",
+        "category": "orchestration",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-tool-failure-fallback",
+      "source_path": "skills/aota-tool-failure-fallback/SKILL.md",
+      "content_sha256": "2dab66f82ce26430f4b09eb7f7b85cd6a33ec24644b4358ca624edc7c5d922a4",
+      "content_size": 6267,
+      "frontmatter_name": "aota-tool-failure-fallback",
+      "frontmatter_description": "Safe AOTA fallback guidance without privilege escalation.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-tool-failure-fallback",
+        "description": "Safe AOTA fallback guidance without privilege escalation.",
+        "category": "forge",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Safe AOTA fallback guidance without privilege escalation.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Safe AOTA fallback guidance without privilege escalation."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-work-classify-and-plan-gate",
+      "source_path": "skills/aota-work-classify-and-plan-gate/SKILL.md",
+      "content_sha256": "cbd943e56ca1d2e9d0401ff19e13d51cbb8fe2cf64eaaec92204a341fd4f525c",
+      "content_size": 4906,
+      "frontmatter_name": "aota-work-classify-and-plan-gate",
+      "frontmatter_description": "Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergence rules.",
+      "frontmatter_category": "orchestration",
+      "frontmatter_tags": [
+        "aota",
+        "classification",
+        "plan",
+        "gate",
+        "intake"
+      ],
+      "declared_metadata": {
+        "name": "aota-work-classify-and-plan-gate",
+        "description": "Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergence rules.",
+        "category": "orchestration",
+        "tags": [
+          "aota",
+          "classification",
+          "plan",
+          "gate",
+          "intake"
+        ],
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergence rules.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergen"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=REFERENCE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is REFERENCE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-workspace-diagnostics",
+      "source_path": "skills/aota-workspace-diagnostics/SKILL.md",
+      "content_sha256": "4ee6b0c94753f10a4ba338e023d803635de88020b5208a7046fce6afec71a209",
+      "content_size": 377,
+      "frontmatter_name": "aota-workspace-diagnostics",
+      "frontmatter_description": "Safe diagnosis for missing or invalid AOTA workspace context.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-workspace-diagnostics",
+        "description": "Safe diagnosis for missing or invalid AOTA workspace context.",
+        "category": "forge",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Safe diagnosis for missing or invalid AOTA workspace context.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Safe diagnosis for missing or invalid AOTA workspace context."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-workspace-model",
+      "source_path": "skills/aota-workspace-model/SKILL.md",
+      "content_sha256": "da879d459d0f958215648db21041781436708e56760317e92724ed95ac34f978",
+      "content_size": 1782,
+      "frontmatter_name": "aota-workspace-model",
+      "frontmatter_description": "Registered filesystem authority and PCF project identity model.",
+      "frontmatter_category": "forge",
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-workspace-model",
+        "description": "Registered filesystem authority and PCF project identity model.",
+        "category": "forge",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Registered filesystem authority and PCF project identity model.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Registered filesystem authority and PCF project identity model."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    },
+    {
+      "skill_name": "aota-worktree-governance",
+      "source_path": "skills/aota-worktree-governance/SKILL.md",
+      "content_sha256": "a0630ace0d9dc2c13655604e89b686ae91a90943f89127a23c1b8d09ab239901",
+      "content_size": 12130,
+      "frontmatter_name": "aota-worktree-governance",
+      "frontmatter_description": "Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deterministic Git worktree/lane runtime boundary: root placement, path and branch naming, lifecycle states, cleanup eligibility, scanner exclusion, CodeGraph boundary, and worker authority. Governance policy only; it does not implement Git commands or runtime tools.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "aota-worktree-governance",
+        "description": "Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deterministic Git worktree/lane runtime boundary: root placement, path and branch naming, lifecycle states, cleanup eligibility, scanner exclusion, CodeGraph boundary, and worker authority. Governance policy only; it does not implement Git commands or runtime tools.",
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_parse_error": "mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 177:\n     ... t worktree/lane runtime boundary: root placement, path and branc ... \n                                         ^",
+        "_frontmatter_malformed": true
+      },
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deterministic Git worktree/lane runtime boundary: root placement, path and branch nam",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deter"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=UNREFERENCED_BY_CURRENT_ASSEMBLY does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof",
+        "frontmatter defect requires reconciliation: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 177:"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is UNREFERENCED_BY_CURRENT_ASSEMBLY, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3",
+        "malformed frontmatter requires W3 verification: mapping values are not allowed here\n  in \"<unicode string>\",",
+        "unreferenced alone insufficient for RETIRE per UNREFERENCED_ALONE_IMPLIES_RETIRE=no"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": true
+    },
+    {
+      "skill_name": "workspace-file-access-strategy",
+      "source_path": "skills/workspace-file-access-strategy/SKILL.md",
+      "content_sha256": "acfa02aac13f9b7bfdabea70c9106e6febe7264818d4bb6e20177fb49c92d266",
+      "content_size": 5719,
+      "frontmatter_name": "workspace-file-access-strategy",
+      "frontmatter_description": "Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbidden access patterns.",
+      "frontmatter_category": null,
+      "frontmatter_tags": null,
+      "declared_metadata": {
+        "name": "workspace-file-access-strategy",
+        "description": "Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbidden access patterns.",
+        "metadata": {
+          "hermes": {
+            "tags": [
+              "aota",
+              "workspace",
+              "file-access",
+              "strategy",
+              "readonly"
+            ]
+          }
+        },
+        "_legacy_explicit_version_present": false,
+        "_legacy_declared_provenance_present": false,
+        "_frontmatter_malformed": false
+      },
+      "usage_evidence": {
+        "active_profiles": [
+          "architect",
+          "coder",
+          "debugger",
+          "friday",
+          "project-steward",
+          "reviewer",
+          "task-coordinator",
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "architect",
+            "coder",
+            "debugger",
+            "friday",
+            "project-steward",
+            "reviewer",
+            "task-coordinator",
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbidden access patterns.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['architect', 'coder', 'debugger', 'friday', 'project-steward', 'reviewer', 'task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbi"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "preliminary_classification": "UNKNOWN_NEEDS_RECONCILIATION",
+      "classification_evidence": [
+        "W2 inventories existing truth without migration; insufficient bounded evidence for final disposition",
+        "usage_state=ACTIVE does not equal migration disposition per W2 invariant USAGE_STATE_EQUALS_MIGRATION_DISPOSITION=no",
+        "forge replacement seam requires concrete behavioral overlap evidence; none proven at W2",
+        "requires W3 reconciliation for final RETAIN/REWRITE/REPLACE_BY_FORGE/RETIRE proof"
+      ],
+      "unresolved_reasons": [
+        "final migration proof owned by W3; W2 provides bounded inventory evidence only",
+        "usage evidence is ACTIVE, not disposition authority",
+        "forge replacement seam not proven; behavioral overlap requires S3 M1/M2 contract analysis in W3"
+      ],
+      "content_truncated": false,
+      "frontmatter_malformed": false
+    }
+  ],
+  "summary": {
+    "tracked_legacy_skill_count": 28,
+    "inventoried_legacy_skill_count": 28,
+    "duplicate_legacy_skill_name_count": 0,
+    "malformed_legacy_skill_count": 2,
+    "active_usage_skill_count": 14,
+    "reference_usage_skill_count": 9,
+    "unreferenced_skill_count": 5,
+    "preliminary_retain_count": 0,
+    "preliminary_rewrite_count": 0,
+    "preliminary_replace_by_forge_count": 0,
+    "preliminary_retire_count": 0,
+    "unknown_needs_reconciliation_count": 28
+  }
+}
