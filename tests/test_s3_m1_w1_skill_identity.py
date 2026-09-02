@@ -487,9 +487,10 @@ def test_no_registry_implementation():
 
 def test_no_plugin_discovery_or_database():
     import pathlib
-    # No S3 database/marketplace production files created by W1
+    # No S3 database/marketplace production files created by W1 (except static registry after W2)
     assert not pathlib.Path("aota_forge/work_plane/registry.py").exists()
-    assert not pathlib.Path("aota_forge/work_plane/skill_registry.py").exists()
+    # skill_registry.py is the expected S3 M1 W2 static registry — allowed after W2
+    # (W1 alone must not have it; W2 introduces it deterministically)
     assert not pathlib.Path("aota_forge/work_plane/skill_index.py").exists()
     assert not pathlib.Path("aota_forge/work_plane/plugin_registry.py").exists()
     assert not pathlib.Path("aota_forge/core/skill_marketplace.py").exists()
@@ -499,5 +500,4 @@ def test_no_plugin_discovery_or_database():
     assert "class Marketplace" not in src
     # No database files created
     assert not pathlib.Path("aota_forge/work_plane/registry.py").exists()
-    assert not pathlib.Path("aota_forge/work_plane/skill_registry.py").exists()
     assert not pathlib.Path("aota_forge/work_plane/skill_index.py").exists()
