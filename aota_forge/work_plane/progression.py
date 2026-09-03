@@ -1,4 +1,7 @@
-"""Milestone DAG & Progress Evidence Contract — S4 M2 W1.
+"""Milestone DAG & Progress Evidence Contract — S4 M2 W1 / W3-R1 Repair.
+
+W3-R1 adds exact Work Item ↔ execution/result binding via TaskHandoff
+and dependency-completion gating (predecessor progression-complete required).
 
 Thin bounded immutable evidence contracts required for deterministic M2 progression,
 without implementing progression itself.
@@ -30,7 +33,7 @@ from typing import Any, Mapping
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
 from aota_forge.core.result_governance import ResultOutcome
-from aota_forge.work_plane.handoff import SemanticReference
+from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.result_card import ResultHandoffRef, WorkerResultCard
 from aota_forge.work_plane.risk_review import (
     ChallengeKind,
@@ -87,6 +90,19 @@ PERSISTENT_WORKFLOW_STATE_CREATED: bool = False
 
 WORKER_RESULT_CARD_IS_PROGRESSION_AUTHORITY: bool = False
 WORKER_RESULT_NEXT_HINT_IS_PROGRESSION_AUTHORITY: bool = False
+
+# W3-R1 binding and dependency gating flags
+TASK_HANDOFF_IS_PROGRESSION_AUTHORITY: bool = False
+TASK_HANDOFF_IS_OPERATION_AUTHORITY: bool = False
+EXISTING_WORK_ITEM_EXECUTION_BINDING_REUSED: bool = True
+WORK_ITEM_EXECUTION_BINDING_SOURCE: str = "TaskHandoff"
+EXACT_WORK_ITEM_RESULT_BINDING_REPRESENTABLE: bool = True
+LOCAL_13_CONDITION_GATE_RETAINED: bool = True
+PROGRESSION_COMPLETE_REQUIRES_PREDECESSORS: bool = True
+
+# Binding collection bounds
+MAX_TASK_HANDOFFS: int = 64
+
 
 # ---------------------------------------------------------------------------
 # Helpers — bounded string validation (fail-closed)
@@ -954,11 +970,17 @@ def evaluate_milestone_progression(
     worker_cards: Mapping[str, WorkerResultCard],
     review_result_cards: Mapping[str, WorkerResultCard],
     expected_source_frontiers: Mapping[str, object] | None = None,
+    task_handoffs: Mapping[str, TaskHandoff] | None = None,
 ) -> ProgressionDisposition:
     """Pure deterministic progression evaluator.
 
     Inputs are bounded deterministic collections; caller ordering does not affect output.
     Unknown Work Item keys fail closed. No Git, no scheduler, no state machine.
+
+    W3-R1: task_handoffs provides exact Work Item ↔ execution/result binding via
+    existing TaskHandoff. Binding is evidence-only, not authority. Deterministic,
+    bounded, ordering-independent, unknown WI fail-closed, duplicate/conflicting
+    binding fail-closed (reconciliation_required).
     """
     # --- Input validation (bounded, fail-closed) ---
     if not isinstance(graph, MilestoneWorkItemGraph):
@@ -993,6 +1015,10 @@ def evaluate_milestone_progression(
         raise ValueError(f"review_result_cards exceeds bounded size")
     if expected_source_frontiers is not None and len(expected_source_frontiers) > MAX_WORK_ITEMS_PER_MILESTONE:
         raise ValueError(f"expected_source_frontiers exceeds bounded size")
+    if task_handoffs is not None and not isinstance(task_handoffs, Mapping):
+        raise TypeError(f"task_handoffs must be mapping or None, got {type(task_handoffs).__name__}")
+    if task_handoffs is not None and len(task_handoffs) > MAX_TASK_HANDOFFS:
+        raise ValueError(f"task_handoffs exceeds bounded size {MAX_TASK_HANDOFFS}")
 
     graph_work_items = set(graph.work_items)
 
@@ -1037,6 +1063,29 @@ def evaluate_milestone_progression(
             raise TypeError(f"review_result_cards key must be non-empty str, got {k!r}")
         if not isinstance(v, WorkerResultCard):
             raise TypeError(f"review_result_cards[{k!r}] must be WorkerResultCard, got {type(v).__name__}")
+    if task_handoffs is not None:
+        # Normalize deterministic ordering: check sorted keys for validation
+        for k, v in sorted(task_handoffs.items(), key=lambda x: x[0]):
+            if not isinstance(k, str) or type(k) is not str or not k.strip():
+                raise TypeError(f"task_handoffs key must be non-empty str, got {k!r}")
+            if k != k.strip():
+                raise ValueError(f"task_handoffs key must not contain leading/trailing whitespace: {k!r}")
+            if len(k) > MAX_REF_LENGTH:
+                raise ValueError(f"task_handoffs key length exceeds maximum {MAX_REF_LENGTH}")
+            if "\x00" in k:
+                raise ValueError("task_handoffs key must not contain NUL")
+            if not isinstance(v, TaskHandoff):
+                raise TypeError(f"task_handoffs[{k!r}] must be TaskHandoff, got {type(v).__name__}")
+            # TaskHandoff must carry work_item_ref for binding; unknown WI fail-closed
+            if v.work_item_ref is None:
+                raise ValueError(f"task_handoffs[{k!r}] TaskHandoff must have work_item_ref for Work Item binding")
+            wi_ref = v.work_item_ref.ref
+            if wi_ref not in graph_work_items:
+                raise ValueError(f"task_handoffs[{k!r}] unknown Work Item in TaskHandoff.work_item_ref: {wi_ref!r}")
+            # Milestone ref if present must be bounded and will be checked per-W for exact match; unknown milestone not fail at input but will block progression.
+        # Duplicate/conflicting binding detection: same task key cannot map to different WI via dict (cannot happen), but detect if multiple entries claim same task with different digest? Dict prevents duplicate keys, so check that no two tasks map to same WI with conflicting task? Actually conflicting binding is two handoffs claiming same task/result for different W — with dict this would be single key overwritten, not detectable. We treat any task_handoffs where same task appears via progress evidence for different W as mismatch during per-W check, which will cause reconciliation_required.
+        # Also detect if same work_item_ref appears for multiple different tasks that share same result digest? Not needed for deterministic; just ensure no NUL etc already.
+        pass
 
     # No metadata bags
     # (We already reject unknown fields in evidence constructors)
@@ -1153,6 +1202,51 @@ def evaluate_milestone_progression(
             per_w_block_reason[wi] = "worker_result_digest mismatch"
             reasons.add(f"{wi}: worker_result_digest mismatch")
             continue
+
+        # --- W3-R1: Exact Work Item <-> execution/result binding via TaskHandoff ---
+        # If task_handoffs provided, verify independent binding: task identity (worker_card.task_ref) must map via TaskHandoff to same work_item_ref.
+        # Also verify result_handoff_ref consistency (already checked worker_result_ref equality) and milestone binding if TaskHandoff carries it.
+        if task_handoffs is not None and len(task_handoffs) > 0:
+            # Lookup handoff by task identity (canonical_task_id). Use worker_card.task_ref as primary, fallback to pe.worker_result_ref.ref
+            task_identity_candidates = [worker_card.task_ref, pe.worker_result_ref.ref]
+            handoff = None
+            matched_key = None
+            for cand in task_identity_candidates:
+                if cand in task_handoffs:
+                    handoff = task_handoffs[cand]
+                    matched_key = cand
+                    break
+            # Also try result_handoff_ref.ref explicitly
+            if handoff is None:
+                rh_ref = worker_card.result_handoff_ref.ref
+                if rh_ref in task_handoffs:
+                    handoff = task_handoffs[rh_ref]
+                    matched_key = rh_ref
+            if handoff is None:
+                reconciliation_required.add(wi)
+                blocked.add(wi)
+                per_w_block_reason[wi] = "missing work item result binding"
+                reasons.add(f"{wi}: missing work item result binding")
+                continue
+            # Verify handoff work_item_ref matches this WI
+            if handoff.work_item_ref is None or handoff.work_item_ref.ref != wi:
+                reconciliation_required.add(wi)
+                blocked.add(wi)
+                per_w_block_reason[wi] = "work item result binding mismatch"
+                reasons.add(f"{wi}: work item result binding mismatch")
+                continue
+            # Verify milestone binding if handoff carries milestone_ref
+            if handoff.milestone_ref is not None and handoff.milestone_ref.ref != graph.milestone_ref:
+                reconciliation_required.add(wi)
+                blocked.add(wi)
+                per_w_block_reason[wi] = "work item result binding milestone mismatch"
+                reasons.add(f"{wi}: work item result binding milestone mismatch")
+                continue
+            # Duplicate/conflicting binding: if same task identity is claimed for different W elsewhere in mapping, fail-closed for both.
+            # Since dict cannot have duplicate keys, we detect conflict by checking if any other entry in task_handoffs has same task key but different work_item_ref — not possible.
+            # Instead we detect if task_handoffs contains multiple entries with same task identity but different work_item_ref via separate progress evidences handled per-W; here we ensure that if task identity appears for different WI, both will be marked reconciliation_required during their respective per-W checks (one will mismatch). No first/last wins.
+            # Also stale binding: same check covers stale (older WI mapping to newer WI) -> mismatch.
+            evidence_refs.add(handoff.handoff_digest[:16])
 
         # Condition 8: no unresolved SemanticStop / MechanicalFailure (check before outcome to capture escalation)
         if worker_card.semantic_stop is not None:
@@ -1397,6 +1491,30 @@ def evaluate_milestone_progression(
         # All 13 conditions passed -> progression_complete
         progression_complete.add(wi)
         # evidence refs already added
+
+    # --- W3-R1: Dependency-completion gating ---
+    # progression_complete requires LOCAL_FULL_GATE (13 conditions) AND all direct predecessors progression_complete.
+    # Enforce transitive DAG integrity by iteratively removing locally-complete Ws whose predecessors are not progression_complete.
+    # This preserves pure snapshot evaluation, stateless, no new state machine.
+    local_gate_complete = set(progression_complete)
+    # Iteratively filter until stable (handles transitive chains W1->W2->W3)
+    changed = True
+    while changed:
+        changed = False
+        for candidate in list(progression_complete):
+            preds = graph.predecessors_of(candidate)
+            if preds and not all(p in progression_complete for p in preds):
+                progression_complete.remove(candidate)
+                blocked.add(candidate)
+                reconciliation_required.add(candidate)
+                if candidate not in per_w_block_reason:
+                    per_w_block_reason[candidate] = "blocked by predecessor not progression-complete"
+                    reasons.add(f"{candidate}: blocked by predecessor not progression-complete")
+                elif per_w_block_reason.get(candidate) == "blocked by dependency":
+                    per_w_block_reason[candidate] = "blocked by predecessor not progression-complete"
+                changed = True
+                # When removing candidate, its successors may need removal in next iteration
+    # If predecessor gating removed some, ensure they are not considered local_complete only; ready will be computed below.
 
     # --- Compute ready set (dependency-ready) ---
     ready: set[str] = set()

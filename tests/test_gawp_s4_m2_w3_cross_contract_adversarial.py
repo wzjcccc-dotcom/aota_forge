@@ -202,14 +202,19 @@ def test_worker_identity_replayed_old_card_for_newer_WI():
     g = _graph(["W1", "W2"], [("W1", "W2")])
     disp = _disp_eligible_no_review()
     card_w1 = _make_card("task-w1", correlation_id="corr1")
+    from aota_forge.work_plane.handoff import TaskHandoff
+    from aota_forge.work_plane.roles import AgentWorkRole
+    # TaskHandoff binds task-w1 to W1, not W2
+    h_w1 = TaskHandoff(work_role=AgentWorkRole.CODER, task_kind="code", objective="obj", bounded_scope="scope", validation_expectations=("v",), semantic_stop_expectations=("s",), milestone_ref=_semantic("S4/M2"), work_item_ref=_semantic("W1"))
     pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-w1", "corr1"), worker_result_digest=card_w1.card_digest)
     ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
-    res = evaluate_milestone_progression(g, (pe_w2,), (ve_w2,), {"W1": disp, "W2": disp}, (), {"task-w1": card_w1}, {})
-    # Evaluator currently does not bind task-w1 card to specific WI beyond ref/digest match; so W2 can be marked progression_complete even though W1 not complete.
-    # This is a known bounded limitation (WI-task binding is not enforced beyond ref/digest). The proof documents that no *fuzzy* matching occurs for ref/digest mismatches (other tests), and that overall milestone still not ready and W1 remains ready.
+    res = evaluate_milestone_progression(g, (pe_w2,), (ve_w2,), {"W1": disp, "W2": disp}, (), {"task-w1": card_w1}, {}, task_handoffs={"task-w1": h_w1})
+    # W3-R1: replay must be fail-closed via binding + predecessor gating
     assert res.milestone_review_ready is False
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W2" in res.blocked_work_item_refs or "W2" in res.reconciliation_required_work_item_refs
     assert "W1" in res.ready_work_item_refs or "W1" in res.blocked_work_item_refs
-    # Note: evaluator does not enforce transitive predecessor for progression_complete; W2 can be marked complete even though W1 not complete. This documents bounded behavior without fuzzy matching for ref/digest (other tests).
+    # W3 (if existed) would not be ready because W2 not complete; here we just verify W2 blocked
 
 def test_worker_identity_no_fuzzy_matching():
     g = _graph(["W1"], [])
@@ -1223,4 +1228,197 @@ def test_parallel_review_join_simulation():
     c4, p4, v4 = _valid_triplet("W4", "task-w4", disp_w4)
     res4 = evaluate_milestone_progression(g, (p1, p2, p3, p4), (v1, v2, v3, v4), {"W1": disp_w1, "W2": disp_w2, "W3": disp_w3, "W4": disp_w4}, (sat,), {"task-w1": c1, "task-w2": c2, "task-w3": c3, "task-w4": c4}, {"task-analyst": analyst})
     assert res4.milestone_review_ready is True
+
+
+
+# ---------------------------------------------------------------------------
+# W3-R1 Repair: Work Item / Result Binding & Dependency-Completion Safety
+# ---------------------------------------------------------------------------
+
+def _make_handoff_for_wi(wi, milestone="S4/M2"):
+    from aota_forge.work_plane.handoff import TaskHandoff
+    return TaskHandoff(work_role=AgentWorkRole.CODER, task_kind="code", objective="obj", bounded_scope="scope", validation_expectations=("v",), semantic_stop_expectations=("s",), milestone_ref=SemanticReference(ref=milestone), work_item_ref=SemanticReference(ref=wi))
+
+def test_w3r1_linear_replay_blocked():
+    g = _graph(["W1","W2","W3"], [("W1","W2"),("W2","W3")])
+    disp = _disp_eligible_no_review()
+    card_w1 = _make_card("task-w1")
+    h_w1 = _make_handoff_for_wi("W1")
+    pe_w2_replay = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-w1","corr1"), worker_result_digest=card_w1.card_digest)
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    res = evaluate_milestone_progression(g, (pe_w2_replay,), (ve_w2,), {"W1": disp,"W2": disp,"W3": disp}, (), {"task-w1": card_w1}, {}, task_handoffs={"task-w1": h_w1})
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W3" not in res.ready_work_item_refs
+    assert "W2" in res.blocked_work_item_refs or "W2" in res.reconciliation_required_work_item_refs
+    # Then provide real W2-bound result R2 and verify W2 can complete when W1 also complete
+    card_w2 = _make_card("task-w2")
+    h_w2 = _make_handoff_for_wi("W2")
+    card_w1b = _make_card("task-w1")
+    pe_w1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-w1","corr1"), worker_result_digest=card_w1b.card_digest)
+    ve_w1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-w2","corr1"), worker_result_digest=card_w2.card_digest)
+    res2 = evaluate_milestone_progression(g, (pe_w1, pe_w2), (ve_w1, ve_w2), {"W1": disp,"W2": disp,"W3": disp}, (), {"task-w1": card_w1b, "task-w2": card_w2}, {}, task_handoffs={"task-w1": h_w1, "task-w2": h_w2})
+    assert "W2" in res2.progression_complete_work_item_refs
+    assert "W3" in res2.ready_work_item_refs
+
+def test_w3r1_multiple_root_replay_blocked():
+    g = _graph(["W1","W2","W3","W4"], [("W1","W3"),("W2","W4")])
+    disp = _disp_eligible_no_review()
+    card_r1 = _make_card("task-r1")
+    h_w1 = _make_handoff_for_wi("W1")
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-r1","corr1"), worker_result_digest=card_r1.card_digest)
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    res = evaluate_milestone_progression(g, (pe_w2,), (ve_w2,), {"W1": disp,"W2": disp,"W3": disp,"W4": disp}, (), {"task-r1": card_r1}, {}, task_handoffs={"task-r1": h_w1})
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W4" not in res.ready_work_item_refs
+    assert "W2" in res.blocked_work_item_refs or "W2" in res.reconciliation_required_work_item_refs
+
+def test_w3r1_same_result_cross_w_replay_blocked():
+    g = _graph(["W1","W2"], [])
+    disp = _disp_eligible_no_review()
+    card_r1 = _make_card("task-r1")
+    h_w1 = _make_handoff_for_wi("W1")
+    pe_w1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-r1","corr1"), worker_result_digest=card_r1.card_digest)
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-r1","corr1"), worker_result_digest=card_r1.card_digest)
+    ve_w1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    res = evaluate_milestone_progression(g, (pe_w1, pe_w2), (ve_w1, ve_w2), {"W1": disp,"W2": disp}, (), {"task-r1": card_r1}, {}, task_handoffs={"task-r1": h_w1})
+    assert "W1" in res.progression_complete_work_item_refs
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W2" in res.blocked_work_item_refs or "W2" in res.reconciliation_required_work_item_refs
+
+def test_w3r1_legitimate_per_w_result_binding():
+    g = _graph(["W1","W2"], [])
+    disp = _disp_eligible_no_review()
+    card1 = _make_card("task-1")
+    card2 = _make_card("task-2")
+    h1 = _make_handoff_for_wi("W1")
+    h2 = _make_handoff_for_wi("W2")
+    pe1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-1","corr1"), worker_result_digest=card1.card_digest)
+    pe2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-2","corr1"), worker_result_digest=card2.card_digest)
+    ve1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    ve2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    res = evaluate_milestone_progression(g, (pe1, pe2), (ve1, ve2), {"W1": disp,"W2": disp}, (), {"task-1": card1, "task-2": card2}, {}, task_handoffs={"task-1": h1, "task-2": h2})
+    assert set(res.progression_complete_work_item_refs) == {"W1","W2"}
+
+def test_w3r1_dependency_gate_blocks_even_with_correct_binding():
+    g = _graph(["W1","W2","W3"], [("W1","W2"),("W2","W3")])
+    disp = _disp_eligible_no_review()
+    card_w2 = _make_card("task-w2")
+    h_w2 = _make_handoff_for_wi("W2")
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-w2","corr1"), worker_result_digest=card_w2.card_digest)
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    # W1 not complete, but W2 has correct binding; should still be blocked by predecessor
+    res = evaluate_milestone_progression(g, (pe_w2,), (ve_w2,), {"W1": disp,"W2": disp,"W3": disp}, (), {"task-w2": card_w2}, {}, task_handoffs={"task-w2": h_w2})
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W3" not in res.ready_work_item_refs
+
+def test_w3r1_transitive_dependency():
+    g = _graph(["W1","W2","W3"], [("W1","W2"),("W2","W3")])
+    disp = _disp_eligible_no_review()
+    card1 = _make_card("task-1")
+    card3 = _make_card("task-3")
+    h1 = _make_handoff_for_wi("W1")
+    h3 = _make_handoff_for_wi("W3")
+    pe1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-1","corr1"), worker_result_digest=card1.card_digest)
+    pe3 = WorkItemProgressEvidence(work_item_ref="W3", worker_result_ref=_handoff("task-3","corr1"), worker_result_digest=card3.card_digest)
+    ve1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    ve3 = FocusedValidationEvidence(work_item_ref="W3", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W3"))
+    # Only W1 and W3 evidence, missing W2; W3 should be blocked even though locally complete
+    res = evaluate_milestone_progression(g, (pe1, pe3), (ve1, ve3), {"W1": disp,"W2": disp,"W3": disp}, (), {"task-1": card1, "task-3": card3}, {}, task_handoffs={"task-1": h1, "task-3": h3})
+    assert "W3" not in res.progression_complete_work_item_refs
+    assert "W3" in res.blocked_work_item_refs
+
+def test_w3r1_conflicting_binding_fail_closed():
+    g = _graph(["W1","W2"], [])
+    disp = _disp_eligible_no_review()
+    card = _make_card("task-x")
+    # Provide task_handoffs where same task would need to map to two Ws, but dict can only have one; simulate conflict via progress evidence attempting both, but handoff only for W1
+    h_w1 = _make_handoff_for_wi("W1")
+    pe_w1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-x","corr1"), worker_result_digest=card.card_digest)
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-x","corr1"), worker_result_digest=card.card_digest)
+    ve_w1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    # Both claim same task, but only W1 has binding; W2 should fail binding, and overall not have first-win
+    res = evaluate_milestone_progression(g, (pe_w1, pe_w2), (ve_w1, ve_w2), {"W1": disp,"W2": disp}, (), {"task-x": card}, {}, task_handoffs={"task-x": h_w1})
+    assert "W1" in res.progression_complete_work_item_refs
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W2" in res.reconciliation_required_work_item_refs or "W2" in res.blocked_work_item_refs
+
+def test_w3r1_stale_binding_fail_closed():
+    g = _graph(["W1","W2"], [])
+    disp = _disp_eligible_no_review()
+    card = _make_card("task-old")
+    h_old = _make_handoff_for_wi("W1")  # task-old bound to W1 (older)
+    pe_w2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-old","corr1"), worker_result_digest=card.card_digest)
+    ve_w2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    res = evaluate_milestone_progression(g, (pe_w2,), (ve_w2,), {"W1": disp,"W2": disp}, (), {"task-old": card}, {}, task_handoffs={"task-old": h_old})
+    assert "W2" not in res.progression_complete_work_item_refs
+    assert "W2" in res.blocked_work_item_refs
+
+def test_w3r1_task_handoff_not_authority():
+    # TaskHandoff must not grant S2 authority; verify evaluator does not check S2 authority via handoff
+    # We test that providing TaskHandoff does not bypass S2 checks: progression still requires validation etc, and handoff alone cannot make W complete.
+    from aota_forge.work_plane.handoff import TaskHandoff as _TH
+    try:
+        from aota_forge.core.authority import WorkspaceAuthorityEvidence  # type: ignore
+    except ImportError:
+        WorkspaceAuthorityEvidence = type("DummyAuthority", (), {})
+    g = _graph(["W1"], [])
+    disp = _disp_eligible_no_review()
+    card = _make_card("task-w1")
+    h = _make_handoff_for_wi("W1")
+    # No validation evidence -> should be blocked even with handoff
+    pe = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-w1","corr1"), worker_result_digest=card.card_digest)
+    res = evaluate_milestone_progression(g, (pe,), (), {"W1": disp}, (), {"task-w1": card}, {}, task_handoffs={"task-w1": h})
+    assert "W1" not in res.progression_complete_work_item_refs
+    # Also check that TaskHandoff type cannot be used as authority evidence (type check)
+    assert type(h).__name__ == "TaskHandoff"
+    assert not isinstance(h, WorkspaceAuthorityEvidence) if WorkspaceAuthorityEvidence.__name__ != "DummyAuthority" else True
+    # Ensure evaluator flags remain false
+    from aota_forge.work_plane import progression as prog_mod
+    assert prog_mod.TASK_HANDOFF_IS_PROGRESSION_AUTHORITY is False
+    assert prog_mod.TASK_HANDOFF_IS_OPERATION_AUTHORITY is False
+
+def test_w3r1_milestone_mismatch_blocks():
+    g = MilestoneWorkItemGraph(milestone_ref="S4/M2", work_items=("W1",), dependencies=())
+    disp = _disp_eligible_no_review()
+    card = _make_card("task-w1")
+    from aota_forge.work_plane.handoff import TaskHandoff
+    h_wrong_milestone = TaskHandoff(work_role=AgentWorkRole.CODER, task_kind="code", objective="obj", bounded_scope="scope", validation_expectations=("v",), semantic_stop_expectations=("s",), milestone_ref=SemanticReference(ref="S4/M999"), work_item_ref=SemanticReference(ref="W1"))
+    pe = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-w1","corr1"), worker_result_digest=card.card_digest)
+    ve = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    res = evaluate_milestone_progression(g, (pe,), (ve,), {"W1": disp}, (), {"task-w1": card}, {}, task_handoffs={"task-w1": h_wrong_milestone})
+    assert "W1" not in res.progression_complete_work_item_refs
+
+def test_w3r1_unknown_work_item_in_handoff_fail_closed():
+    g = _graph(["W1"], [])
+    # handoff with unknown WI should fail at input validation
+    h_bad = _make_handoff_for_wi("W999")
+    card = _make_card("task-w1")
+    pe = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-w1","corr1"), worker_result_digest=card.card_digest)
+    ve = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    disp = _disp_eligible_no_review()
+    try:
+        evaluate_milestone_progression(g, (pe,), (ve,), {"W1": disp}, (), {"task-w1": card}, {}, task_handoffs={"task-w1": h_bad})
+        assert False, "should have raised ValueError for unknown WI in handoff"
+    except ValueError as e:
+        assert "unknown Work Item" in str(e)
+
+def test_w3r1_deterministic_ordering():
+    g = _graph(["W1","W2"], [])
+    disp = _disp_eligible_no_review()
+    card1 = _make_card("task-1")
+    card2 = _make_card("task-2")
+    h1 = _make_handoff_for_wi("W1")
+    h2 = _make_handoff_for_wi("W2")
+    pe1 = WorkItemProgressEvidence(work_item_ref="W1", worker_result_ref=_handoff("task-1","corr1"), worker_result_digest=card1.card_digest)
+    pe2 = WorkItemProgressEvidence(work_item_ref="W2", worker_result_ref=_handoff("task-2","corr1"), worker_result_digest=card2.card_digest)
+    ve1 = FocusedValidationEvidence(work_item_ref="W1", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W1"))
+    ve2 = FocusedValidationEvidence(work_item_ref="W2", verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=_semantic("val:W2"))
+    # Different orderings should give same digest
+    res_a = evaluate_milestone_progression(g, (pe1, pe2), (ve1, ve2), {"W1": disp,"W2": disp}, (), {"task-1": card1, "task-2": card2}, {}, task_handoffs={"task-1": h1, "task-2": h2})
+    res_b = evaluate_milestone_progression(g, (pe2, pe1), (ve2, ve1), {"W1": disp,"W2": disp}, (), {"task-2": card2, "task-1": card1}, {}, task_handoffs={"task-2": h2, "task-1": h1})
+    assert res_a.digest == res_b.digest
+    assert res_a.progression_complete_work_item_refs == res_b.progression_complete_work_item_refs
 
