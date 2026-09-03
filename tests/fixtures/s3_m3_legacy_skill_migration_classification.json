@@ -1,0 +1,1789 @@
+{
+  "schema_version": "1.0.0",
+  "source_inventory": "tests/fixtures/s3_m3_legacy_skill_inventory.json",
+  "source_repository": "wzjcccc-dotcom/aota-hermes-tools",
+  "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+  "classification_source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+  "classification_revision_matches_w2": true,
+  "legacy_head_drift_present": false,
+  "classification_policy": {
+    "deterministic_order": "skill_name, source_path ascending",
+    "input_order_is_authority": false,
+    "filename_only_classification_count": 0,
+    "classification_vocab": [
+      "RETAIN",
+      "REWRITE",
+      "REPLACE_BY_FORGE",
+      "RETIRE"
+    ],
+    "unknown_needs_reconciliation_is_final_classification": false,
+    "replace_by_forge_requires_concrete_accepted_seam": true,
+    "unreferenced_alone_implies_retire": false,
+    "legacy_profile_alias_mapping_created": false,
+    "usage_state_equals_migration_disposition": false,
+    "evidence_dimensions": [
+      "actual Skill procedural content",
+      "legacy usage evidence",
+      "legacy ownership/profile evidence",
+      "current Forge-native equivalent/replacement evidence",
+      "compatibility with current S1/S2/S3 authority model",
+      "continued procedural value"
+    ],
+    "w2_unknown_needs_reconciliation_count": 28,
+    "w1_failure_matrix_proven": true,
+    "m1_m2_failure_semantics_repair_required": false,
+    "legacy_skill_forces_m1_m2_authority_weakening": false,
+    "concurrent_unaccepted_branch_used_as_replacement_proof": false,
+    "migration_classification_is_runtime_authority": false,
+    "migration_classification_auto_applied": false,
+    "actual_legacy_migration_performed": false,
+    "legacy_source_mutation_performed": false,
+    "s1_shared_hot_file_touched": false,
+    "classification_count_targets_predetermined": false
+  },
+  "entries": [
+    {
+      "skill_name": "aota-architecture-review",
+      "source_path": "skills/aota-architecture-review/SKILL.md",
+      "content_sha256": "a7165da595e37fa9f2234d10792403601528847ac6e3930c3a304d42c0f767bf",
+      "content_size": 10013,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "architect"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "architect"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven architecture review for design_review and spec_preflight modes.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['architect'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge architect skill — pre-construction design and spec review contract. Read-only, evidence-based, verdict-driven"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct procedural responsibility remains useful: pre-construction design and spec review (read-only, evidence-based, verdict-driven) for architect role",
+        "No accepted Forge core/module fully replaces that responsibility; S3 Skill system provides registry and loading but not review semantics",
+        "Content is compatible with present authority boundaries: read-only CodeGraph status/query/explore, no Tool authority grant, no AGENTS override",
+        "Legacy profile naming (architect) is not essential to semantics; procedure remains useful under AgentWorkRole analyst or reviewer",
+        "No material obsolete Tool/runtime assumption requiring rewrite; bounded reads align with workspace_tools governance"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-architecture-review/SKILL.md content_sha256 verified",
+        "deploy/profile-runtime-assembly.yaml active_skills includes architect",
+        "aota_forge/work_plane/skill.py SkillIdentity contract checked – no overlap"
+      ],
+      "authority_compatibility": "compatible: read-only governance guidance, no conflict with S1/S2/S3 authority model",
+      "migration_action_summary": "Retain procedural concept as S3 Skill; re-package with S3 identity (skill_id/version/digest/provenance) and namespace without semantic rewrite",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-canonical-spec-contract",
+      "source_path": "skills/aota-canonical-spec-contract/SKILL.md",
+      "content_sha256": "fd06275479a9aedd38a1482edd632a0dc95ffb1d0503b9f0fc3b5be30d06e849",
+      "content_size": 16031,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and binding invariants.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA SPEC contract — field matrix, artifact reference schema, validation tiers, freeze/approval authority, and"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct procedural responsibility remains useful: canonical SPEC field matrix, artifact refs, validation tiers, freeze/approval authority",
+        "No Forge implementation owns SPEC contract fields; S3 owns Skill identity not SPEC semantics",
+        "Compatible with present authority: descriptive contract, does not grant execution/filesystem/tool authority",
+        "Procedure remains useful for task coordinator and task-main orchestration",
+        "No obsolete Tool assumption; content is contract reference, not runtime choreography"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-canonical-spec-contract/SKILL.md content_sha256 verified",
+        "deploy/profile-runtime-assembly.yaml reference_skills includes task-coordinator/task-main"
+      ],
+      "authority_compatibility": "compatible: contract reference, authority precedence trusted project/worktree > TaskHandoff > AGENTS > Skill preserved",
+      "migration_action_summary": "Retain as reference Skill; keep as progressive guidance for SPEC creation",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-canonical-spec-pitfalls",
+      "source_path": "skills/aota-canonical-spec-pitfalls/SKILL.md",
+      "content_sha256": "aeae17391a77ee78cdd798ae10021f0b3691200dbb71a9bcfe1adefa399835bc",
+      "content_size": 6387,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA SPEC pitfalls — common failure modes, anti-patterns, and stop conditions for SPEC creation and freeze."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct procedural value: anti-patterns and stop conditions for SPEC creation/freeze",
+        "Not replaced by Forge; no Forge module enumerates SPEC pitfalls as procedural guidance",
+        "Compatible: guidance only, no authority escalation, no filesystem widening",
+        "Legacy category/orchestration remains valid under new Work Role model",
+        "No rewrite needed: content is pitfalls list, not tool choreography"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-canonical-spec-pitfalls/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml reference usage"
+      ],
+      "authority_compatibility": "compatible: purely advisory, no authority conflict",
+      "migration_action_summary": "Retain as complementary reference to canonical-spec-contract",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-evidence-first-debugging",
+      "source_path": "skills/aota-evidence-first-debugging/SKILL.md",
+      "content_sha256": "e01e8f146dc3fa20bce2c4f3426900f9eb76ac8152611c0f39de0064de9fc932",
+      "content_size": 6572,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "debugger"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "debugger"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['debugger'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge debugger skill — evidence-first diagnosis contract for the debugger profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct diagnostic responsibility for debugger profile: evidence-first root-cause analysis",
+        "No Forge replacement: S1/S2 provide stop/retry classification but not diagnostic procedure",
+        "Compatible with S1 stop contract: symptom/hypothesis/evidence discipline aligns with semantic stop taxonomy",
+        "Profile naming (debugger) not essential; procedure useful under analyst or coder",
+        "No obsolete runtime assumption; CodeGraph fallback to bounded read/search aligns with workspace_tools"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-evidence-first-debugging/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active_skills debugger"
+      ],
+      "authority_compatibility": "compatible: diagnosis procedure, no authority grant",
+      "migration_action_summary": "Retain as debugger/analyst diagnostic Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-github-issue-planning",
+      "source_path": "skills/aota-github-issue-planning/SKILL.md",
+      "content_sha256": "15f6c6d03395c3a47ab6f0145031a9d088332b9b192f2199107cce8ea498d968",
+      "content_size": 2380,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portable Plan authority.",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Legacy compatibility alias only. Routes to GOVERNANCE_INDEX and the canonical shared core; defines no independent Portab"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETIRE",
+      "classification_reasons": [
+        "Procedure is obsolete: file declares LEGACY_COMPATIBILITY_ALIAS_ONLY=yes, no independent Portable Plan authority",
+        "Superseded by canonical shared core at chat_governance/aota-portable-plan-governance.md with S/M/W body-plus-5-comments model",
+        "Content is routing table (GOVERNANCE_INDEX, SHARED_CORE) without procedural decision workflow",
+        "No residual Skill guidance beyond alias routing; retaining would duplicate router already covered by aota-portable-plan-governance",
+        "Unreferenced status (UNREFERENCED_BY_CURRENT_ASSEMBLY) is corroborating, not sole determinant; retirement based on superseded authority"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-github-issue-planning/SKILL.md line 1-20 shows LEGACY_COMPATIBILITY_ALIAS_ONLY",
+        "chat_governance/aota-portable-plan-governance.md canonical core – superseding authority",
+        "deploy/profile-runtime-assembly.yaml no current profile references this skill"
+      ],
+      "authority_compatibility": "obsolete alias conflicts with current S3 authority model if retained as normative; aligns with retirement to avoid dual authority",
+      "migration_action_summary": "Retire: remove from future S3 registry; historical alias kept only for readability, not migrated",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-hermes-host-upgrade-recovery",
+      "source_path": "skills/aota-hermes-host-upgrade-recovery/SKILL.md",
+      "content_sha256": "383d91f5f5175dfe5d6d823864ae616ad46a9bd63735af30d5e74729ac125f84",
+      "content_size": 3086,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a Hermes host-source update.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Preserve AOTA Profile Skill-exposure behavior and verify the retired parent-wake core customization stays absent after a"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Procedural value remains: verify Skill-exposure after Hermes host update and ensure retired parent-wake customization stays absent",
+        "Not replaced by Forge: Forge work plane does not own Hermes host upgrade verification; host remains external",
+        "Compatible: read-only verification, no authority grant, bounded checks",
+        "Distinct from Forge execution; procedure addresses host-specific safety gates still relevant for aota-hermes-tools repo",
+        "No obsolete Tool names requiring rewrite; references hermes-host binary path which remains factual"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-hermes-host-upgrade-recovery/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active task-main"
+      ],
+      "authority_compatibility": "compatible: host verification is orthogonal to Forge work plane, no conflict",
+      "migration_action_summary": "Retain as host maintenance Skill for aota-hermes-tools governance",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-implementation-review",
+      "source_path": "skills/aota-implementation-review/SKILL.md",
+      "content_sha256": "38d0d07b301e7c053b587772f3a3cdc11cb42928ae955e785ccd9a55bc8735be",
+      "content_size": 8785,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "reviewer"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "reviewer"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['reviewer'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge reviewer skill — post-implementation review contract for the reviewer profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct reviewer procedure: post-implementation review scope, correctness, validation evidence, regression risk",
+        "No Forge replacement; S3 provides review Skill loading but not review verdict workflow",
+        "Compatible: reviewer contract, read-only, verdict-driven, no tool choreography",
+        "Profile reviewer remains distinct under AgentWorkRole reviewer",
+        "No obsolete assumptions; aligns with S1 result governance"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-implementation-review/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active reviewer"
+      ],
+      "authority_compatibility": "compatible: review procedure, no authority escalation",
+      "migration_action_summary": "Retain as reviewer bootstrap Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-multi-phase-doc-closure",
+      "source_path": "skills/aota-multi-phase-doc-closure/SKILL.md",
+      "content_sha256": "c32d5ec84a1ac088f649a3dbd59762ce955150966b83ee265aea0c46503555ad",
+      "content_size": 3914,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and follow-up SPEC boundaries.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA multi-phase documentation closure — work item closure evidence, residual risk, checkpoint completion, and"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Useful closure procedure: work item evidence, residual risk, checkpoint completion, follow-up SPEC boundaries",
+        "Not replaced by Forge; no Forge module automates doc closure checklist",
+        "Compatible with S1/S2 result governance: closure as governance, not execution authority",
+        "Reference usage still valid for task-coordinator/task-main",
+        "No rewrite required; content is checklist, not authority mix"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-multi-phase-doc-closure/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml reference"
+      ],
+      "authority_compatibility": "compatible: closure guidance, no dual authority",
+      "migration_action_summary": "Retain as reference closure Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-native-terminal-completion-runtime-verification",
+      "source_path": "skills/aota-native-terminal-completion-runtime-verification/SKILL.md",
+      "content_sha256": "0c4572f3376f716931a1662bbb0e0fe8a423da4909f02385d0de71484e985950",
+      "content_size": 6627,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Desktop backend, ProcessRegistry, or session-state changes.",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Verify Hermes-native terminal completion, wake, handoff, and durable closure after Hermes, AOTA launcher, finalizer, Des"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [
+        "path: aota_forge/adapters/hermes/executor.py symbol: HermesAdapter (accepted S2 M2 frontier 78daaf49)",
+        "path: aota_forge/adapters/hermes/host_client.py symbol: HermesHostClient dispatch/query_status/fetch_result protocol (accepted lineage)",
+        "path: aota_forge/composition/execution.py symbol: bind_production_execution_dispatcher / create_production_execution_dispatcher (accepted)",
+        "path: aota_forge/core/execution/state.py symbol: CanonicalTaskState terminal reconciliation (accepted S1)",
+        "lineage: M3 base 14fbdd28 contains S2 M2 accepted frontier 78daaf49 and JRV1 14fbdd28 verification; semantic overlap: bounded execution, adapter-handle identity, status/result translation, drain stabilization replaces native terminal completion verification"
+      ],
+      "final_classification": "REPLACE_BY_FORGE",
+      "classification_reasons": [
+        "Legacy procedure verified Hermes-native terminal completion, wake, handoff, durable closure via ProcessRegistry and Desktop backend",
+        "Behavior now owned by accepted Forge implementation: execution dispatcher + HermesAdapter + host-client protocol fully replaces native terminal wake/closure semantics",
+        "Evidence: Forge execution verification at aota_forge/adapters/hermes/* and aota_forge/composition/execution.py governs terminal completion deterministically with JRV1 proof",
+        "Legacy skill's terminal/ProcessRegistry control plane is removed architecture; rewriting has no justified value vs replacement",
+        "Usage UNREFERENCED corroborates but not sole reason; obsolescence + concrete replacement proves retire vs rewrite"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-native-terminal-completion-runtime-verification/SKILL.md verified UNREFERENCED but procedure targets removed Hermes-native runtime",
+        "aota_forge/adapters/hermes/executor.py concrete seam",
+        "deploy/profile-runtime-assembly.yaml no active reference"
+      ],
+      "authority_compatibility": "superseded: legacy Hermes-native terminal model conflicts with Forge adapter-neutral execution; Forge work plane is authority",
+      "migration_action_summary": "Replace by Forge: do not migrate Skill; rely on Forge execution seams; retain no Skill guidance",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-parallel-development-orchestration",
+      "source_path": "skills/aota-parallel-development-orchestration/SKILL.md",
+      "content_sha256": "b7b30affe9944d7bb45e439d008cfa495feb05a4feed53d1e212fdcbc8e199c8",
+      "content_size": 19499,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set scheduling, writable-lane isolation, source ownership, integration gates, and serial ",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: AOTA Forge policy layer for safely parallelizing approved milestone development through dependency DAGs, ready-set sched"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct policy value: DAG, ready-set scheduling, writable-lane isolation, source ownership, integration gates for parallel milestone development",
+        "No Forge replacement: work_plane worktree_sandbox provides lane isolation mechanics but not DAG/scheduling policy",
+        "Compatible with Work Plane: governance policy only, does not implement Git commands (as file states), no authority grant",
+        "Useful for large approved plans; not limited to old profile model",
+        "No material obsolete assumption requiring rewrite; deterministic Git worktree patterns align with Forge worktree governance"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-parallel-development-orchestration/SKILL.md verified 19499 bytes policy layer",
+        "deploy/profile-runtime-assembly.yaml currently UNREFERENCED but policy remains valid for future milestone parallelization"
+      ],
+      "authority_compatibility": "compatible: scheduling policy, not execution authority",
+      "migration_action_summary": "Retain as orchestration policy Skill for milestone planning",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-pcf-project-steward",
+      "source_path": "skills/aota-pcf-project-steward/SKILL.md",
+      "content_sha256": "9dcdb27f8b5e2c37c36dfe56fad6a5f0481633ff555595bf4972da1e5a81efe1",
+      "content_size": 8035,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Project Steward contract for bounded project facts, artifact continuity, and approved docs maintenance"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct stewardship procedure: bounded project facts, artifact continuity, approved docs maintenance",
+        "No Forge replacement; Forge Project Steward is role governance, not fact continuity procedure",
+        "Compatible with S1 AgentWorkRole project-steward → steward mapping; no authority override",
+        "Content aligns with task-main durable truth vs conversation cache distinction",
+        "No obsolete Tool assumptions"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-pcf-project-steward/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active project-steward"
+      ],
+      "authority_compatibility": "compatible: stewardship guidance, no dual authority",
+      "migration_action_summary": "Retain as project-steward bootstrap Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-plugin-tool-development",
+      "source_path": "skills/aota-plugin-tool-development/SKILL.md",
+      "content_sha256": "c04690e5310da5cd9cb6208a5d2d7f6efaf8bce6c4b1517b9112304f4af01189",
+      "content_size": 7439,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "coder",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "coder",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['coder', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA Forge workflow for plugin Tool, toolset, Profile exposure, deployment, and lifecycle verification."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful procedure remains: plugin Tool, toolset, Profile exposure, deployment, lifecycle verification",
+        "But legacy content contains obsolete Tool names/interfaces (e.g., direct Hermes plugin paths, Profile tool permission via launcher config) and authority assumptions mixing Skill guidance with execution authority",
+        "Current Forge Work Plane now governs Tool exposure via aota_forge/work_plane/tool_surface.py and workspace_tools with explicit authority evidence; legacy workflow's deployment path assumptions incompatible",
+        "Procedure mixes procedural guidance with former Hermes transport/path/mount details that are now Forge-owned",
+        "Retains value after semantic cleanup: Tool lifecycle verification remains useful once stripped of obsolete Hermes transport assumptions"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-plugin-tool-development/SKILL.md verified obsolete Tool interfaces",
+        "aota_forge/work_plane/tool_surface.py role tool surface contract – compared for incompatibility",
+        "deploy/profile-runtime-assembly.yaml reference coder/task-main"
+      ],
+      "authority_compatibility": "partially incompatible: legacy deployment assumptions conflict with Forge tool_result_governance and sandbox authority precedence; needs rewrite to align",
+      "migration_action_summary": "Rewrite: retain Tool lifecycle verification value, remove obsolete Hermes plugin path grammar and authority semantics, align with Forge Tool Provider seam",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-portable-plan-governance",
+      "source_path": "skills/aota-portable-plan-governance/SKILL.md",
+      "content_sha256": "685b05de2978191dfd7ddcdcab14767be01f218ff1aae29f191b3fee0ddbaec7",
+      "content_size": 1663,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution governance.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Thin compatibility router to the canonical shared governance core. Load the canonical core before planning or execution "
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETIRE",
+      "classification_reasons": [
+        "Procedure is superseded: file is Thin compatibility router, declares LOCAL_FILE_IS_NORMATIVE_AUTHORITY=no, ROUTER_MAY_NOT_REDEFINE_CORE=yes",
+        "Canonical authority now at chat_governance/aota-portable-plan-governance.md (GOVERNANCE_REVISION=chat-canonical-p1) with single shared authority; router adds no independent decision workflow",
+        "No residual Skill guidance beyond routing indirection; retaining would duplicate canonical core",
+        "Superseded and no longer justified as S3 Skill; unreferenced status corroborates but not sole determinant",
+        "Retirement justified by superseded architecture, not filename or unreferenced alone"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-portable-plan-governance/SKILL.md declares thin router to canonical core",
+        "chat_governance/aota-portable-plan-governance.md canonical core",
+        "deploy/profile-runtime-assembly.yaml reference but router not normative"
+      ],
+      "authority_compatibility": "superseded: router conflicts with single-authority invariant if retained as normative; canonical core is authority",
+      "migration_action_summary": "Retire as S3 Skill; keep file only as legacy compatibility alias, not migrated into Forge registry",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-profile-efficiency-rerun",
+      "source_path": "skills/aota-profile-efficiency-rerun/SKILL.md",
+      "content_sha256": "fa36d38f6b8d79285e0d480d968751cc2d0dd6ca46f0f14e5730f1782adbceff",
+      "content_size": 4909,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with conservative scoring and evidence capture. Use when validating AOTA tool/skill/pro",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Run the managed AOTA deploy, headless Hermes reload, minimal smoke, and fixed 30-sample profile-efficiency rerun with co"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Procedural value remains for Hermes host: managed deploy, headless reload, minimal smoke, 30-sample rerun with conservative scoring",
+        "Not replaced by Forge: Forge telemetry is S6-owned aggregation, not immediate rerun; this Skill is Hermes-specific but still useful for host validation where Hermes remains runtime",
+        "Compatible with Forge orthogonal: does not grant Forge authority, does not widen filesystem, remains within hermes-tools workspace",
+        "Unreferenced status is not retirement proof; procedure targets validation, not removed architecture",
+        "No material obsolete Tool assumption requiring rewrite; runner remains factual"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-profile-efficiency-rerun/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml UNREFERENCED but not obsolete"
+      ],
+      "authority_compatibility": "compatible: validation procedure, orthogonal to Forge governance",
+      "migration_action_summary": "Retain as optional validation Skill for host tasks; not part of governed Forge Work Plane but still procedural",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-profile-skill-routing-index",
+      "source_path": "skills/aota-profile-skill-routing-index/SKILL.md",
+      "content_sha256": "b88a5ed61df68470acb5c7aad6a39aa677dfd1a9f646c921686202a96094f6eb",
+      "content_size": 5695,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orchestration guidance.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Compact task-main routing index for choosing the minimum AOTA Skill and canonical P0 tool chain without loading full orc"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Essential compact task-main routing index: minimum Skill and P0 tool chain selection without loading full orchestration",
+        "No Forge replacement; routing is procedural decision, not implemented by registry/search",
+        "Compatible with S3 progressive loading: eager vs progressive distinction preserved",
+        "Distinct from orchestration Skill; remains canonical entry for task-main",
+        "No obsolete assumptions; aligns with S3 bootstrap policy"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-profile-skill-routing-index/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active task-main"
+      ],
+      "authority_compatibility": "compatible: routing index, no authority grant",
+      "migration_action_summary": "Retain as task-main default bootstrap Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-profile-task-orchestration",
+      "source_path": "skills/aota-profile-task-orchestration/SKILL.md",
+      "content_sha256": "4fa0d95c4cdd9fbf8b9c4b53263e9430be7fd2511db51f612523bfed13cd48b0",
+      "content_size": 34031,
+      "frontmatter_malformed": true,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "project-steward",
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "project-steward",
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and handoff.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['project-steward', 'task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge task-main orchestration: bounded intake, classification, Plan/SPEC/task lifecycle, evidence, closure, and han"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful procedure remains: task-main orchestration for intake, classification, Plan/SPEC/task lifecycle, evidence, closure, handoff",
+        "But legacy content is materially incompatible: malformed YAML frontmatter (tags string parse error at line 2 col 48) indicating obsolete formatting, plus profile-specific assumptions (task-main/task-coordinator tightly coupled), obsolete Tool names and bootstrap authority mixing",
+        "Content mixes procedural guidance with former workspace selection, frozen SPEC binding, and launcher manifest assumptions incompatible with S1 TaskHandoff → ExecutionPackage compilation and S2 sandbox binding order",
+        "Procedure references obsolete Hermes global auth and HERMES_HOME handling not aligned with Forge trusted project/worktree authority",
+        "Retains significant value after semantic cleanup: bounded intake and Plan/SPEC lifecycle remains core to task-main, once stripped of obsolete transport/binding choreography"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-profile-task-orchestration/SKILL.md frontmatter parse error mapping values not allowed – malformed evidence",
+        "aota_forge/work_plane/handoff.py TaskHandoff contract checked for incompatibility",
+        "deploy/profile-runtime-assembly.yaml reference but content references obsolete Hermes launcher"
+      ],
+      "authority_compatibility": "incompatible in parts: legacy binding/Hermes authority assumptions conflict with S1/S2 worktree_binding_before_discovery and sandbox_before_agents_read invariants; needs rewrite",
+      "migration_action_summary": "Rewrite: retain orchestration workflow value, remove malformed frontmatter, rewrite binding and launcher sections to align with S1 TaskHandoff and S2 sandbox semantics",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-project-plan-intake",
+      "source_path": "skills/aota-project-plan-intake/SKILL.md",
+      "content_sha256": "cd8a6fe5745c52015a0eb6090edaac9c742c8e5d8d9de77a54c1850ae282095c",
+      "content_size": 4095,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestrators into the shared governance and executor adapter contracts.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Thin local-agent intake entry for consuming a Portable Plan and routing task-main, task-coordinator, or future orchestra"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Thin local-agent intake entry remains useful: Portable Plan intake routing into shared governance and executor adapter contracts",
+        "Not replaced; complements aota-portable-plan-governance router but provides entry sequence guidance",
+        "Compatible: states thin entry, defers to shared semantic authority, no authority grant",
+        "Procedure for local execution entry still valid under Forge Work Plane",
+        "No obsolete Tool requiring rewrite; content is intake sequence"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-project-plan-intake/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml reference"
+      ],
+      "authority_compatibility": "compatible: intake guidance, defers to canonical core",
+      "migration_action_summary": "Retain as intake Skill for task-coordinator/task-main",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-runtime-smoke-verification",
+      "source_path": "skills/aota-runtime-smoke-verification/SKILL.md",
+      "content_sha256": "2a49eb32fe6522ce07149737deaee9ad85fd53b0f0420b2ebe521051b5693ec0",
+      "content_size": 5660,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA runtime smoke verification — bounded process-reload, new-session, and registration checks."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Useful bounded verification: process-reload, new-session, registration checks for deployed Plugin/Profile/Skill",
+        "Not replaced by Forge; Forge verifies work plane and sandbox but not Hermes runtime reload smoke",
+        "Compatible: distinct from source/deploy verification, remains deployment smoke",
+        "Active usage in task-main indicates continued value",
+        "No obsolete authority mix; read-only verification"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-runtime-smoke-verification/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active task-main"
+      ],
+      "authority_compatibility": "compatible: runtime smoke is orthogonal to Forge work plane",
+      "migration_action_summary": "Retain as deployment verification Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-skill-development",
+      "source_path": "skills/aota-skill-development/SKILL.md",
+      "content_sha256": "ea29fad96f8127844925ff53289f18b2e7495d6be5422d208233b8e94b41074e",
+      "content_size": 4594,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "coder",
+          "project-steward",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "coder",
+            "project-steward",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['coder', 'project-steward', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA Forge workflow for Skill contract, scope, deployment, visibility, cache refresh, and behavior proof."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful Skill lifecycle remains: contract, scope, deployment, visibility, cache refresh, behavior proof",
+        "But legacy content is materially incompatible with S3: profile visibility via deploy/profile-runtime-assembly.yaml active/reference vs S3 registry namespaces, SOUL mentions vs Skill bootstrap, and hermes-specific deploy steps (hermes-overrides, profile-local strategy) obsolete",
+        "References obsolete Skill-loader configuration and global/profile-local strategy superseded by S3 StaticSkillRegistry, skill_search, skill_resolution, skill_bootstrap with digest/provenance",
+        "Mixes procedural guidance with former Profile activation authority now owned by Handoff pinned Skill refs and bootstrap budget",
+        "Retains value after cleanup: canonical source creation, manifest inventory, verification discipline remains useful"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-skill-development/SKILL.md verified legacy profile deployment vs S3 registry mismatch",
+        "aota_forge/work_plane/skill_registry.py, skill_bootstrap.py checked – incompatible",
+        "deploy/profile-runtime-assembly.yaml reference"
+      ],
+      "authority_compatibility": "incompatible: legacy deployment model conflicts with S3 Skill registry/bootstrap authority precedence; needs semantic rewrite",
+      "migration_action_summary": "Rewrite: retain Skill lifecycle verification value, remove obsolete profile deployment semantics, align with S3 SkillIdentity/registry/ bootstrap budget",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-spec-driven-implementation",
+      "source_path": "skills/aota-spec-driven-implementation/SKILL.md",
+      "content_sha256": "b37bf86d75d2e7b59b6eacad578446accbf8c618501c4351e1893232b9c607f7",
+      "content_size": 12277,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "coder"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "coder"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Forge coder skill — spec-driven implementation contract for the coder profile",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['coder'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Forge coder skill — spec-driven implementation contract for the coder profile"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct coder procedure: spec-driven implementation governed by approved SPEC",
+        "No Forge replacement; S3 provides Skill loading but not implementation workflow",
+        "Compatible with Spec-driven governance: references SPEC as frozen contract, aligns with TaskHandoff bounded scope",
+        "Profile coder maps cleanly to AgentWorkRole coder → CanonicalRole coder",
+        "No obsolete Tool requiring rewrite; CodeGraph use is read-only and fallback-bounded"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-spec-driven-implementation/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active coder"
+      ],
+      "authority_compatibility": "compatible: coder implementation guidance, no authority grant",
+      "migration_action_summary": "Retain as coder bootstrap Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-task-coordinator-intake",
+      "source_path": "skills/aota-task-coordinator-intake/SKILL.md",
+      "content_sha256": "6dca8cf0563cfbb069da7d21b8b80839fe0bf932a1b423489b0998296b7629e3",
+      "content_size": 2918,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "task-coordinator"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "task-coordinator"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinator; do not use for code execution or arbitrary GitHub work.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['task-coordinator'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Active task-coordinator activation wrapper for the shared Portable Plan intake contract. Use only within task-coordinato"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct activation wrapper for task-coordinator: Portable Plan intake without duplicating shared governance",
+        "Not replaced; complements project-plan-intake for task-coordinator profile",
+        "Compatible: explicitly states does not execute work, expand permissions, transmit secrets",
+        "Active usage shows continued value for named profile",
+        "No obsolete assumptions requiring rewrite; wrapper remains thin and correct"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-task-coordinator-intake/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active task-coordinator"
+      ],
+      "authority_compatibility": "compatible: intake wrapper, no authority escalation",
+      "migration_action_summary": "Retain as task-coordinator active Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-task-lifecycle",
+      "source_path": "skills/aota-task-lifecycle/SKILL.md",
+      "content_sha256": "e7babb55696bd7f2727054c5bd42a5be2793da5225d728a0e8ad980fb93fbbea",
+      "content_size": 16771,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: AOTA Profile Task binding contract from frozen SPEC through result, handoff, decision, and acknowledgement."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful binding contract remains: frozen SPEC through result, handoff, decision, acknowledgement",
+        "But content contains obsolete execution authority assumptions: derives AOTA_WORKSPACE_ID/PROJECT_ID, HERMES_HOME, global_hermes_home, parent_profile_home, credential bootstrap, launcher manifest, and Hermes path binding now superseded by S1 TaskHandoff → ExecutionPackage and S2 worktree sandbox binding",
+        "Mixes procedural guidance with authority semantics: launcher frozen binding, profile_launch_binding_mismatch handling incompatible with Forge compiler/materializer owning mechanical fields",
+        "Obsolete bootstrap/finalizer failure handoff paths conflict with S1 Result CARD and stop classification",
+        "Retains value after cleanup: binding preservation concept (meta.json, Card, Result, Handoff same binding) remains useful once rewritten to Forge Handoff semantics"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-task-lifecycle/SKILL.md verified obsolete Hermes HERMES_HOME binding",
+        "aota_forge/work_plane/handoff.py + bootstrap.py + result_card.py checked – incompatible",
+        "deploy/profile-runtime-assembly.yaml active project-steward etc."
+      ],
+      "authority_compatibility": "incompatible: legacy Hermes launcher binding conflicts with Forge worktree binding and Handoff semantic authority; needs rewrite",
+      "migration_action_summary": "Rewrite: retain binding preservation workflow, replace Hermes launcher/bootstrap specifics with Forge TaskHandoff and result governance",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-tool-failure-fallback",
+      "source_path": "skills/aota-tool-failure-fallback/SKILL.md",
+      "content_sha256": "2dab66f82ce26430f4b09eb7f7b85cd6a33ec24644b4358ca624edc7c5d922a4",
+      "content_size": 6267,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Safe AOTA fallback guidance without privilege escalation.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Safe AOTA fallback guidance without privilege escalation."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful fallback guidance remains: workspace context missing fallback, launcher failures with bounded redacted log",
+        "But content contains obsolete Tool names and fallback paths: references obsolete workspace context fallback and suggests Steward recommendation/task-main selection now governed differently by S2 worktree sandbox and S1 stop/escalation",
+        "References legacy Profile Task launcher fallback finalizer now replaced by Forge CanonicalResult and result governance projection",
+        "Mixes procedural fallback with authority semantics about switching Profiles/terminals that conflicts with WORKER_BOUND_TO_ONE_PROJECT invariant",
+        "Retains value after cleanup: safe fallback without privilege escalation remains essential"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-tool-failure-fallback/SKILL.md verified fallback suggestions compared to S1 stop contract",
+        "aota_forge/work_plane/stop.py + workspace_tools.py checked",
+        "deploy/profile-runtime-assembly.yaml reference"
+      ],
+      "authority_compatibility": "partially incompatible: legacy fallback suggestions conflict with S2 sandbox binding before discovery invariant; needs rewrite",
+      "migration_action_summary": "Rewrite: retain safe fallback principles, remove obsolete Profile/terminal switching suggestions, align with S2/S1 failure semantics",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-work-classify-and-plan-gate",
+      "source_path": "skills/aota-work-classify-and-plan-gate/SKILL.md",
+      "content_sha256": "cbd943e56ca1d2e9d0401ff19e13d51cbb8fe2cf64eaaec92204a341fd4f525c",
+      "content_size": 4906,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "REFERENCE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergence rules.",
+        "explicit_ownership_records": [
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Canonical AOTA work classification and plan gate — P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, and convergen"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Distinct planning gate: P0/P1/P2 depth, A0/A1/A2 architect gate, delivery path, convergence rules",
+        "No Forge replacement; S4 Risk Envelope owns risk but not classification gate procedure",
+        "Compatible: classification guidance, not execution authority",
+        "Reference usage still valid for task-main",
+        "No obsolete Tool requiring rewrite"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-work-classify-and-plan-gate/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml reference"
+      ],
+      "authority_compatibility": "compatible: classification gate, no authority conflict",
+      "migration_action_summary": "Retain as planning reference Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-workspace-diagnostics",
+      "source_path": "skills/aota-workspace-diagnostics/SKILL.md",
+      "content_sha256": "4ee6b0c94753f10a4ba338e023d803635de88020b5208a7046fce6afec71a209",
+      "content_size": 377,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Safe diagnosis for missing or invalid AOTA workspace context.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Safe diagnosis for missing or invalid AOTA workspace context."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Useful diagnosis for missing workspace context: list workspaces, bounded candidate, Steward recommendation, task-main durable selection",
+        "Not replaced by Forge; Forge worktree_sandbox enforces binding but does not provide diagnostic workflow",
+        "Compatible: safe diagnosis, never infer IDs, aligns with current-project authority via trusted context",
+        "Procedure remains valid under Forge current-project authority",
+        "No obsolete Tool requiring rewrite"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-workspace-diagnostics/SKILL.md verified",
+        "deploy/profile-runtime-assembly.yaml active? actually active in multiple profiles – retained"
+      ],
+      "authority_compatibility": "compatible: diagnostic guidance, no authority grant",
+      "migration_action_summary": "Retain as workspace diagnostic Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-workspace-model",
+      "source_path": "skills/aota-workspace-model/SKILL.md",
+      "content_sha256": "da879d459d0f958215648db21041781436708e56760317e92724ed95ac34f978",
+      "content_size": 1782,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "project-steward"
+        ],
+        "reference_profiles": [
+          "task-coordinator",
+          "task-main"
+        ],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "project-steward"
+          ],
+          "reference": [
+            "task-coordinator",
+            "task-main"
+          ],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Registered filesystem authority and PCF project identity model.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['project-steward'] via deploy/profile-runtime-assembly.yaml",
+          "reference usage in profiles: ['task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Registered filesystem authority and PCF project identity model."
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "RETAIN",
+      "classification_reasons": [
+        "Fundamental model: workspace_id as filesystem authority root, project_id identity, manifest validation, control-plane ID handling",
+        "Not replaced by Forge; Forge reuses this model via worktree_sandbox and worktree_resources with same semantics",
+        "Compatible with S2: model-facing tools use semantic refs, trusted resolvers supply scope – same as workspace_tools authority evidence",
+        "Core distinction workspace vs project vs worktree preserved in Forge",
+        "No obsolete assumption; content defines canonical IDs now reused"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-workspace-model/SKILL.md verified",
+        "aota_forge/work_plane/worktree_sandbox.py preserves same model",
+        "deploy/profile-runtime-assembly.yaml reference/active"
+      ],
+      "authority_compatibility": "compatible: foundational model, reused by Forge",
+      "migration_action_summary": "Retain as model reference Skill",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "aota-worktree-governance",
+      "source_path": "skills/aota-worktree-governance/SKILL.md",
+      "content_sha256": "a0630ace0d9dc2c13655604e89b686ae91a90943f89127a23c1b8d09ab239901",
+      "content_size": 12130,
+      "frontmatter_malformed": true,
+      "usage_evidence": {
+        "active_profiles": [],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "UNREFERENCED_BY_CURRENT_ASSEMBLY",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deterministic Git worktree/lane runtime boundary: root placement, path and branch nam",
+        "explicit_ownership_records": [
+          "no current assembly usage; ownership via skill content description only",
+          "skill description declares purpose: Canonical AOTA Forge/runtime worktree governance contract for task-main and execution-planning Skills. Defines the deter"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [],
+      "final_classification": "REWRITE",
+      "classification_reasons": [
+        "Useful governance remains: worktree root placement, branch naming, lifecycle states, cleanup eligibility, scanner exclusion",
+        "But legacy content is materially incompatible: malformed frontmatter (missing category/tags, but present metadata.tags) and mixes governance policy with obsolete assumptions about WorktreeRoot canonical placement now owned by Forge WorktreeSandboxBoundary and ProjectBoundResourceResolver",
+        "Content assumes worktree contract version 1 with git-native technology but references CodeGraph boundary and workspace layout not aligned with Forge .aota-worktrees/<project>/<milestone>/<slug> pattern enforced mechanically",
+        "Policy-only claim conflicts with Forge actually implementing mechanics; governance vs implementation boundary needs clarification",
+        "Retains value after rewrite: deterministic path/branch naming and lifecycle states remain essential once stripped of obsolete placement assumptions"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/aota-worktree-governance/SKILL.md frontmatter category null but metadata.tags present – malformed evidence",
+        "aota_forge/work_plane/worktree_sandbox.py + worktree_resources.py checked – overlap but needs semantic cleanup",
+        "deploy/profile-runtime-assembly.yaml UNREFERENCED but governance still relevant"
+      ],
+      "authority_compatibility": "partially incompatible: legacy placement assumptions overlap but not identical to Forge worktree_sandbox mechanics; frontmatter malformed indicates packaging issue; needs rewrite",
+      "migration_action_summary": "Rewrite: retain governance policy value, remove malformed frontmatter, align root pattern and lifecycle with Forge worktree_sandbox implementation",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    },
+    {
+      "skill_name": "workspace-file-access-strategy",
+      "source_path": "skills/workspace-file-access-strategy/SKILL.md",
+      "content_sha256": "acfa02aac13f9b7bfdabea70c9106e6febe7264818d4bb6e20177fb49c92d266",
+      "content_size": 5719,
+      "frontmatter_malformed": false,
+      "usage_evidence": {
+        "active_profiles": [
+          "architect",
+          "coder",
+          "debugger",
+          "friday",
+          "project-steward",
+          "reviewer",
+          "task-coordinator",
+          "task-main"
+        ],
+        "reference_profiles": [],
+        "profile_specific_profiles": [],
+        "usage_state": "ACTIVE",
+        "runtime_assembly_path": "deploy/profile-runtime-assembly.yaml",
+        "deployment_excluded_profiles": [
+          "friday"
+        ]
+      },
+      "ownership_evidence": {
+        "profile_runtime_assembly_usage": {
+          "active": [
+            "architect",
+            "coder",
+            "debugger",
+            "friday",
+            "project-steward",
+            "reviewer",
+            "task-coordinator",
+            "task-main"
+          ],
+          "reference": [],
+          "profile_specific": []
+        },
+        "skill_description_purpose": "Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbidden access patterns.",
+        "explicit_ownership_records": [
+          "active usage in profiles: ['architect', 'coder', 'debugger', 'friday', 'project-steward', 'reviewer', 'task-coordinator', 'task-main'] via deploy/profile-runtime-assembly.yaml",
+          "skill description declares purpose: Compact AOTA bounded-read router for exact files, literal source search, structured probes, path verification, and forbi"
+        ],
+        "forge_module_overlap_checked": true,
+        "existing_forge_modules_checked": [
+          "work_plane/skill.py",
+          "work_plane/skill_registry.py",
+          "work_plane/skill_search.py",
+          "work_plane/skill_resolution.py",
+          "work_plane/skill_bootstrap.py",
+          "work_plane/skill_content.py"
+        ]
+      },
+      "forge_replacement_evidence": [
+        "path: aota_forge/work_plane/workspace_tools.py symbol: BoundedWorkspaceToolProvider + WORKSPACE_READ_DESCRIPTOR / WORKSPACE_SEARCH_DESCRIPTOR (accepted S2 M2 frontier 78daaf49)",
+        "path: aota_forge/work_plane/workspace_tools.py symbol: create_workspace_authority + WorkspaceAuthorityEvidence aggregating WorktreeSandboxBoundary+TaskHandoff+AgentsPolicyCandidate+OperationContractDescriptor (accepted lineage)",
+        "path: aota_forge/work_plane/skill_content.py symbol: open_skill with MAX_SKILL_CONTENT_BYTES and SkillDigestMismatchError (accepted S3 M2)",
+        "lineage: M3 base 14fbdd28 contains S2 M2 accepted frontier 78daaf49 and S3 M2 frontier a7907a8; semantic overlap: bounded workspace read/search inside trusted worktree root, symlink escape fail-closed, budgeted output, lexical search ref-only – replaces legacy aota_* table",
+        "replacement proof: legacy file lists aota_path_info, aota_read_file, aota_search_files → Forge provides equivalent with stronger sandbox guarantees and ToolResult governance"
+      ],
+      "final_classification": "REPLACE_BY_FORGE",
+      "classification_reasons": [
+        "Legacy bounded-read router defines authorized tools aota_path_info, aota_read_file, aota_search_files etc. and forbidden patterns",
+        "Behavior now owned by accepted Forge implementation: BoundedWorkspaceToolProvider with workspace.read/workspace.search descriptors, sandbox-bound, bounded, digest-verified",
+        "Evidence: Forge work_plane/workspace_tools.py provides workspace.read (MAX_READ_BYTES 32KiB) and workspace.search (MAX_SEARCH_RESULTS 50) with sandbox, task scope, policy context prerequisites and fail-closed semantics – exact semantic overlap",
+        "Forge skill_content.py also provides Skill read with digest verification, covering similar bounded read concerns",
+        "Legacy Tool names (aota_read_file vs workspace.read) are superseded; continuing Skill guidance would duplicate Forge Tool contracts"
+      ],
+      "evidence_refs": [
+        "git show d9cf0adc2d448997d291633e474cb7c34e65615e:skills/workspace-file-access-strategy/SKILL.md verified – Table of aota_* tools",
+        "aota_forge/work_plane/workspace_tools.py concrete seam – accepted",
+        "aota_forge/work_plane/skill_content.py – bounded read seam"
+      ],
+      "authority_compatibility": "superseded: legacy Tool choreography replaced by governed Work Plane read plane; Skill as Tool router no longer needed as procedural Skill",
+      "migration_action_summary": "Replace by Forge: do not migrate Skill; rely on Forge workspace_tools seam; procedure no longer needs separate Skill guidance",
+      "source_revision": "d9cf0adc2d448997d291633e474cb7c34e65615e",
+      "legacy_source_revision_match": true
+    }
+  ],
+  "summary": {
+    "tracked_legacy_skill_count": 28,
+    "inventoried_legacy_skill_count": 28,
+    "final_classification_count": 28,
+    "unknown_needs_reconciliation_count_after": 0,
+    "final_retain_count": 18,
+    "final_rewrite_count": 6,
+    "final_replace_by_forge_count": 2,
+    "final_retire_count": 2,
+    "malformed_legacy_skill_count": 2,
+    "malformed_skills_explicitly_reconciled": true
+  },
+  "verification": {
+    "workspace_file_strategy_replaced_by": "aota_forge/work_plane/workspace_tools.py BoundedWorkspaceToolProvider",
+    "native_terminal_replaced_by": "aota_forge/adapters/hermes/* + composition/execution.py",
+    "w2_content_digest_verification": "PASS via git show at classification_source_revision",
+    "legacy_repository_delta_created_by_w3": false,
+    "w1_ancestor_of_convergence": true,
+    "w2_ancestor_of_convergence": true
+  },
+  "legacy_head_current": "d9cf0adc2d448997d291633e474cb7c34e65615e"
+}

@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0.0",
+  "project_id": "aota_forge",
+  "program_id": "aota-forge-governed-agent-work-plane",
+  "subplan": "S3",
+  "milestone": "M4",
+  "work_item": "W3",
+  "task": "W1_W2_CONVERGENCE_AND_S3_PROGRAM_READINESS_PROJECTION",
+  "candidate_basis": {
+    "M4_ENTRY_BASE": "d6c0ed893e8316f334f1e09f94e4642205faf59d",
+    "M1_ACCEPTED_FRONTIER": "3f331f0f23c5866ccb40656c31cdf9e9ff947ea7",
+    "M2_ACCEPTED_FRONTIER": "a7907a810198b5738798bf699442011fc5938415",
+    "M3_ACCEPTED_FRONTIER": "d6c0ed893e8316f334f1e09f94e4642205faf59d",
+    "M4_W1_FRONTIER": "ed10953213a1186d93d7acbb0d700563e4042366",
+    "M4_W2_FRONTIER": "532aa5b2cdaedef7e781b36575d02d8ade5b9cfc",
+    "CONVERGENCE_COMMIT": "e953a61a8eeb1ea6fd1aac138019f9fbf9f907b6",
+    "CONVERGENCE_COMMIT_MESSAGE": "S3 M4: converge usage and bootstrap proof"
+  },
+  "accepted_frontiers": {
+    "M1_ACCEPTED_FRONTIER": "3f331f0f23c5866ccb40656c31cdf9e9ff947ea7",
+    "M2_ACCEPTED_FRONTIER": "a7907a810198b5738798bf699442011fc5938415",
+    "M3_ACCEPTED_FRONTIER": "d6c0ed893e8316f334f1e09f94e4642205faf59d"
+  },
+  "final_acceptance": {
+    "SKILL_IDENTITY_VERSION_DIGEST_PRESENT": "yes",
+    "STATIC_REGISTRY_PRESENT": "yes",
+    "PERSISTENT_DB_CREATED": "no",
+    "LEXICAL_BOUNDED_SEARCH_PRESENT": "yes",
+    "VECTOR_DEPENDENCY_REQUIRED": "no",
+    "PINNED_REQUIRED_RECOMMENDED_RESOLUTION_DETERMINISTIC": "yes",
+    "SKILL_AUTHORITY_ESCALATION": "no",
+    "EAGER_PROGRESSIVE_BOOTSTRAP_INTEGRATED": "yes",
+    "BOOTSTRAP_BUDGET_REUSED": "yes",
+    "SKILL_FAILURE_MATRIX_PROVEN": "yes",
+    "LEGACY_INVENTORY_CLASSIFIED": "yes",
+    "EVENT_HOOK_REUSED": "yes",
+    "TELEMETRY_STORE_CREATED": "no",
+    "S1_ACCEPTED_CONTRACT_CHANGE_REQUIRED": "no"
+  },
+  "boundary_assertions": {
+    "S3_READINESS_PROJECTION_IS_AUTHORITY": "no",
+    "READINESS_FIXTURE_IS_RUNTIME_INPUT": "no",
+    "READINESS_FIXTURE_AUTO_APPLIED": "no",
+    "RUNTIME_PRODUCTION_SOURCE_CHANGE_REQUIRED": "no",
+    "PERSISTENT_DB_CREATED": "no",
+    "VECTOR_DEPENDENCY_REQUIRED": "no",
+    "SKILL_AUTHORITY_ESCALATION": "no",
+    "BOOTSTRAP_BUDGET_REUSED": "yes",
+    "TELEMETRY_STORE_CREATED": "no",
+    "ANALYTICS_CREATED": "no",
+    "BACKGROUND_EXPORTER_CREATED": "no",
+    "S6_OWNERSHIP_PRESERVED": "yes",
+    "S6_TELEMETRY_IMPLEMENTED_IN_S3": "no",
+    "S1_ACCEPTED_CONTRACT_MUTATED": "no",
+    "S2_OWNERSHIP_PRESERVED": "yes",
+    "S2_UNACCEPTED_CANDIDATE_DEPENDENCY": "no",
+    "W3_PRODUCTION_SOURCE_CHANGE_COUNT": 0,
+    "READINESS_FIXTURE_SELF_ATTESTATION_ONLY": "no",
+    "ALL_S3_FINAL_ACCEPTANCE_PREDICATES_PROVEN": "yes",
+    "S3_TECHNICAL_READINESS_PROVEN": "yes",
+    "M4_ACCEPTED": "no",
+    "M4_COMPLETED": "no",
+    "S3_PLAN_COMPLETED": "no",
+    "S3_CHILD_PLAN_CLOSED": "no",
+    "GITHUB_GOVERNANCE_WRITE_PERFORMED": "no"
+  },
+  "evidence": {
+    "skill_identity": {
+      "source": "aota_forge/work_plane/skill.py",
+      "fields": ["skill_id", "version", "digest", "provenance"],
+      "tests": ["tests/test_s3_m1_w1_skill_identity.py"]
+    },
+    "static_registry": {
+      "source": "aota_forge/work_plane/skill_registry.py",
+      "bounded": 64,
+      "key_fields": ["namespace", "skill_id", "version"],
+      "discovery": "static declarative index only",
+      "tests": ["tests/test_s3_m1_w2_static_registry.py", "tests/test_s3_m1_w3_registry_adversarial.py"]
+    },
+    "lexical_search": {
+      "source": "aota_forge/work_plane/skill_search.py",
+      "bounded_ref_only": true,
+      "namespace_scoped": true,
+      "vector_required": false,
+      "tests": ["tests/test_s3_m2_w2_lexical_search.py"]
+    },
+    "resolution": {
+      "source": "aota_forge/work_plane/skill_resolution.py",
+      "precedence": "pinned>required>role_default>recommended",
+      "allowed_universe_is_input": true,
+      "tests": ["tests/test_s3_m2_w3_skill_resolution.py"]
+    },
+    "bootstrap": {
+      "source": "aota_forge/work_plane/skill_bootstrap.py",
+      "reuses": "aota_forge/work_plane/bootstrap.py BootstrapBudget/Bundle",
+      "delivery": {"pinned": "eager", "required": "eager", "role_default": "eager", "recommended": "progressive"},
+      "tests": ["tests/test_s3_m2_w4_skill_bootstrap.py"]
+    },
+    "failure_matrix": {
+      "source": "tests/test_s3_m3_w1_failure_determinism_matrix.py",
+      "predicates": [
+        "required oversized fail closed",
+        "multiple required total budget overflow fail closed",
+        "recommended oversized non-authoritative degradation",
+        "digest mismatch fail closed",
+        "missing mandatory ref fail closed",
+        "stale version fail closed",
+        "conflicting versions fail closed",
+        "REQUIRED_SKILL_SILENT_TRUNCATION=no",
+        "SKILL_BOOTSTRAP_BUDGET_BYPASS=no",
+        "INPUT_ORDER_ACCIDENTAL_AUTHORITY=no"
+      ]
+    },
+    "legacy_inventory": {
+      "source_fixtures": ["tests/fixtures/s3_m3_legacy_skill_inventory.json", "tests/fixtures/s3_m3_legacy_skill_migration_classification.json"],
+      "counts": {"LEGACY_SKILL_COUNT": 28, "RETAIN": 18, "REWRITE": 6, "REPLACE_BY_FORGE": 2, "RETIRE": 2, "UNKNOWN": 0},
+      "tests": ["tests/test_s3_m3_w2_legacy_skill_inventory.py", "tests/test_s3_m3_w3_legacy_skill_migration.py"]
+    },
+    "event_hook_reuse": {
+      "source": "aota_forge/work_plane/skill_usage.py",
+      "reuses": "aota_forge/work_plane/events.py ExecutionEvent/EventHook",
+      "new_event_type_created": false,
+      "tests": ["tests/test_s3_m4_w1_skill_usage_observation.py"]
+    },
+    "skill_usage_observation": {
+      "source": "aota_forge/work_plane/skill_usage.py",
+      "bounded": true,
+      "deterministic": true,
+      "non_authoritative": true,
+      "tests": ["tests/test_s3_m4_w1_skill_usage_observation.py"]
+    },
+    "handoff_bootstrap_integration": {
+      "source": "tests/test_s3_m4_w2_handoff_skill_bootstrap_integration.py",
+      "path": "TaskHandoff.skill_refs -> allowed universe -> resolution -> read/open -> digest verification -> eager/progressive Bootstrap",
+      "tests": ["tests/test_s3_m4_w2_handoff_skill_bootstrap_integration.py"]
+    },
+    "jrv1_vertical_slice": {
+      "source": "tests/test_program_s2s3_jrv1_first_worker_vertical_slice.py",
+      "status": "PASS",
+      "tests": ["tests/test_program_s2s3_jrv1_first_worker_vertical_slice.py"]
+    },
+    "s1_contracts": {
+      "unchanged_files": [
+        "aota_forge/work_plane/events.py",
+        "aota_forge/work_plane/handoff.py",
+        "aota_forge/work_plane/bootstrap.py",
+        "aota_forge/work_plane/roles.py"
+      ]
+    },
+    "s2_boundary": {
+      "preserved": true,
+      "owned_elsewhere": ["sandbox", "physical worktree enforcement", "Tool execution authority", "Tool Result Governance", "filesystem authority"]
+    }
+  },
+  "worktree": "/home/latios/workspace/.aota-worktrees/aota_forge/M4/s3-w3-program-readiness",
+  "branch": "aota/M4/s3-w3-program-readiness"
+}
