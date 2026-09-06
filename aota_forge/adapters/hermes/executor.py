@@ -186,16 +186,18 @@ def canonical_role_to_hermes_profile(canonical_role: str) -> str:
 def canonical_to_hermes_payload(
     package: ExecutionPackage,
     role_mapping: RoleMapping | None = None,
+    runtime_config: Any | None = None,
 ) -> dict[str, Any]:
     """Translate canonical ExecutionPackage into Hermes dispatch envelope.
 
     Deterministic projection:
-    - profile: mapped Hermes profile
+    - profile: mapped Hermes profile (via role_mapping or via runtime_config binding)
     - instruction: verbatim package instruction
     - context: deterministic dictionary (task id, project id, correlation id, working context)
     - artifacts: list of dicts
     - constraints: package.constraints
     - capability_requirements: package.capability_requirements
+    - provider/model: optional operator runtime binding (W1, deterministic)
 
     Fails closed if role mapping is missing.
     Does NOT rewrite instructions, weaken constraints, or drop requirements.
@@ -203,10 +205,31 @@ def canonical_to_hermes_payload(
     if not isinstance(package, ExecutionPackage):
         raise TypeError(f"package must be ExecutionPackage, got {type(package).__name__}")
 
-    mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
-    profile = mapping.get_target_role(package.canonical_role)
+    # W1 runtime binding takes precedence when provided: deterministic operator-owned
+    # profile/provider/model/concurrency resolution. This preserves Core neutrality
+    # and keeps TaskHandoff free of deployment authority.
+    runtime_binding = None
+    if runtime_config is not None:
+        try:
+            from aota_forge.runtime.config import resolve_binding_for_canonical_role as _resolve
 
-    payload = {
+            runtime_binding = _resolve(package.canonical_role, runtime_config)
+        except Exception:
+            # If runtime config cannot resolve canonical role, fall back to role_mapping
+            # for fail-closed validation (so missing mapping still raises RoleMappingNotFoundError).
+            runtime_binding = None
+
+    if runtime_binding is not None:
+        profile = runtime_binding.profile
+        provider = runtime_binding.provider
+        model = runtime_binding.model
+    else:
+        mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
+        profile = mapping.get_target_role(package.canonical_role)
+        provider = None
+        model = None
+
+    payload: dict[str, Any] = {
         "profile": profile,
         "instruction": package.instruction,
         "context": {
@@ -225,6 +248,11 @@ def canonical_to_hermes_payload(
         "operation": package.operation,
         "package_id": package.package_id,
     }
+    # Provider/model are operator deployment, not semantic; include only when pinned.
+    if provider is not None:
+        payload["provider"] = provider
+    if model is not None:
+        payload["model"] = model
     return canonicalize(payload, path="hermes_payload")
 
 
@@ -561,10 +589,12 @@ class HermesAdapter(ExecutorAdapter):
         host_client: HermesHostClient | None = None,
         capabilities: ExecutorCapabilities | None = None,
         role_mapping: RoleMapping | None = None,
+        runtime_config: Any | None = None,
     ) -> None:
         self._host_client = host_client
         self._capabilities = capabilities or default_hermes_capabilities()
         self._role_mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
+        self._runtime_config = runtime_config
         self._dispatch_replays: dict[str, tuple[str, DispatchResult]] = {}
         self._cancel_replays: dict[tuple[str, str], CancelResult] = {}
         self._resume_replays: dict[str, tuple[str, str, str, ResumeResult]] = {}
@@ -745,7 +775,7 @@ class HermesAdapter(ExecutorAdapter):
                 "EXECUTOR_UNAVAILABLE: Hermes host client is not configured (offline/test injection required)"
             )
 
-        payload = canonical_to_hermes_payload(package, self._role_mapping)
+        payload = canonical_to_hermes_payload(package, self._role_mapping, self._runtime_config)
 
         try:
             host_resp = self._host_client.dispatch(payload)
@@ -987,7 +1017,7 @@ class HermesAdapter(ExecutorAdapter):
         if self._host_client is None:
             raise HermesHostUnavailableError("EXECUTOR_UNAVAILABLE: Hermes host client is not configured")
 
-        payload = canonical_to_hermes_payload(resume_package, self._role_mapping)
+        payload = canonical_to_hermes_payload(resume_package, self._role_mapping, self._runtime_config)
 
         try:
             host_resp = self._host_client.resume_task(adapter_handle, payload)
