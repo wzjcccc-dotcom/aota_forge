@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from copy import copy
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any, Mapping
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
@@ -272,6 +273,7 @@ class ExecutionDispatcher:
         *,
         state_store: ExecutionStateStore | None = None,
         origin_session_ref: OriginSessionRef | str | None = None,
+        admission_scope_resolver: Callable[[ExecutionPackage], str | None] | None = None,
     ) -> None:
         if not isinstance(registry, ExecutorRegistry):
             raise TypeError(
@@ -281,10 +283,16 @@ class ExecutionDispatcher:
             raise TypeError(
                 f"state_store must be an ExecutionStateStore or None, got {type(state_store).__name__}"
             )
+        if admission_scope_resolver is not None and not callable(admission_scope_resolver):
+            raise TypeError("admission_scope_resolver must be callable or None")
         self.registry: ExecutorRegistry = registry
         self.state_store: ExecutionStateStore | None = state_store
         # Trusted-runtime supplied; opaque; never model-self-asserted.
         self.origin_session_ref: OriginSessionRef | None = OriginSessionRef.from_value(origin_session_ref)
+        # M2/W3: server-side trusted resolver deriving the concurrency-accounting
+        # scope from the runtime binding for each package. The package, model,
+        # and TaskHandoff never carry it; the resolver is composition-owned.
+        self._admission_scope_resolver = admission_scope_resolver
         # Process-local routing table: canonical_task_id -> RouteRecord
         self._routes: dict[str, RouteRecord] = {}
         # Idempotency index: idempotency_key -> (canonical_task_id, intent_fingerprint, DispatchResult)
@@ -596,6 +604,32 @@ class ExecutionDispatcher:
 
         return dispatch_result
 
+    def resolve_admission_scope(self, package: ExecutionPackage) -> str | None:
+        """Public composition seam: the trusted concurrency-accounting scope.
+
+        Deterministic for the same operator config + package; used by the M2/W3
+        coordinator to evaluate admission BEFORE any physical dispatch.
+        """
+        return self._resolve_admission_scope(package)
+
+    def _resolve_admission_scope(self, package: ExecutionPackage) -> str | None:
+        """Derive the trusted concurrency-accounting scope for a new dispatch.
+
+        Composition-owned server-side seam (M2/W3). The value is mechanical
+        accounting identity only (ADMISSION_SCOPE_IS_AUTHORITY=no); it may
+        never come from the package contents, the model, or TaskHandoff. An
+        unresolvable scope stays None: W3 admission then fails closed in the
+        coordinator rather than guessing a bucket.
+        """
+        if self._admission_scope_resolver is None:
+            return None
+        scope = self._admission_scope_resolver(package)
+        if scope is None:
+            return None
+        if not isinstance(scope, str) or not scope.strip():
+            raise DispatcherError("admission_scope_resolver must return None or a non-empty string")
+        return scope
+
     def _create_prepared_record(
         self,
         package: ExecutionPackage,
@@ -619,6 +653,7 @@ class ExecutionDispatcher:
             execution_phase=ExecutionPhase.PREPARED,
             canonical_task_state=CanonicalTaskState.CREATED,
             origin_session_ref=self.origin_session_ref,
+            admission_scope=self._resolve_admission_scope(package),
         )
         try:
             return self.state_store.create(record)

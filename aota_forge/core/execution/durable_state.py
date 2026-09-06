@@ -30,6 +30,13 @@ Governance boundaries (M2 plan authority: wzjcccc-dotcom/aota-hermes-tools#36):
 - W1 owns durability mechanics only. The delivery claim coordinator, retry
   loop, ACK orchestration, exact-session re-entry, and attempt-cap policy are
   W3. This module implements none of them.
+- M2/W3 bounded model extension (schema v2): one additional immutable
+  non-authoritative field ``admission_scope``. It is a concurrency-accounting
+  identity derived server-side from the trusted runtime binding
+  (``executor_id:work_role``); the model, TaskHandoff, and Worker instruction
+  can never set it. It grants no authority and rewrites are impossible
+  (creation-time only). Deterministic restart reconstruction of the admission
+  scope depends on it because RuntimeConfig concurrency differs per binding.
 - No distributed exactly-once dispatch is claimed: the crash window between
   physical dispatch success and DISPATCHED persistence is documented truthfully
   in ``ExecutionDispatcher.dispatch`` (recovery keeps the record PREPARED with
@@ -68,7 +75,7 @@ EXECUTION_STATE_STORE_PORT_IMPLEMENTED = True
 PRODUCTION_STORAGE_ENGINE_FROZEN = False
 FILE_BACKED_EXECUTION_STORE_ROLE = "reference_adapter"
 FILE_BACKED_IS_PRODUCTION_DEFAULT = False
-EXECUTION_DURABLE_SCHEMA_VERSION = 1
+EXECUTION_DURABLE_SCHEMA_VERSION = 2
 JOURNAL_RECORD_ONTOLOGY_UNCHANGED = True
 JOURNAL_RECORD_SEMANTICS_REUSED = False
 DURABLE_IDEMPOTENCY_IMPLEMENTED = True
@@ -81,6 +88,9 @@ ORIGIN_SESSION_REF_IS_AUTHORITY = False
 CARD_POSSESSION_IS_AUTHORITY = False
 THIRD_CARD_ONTOLOGY_CREATED = False
 DELIVERY_COORDINATOR_IMPLEMENTED_IN_W1 = False
+ADMISSION_SCOPE_IS_AUTHORITY = False
+ADMISSION_SCOPE_MODEL_SETTABLE = False
+ADMISSION_SCOPE_REWRITABLE = False
 
 # ---------------------------------------------------------------------------
 # Bounded vocabularies
@@ -212,7 +222,10 @@ class OriginSessionRef:
 # Closed vocabulary of CAS-mutable fields. Everything not listed here is
 # immutable durable identity; identity fields (canonical_task_id,
 # executor_id, package_id, correlation_id, dispatch_attempt_id,
-# idempotency_key, intent_fingerprint) may never be rewritten.
+# idempotency_key, intent_fingerprint) and the W3 concurrency-accounting
+# identity (admission_scope) may never be rewritten. admission_scope is NOT
+# authority: it is derived server-side from the trusted runtime binding at
+# record creation and is absent from this CAS vocabulary on purpose.
 CAS_MUTABLE_EXECUTION_FIELDS: frozenset[str] = frozenset(
     {
         "execution_phase",
@@ -253,6 +266,7 @@ _DURABLE_FIELD_NAMES: tuple[str, ...] = (
     "delivery_attempt",
     "delivery_claim_owner",
     "delivery_claim_until",
+    "admission_scope",
     "created_at",
     "updated_at",
     "record_revision",
@@ -305,6 +319,9 @@ class DurableExecutionRecord:
     delivery_attempt: int = 0
     delivery_claim_owner: str | None = None
     delivery_claim_until: str | None = None
+    # W3 bounded concurrency-accounting identity (server-derived, immutable,
+    # non-authoritative): "executor_id:work_role" from the trusted binding.
+    admission_scope: str | None = None
     record_revision: int = 1
     revision_token: str = ""
     schema_version: int = EXECUTION_DURABLE_SCHEMA_VERSION
@@ -335,7 +352,7 @@ class DurableExecutionRecord:
         if self.schema_version != EXECUTION_DURABLE_SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported execution record schema_version {self.schema_version!r}; "
-                f"W1 accepts exactly {EXECUTION_DURABLE_SCHEMA_VERSION} (fail closed)"
+                f"the durable seam accepts exactly {EXECUTION_DURABLE_SCHEMA_VERSION} (fail closed)"
             )
 
         if self.adapter_handle is not None:
@@ -375,10 +392,16 @@ class DurableExecutionRecord:
                     "canonical_task_state"
                 )
         if self.execution_phase == ExecutionPhase.PREPARED:
-            if self.canonical_task_state != CanonicalTaskState.CREATED:
+            # W3 (M2/W3 §17): an unresolved PREPARED crash tail may be
+            # reconciled to a durable UNKNOWN by recovery, but to nothing
+            # else — it may never carry a fabricated RUNNING/terminal state.
+            if self.canonical_task_state not in (
+                CanonicalTaskState.CREATED,
+                CanonicalTaskState.UNKNOWN,
+            ):
                 raise ValueError(
-                    "PREPARED records carry intent identity only; canonical_task_state "
-                    "must remain CREATED until dispatch is confirmed"
+                    "PREPARED records carry intent identity (CREATED) or W3-reconciled "
+                    "UNKNOWN only; other states require a confirmed DISPATCHED phase"
                 )
         if self.worker_result_card is not None:
             if not isinstance(self.worker_result_card, Mapping):
@@ -407,6 +430,8 @@ class DurableExecutionRecord:
             _bounded_nonempty(self.delivery_claim_owner, "delivery_claim_owner", _MAX_ID_LENGTH)
         if self.delivery_claim_until is not None:
             _bounded_nonempty(self.delivery_claim_until, "delivery_claim_until")
+        if self.admission_scope is not None:
+            _bounded_nonempty(self.admission_scope, "admission_scope", _MAX_ID_LENGTH)
 
     # -- serialization ------------------------------------------------------
 
@@ -438,6 +463,7 @@ class DurableExecutionRecord:
                 "delivery_attempt": self.delivery_attempt,
                 "delivery_claim_owner": self.delivery_claim_owner,
                 "delivery_claim_until": self.delivery_claim_until,
+                "admission_scope": self.admission_scope,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
                 "record_revision": self.record_revision,
@@ -453,7 +479,8 @@ class DurableExecutionRecord:
     def from_dict(cls, data: Mapping[str, Any]) -> "DurableExecutionRecord":
         if not isinstance(data, Mapping):
             raise TypeError(f"data must be a mapping, got {type(data).__name__}")
-        # Strict v1 contract: unknown and newer schemas fail closed.
+        # Strict single-version contract: unknown/newer/older schemas fail closed.
+        # v2 (M2/W3) added only the immutable non-authoritative admission_scope.
         raw_version = data.get("schema_version")
         if raw_version is None:
             raise ValueError("Missing required field in DurableExecutionRecord: 'schema_version'")
@@ -465,7 +492,8 @@ class DurableExecutionRecord:
             )
         if raw_version < EXECUTION_DURABLE_SCHEMA_VERSION:
             raise ValueError(
-                f"Unsupported schema_version {raw_version}; no migration framework in W1 (fail closed)"
+                f"Unsupported schema_version {raw_version}; no migration framework "
+                f"(v{raw_version} predates the W3 admission_scope accounting field; fail closed)"
             )
         extra = set(data.keys()) - set(_DURABLE_FIELD_NAMES)
         if extra:
@@ -511,6 +539,7 @@ class DurableExecutionRecord:
             delivery_attempt=data.get("delivery_attempt", 0),
             delivery_claim_owner=data.get("delivery_claim_owner"),
             delivery_claim_until=data.get("delivery_claim_until"),
+            admission_scope=data.get("admission_scope"),
             record_revision=data["record_revision"],
             revision_token=data["revision_token"],
             created_at=data["created_at"],
@@ -1141,6 +1170,9 @@ __all__ = [
     "CARD_POSSESSION_IS_AUTHORITY",
     "THIRD_CARD_ONTOLOGY_CREATED",
     "DELIVERY_COORDINATOR_IMPLEMENTED_IN_W1",
+    "ADMISSION_SCOPE_IS_AUTHORITY",
+    "ADMISSION_SCOPE_MODEL_SETTABLE",
+    "ADMISSION_SCOPE_REWRITABLE",
     # Vocabularies
     "ExecutionPhase",
     "DeliveryState",

@@ -119,11 +119,20 @@ class TestSchemaStrictness:
         rec = _record()
         loaded = json.loads(rec.to_json())
         assert isinstance(loaded, dict)
-        assert loaded["schema_version"] == EXECUTION_DURABLE_SCHEMA_VERSION == 1
+        # M2/W3 extends the durable seam to schema v2 (immutable,
+        # non-authoritative admission_scope); strict single-version remains.
+        assert loaded["schema_version"] == EXECUTION_DURABLE_SCHEMA_VERSION == 2
 
     def test_newer_schema_fails_closed(self):
         data = _record().to_dict()
-        data["schema_version"] = 2
+        data["schema_version"] = 3
+        with pytest.raises(ValueError, match="[Uu]nsupported schema_version"):
+            DurableExecutionRecord.from_dict(data)
+
+    def test_older_schema_fails_closed(self):
+        # v1 predates the W3 admission accounting field: no silent migration.
+        data = _record().to_dict()
+        data["schema_version"] = 1
         with pytest.raises(ValueError, match="[Uu]nsupported schema_version"):
             DurableExecutionRecord.from_dict(data)
 
@@ -171,6 +180,9 @@ class TestRuntimePrivateNeverPersisted:
             "dispatch_attempt_id",
             "idempotency_key",
             "intent_fingerprint",
+            # W3 immutable concurrency-accounting identity (not CAS-mutable,
+            # not authority): admits no rewrite after creation.
+            "admission_scope",
             "created_at",
             "updated_at",
             "record_revision",
@@ -195,6 +207,8 @@ class TestRuntimePrivateNeverPersisted:
             "dispatch_attempt_id",
             "idempotency_key",
             "intent_fingerprint",
+            # W3 accounting identity is creation-time only: no re-bucketing.
+            "admission_scope",
         ):
             with pytest.raises(ExecutionPersistenceFailureError):
                 mem_store.compare_and_swap(

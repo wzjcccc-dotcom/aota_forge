@@ -188,6 +188,31 @@ def _write_smoke_fixture(root: Path, token: str) -> None:
     (fixture / "input.txt").write_text(f"AOTA_M1_W3_SENTINEL={token}\n", encoding="utf-8")
 
 
+def worker_environment(
+    *,
+    root: Path,
+    project_id: str,
+    worktree_id: str,
+    canonical_task_id: str,
+    handoff: TaskHandoff,
+    trace_path: Path,
+) -> Iterator[None]:
+    """Public trusted-MCP-binding environment seam (M2/W3 integration slice).
+
+    Identical to the M1 slice's private context manager; exposed so the W3
+    durable vertical slice can keep the Worker's trusted binding supplied
+    across a coordinator runtime restart without re-implementing the seam.
+    """
+    return _worker_environment(
+        root=root,
+        project_id=project_id,
+        worktree_id=worktree_id,
+        canonical_task_id=canonical_task_id,
+        handoff=handoff,
+        trace_path=trace_path,
+    )
+
+
 @contextmanager
 def _worker_environment(
     *,
