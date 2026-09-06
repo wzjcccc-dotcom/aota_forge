@@ -25,10 +25,10 @@ Core Invariants:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import Any, Protocol, runtime_checkable
 
-from aota_forge.core.contracts.canonical import canonical_json, canonicalize
+from aota_forge.core.contracts.canonical import canonicalize
 from aota_forge.core.execution.adapter import (
     CancelResult,
     DispatchResult,
@@ -50,7 +50,6 @@ from aota_forge.core.execution.roles import (
 )
 from aota_forge.core.execution.state import (
     CanonicalTaskState,
-    parse_state,
 )
 
 HERMES_EXECUTOR_ID: str = "hermes"
@@ -210,7 +209,9 @@ def canonical_to_hermes_payload(
     # and keeps TaskHandoff free of deployment authority.
     runtime_binding = None
     if runtime_config is not None:
-        from aota_forge.runtime.config import resolve_binding_for_canonical_role as _resolve
+        from aota_forge.runtime.config import (
+            resolve_binding_for_canonical_role as _resolve,
+        )
 
         # A supplied operator binding is authoritative for this invocation.
         # Missing/invalid binding must not silently become a static fallback.
@@ -623,6 +624,13 @@ class HermesAdapter(ExecutorAdapter):
             return
 
         if not handle_is_known and not task_is_known:
+            # M2/W2 durable re-binding: a fresh adapter process may recover the
+            # handle<->task binding from the adapter-private mechanical locator
+            # (the marker only echoes what the original trusted dispatch
+            # supplied).  An executor that cannot resolve the handle durably
+            # still fails closed exactly as before.
+            if self._recover_durable_binding(canonical_task_id, adapter_handle):
+                return
             raise HermesAdapterError(
                 f"TASK_HANDLE_NOT_FOUND: No adapter binding exists for canonical task "
                 f"{canonical_task_id!r} and handle {adapter_handle!r}",
@@ -648,6 +656,27 @@ class HermesAdapter(ExecutorAdapter):
             f"task {canonical_task_id!r} and handle {adapter_handle!r}",
             code="ADAPTER_PROTOCOL_ERROR",
         )
+
+    def _recover_durable_binding(self, canonical_task_id: str, adapter_handle: str) -> bool:
+        """Recover one handle<->task binding from adapter-private durable evidence.
+
+        The host seam may expose an executor-specific ``resolve_handle``
+        (mechanical locator echo of the dispatch-time canonical task id).
+        Any uncertainty or corruption fails closed: recovery never adopts a
+        binding on partial evidence and never spawns anything.
+        """
+        resolve = getattr(self._host_client, "resolve_handle", None)
+        if resolve is None or not callable(resolve):
+            return False
+        try:
+            resolved = resolve(adapter_handle)
+        except Exception:
+            return False
+        if not isinstance(resolved, str) or resolved != canonical_task_id:
+            return False
+        self._handle_tasks[adapter_handle] = canonical_task_id
+        self._task_handles[canonical_task_id] = adapter_handle
+        return True
 
     def validate_package(self, package: ExecutionPackage) -> ValidationResult:
         """Pure read check whether package can be executed by Hermes adapter."""

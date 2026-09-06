@@ -38,11 +38,14 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any
 
 import pytest
 
+from aota_forge.adapters.hermes import launcher as durable_launcher
+from aota_forge.adapters.hermes import locator
 from aota_forge.adapters.hermes.executor import (
     HermesAdapter,
     HermesAdapterError,
@@ -50,10 +53,11 @@ from aota_forge.adapters.hermes.executor import (
     hermes_output_to_canonical_result,
 )
 from aota_forge.adapters.hermes.host_client import (
-    READER_DRAIN_TIMEOUT_SECONDS,
     HermesHostClient,
     HermesHostClientError,
 )
+
+READER_DRAIN_TIMEOUT_SECONDS = durable_launcher.JOIN_GRACE_SECONDS
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.runtime.config import SHARED_MCP_TOOLSET, RuntimeBinding, RuntimeConfig
 
@@ -93,6 +97,8 @@ def _operator_real_config() -> RuntimeConfig | None:
         model="deepseek-v4-flash",
         bindings=bindings,
     )
+from hermes_durable_support import DurableSupervisorPad, launch_spec
+
 from aota_forge.core.execution import CanonicalTaskState, ExecutionPackage
 
 FORBIDDEN_PROJECTION_KEYS = (
@@ -289,10 +295,21 @@ def package(task_id: str, **kwargs: Any) -> ExecutionPackage:
     )
 
 
-def concrete_client(tmp_path: Path, runner: RecordingRunner, **kwargs: Any) -> HermesHostClient:
+def concrete_client(tmp_path: Path, runner: Any, **kwargs: Any) -> HermesHostClient:
     kwargs.setdefault("validate_launcher", False)
     kwargs.setdefault("timeout_seconds", 30)
+    kwargs.setdefault("runtime_root", tmp_path / "af-runtime")
     return HermesHostClient(str(tmp_path / "w3-unused-launcher"), popen_factory=runner, **kwargs)
+
+
+def run_paths(client: HermesHostClient, handle: str) -> locator.HermesRunPaths:
+    run_id = locator.run_id_from_adapter_handle(handle)
+    assert run_id is not None
+    return locator.HermesRunPaths(Path(client.runtime_root), run_id)
+
+
+def durable_handles(client: HermesHostClient) -> list[str]:
+    return locator.list_run_dirs(Path(client.runtime_root))
 
 
 def wait_for_status(client: HermesHostClient, handle: str, wanted: set[str], budget: float = 8.0) -> str:
@@ -400,20 +417,27 @@ def test_unavailable_launcher_launch_never_falls_back_to_any_other_binary(tmp_pa
     attempted: list[Any] = []
 
     def spy_popen(args: Any, **kwargs: Any) -> Any:
-        attempted.append(list(args))
-        raise FileNotFoundError(2, "No such file or directory", str(args[0]))
+        # Capture the durable launch spec before the (simulated) exec failure
+        # removes it again: the ONLY Hermes command attempted must be the
+        # exact configured launcher.
+        attempted.append(launch_spec(list(args))["hermes_argv"])
+        raise FileNotFoundError(2, "No such file or directory", str(args[-1]))
 
     client = HermesHostClient(
         configured,
         default_cwd=str(tmp_path),
         popen_factory=spy_popen,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
     with pytest.raises(HermesHostUnavailableError, match="EXECUTOR_UNAVAILABLE"):
         client.dispatch(host_payload())
-    assert attempted == [[configured, "-p", "coder", "-z", "Return exactly: AOTA_FORGE_S3_M2_W3_OK"]]
-    assert attempted[0][0] == configured, "no fallback launcher may be attempted"
-    assert client._records == {}  # noqa: SLF001
+    assert len(attempted) == 1, "exactly one launch attempt"
+    launch_argv = attempted[0]
+    assert launch_argv[0] == configured, "no fallback launcher may be attempted"
+    assert launch_argv[:3] == [configured, "-p", "coder"]
+    assert launch_argv[-2:] == ["-z", "Return exactly: AOTA_FORGE_S3_M2_W3_OK"]
+    assert durable_handles(client) == [], "a failed launch may leave no ghost evidence"
 
 
 def test_host_unavailable_probe_is_non_destructive_to_production_launcher(tmp_path: Path) -> None:
@@ -454,9 +478,9 @@ def test_launch_failure_matrix_creates_no_handle_record_or_binding(tmp_path: Pat
         adapter.dispatch(package("ghost-launch", working_context={"cwd": str(tmp_path)}))
 
     assert excinfo.value.code == "EXECUTOR_UNAVAILABLE"
-    assert client._records == {}  # noqa: SLF001
-    assert adapter._task_handles == {} and adapter._handle_tasks == {}  # noqa: SLF001
-    assert adapter._dispatch_replays == {}  # noqa: SLF001
+    assert durable_handles(client) == [], "failed launch leaves no durable evidence"
+    assert adapter._task_handles == {} and adapter._handle_tasks == {}
+    assert adapter._dispatch_replays == {}
     assert len(runner.calls) == 1, "exactly one launch attempt, failed, no ghost state"
 
     with pytest.raises(HermesAdapterError) as lookup:
@@ -464,10 +488,12 @@ def test_launch_failure_matrix_creates_no_handle_record_or_binding(tmp_path: Pat
     assert lookup.value.code == "TASK_HANDLE_NOT_FOUND"
 
     # no ghost residue: a later valid dispatch through a fresh client still works
-    ok_client = concrete_client(tmp_path, RecordingRunner(lambda: ControlledProcess(exit_code=0)))
+    ok_pad = DurableSupervisorPad(release_on_spawn=0)
+    ok_client = concrete_client(tmp_path, ok_pad)
     handle = ok_client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
     assert handle.startswith("hermes-host-")
     ok_client.close()
+    ok_pad.close()
 
 
 def test_launch_failure_message_never_carries_exception_payload_credentials(tmp_path: Path) -> None:
@@ -501,7 +527,11 @@ def test_launch_failure_message_never_carries_exception_payload_credentials(tmp_
 def test_dispatch_rejections_start_zero_processes(tmp_path: Path, mutation: Any) -> None:
     runner = RecordingRunner()
     client = HermesHostClient(
-        str(tmp_path / "w3-unused"), default_cwd=str(tmp_path), popen_factory=runner, validate_launcher=False
+        str(tmp_path / "w3-unused"),
+        default_cwd=str(tmp_path),
+        popen_factory=runner,
+        validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
 
     payload = payload_with_cwd(tmp_path)
@@ -511,7 +541,7 @@ def test_dispatch_rejections_start_zero_processes(tmp_path: Path, mutation: Any)
 
     assert excinfo.value.code in {"CAPABILITY_MISMATCH", "PACKAGE_INVALID", "DISPATCH_REJECTED"}
     assert runner.calls == [], "a rejected dispatch may never start a process"
-    assert client._records == {}  # noqa: SLF001
+    assert locator.list_run_dirs(Path(client.runtime_root)) == []
 
 
 def test_rejected_dispatch_never_creates_adapter_binding(tmp_path: Path) -> None:
@@ -524,7 +554,7 @@ def test_rejected_dispatch_never_creates_adapter_binding(tmp_path: Path) -> None
         )
 
     assert host.calls["dispatch"] == 0
-    assert adapter._task_handles == {} and adapter._handle_tasks == {}  # noqa: SLF001
+    assert adapter._task_handles == {} and adapter._handle_tasks == {}
 
 
 # ---------------------------------------------------------------------------
@@ -533,10 +563,10 @@ def test_rejected_dispatch_never_creates_adapter_binding(tmp_path: Path) -> None
 
 
 def test_host_level_unknown_handle_status_result_cancel_fail_closed(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0)
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad)
     live = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    records_before = dict.fromkeys(client._records)  # noqa: SLF001
+    handles_before = durable_handles(client)
 
     unknown = "hermes-host-" + "f" * 32
     for response in (client.query_status(unknown), client.fetch_result(unknown)):
@@ -546,15 +576,16 @@ def test_host_level_unknown_handle_status_result_cancel_fail_closed(tmp_path: Pa
     assert cancelled["cancelled"] is False
     assert cancelled["status"] == "unreachable"
     assert cancelled["error"]["code"] == "TASK_NOT_FOUND"
-    assert process.poll() is None, "an unknown handle may not resolve to (or disturb) the live execution"
-    assert dict.fromkeys(client._records) == records_before, "unknown probes must not create or swap records"  # noqa: SLF001
+    assert pad.last.poll() is None, "an unknown handle may not resolve to (or disturb) the live execution"
+    assert durable_handles(client) == handles_before, "unknown probes must not create or swap durable runs"
     assert client.query_status(live)["status"] == "running"
     client.close()
+    pad.close()
 
 
 def test_resume_on_live_or_unknown_handle_stays_unsupported(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0)
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
 
     for probe in (handle, "hermes-host-" + "0" * 32):
@@ -562,6 +593,7 @@ def test_resume_on_live_or_unknown_handle_stays_unsupported(tmp_path: Path) -> N
         assert response["error"]["code"] == "RESUME_UNSUPPORTED"
     assert client.query_status(handle)["status"] == "running", "a resume probe must not disturb live state"
     client.close()
+    pad.close()
 
 
 def test_adapter_level_unknown_handle_never_reaches_host(tmp_path: Path) -> None:
@@ -581,7 +613,7 @@ def test_adapter_level_unknown_handle_never_reaches_host(tmp_path: Path) -> None
         assert excinfo.value.code == "TASK_HANDLE_NOT_FOUND"
     for operation in ("status", "result", "cancel", "resume"):
         assert host.calls[operation] == 0, f"rejected {operation} identity probe touched the host"
-    assert adapter._task_handles["known-task"] == handle  # noqa: SLF001
+    assert adapter._task_handles["known-task"] == handle
 
 
 # ---------------------------------------------------------------------------
@@ -594,7 +626,7 @@ def test_cross_task_access_fails_closed_before_any_host_call(tmp_path: Path, ope
     host = ScriptedHost()
     adapter = HermesAdapter(host_client=host)
     bound_pair(adapter, host, tmp_path, "task-b")
-    handle_b = adapter._task_handles["task-b"]  # noqa: SLF001
+    handle_b = adapter._task_handles["task-b"]
     handle_a = bound_pair(adapter, host, tmp_path, "task-a")
 
     args: tuple[Any, ...]
@@ -610,19 +642,24 @@ def test_cross_task_access_fails_closed_before_any_host_call(tmp_path: Path, ope
 
 
 def test_terminal_execution_keeps_identity_binding_strict(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0)
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad)
     adapter = HermesAdapter(host_client=client)
     result_a = adapter.dispatch(package("term-a", working_context={"cwd": str(tmp_path)}))
-    process.release(0)
+    pad.last.release(0)
     assert wait_for_status(client, result_a.adapter_handle, {"done"}) == "done"
 
-    terminal_before = client._records[result_a.adapter_handle].terminal_at  # noqa: SLF001
+    receipt_before = locator.read_receipt(run_paths(client, result_a.adapter_handle))
+    assert receipt_before is not None
     with pytest.raises(HermesAdapterError) as excinfo:
         adapter.status("term-a", "hermes-host-" + "a" * 32)
-    assert excinfo.value.code == "TASK_ID_MISMATCH", "terminal executions keep bidirectional guards"
-    assert client._records[result_a.adapter_handle].terminal_at == terminal_before  # noqa: SLF001
+    assert excinfo.value.code == "TASK_ID_MISMATCH", (
+        "terminal executions keep bidirectional guards; durable recovery never joins a half-known pair"
+    )
+    receipt_after = locator.read_receipt(run_paths(client, result_a.adapter_handle))
+    assert receipt_after == receipt_before
     still = adapter.result("term-a", result_a.adapter_handle)
+    pad.close()
     assert_never_false_success(still)
     assert still.ok is True, "the known pair keeps working after a rejected cross probe"
 
@@ -639,14 +676,14 @@ def test_inconsistent_binding_fails_closed_without_repair(tmp_path: Path, corrup
     task_id = "victim"
     handle = bound_pair(adapter, host, tmp_path, task_id)
     if corruption == "forward-only":
-        del adapter._task_handles[task_id]  # noqa: SLF001
+        del adapter._task_handles[task_id]
     elif corruption == "reverse-only":
-        del adapter._handle_tasks[handle]  # noqa: SLF001
+        del adapter._handle_tasks[handle]
     else:
-        adapter._task_handles[task_id] = "phantom-handle"  # noqa: SLF001
+        adapter._task_handles[task_id] = "phantom-handle"
 
-    forward_before = dict(adapter._handle_tasks)  # noqa: SLF001
-    reverse_before = dict(adapter._task_handles)  # noqa: SLF001
+    forward_before = dict(adapter._handle_tasks)
+    reverse_before = dict(adapter._task_handles)
 
     with pytest.raises(HermesAdapterError):
         adapter.status(task_id, handle)
@@ -654,8 +691,8 @@ def test_inconsistent_binding_fails_closed_without_repair(tmp_path: Path, corrup
         adapter.result(task_id, handle)
 
     assert host.calls["status"] == 0 and host.calls["result"] == 0
-    assert adapter._handle_tasks == forward_before  # noqa: SLF001
-    assert adapter._task_handles == reverse_before  # noqa: SLF001
+    assert adapter._handle_tasks == forward_before
+    assert adapter._task_handles == reverse_before
 
 
 # ---------------------------------------------------------------------------
@@ -751,15 +788,18 @@ def test_truncated_structured_stdout_is_evidence_not_parsed_payload(tmp_path: Pa
 
 
 def test_stderr_gated_completion_publishes_failed_only_after_drain(tmp_path: Path) -> None:
-    """TERMINAL_PUBLICATION_WAITS_FOR_STABLE_OUTPUT also applies to FAILED."""
-    gate = threading.Event()
-    stderr = GatedStream([b"tail-"], gate)
-    process = ControlledProcess(exit_code=9, stdout=io.BytesIO(b"out"), stderr=stderr)
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
-    handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(9)
+    """TERMINAL_PUBLICATION_WAITS_FOR_STABLE_OUTPUT also applies to FAILED.
 
-    assert process.poll() == 9
+    W2 durable boundary: the supervisor renames the terminal receipt into
+    place only after both bounded captures are complete.
+    """
+    gate = threading.Event()
+    pad = DurableSupervisorPad(stdout=b"out", stderr=b"tail-")
+    client = concrete_client(tmp_path, pad)
+    handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
+    pad.last.release(9, stream_gate=gate)
+
+    assert pad.last.child_returncode() is not None
     seen = {client.query_status(handle)["status"] for _ in range(3)}
     assert seen == {"running"}, "a failed exit with an undrained stderr must not publish terminal yet"
 
@@ -768,18 +808,15 @@ def test_stderr_gated_completion_publishes_failed_only_after_drain(tmp_path: Pat
     envelope = client.fetch_result(handle)
     assert envelope["status"] == "failed" and envelope["exit_code"] == 9
     assert envelope["stderr"] == "tail-"
+    pad.close()
 
 
 def test_both_streams_delayed_publish_only_after_both_stabilize(tmp_path: Path) -> None:
     out_gate, err_gate = threading.Event(), threading.Event()
-    process = ControlledProcess(
-        exit_code=0,
-        stdout=GatedStream([b"so-"], out_gate),
-        stderr=GatedStream([b"se-"], err_gate),
-    )
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"so-", stderr=b"se-")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(0)
+    pad.last.release(0, stream_gate=[out_gate, err_gate])
     try:
         assert client.query_status(handle)["status"] == "running"
         out_gate.set()
@@ -791,14 +828,15 @@ def test_both_streams_delayed_publish_only_after_both_stabilize(tmp_path: Path) 
     finally:
         out_gate.set()
         err_gate.set()
+        pad.close()
 
 
 def test_reader_join_timeout_is_bounded_and_delayed_retry_terminates(tmp_path: Path) -> None:
     gate = threading.Event()
-    process = ControlledProcess(exit_code=0, stdout=GatedStream([b"held"], gate), stderr=io.BytesIO(b""))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"held", stderr=b"")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(0)
+    pad.last.release(0, stream_gate=gate)
 
     started = time.monotonic()
     first = client.query_status(handle)["status"]
@@ -817,16 +855,17 @@ def test_reader_join_timeout_is_bounded_and_delayed_retry_terminates(tmp_path: P
         "DELAYED_DRAIN_EVENTUALLY_TERMINATES: no permanent RUNNING once streams drain"
     )
     assert client.fetch_result(handle)["stdout"] == "held"
+    pad.close()
 
 
 def test_never_draining_stream_cannot_wedge_running_past_deadline(tmp_path: Path) -> None:
-    """Even a stream that never stabilizes cannot produce permanent RUNNING:
-    the bounded local deadline forces a terminal (timeout -> UNKNOWN)."""
+    """Even a capture that never stabilizes cannot produce permanent RUNNING:
+    the supervisor's bounded deadline forces a terminal (timeout -> UNKNOWN)."""
     gate = threading.Event()
-    process = ControlledProcess(exit_code=0, stdout=GatedStream([b"stuck-after-this"], gate), stderr=io.BytesIO(b""))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"stuck-after-this", stderr=b"")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path, constraints={"timeout_seconds": 0.5}))["adapter_handle"]
-    process.release(0)
+    pad.last.release(0, stream_gate=gate)
     try:
         status = wait_for_status(client, handle, {"timeout"}, budget=8.0)
         assert status == "timeout", "OUTPUT_DRAIN_DEADLOCK: deadline must publish terminal anyway"
@@ -835,31 +874,23 @@ def test_never_draining_stream_cannot_wedge_running_past_deadline(tmp_path: Path
         assert envelope["error"]["code"] == "EXECUTION_TIMEOUT"
     finally:
         gate.set()
+        pad.close()
 
 
 def test_late_arriving_output_after_exit_is_captured_in_full(tmp_path: Path) -> None:
     gate = threading.Event()
-
-    class LateStream:
-        def __init__(self) -> None:
-            self._delivered = False
-
-        def read(self, size: int = -1) -> bytes:
-            if self._delivered:
-                return b""
-            gate.wait(timeout=20)
-            self._delivered = True
-            return b"complete-after-gate\n"
-
-    process = ControlledProcess(exit_code=0, stdout=LateStream(), stderr=io.BytesIO(b""))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"complete-after-gate\n", stderr=b"")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(0)
+    # Worker exits while its final bytes are still being written: the receipt
+    # may only publish once the late-arriving output fully landed.
+    pad.last.release(0, stream_gate=gate)
 
     assert client.query_status(handle)["status"] == "running"
     gate.set()
     assert wait_for_status(client, handle, {"done"}) == "done"
     assert client.fetch_result(handle)["stdout"] == "complete-after-gate\n"
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -868,12 +899,12 @@ def test_late_arriving_output_after_exit_is_captured_in_full(tmp_path: Path) -> 
 
 
 def test_reader_exception_after_partial_output_fails_closed_exit_zero(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0, stdout=ExplodingStream(partial=b"half-a-result"))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"half-a-result")
+    client = concrete_client(tmp_path, pad)
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("reader-crash", working_context={"cwd": str(tmp_path)}))
     handle = dispatch_result.adapter_handle
-    process.release(0)
+    pad.last.release(0, read_failure=True)
 
     assert wait_for_status(client, handle, {"failed"}) == "failed", (
         "READER_FAILURE_FALSE_SUCCESS: a crashed reader must never publish done"
@@ -889,40 +920,44 @@ def test_reader_exception_after_partial_output_fails_closed_exit_zero(tmp_path: 
     assert result.status == "failed"
     assert result.error is not None and result.error["code"] == "RESULT_UNAVAILABLE"
     assert result.result_data == {}
+    pad.close()
 
 
 def test_reader_closed_file_failure_fails_closed(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0, stdout=ClosedFileStream())
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(0)
+    pad.last.release(0, read_failure=True)
 
     assert wait_for_status(client, handle, {"failed"}) == "failed"
     assert client.fetch_result(handle)["error"]["code"] == "RESULT_UNAVAILABLE"
+    pad.close()
 
 
 def test_stderr_reader_failure_fails_closed(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0, stdout=io.BytesIO(b"fine"), stderr=ExplodingStream())
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"fine")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(0)
+    pad.last.release(0, read_failure=True)
 
     assert wait_for_status(client, handle, {"failed"}) == "failed"
     assert client.fetch_result(handle)["error"]["code"] == "RESULT_UNAVAILABLE"
+    pad.close()
 
 
 def test_nonzero_exit_with_reader_failure_stays_execution_failed(tmp_path: Path) -> None:
     """A known worker failure remains the dominant honest evidence even when
-    the reader also died; the actual exit code is preserved."""
-    process = ControlledProcess(exit_code=3, stdout=ExplodingStream(), stderr=io.BytesIO(b"boom"))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    the capture also died; the actual exit code is preserved."""
+    pad = DurableSupervisorPad(stderr=b"boom")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    process.release(3)
+    pad.last.release(3, read_failure=True)
 
     assert wait_for_status(client, handle, {"failed"}) == "failed"
     envelope = client.fetch_result(handle)
     assert envelope["exit_code"] == 3
     assert envelope["error"]["code"] == "EXECUTION_FAILED"
+    pad.close()
 
 
 def test_clean_process_with_good_readers_still_completes(tmp_path: Path) -> None:
@@ -967,7 +1002,7 @@ def test_fast_failing_real_worker_keeps_handle_queryable_failed(tmp_path: Path) 
 
 def test_real_failure_with_garbage_output_can_never_override_into_success(tmp_path: Path) -> None:
     launcher = _make_launcher(tmp_path, "fail-garbage.sh", "printf '{\"ok\": tr' ; printf 'oops' >&2 ; exit 9")
-    client = HermesHostClient(launcher, default_cwd=str(tmp_path))
+    client = HermesHostClient(launcher, default_cwd=str(tmp_path), runtime_root=tmp_path / "af-runtime")
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("fail-garbage", working_context={"cwd": str(tmp_path)}))
 
@@ -984,11 +1019,11 @@ def test_exit_zero_without_stable_result_fails_closed_end_to_end(tmp_path: Path)
     """§22 regression through the real pipeline shape: exit code 0 is runtime
     evidence only; without a stable valid capture the projection fails closed.
     (Structural envelope variants are frozen in F/W2.)"""
-    process = ControlledProcess(exit_code=0, stdout=ExplodingStream(partial=b'{"answer":'))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b'{"answer":')
+    client = concrete_client(tmp_path, pad)
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("exit0-noresult", working_context={"cwd": str(tmp_path)}))
-    process.release(0)
+    pad.last.release(0, read_failure=True)
 
     state = wait_for_adapter_state(
         adapter,
@@ -1000,6 +1035,7 @@ def test_exit_zero_without_stable_result_fails_closed_end_to_end(tmp_path: Path)
     result = adapter.result("exit0-noresult", dispatch_result.adapter_handle)
     assert_never_false_success(result)
     assert result.ok is False
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1053,9 @@ TIMEOUT_PROFILES = {
 @pytest.mark.parametrize(("profile", "body"), TIMEOUT_PROFILES.items())
 def test_real_timeout_never_false_completion(tmp_path: Path, profile: str, body: str) -> None:
     launcher = _make_launcher(tmp_path, f"sleeper-{profile}.sh", body)
-    client = HermesHostClient(launcher, default_cwd=str(tmp_path), timeout_seconds=30)
+    client = HermesHostClient(
+        launcher, default_cwd=str(tmp_path), timeout_seconds=30, runtime_root=tmp_path / "af-runtime"
+    )
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(
         package(f"timeout-{profile}", working_context={"cwd": str(tmp_path)}, constraints={"timeout_seconds": 0.4})
@@ -1033,19 +1071,27 @@ def test_real_timeout_never_false_completion(tmp_path: Path, profile: str, body:
     assert result.error is not None and result.error["code"] == "EXECUTION_TIMEOUT"
     assert result.result_data == {}, "retained partial output never fabricates a payload"
 
-    process = client._records[handle].process  # noqa: SLF001
+    child = locator.read_json_object(run_paths(client, handle).child)
+    assert child is not None
     deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and process.poll() is None:
+    while time.monotonic() < deadline:
+        try:
+            os.kill(int(child["child_pid"]), 0)
+            alive = True
+        except ProcessLookupError:
+            alive = False
+            break
         time.sleep(0.05)
-    assert process.poll() is not None, "timed-out worker must be terminated, no lingering process"
+    assert not alive, "timed-out worker must be terminated, no lingering process"
     client.close()
 
 
 def test_timeout_while_reader_drains_is_bounded_and_never_success(tmp_path: Path) -> None:
     gate = threading.Event()
-    process = ControlledProcess(exit_code=0, stdout=GatedStream([b"draining..."], gate), stderr=io.BytesIO(b""))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"draining...", stderr=b"")
+    client = concrete_client(tmp_path, pad)
     handle = client.dispatch(payload_with_cwd(tmp_path, constraints={"timeout_seconds": 0.4}))["adapter_handle"]
+    pad.last.release(0, stream_gate=gate)
 
     started = time.monotonic()
     status = ""
@@ -1063,6 +1109,7 @@ def test_timeout_while_reader_drains_is_bounded_and_never_success(tmp_path: Path
         assert envelope["error"]["code"] == "EXECUTION_TIMEOUT"
     finally:
         gate.set()
+        pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1072,12 +1119,13 @@ def test_timeout_while_reader_drains_is_bounded_and_never_success(tmp_path: Path
 
 def test_cancel_while_reader_delayed_no_deadlock_no_false_success(tmp_path: Path) -> None:
     gate = threading.Event()
-    process = ControlledProcess(exit_code=0, stdout=GatedStream([b"in-flight"], gate), stderr=io.BytesIO(b""))
-    client = concrete_client(tmp_path, RecordingRunner(lambda: process))
+    pad = DurableSupervisorPad(stdout=b"in-flight", stderr=b"")
+    client = concrete_client(tmp_path, pad)
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("cancel-drain", working_context={"cwd": str(tmp_path)}))
     handle = dispatch_result.adapter_handle
     assert client.query_status(handle)["status"] == "running"
+    pad.last.release(0, stream_gate=gate)  # worker exits mid-drain; receipt pending
 
     started = time.monotonic()
     cancel = adapter.cancel("cancel-drain", handle)
@@ -1094,6 +1142,7 @@ def test_cancel_while_reader_delayed_no_deadlock_no_false_success(tmp_path: Path
         assert client.query_status(handle)["status"] == "cancelled", "terminal stays cancelled after drain settles"
     finally:
         gate.set()
+        pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1102,8 +1151,13 @@ def test_cancel_while_reader_delayed_no_deadlock_no_false_success(tmp_path: Path
 
 
 def test_production_resume_is_not_advertised_and_guarded_before_host(tmp_path: Path) -> None:
-    runner = RecordingRunner()
-    host_client = HermesHostClient(str(tmp_path / "w3-unused"), popen_factory=runner, validate_launcher=False)
+    runner = DurableSupervisorPad(release_on_spawn=0)
+    host_client = HermesHostClient(
+        str(tmp_path / "w3-unused"),
+        popen_factory=runner,
+        validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
+    )
     dispatcher = create_production_execution_dispatcher(host_client=host_client)
     adapter = dispatcher.registry.get("hermes")
 
@@ -1151,14 +1205,8 @@ def test_unavailable_result_paths_never_fabricate_success(tmp_path: Path) -> Non
 def test_status_and_result_agree_on_every_real_lifecycle_state(tmp_path: Path) -> None:
     """No adapter-visible (status, result) pair may contradict: ok=True iff
     COMPLETED; every other lifecycle outcome fails closed."""
-    done_proc = ControlledProcess(exit_code=0, stdout=io.BytesIO(b"ok"))
-    failed_proc = ControlledProcess(exit_code=8, stderr=io.BytesIO(b"bad"))
-    cancelled_proc = ControlledProcess()
-    timeout_proc = ControlledProcess()
-    readerfail_proc = ControlledProcess(exit_code=0, stdout=ExplodingStream())
-
-    processes = iter([done_proc, failed_proc, cancelled_proc, timeout_proc, readerfail_proc])
-    client = concrete_client(tmp_path, RecordingRunner(lambda: next(processes)))
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad)
     adapter = HermesAdapter(host_client=client)
 
     handles = {}
@@ -1168,9 +1216,10 @@ def test_status_and_result_agree_on_every_real_lifecycle_state(tmp_path: Path) -
             package(task, working_context={"cwd": str(tmp_path)}, constraints=constraints)
         ).adapter_handle
 
-    done_proc.release(0)
-    failed_proc.release(8)
-    readerfail_proc.release(0)
+    by_order = {task: launch for task, launch in zip(("done", "failed", "cancelled", "timeout", "readerfail"), pad.launches)}
+    by_order["done"].release(0, stdout=b"ok")
+    by_order["failed"].release(8, stderr=b"bad")
+    by_order["readerfail"].release(0, read_failure=True)
     adapter.cancel("cancelled", handles["cancelled"])
 
     assert wait_for_status(client, handles["done"], {"done"}) == "done"
@@ -1196,6 +1245,7 @@ def test_status_and_result_agree_on_every_real_lifecycle_state(tmp_path: Path) -
     done_result = adapter.result("done", handles["done"])
     assert done_result.ok is True and done_result.canonical_task_state == CanonicalTaskState.COMPLETED.value
     assert adapter.status("done", handles["done"]).state is CanonicalTaskState.COMPLETED
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1204,31 +1254,33 @@ def test_status_and_result_agree_on_every_real_lifecycle_state(tmp_path: Path) -
 
 
 def test_active_records_survive_terminal_eviction_pressure(tmp_path: Path) -> None:
-    active = ControlledProcess()
-    doomed = [ControlledProcess(exit_code=0) for _ in range(4)]
-    queue = iter([active] + doomed)
+    """Durable capacity accounting: terminal runs do not consume the active
+    bound and an ACTIVE run's evidence is never reclaimed to make room."""
+    pad = DurableSupervisorPad()
     client = HermesHostClient(
         str(tmp_path / "w3-unused"),
         default_cwd=str(tmp_path),
-        popen_factory=lambda *a, **k: next(queue),
+        popen_factory=pad,
         validate_launcher=False,
         max_records=3,
         timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
     )
     active_handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
     for _ in range(4):
         handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-        client._records[handle].process.release(0)  # noqa: SLF001
+        pad.last.release(0)
         assert wait_for_status(client, handle, {"done"}) == "done"
 
-    assert active_handle in client._records, "ACTIVE_RECORD_NOT_EVICTED"  # noqa: SLF001
+    assert run_paths(client, active_handle).run_dir.is_dir(), "ACTIVE_RECORD_NOT_EVICTED"
     assert client.query_status(active_handle)["status"] == "running", "UNKNOWN_FROM_PREMATURE_ACTIVE_EVICTION=no"
-    assert len(client._records) <= 3  # noqa: SLF001
+    assert client._count_active_runs() <= 3
     client.close()
+    pad.close()
 
 
 def test_record_bound_exhaustion_fails_before_process_start(tmp_path: Path) -> None:
-    runner = RecordingRunner()
+    runner = DurableSupervisorPad()
     client = HermesHostClient(
         str(tmp_path / "w3-unused"),
         default_cwd=str(tmp_path),
@@ -1236,6 +1288,7 @@ def test_record_bound_exhaustion_fails_before_process_start(tmp_path: Path) -> N
         validate_launcher=False,
         max_records=2,
         timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
     )
     client.dispatch(payload_with_cwd(tmp_path))
     client.dispatch(payload_with_cwd(tmp_path))
@@ -1243,6 +1296,7 @@ def test_record_bound_exhaustion_fails_before_process_start(tmp_path: Path) -> N
         client.dispatch(payload_with_cwd(tmp_path))
     assert len(runner.calls) == 2, "exhausted record bound may never start a third process"
     client.close()
+    runner.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1251,57 +1305,49 @@ def test_record_bound_exhaustion_fails_before_process_start(tmp_path: Path) -> N
 
 
 def test_failure_paths_do_not_grow_threads(tmp_path: Path) -> None:
+    """W2 durable boundary: the AF process owns ZERO per-execution threads.
+    Observation reads durable evidence; capture/drain/watch run in the
+    detached supervisor process.  Status polling may never spawn threads."""
     gates: list[threading.Event] = []
-    processes: list[ControlledProcess] = []
-
-    def spawn() -> ControlledProcess:
-        gate = threading.Event()
-        gates.append(gate)
-        process = ControlledProcess(exit_code=0, stdout=GatedStream([b"x" * 10], gate))
-        processes.append(process)
-        return process
-
+    pad = DurableSupervisorPad(stdout=b"x" * 10, stderr=b"")
     client = HermesHostClient(
         str(tmp_path / "w3-unused"),
         default_cwd=str(tmp_path),
-        popen_factory=RecordingRunner(spawn),
+        popen_factory=pad,
         validate_launcher=False,
         output_limit_bytes=64,
         timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
     )
-    before_threads = {threading.current_thread().ident} | {
-        t.ident for t in threading.enumerate() if t is not threading.current_thread()
-    }
+    handles: list[str] = []
+    for _ in range(4):
+        gate = threading.Event()
+        gates.append(gate)
+        handles.append(client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"])
+        pad.last.release(0, stream_gate=gate)
+    assert len(durable_handles(client)) == 4
+
+    before_threads = {t.ident for t in threading.enumerate()}
     try:
-        handles = [client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"] for _ in range(4)]
-        assert len(client._records) == 4  # noqa: SLF001
-        for record in list(client._records.values()):  # noqa: SLF001
-            assert len(record.readers) == 2, "exactly two bounded reader threads per execution"
-        spawned = [t for t in threading.enumerate() if t.ident not in before_threads]
-        assert len(spawned) <= 4 * 3, "at most bounded per-record reader/watcher threads"
-        count_after_spawn = len([t for t in threading.enumerate() if t.ident not in before_threads])
         for _ in range(6):
             for handle in handles:
                 client.query_status(handle)
-        assert len([t for t in threading.enumerate() if t.ident not in before_threads]) <= count_after_spawn, (
-            "status polling must never spawn more threads"
+                client.fetch_result(handle)
+        assert {t.ident for t in threading.enumerate()} == before_threads, (
+            "status/result polling over durable evidence must never spawn threads"
         )
     finally:
-        for gate, process in zip(gates, processes):
-            process.release(0)
+        for gate in gates:
             gate.set()
         client.close()
-
-    deadline = time.monotonic() + 10
-    for thread in spawned:
-        thread.join(timeout=max(0.0, deadline - time.monotonic()))
-    alive = [thread.name for thread in spawned if thread.is_alive()]
-    assert alive == [], f"LINGERING reader/watcher threads after close: {alive}"
+        pad.close()
 
 
 def test_bounded_output_survives_failure_projection(tmp_path: Path) -> None:
     launcher = _make_launcher(tmp_path, "spew-fail.sh", "yes AOTA_FORGE_S3_M2_W3 | head -c 100000 ; exit 2")
-    client = HermesHostClient(launcher, default_cwd=str(tmp_path), output_limit_bytes=256)
+    client = HermesHostClient(
+        launcher, default_cwd=str(tmp_path), output_limit_bytes=256, runtime_root=tmp_path / "af-runtime"
+    )
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("spew-fail", working_context={"cwd": str(tmp_path)}))
     handle = dispatch_result.adapter_handle
@@ -1320,17 +1366,18 @@ def test_failure_envelopes_carry_no_private_runtime_metadata(tmp_path: Path) -> 
     cwd_marker = "w3cwdMARKdir"
     workspace = tmp_path / cwd_marker
     workspace.mkdir()
-    process = ControlledProcess(exit_code=1, stderr=io.BytesIO(b"bounded failure text"))
+    pad = DurableSupervisorPad(stdout=b"", stderr=b"bounded failure text")
     client = HermesHostClient(
         str(tmp_path / launcher_marker),
-        popen_factory=RecordingRunner(lambda: process),
+        popen_factory=pad,
         validate_launcher=False,
         timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
     )
     adapter = HermesAdapter(host_client=client)
     dispatch_result = adapter.dispatch(package("privacy", working_context={"cwd": str(workspace)}))
     handle = dispatch_result.adapter_handle
-    process.release(1)
+    pad.last.release(1)
     assert wait_for_status(client, handle, {"failed"}) == "failed"
 
     status = adapter.status("privacy", handle)
@@ -1378,8 +1425,8 @@ def test_real_production_hermes_happy_path_after_w3_hardening(tmp_path: Path) ->
     )
     task_id = dispatch_result.canonical_task_id
     handle = dispatch_result.adapter_handle
-    client = adapter._host_client  # noqa: SLF001
-    process = client._records[handle].process  # noqa: SLF001
+    client = adapter._host_client
+    process = client._records[handle].process
     pid = process.pid
 
     try:

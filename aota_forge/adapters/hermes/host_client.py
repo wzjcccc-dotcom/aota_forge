@@ -1,28 +1,48 @@
-"""Production Hermes host bridge.
+"""Production Hermes host bridge (M2/W2 durable runtime boundary).
 
-This module owns the subprocess and all runtime state.  It deliberately exposes
-only the small envelope expected by :class:`HermesAdapter`; process IDs,
-profiles, and retained output never become canonical identities.
+This module owns Hermes one-shot launches.  Since M2/W2 the authoritative
+execution evidence is the executor-private durable locator (see
+:mod:`aota_forge.adapters.hermes.locator`) plus the atomic terminal receipt
+written by the detached supervisor in :mod:`aota_forge.adapters.hermes.launcher`.
+In-process state is a non-authoritative accelerator only: after an AF restart
+a fresh :class:`HermesHostClient` can resolve the same adapter handles purely
+from mechanical evidence — no old Popen object, no reader thread, no
+process-local record store.
+
+It still exposes only the small envelope expected by :class:`HermesAdapter`;
+PIDs, paths, profiles, and retained output never become canonical identities.
+Mechanical terminal evidence (an exit code) is never an AF semantic
+acceptance: ``HERMES_PROCESS_EXIT_ZERO_IS_AF_ACCEPTANCE=no``.  When evidence
+cannot establish a state, the boundary returns typed UNKNOWN — never a
+fabricated COMPLETED/FAILED and never a silent re-dispatch.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
+import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
-from collections import OrderedDict
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
+from . import locator
 from .executor import HermesHostUnavailableError
+from .locator import HermesLocatorError, HermesRunPaths
 
 MAX_OUTPUT_BYTES = 64 * 1024
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_RECORDS = 128
-READER_DRAIN_TIMEOUT_SECONDS = 1.0
+DEFAULT_RETENTION_SECONDS = 7 * 24 * 3600
+CANCEL_RECEIPT_WAIT_SECONDS = 1.0
+RECEIPT_POLL_SECONDS = 0.02
+_TRUNCATION_MARKER = "\n...[output truncated]"
+_USAGE_FILE_MAX_BYTES = 64 * 1024
 _WORKING_DIRECTORY_KEYS = ("cwd", "working_directory", "working_dir", "repo_path", "repo_root", "dir")
 _SEMANTIC_CONTEXT_KEYS = frozenset({"bounded_scope", "handoff_digest", "task_kind", "work_role", "refs"})
 _SUPPORTED_CONSTRAINTS = frozenset({"timeout_seconds", "execution_mode", "isolation", "isolation_mode"})
@@ -36,6 +56,18 @@ _SUPPORTED_REQUIREMENTS = frozenset(
     }
 )
 
+# Bootstrap used to launch the durable supervisor detached from this process.
+# The importable package location is a machine-level fact computed from this
+# module's own file, never from the payload, model text, or shell CWD.
+# host_client.py lives at <root>/aota_forge/adapters/hermes/, so the parent
+# directory that makes ``import aota_forge`` resolve is parents[3].
+_PACKAGE_PARENT = str(Path(__file__).resolve().parents[3])
+_SUPERVISOR_BOOTSTRAP = (
+    f"import sys; sys.path.insert(0, {_PACKAGE_PARENT!r}); "
+    "from aota_forge.adapters.hermes.launcher import main; "
+    "raise SystemExit(main(sys.argv[1:]))"
+)
+
 
 class HermesHostClientError(Exception):
     """Bounded host-client error with a canonical adapter error code."""
@@ -46,57 +78,19 @@ class HermesHostClientError(Exception):
         self.code = code
 
 
-class _BoundedOutput:
-    def __init__(self, limit: int) -> None:
-        self._limit = limit
-        self._data = bytearray()
-        self.truncated = False
-        self._lock = threading.Lock()
-
-    def append(self, value: bytes) -> None:
-        with self._lock:
-            remaining = self._limit - len(self._data)
-            if remaining > 0:
-                self._data.extend(value[:remaining])
-            if len(value) > remaining:
-                self.truncated = True
-
-    def text(self) -> str:
-        marker = b"\n...[output truncated]"
-        with self._lock:
-            data = bytes(self._data)
-            truncated = self.truncated
-        if truncated:
-            if self._limit >= len(marker):
-                data = data[: self._limit - len(marker)] + marker
-            else:
-                data = data[: self._limit]
-        return data.decode("utf-8", errors="replace")
-
-
-@dataclass
-class _ExecutionRecord:
-    process: Any
-    profile: str
-    cwd: str
-    started_at: float
-    deadline: float
-    stdout: _BoundedOutput
-    stderr: _BoundedOutput
-    readers: list[threading.Thread] = field(default_factory=list)
-    status: str = "pending"
-    exit_code: int | None = None
-    terminal_at: float | None = None
-    timed_out: bool = False
-    cancelled: bool = False
-    # W3 fail-closed marker: a reader that raised can never re-establish a
-    # complete, stable capture, so exit code 0 must not project as "done".
-    read_failure: bool = False
-    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-
-
 class HermesHostClient:
-    """Run bounded Hermes one-shot workers behind the Hermes host protocol."""
+    """Run bounded Hermes one-shot workers behind the durable Hermes protocol.
+
+    Durable-boundary invariants (W2):
+
+    - ``ADAPTER_HANDLE_RECOVERABLE_AFTER_RESTART=yes``: the public handle maps
+      deterministically to ``<runtime-root>/runs/<run-id>`` mechanical evidence.
+    - ``PROCESS_LOCAL_RECORD_REQUIRED_FOR_RECOVERY=no`` /
+      ``OLD_POPEN_REQUIRED_FOR_RECOVERY=no``: recovery consults durable records
+      plus OS process identity, never this instance's Python objects.
+    - ``close()`` detaches local observation; it must NOT terminate durable
+      workers (workers outliving the dispatching process is the point of M2).
+    """
 
     def __init__(
         self,
@@ -106,6 +100,8 @@ class HermesHostClient:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         output_limit_bytes: int = MAX_OUTPUT_BYTES,
         max_records: int = DEFAULT_MAX_RECORDS,
+        retention_seconds: float = DEFAULT_RETENTION_SECONDS,
+        runtime_root: str | os.PathLike[str] | None = None,
         popen_factory: Callable[..., Any] | None = None,
         validate_launcher: bool = True,
     ) -> None:
@@ -117,17 +113,27 @@ class HermesHostClient:
             raise ValueError("output_limit_bytes must be a positive integer")
         if type(max_records) is not int or max_records <= 0:
             raise ValueError("max_records must be a positive integer")
+        if type(retention_seconds) not in (int, float) or isinstance(retention_seconds, bool) or retention_seconds < 0:
+            raise ValueError("retention_seconds must be a non-negative number")
 
         self.launcher_path = str(launcher_path)
         self.default_cwd = self._validate_cwd(default_cwd) if default_cwd is not None else None
         self.timeout_seconds = float(timeout_seconds)
         self.output_limit_bytes = output_limit_bytes
+        # Capacity bound now counts ACTIVE durable runs (no terminal receipt
+        # yet); terminal runs are kept until the bounded retention window.
         self.max_records = max_records
+        self.retention_seconds = float(retention_seconds)
+        self.runtime_root = Path(runtime_root) if runtime_root is not None else locator.default_runtime_root()
         self._popen_factory = popen_factory or subprocess.Popen
         if validate_launcher:
             self._validate_launcher()
-        self._records: OrderedDict[str, _ExecutionRecord] = OrderedDict()
-        self._records_lock = threading.Lock()
+        # Non-authoritative accelerator: supervisor Popen objects observed by
+        # THIS instance.  Resolution never requires it.
+        self._local_supervisors: dict[str, Any] = {}
+        self._state_lock = threading.Lock()
+
+    # -- construction-time validation ---------------------------------------
 
     def _validate_launcher(self) -> None:
         path = Path(self.launcher_path)
@@ -149,28 +155,6 @@ class HermesHostClient:
                 code="PACKAGE_INVALID",
             )
         return str(path.resolve())
-
-    @staticmethod
-    def _read_stream(stream: Any, output: _BoundedOutput) -> None:
-        if stream is None:
-            return
-        while True:
-            chunk = stream.read(4096)
-            if not chunk:
-                return
-            if isinstance(chunk, str):
-                chunk = chunk.encode("utf-8", errors="replace")
-            output.append(bytes(chunk))
-
-    def _drain_stream(self, stream: Any, output: _BoundedOutput, record: _ExecutionRecord) -> None:
-        # A reader that raises can never again establish a complete, stable
-        # capture, so the record is flagged and exit code 0 is not allowed to
-        # project as "done" (W3 fail-closed boundary).  The bounded marker is
-        # a boolean only: raw stream exception text never enters any envelope.
-        try:
-            self._read_stream(stream, output)
-        except Exception:
-            record.read_failure = True
 
     def _resolve_cwd(self, payload: Mapping[str, Any]) -> str:
         context = payload.get("context")
@@ -335,187 +319,276 @@ class HermesHostClient:
         cwd = self._resolve_cwd(payload)
         return profile, instruction, cwd, float(timeout), provider, model, toolsets
 
-    def _evict_records(self) -> None:
-        with self._records_lock:
-            while len(self._records) >= self.max_records:
-                removable = next(
-                    ((handle, record) for handle, record in self._records.items() if record.status in {"done", "failed", "cancelled", "timeout"}),
-                    None,
-                )
-                if removable is None:
-                    raise HermesHostClientError("EXECUTOR_UNAVAILABLE: host execution record bound exhausted", "EXECUTOR_UNAVAILABLE")
-                del self._records[removable[0]]
+    # -- durable dispatch -----------------------------------------------------
 
-    def _record(self, adapter_handle: str) -> _ExecutionRecord:
-        with self._records_lock:
-            record = self._records.get(adapter_handle)
-        if record is None:
-            raise KeyError(adapter_handle)
-        return record
-
-    def _finalize(self, record: _ExecutionRecord, status: str, exit_code: int | None) -> bool:
-        # W2 ordering invariant: a terminal success/failure observation is
-        # published only after the stdout/stderr reader threads have finished
-        # draining, so fetch_result can never freeze a partially collected
-        # stream into a final result envelope.  Drain waits are bounded and
-        # Hermes-private; if the streams are not stable within the bound, the
-        # terminal observation is deferred and retried on the next status or
-        # result poll.  Timeout/cancellation are terminal by local decision
-        # and publish regardless, but they can never project a success.
-        forced = status in {"timeout", "cancelled"}
-        drain_deadline = time.monotonic() + READER_DRAIN_TIMEOUT_SECONDS
-        drained = True
-        for reader in record.readers:
-            remaining = drain_deadline - time.monotonic()
-            if remaining <= 0:
-                drained = False
-                break
-            reader.join(timeout=remaining)
-            if reader.is_alive():
-                drained = False
-                break
-        if not drained and not forced:
-            return False
-        if status == "done" and record.read_failure:
-            # W3: every reader finished only because one of them died mid
-            # capture; the stream never stabilized, so exit code 0 is not
-            # success evidence and the terminal observation fails closed.
-            status = "failed"
-        with record.lock:
-            if record.terminal_at is None:
-                record.status = status
-                record.exit_code = exit_code
-                record.terminal_at = time.monotonic()
-        return True
-
-    def _refresh(self, record: _ExecutionRecord) -> str:
-        with record.lock:
-            if record.terminal_at is not None:
-                return record.status
-            if time.monotonic() >= record.deadline:
-                timed_out = True
-            else:
-                timed_out = False
-        if timed_out:
-            self._terminate(record, timed_out=True)
-            return "timeout"
-        returncode = record.process.poll()
-        if returncode is None:
-            with record.lock:
-                record.status = "running"
-            return "running"
-        status = "done" if returncode == 0 else "failed"
-        if not self._finalize(record, status, int(returncode)):
-            return "running"
-        with record.lock:
-            # Report what was actually published: a capture that never
-            # stabilized downgrades the completion observation to failed.
-            return record.status
-
-    def _terminate(self, record: _ExecutionRecord, *, timed_out: bool = False) -> None:
-        with record.lock:
-            if record.terminal_at is not None:
-                return
-        try:
-            record.process.terminate()
-            record.process.wait(timeout=1.0)
-        except subprocess.TimeoutExpired:
+    def _count_active_runs(self) -> int:
+        active = 0
+        for run_id in locator.list_run_dirs(self.runtime_root):
             try:
-                record.process.kill()
-                record.process.wait(timeout=1.0)
-            except Exception:
-                pass
-        except Exception:
-            pass
-        returncode = record.process.poll()
-        if timed_out:
-            self._finalize(record, "timeout", returncode if isinstance(returncode, int) else None)
-        else:
-            self._finalize(record, "cancelled", returncode if isinstance(returncode, int) else None)
+                if locator.read_receipt(HermesRunPaths(self.runtime_root, run_id)) is None:
+                    active += 1
+            except HermesLocatorError:
+                # A run with unreadable evidence still occupies capacity: the
+                # locator fails closed and an operator must resolve it.
+                active += 1
+        return active
 
-    def _watch(self, record: _ExecutionRecord) -> None:
-        try:
-            record.process.wait(timeout=max(0.0, record.deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            self._terminate(record, timed_out=True)
-        except Exception:
-            return
-        if record.terminal_at is None:
-            self._refresh(record)
+    @staticmethod
+    def _context_task_id(payload: Mapping[str, Any]) -> str:
+        context = payload.get("context")
+        if isinstance(context, Mapping):
+            value = context.get("canonical_task_id")
+            if isinstance(value, str) and value.strip():
+                return value
+        return ""
+
+    def _hermes_argv(
+        self,
+        paths: HermesRunPaths,
+        profile: str,
+        instruction: str,
+        provider: str | None,
+        model: str | None,
+        toolsets: tuple[str, ...] | None,
+    ) -> list[str]:
+        # Direct Hermes invocation per W1 launcher resolution Path A:
+        # the executable comes from the operator RuntimeConfig; runtime binding is
+        # translated -> hermes -p <profile> [-t <allowlist>] [--provider X] [-m Y]
+        # --usage-file <durable> -z <instruction>.
+        # Flags verified against Hermes v0.21 `hermes --help` / hermes_cli.oneshot:
+        # -p, -t (toolset allowlist incl. MCP server names), --provider, -m,
+        # --usage-file (durable machine-readable session identity), -z.
+        args = [self.launcher_path, "-p", profile]
+        if toolsets:
+            args.extend(["-t", ",".join(str(toolset) for toolset in toolsets)])
+        if provider:
+            args.extend(["--provider", provider])
+        if model:
+            args.extend(["-m", model])
+        # Hermes' own durable one-shot report: the only supported machine-readable
+        # session identity of the `-z` path (hermes_cli/oneshot.py --usage-file).
+        args.extend(["--usage-file", str(paths.usage)])
+        args.extend(["-z", instruction])
+        return args
 
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: host payload must be a mapping", "PACKAGE_INVALID")
         profile, instruction, cwd, timeout, provider, model, toolsets = self._validate_payload(payload)
-        self._evict_records()
-        adapter_handle = f"hermes-host-{uuid.uuid4().hex}"
-        # Direct Hermes invocation per W1 launcher resolution Path A:
-        # the executable comes from the operator RuntimeConfig; runtime binding is
-        # translated -> hermes -p <profile> [-t <allowlist>] [--provider X] [-m Y] -z <instruction>.
-        # Flags verified against Hermes v0.21 `hermes --help` / hermes_cli.oneshot:
-        # -p, -t (toolset allowlist incl. MCP server names), --provider, -m, -z.
-        args = [self.launcher_path, "-p", profile]
-        if toolsets is not None:
-            args.extend(["-t", ",".join(toolsets)])
-        if provider is not None:
-            args.extend(["--provider", provider])
-        if model is not None:
-            args.extend(["-m", model])
-        args.extend(["-z", instruction])
         try:
-            process = self._popen_factory(
-                args,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-        except (OSError, ValueError) as exc:
-            raise HermesHostUnavailableError(
-                f"EXECUTOR_UNAVAILABLE: Hermes worker launch failed: {type(exc).__name__}"
-            ) from exc
+            locator.prune_finished_runs(self.runtime_root, retention_seconds=self.retention_seconds)
+        except HermesLocatorError as exc:
+            raise HermesHostUnavailableError(f"EXECUTOR_UNAVAILABLE: Hermes locator root is unusable: {exc.message}") from exc
+        with self._state_lock:
+            if self._count_active_runs() >= self.max_records:
+                raise HermesHostUnavailableError(
+                    "EXECUTOR_UNAVAILABLE: host execution record bound exhausted"
+                )
+            run_id = uuid.uuid4().hex
+            try:
+                paths = locator.prepare_run(self.runtime_root, run_id)
+            except OSError as exc:
+                raise HermesHostUnavailableError(
+                    f"EXECUTOR_UNAVAILABLE: Hermes locator storage is unavailable: {type(exc).__name__}"
+                ) from exc
+            adapter_handle = paths.adapter_handle()
+            now_wall = time.time()
+            hermes_argv = self._hermes_argv(paths, profile, instruction, provider, model, toolsets)
+            try:
+                locator.write_spec(
+                    paths,
+                    hermes_argv=hermes_argv,
+                    cwd=cwd,
+                    timeout_seconds=timeout,
+                    started_at_wall=now_wall,
+                    deadline_wall=now_wall + timeout,
+                    output_limit_bytes=self.output_limit_bytes,
+                )
+                locator.write_marker_reserved(
+                    paths,
+                    adapter_handle=adapter_handle,
+                    canonical_task_id=self._context_task_id(payload),
+                    profile=profile,
+                    cwd=cwd,
+                    launcher=self.launcher_path,
+                    dispatched_at_wall=now_wall,
+                    deadline_wall=now_wall + timeout,
+                )
+            except HermesLocatorError as exc:
+                _cleanup_run(paths)
+                raise HermesHostUnavailableError(
+                    f"EXECUTOR_UNAVAILABLE: Hermes locator storage is unavailable: {exc.message}"
+                ) from exc
 
-        now = time.monotonic()
-        record = _ExecutionRecord(
-            process=process,
-            profile=profile,
-            cwd=cwd,
-            started_at=now,
-            deadline=now + timeout,
-            stdout=_BoundedOutput(self.output_limit_bytes),
-            stderr=_BoundedOutput(self.output_limit_bytes),
+            supervisor_argv = [sys.executable, "-c", _SUPERVISOR_BOOTSTRAP, str(paths.spec)]
+            try:
+                process = self._popen_factory(
+                    supervisor_argv,
+                    cwd=cwd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except (OSError, ValueError) as exc:
+                _cleanup_run(paths)
+                raise HermesHostUnavailableError(
+                    f"EXECUTOR_UNAVAILABLE: Hermes worker launch failed: {type(exc).__name__}"
+                ) from exc
+
+            try:
+                locator.mark_marker_spawned(paths, supervisor_pid=int(process.pid))
+            except (HermesLocatorError, OSError, TypeError, ValueError):
+                # The durable evidence must exist before the handle is handed
+                # out; without it the run could never be recovered by a later process.
+                _terminate_supervisor(process)
+                _cleanup_run(paths)
+                raise HermesHostUnavailableError(
+                    "EXECUTOR_UNAVAILABLE: Hermes locator could not record the durable launch identity"
+                )
+            self._local_supervisors[adapter_handle] = process
+
+        return {
+            "adapter_handle": adapter_handle,
+            "status": "pending",
+            "dispatch_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_wall)),
+        }
+
+    # -- durable resolution ----------------------------------------------------
+
+    def _not_found_envelope(self) -> dict[str, Any]:
+        return {"status": "unreachable", "error": {"code": "TASK_NOT_FOUND", "message": "unknown adapter handle"}}
+
+    def _corrupt_envelope(self, message: str) -> dict[str, Any]:
+        return {"status": "unreachable", "error": {"code": "HERMES_LOCATOR_CORRUPT", "message": message}}
+
+    def _unknown_envelope(self) -> dict[str, Any]:
+        return {
+            "status": "unknown",
+            "error": {
+                "code": "HERMES_EXECUTION_UNKNOWN",
+                "message": "Hermes execution evidence cannot establish the state; no terminal was fabricated",
+                "retryable": True,
+            },
+        }
+
+    def _resolve(self, adapter_handle: str) -> dict[str, Any]:
+        """Resolve mechanical execution state from durable evidence.
+
+        Returns an observation dict:
+          {"status": pending|running|done|failed|timeout|cancelled|unknown|unreachable,
+           "paths"?, "marker"?, "receipt"?}
+        The result NEVER depends on a Python object created by an earlier
+        process, and never fabricates a terminal state from absence of data.
+        """
+        run_id = locator.run_id_from_adapter_handle(adapter_handle)
+        if run_id is None:
+            return self._not_found_envelope()
+        paths = HermesRunPaths(self.runtime_root, run_id)
+        if not paths.run_dir.is_dir():
+            return self._not_found_envelope()
+        try:
+            marker = locator.validate_marker(locator.read_json_object(paths.marker) or {})
+            receipt = locator.read_receipt(paths)
+        except HermesLocatorError as exc:
+            return self._corrupt_envelope(exc.message)
+
+        if receipt is not None:
+            published = locator.published_receipt_status(receipt)
+            return {"status": published, "paths": paths, "marker": marker, "receipt": receipt}
+
+        supervisor_state = self._supervisor_liveness(adapter_handle, paths, marker)
+        if supervisor_state is None:
+            return dict(self._unknown_envelope(), paths=paths, marker=marker)
+        if not supervisor_state:
+            # The supervisor is gone without a receipt: the supervised child
+            # may have outlived it, and neither can be trusted for a terminal.
+            child_state = self._child_liveness(paths, marker)
+            if child_state is True:
+                return {"status": "running", "paths": paths, "marker": marker}
+            if child_state is None:
+                return dict(self._unknown_envelope(), paths=paths, marker=marker)
+            return dict(self._unknown_envelope(), paths=paths, marker=marker)
+
+        child_present = paths.child.is_file()
+        status = "running" if child_present else "pending"
+        return {"status": status, "paths": paths, "marker": marker}
+
+    def _supervisor_liveness(self, adapter_handle: str, paths: HermesRunPaths, marker: Mapping[str, Any]) -> bool | None:
+        process = self._local_supervisors.get(adapter_handle)
+        if process is not None:
+            try:
+                return process.poll() is None
+            except Exception:
+                pass
+        return locator.process_matches_identity(
+            marker.get("supervisor_pid"),
+            expected_start_ticks=marker.get("supervisor_start_ticks"),
+            cmdline_token=paths.run_id,
         )
-        for stream, output in ((getattr(process, "stdout", None), record.stdout), (getattr(process, "stderr", None), record.stderr)):
-            if stream is not None:
-                reader = threading.Thread(target=self._drain_stream, args=(stream, output, record), daemon=True)
-                reader.start()
-                record.readers.append(reader)
-        with self._records_lock:
-            self._records[adapter_handle] = record
-        threading.Thread(target=self._watch, args=(record,), daemon=True).start()
-        return {"adapter_handle": adapter_handle, "status": "pending", "dispatch_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+    def _child_liveness(self, paths: HermesRunPaths, marker: Mapping[str, Any]) -> bool | None:
+        try:
+            record = locator.read_json_object(paths.child)
+        except HermesLocatorError:
+            return None
+        if record is None:
+            # The supervisor was proven dead before it recorded a child: the
+            # run never started a Hermes process (or evidence was lost).
+            return False
+        try:
+            record = locator.validate_child_record(record)
+        except HermesLocatorError:
+            return None
+        return locator.process_matches_identity(
+            record.get("child_pid"),
+            expected_start_ticks=record.get("child_start_ticks"),
+            cmdline_token=str(marker.get("launcher", "")),
+        )
+
+    # -- protocol surface -------------------------------------------------------
 
     def query_status(self, adapter_handle: str) -> Mapping[str, Any]:
-        try:
-            record = self._record(adapter_handle)
-        except KeyError:
-            return {"status": "unreachable", "error": {"code": "TASK_NOT_FOUND", "message": "unknown adapter handle"}}
-        status = self._refresh(record)
-        return {"status": status, "details": record.stderr.text() if status == "failed" else ""}
+        observed = self._resolve(adapter_handle)
+        status = observed["status"]
+        response: dict[str, Any] = {"status": status}
+        if "error" in observed:
+            response["error"] = observed["error"]
+        if status == "failed" and observed.get("receipt") is not None:
+            details, _ = self._read_output(observed["paths"].stderr)
+            response["details"] = details
+        else:
+            response["details"] = ""
+        return response
 
     def fetch_result(self, adapter_handle: str) -> Mapping[str, Any]:
-        try:
-            record = self._record(adapter_handle)
-        except KeyError:
-            return {"status": "unreachable", "error": {"code": "TASK_NOT_FOUND", "message": "unknown adapter handle"}}
-        status = self._refresh(record)
+        observed = self._resolve(adapter_handle)
+        status = observed["status"]
         if status in {"running", "pending"}:
             return {"status": status}
-        duration_ms = int(((record.terminal_at or time.monotonic()) - record.started_at) * 1000)
-        response: dict[str, Any] = {
+        if status not in {"done", "failed", "timeout", "cancelled"}:
+            response: dict[str, Any] = {"status": status}
+            if "error" in observed:
+                response["error"] = observed["error"]
+            return response
+
+        receipt = observed["receipt"]
+        paths = observed["paths"]
+        stdout_text, stdout_truncated = self._read_output(paths.stdout)
+        stderr_text, stderr_truncated = self._read_output(paths.stderr)
+        if receipt["stdout_truncated"] or stdout_truncated:
+            stdout_text = _clip_with_marker(stdout_text, self.output_limit_bytes)
+        if receipt["stderr_truncated"] or stderr_truncated:
+            stderr_text = _clip_with_marker(stderr_text, self.output_limit_bytes)
+        duration_ms = max(
+            0,
+            int((float(receipt["completed_at_wall"]) - float(receipt["started_at_wall"])) * 1000),
+        )
+        response = {
             "status": status,
-            "exit_code": record.exit_code,
-            "stdout": record.stdout.text(),
-            "stderr": record.stderr.text(),
+            "exit_code": receipt["exit_code"],
+            "stdout": stdout_text,
+            "stderr": stderr_text,
             "execution_stats": {"duration_ms": duration_ms},
         }
         if status == "timeout":
@@ -523,7 +596,7 @@ class HermesHostClient:
         elif status == "cancelled":
             response["error"] = {"code": "EXECUTION_CANCELLED", "message": "Hermes worker cancelled"}
         elif status == "failed":
-            if record.read_failure and record.exit_code == 0:
+            if receipt["read_failure"] and receipt["exit_code"] == 0:
                 response["error"] = {
                     "code": "RESULT_UNAVAILABLE",
                     "message": "Hermes worker output capture failed before the result stream stabilized",
@@ -533,22 +606,186 @@ class HermesHostClient:
         return response
 
     def cancel_task(self, adapter_handle: str) -> Mapping[str, Any]:
-        try:
-            record = self._record(adapter_handle)
-        except KeyError:
-            return {"cancelled": False, "status": "unreachable", "error": {"code": "TASK_NOT_FOUND", "message": "unknown adapter handle"}}
-        status = self._refresh(record)
-        if status != "running":
+        observed = self._resolve(adapter_handle)
+        status = observed["status"]
+        if status not in {"pending", "running"}:
+            response: dict[str, Any] = {"cancelled": False, "status": status}
+            if "error" in observed:
+                response["error"] = observed["error"]
+            return response
+        paths = observed["paths"]
+        if not self._request_supervisor_cancel(adapter_handle, paths, observed["marker"]):
             return {"cancelled": False, "status": status}
-        self._terminate(record)
-        return {"cancelled": True, "status": "cancelled"}
+        receipt = self._await_receipt(paths, CANCEL_RECEIPT_WAIT_SECONDS)
+        if receipt is None:
+            refreshed = self._resolve(adapter_handle)
+            return {"cancelled": False, "status": refreshed["status"]}
+        return {"cancelled": True, "status": locator.published_receipt_status(receipt)}
 
     def resume_task(self, adapter_handle: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return {"status": "error", "error": {"code": "RESUME_UNSUPPORTED", "message": "bounded Hermes oneshot has no resume session"}}
 
+    # -- durable W2 seams consumed by the adapter layer / W3 -------------------
+
+    def resolve_handle(self, adapter_handle: str) -> str | None:
+        """Canonical task binding recovered from durable mechanical evidence.
+
+        Lets a fresh adapter instance re-establish the handle<->task binding
+        after a process restart WITHOUT inventing authority: the marker only
+        echoes what the dispatching caller supplied at launch.
+        """
+        run_id = locator.run_id_from_adapter_handle(adapter_handle)
+        if run_id is None:
+            return None
+        paths = HermesRunPaths(self.runtime_root, run_id)
+        if not paths.run_dir.is_dir():
+            return None
+        marker = locator.validate_marker(locator.read_json_object(paths.marker) or {})
+        task_id = marker.get("canonical_task_id")
+        return task_id if isinstance(task_id, str) and task_id.strip() else None
+
+    def execution_evidence(self, adapter_handle: str) -> Mapping[str, Any] | None:
+        """Bounded executor-private evidence for W1/W3 recovery seams.
+
+        Mechanical identity only — never AF canonical truth.  The Hermes
+        session id, when Hermes itself persisted it (``--usage-file``), is
+        recovered here so a later process can exact-session-reenter or audit
+        lineage without the original Python objects.
+        """
+        run_id = locator.run_id_from_adapter_handle(adapter_handle)
+        if run_id is None:
+            return None
+        paths = HermesRunPaths(self.runtime_root, run_id)
+        if not paths.run_dir.is_dir():
+            return None
+        try:
+            marker = locator.validate_marker(locator.read_json_object(paths.marker) or {})
+            receipt = locator.read_receipt(paths)
+            observed = self._resolve(adapter_handle)
+        except HermesLocatorError as exc:
+            return {"state": "corrupt", "error": {"code": exc.code, "message": exc.message}}
+        evidence: dict[str, Any] = {
+            "run_id": run_id,
+            "adapter_handle": adapter_handle,
+            "canonical_task_id": marker.get("canonical_task_id"),
+            "state": observed["status"],
+            "terminal": observed["status"] in {"done", "failed", "timeout", "cancelled"},
+            "started_at_wall": marker.get("dispatched_at_wall"),
+            "deadline_wall": marker.get("deadline_wall"),
+            "session_id": _read_usage_session_id(paths),
+        }
+        if receipt is not None:
+            evidence["exit_code"] = receipt["exit_code"]
+            evidence["completed_at_wall"] = receipt["completed_at_wall"]
+            evidence["read_failure"] = receipt["read_failure"]
+        return evidence
+
+    def query_execution_state(self, adapter_handle: str) -> str:
+        """Durable status projection without process-local accelerators."""
+        return str(self._resolve(adapter_handle)["status"])
+
+    # -- helpers ----------------------------------------------------------------
+
+    def _read_output(self, path: Path) -> tuple[str, bool]:
+        try:
+            return locator.read_bounded_text(path, self.output_limit_bytes)
+        except HermesLocatorError:
+            return "", True
+
+    def _request_supervisor_cancel(self, adapter_handle: str, paths: HermesRunPaths, marker: Mapping[str, Any]) -> bool:
+        process = self._local_supervisors.get(adapter_handle)
+        if process is not None:
+            try:
+                process.terminate()
+                return True
+            except Exception:
+                pass
+        alive = locator.process_matches_identity(
+            marker.get("supervisor_pid"),
+            expected_start_ticks=marker.get("supervisor_start_ticks"),
+            cmdline_token=paths.run_id,
+        )
+        if alive is not True:
+            return False
+        try:
+            os.kill(int(marker["supervisor_pid"]), signal.SIGTERM)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _await_receipt(paths: HermesRunPaths, budget: float) -> Mapping[str, Any] | None:
+        deadline = time.monotonic() + budget
+        while True:
+            try:
+                receipt = locator.read_receipt(paths)
+            except HermesLocatorError:
+                return None
+            if receipt is not None:
+                return receipt
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(RECEIPT_POLL_SECONDS)
+
     def close(self) -> None:
-        with self._records_lock:
-            records = list(self._records.values())
-        for record in records:
-            if self._refresh(record) == "running":
-                self._terminate(record)
+        """Detach local observation only.
+
+        Deliberate W2 boundary change: close() must NOT kill durable Workers.
+        An AF process disappearing while a supervised Hermes Worker continues
+        running is the supported crash case (R8), not a cancellation request.
+        """
+        with self._state_lock:
+            self._local_supervisors.clear()
+
+
+def _clip_with_marker(text: str, limit: int) -> str:
+    if limit >= len(_TRUNCATION_MARKER.encode("utf-8", errors="replace")):
+        budget = max(0, limit - len(_TRUNCATION_MARKER))
+        clipped = text.encode("utf-8", errors="replace")[:budget].decode("utf-8", errors="replace")
+        return clipped + _TRUNCATION_MARKER
+    return text[:limit]
+
+
+def _read_usage_session_id(paths: HermesRunPaths) -> str | None:
+    """Recover the Hermes-minted session id from Hermes' own durable report.
+
+    Read-only bounded JSON; malformed or oversized evidence yields None
+    (unknown), never a guess.
+    """
+    try:
+        size = paths.usage.stat().st_size
+    except OSError:
+        return None
+    if size <= 0 or size > _USAGE_FILE_MAX_BYTES:
+        return None
+    try:
+        report = locator.read_json_object(paths.usage)
+    except HermesLocatorError:
+        return None
+    if not report:
+        return None
+    value = report.get("session_id")
+    if isinstance(value, str) and value.strip() and len(value) <= 128:
+        return value
+    return None
+
+
+def _terminate_supervisor(process: Any) -> None:
+    try:
+        process.terminate()
+    except Exception:
+        pass
+
+
+def _cleanup_run(paths: HermesRunPaths) -> None:
+    shutil.rmtree(paths.run_dir, ignore_errors=True)
+
+
+__all__ = [
+    "DEFAULT_MAX_RECORDS",
+    "DEFAULT_RETENTION_SECONDS",
+    "DEFAULT_TIMEOUT_SECONDS",
+    "MAX_OUTPUT_BYTES",
+    "HermesHostClient",
+    "HermesHostClientError",
+]
