@@ -27,7 +27,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -120,8 +120,11 @@ class HermesHostClient:
         self.default_cwd = self._validate_cwd(default_cwd) if default_cwd is not None else None
         self.timeout_seconds = float(timeout_seconds)
         self.output_limit_bytes = output_limit_bytes
-        # Capacity bound now counts ACTIVE durable runs (no terminal receipt
-        # yet); terminal runs are kept until the bounded retention window.
+        # Capacity bound counts ACTIVE durable runs (no terminal receipt yet).
+        # Terminal runs are retained until an explicit maintenance pass removes
+        # ONLY receipts the trusted AF runtime layer declared canonically safe
+        # (see prune_canonicalized_receipts); retention age is an additional
+        # mechanical condition there, never a dispatch-side deletion authority.
         self.max_records = max_records
         self.retention_seconds = float(retention_seconds)
         self.runtime_root = Path(runtime_root) if runtime_root is not None else locator.default_runtime_root()
@@ -371,16 +374,47 @@ class HermesHostClient:
         args.extend(["-z", instruction])
         return args
 
+    def prune_canonicalized_receipts(
+        self,
+        *,
+        eligible_handles: Collection[str],
+        now_wall: float | None = None,
+    ) -> int:
+        """One bounded explicit maintenance pass over canonically safe receipts.
+
+        M2/W4 RV1 F01 repair: receipt cleanup is NO LONGER implicit dispatch-side
+        maintenance.  A new dispatch must never destroy another execution's
+        terminal evidence merely because it is old
+        (``NEW_DISPATCH_CAN_PRUNE_UNCANONICALIZED_RECEIPT=no``).  The trusted AF
+        runtime layer supplies the explicit set of adapter handles whose
+        durable terminal canonical result + verified result-CARD digest
+        truth already exists; this client then applies only the executor-private
+        mechanical checks (terminal receipt, validity, bounded retention age).
+        It does not consult — and must never import — the AF canonical store.
+        """
+        return locator.prune_finished_runs(
+            self.runtime_root,
+            retention_seconds=self.retention_seconds,
+            eligible_handles=eligible_handles,
+            now_wall=now_wall,
+        )
+
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: host payload must be a mapping", "PACKAGE_INVALID")
         profile, instruction, cwd, timeout, provider, model, toolsets = self._validate_payload(payload)
-        try:
-            locator.prune_finished_runs(self.runtime_root, retention_seconds=self.retention_seconds)
-        except HermesLocatorError as exc:
-            raise HermesHostUnavailableError(f"EXECUTOR_UNAVAILABLE: Hermes locator root is unusable: {exc.message}") from exc
+        # M2/W4 RV1 F01: no implicit retention pruning happens here.  New
+        # dispatch may only ADD mechanical evidence; terminal receipts are
+        # reclaimed exclusively through prune_canonicalized_receipts() with an
+        # explicit AF-runtime-supplied eligible-handle set.
         with self._state_lock:
-            if self._count_active_runs() >= self.max_records:
+            try:
+                active_runs = self._count_active_runs()
+            except HermesLocatorError as exc:
+                raise HermesHostUnavailableError(
+                    f"EXECUTOR_UNAVAILABLE: Hermes locator root is unusable: {exc.message}"
+                ) from exc
+            if active_runs >= self.max_records:
                 raise HermesHostUnavailableError(
                     "EXECUTOR_UNAVAILABLE: host execution record bound exhausted"
                 )

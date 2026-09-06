@@ -821,8 +821,10 @@ def test_process_level_runtime_loss_projects_never_success(tmp_path: Path) -> No
 
 
 def test_pruned_terminal_record_result_access_is_unreachable_unknown(tmp_path: Path) -> None:
-    """After the bounded retention window removes terminal evidence, access
-    fails closed as TASK_NOT_FOUND (unknown handle), never a stale success."""
+    """After an EXPLICIT canonical-safe maintenance pass removes terminal
+    evidence, access fails closed as TASK_NOT_FOUND (unknown handle), never a
+    stale success.  M2/W4: pruning requires an AF-runtime-supplied eligible
+    handle set; new dispatches alone never delete receipts."""
     pad = DurableSupervisorPad(release_on_spawn=0)
     client = HermesHostClient(
         str(tmp_path / "unused"),
@@ -837,8 +839,14 @@ def test_pruned_terminal_record_result_access_is_unreachable_unknown(tmp_path: P
     assert wait_for_status(client, first, {"done"}) == "done"
     second = client.dispatch(host_payload())["adapter_handle"]
     assert second != first
+    # The new dispatch did NOT prune the aged terminal receipt (F01 repair).
+    assert run_paths(client, first).run_dir.is_dir(), "dispatch must never prune uncanonicalized receipts"
 
-    assert not run_paths(client, first).run_dir.is_dir(), "terminal evidence past retention is pruned"
+    # Simulate the trusted AF runtime having durably canonicalized this
+    # terminal truth, then run the explicit bounded maintenance pass.
+    assert client.prune_canonicalized_receipts(eligible_handles=[first]) == 1
+
+    assert not run_paths(client, first).run_dir.is_dir(), "canonically safe evidence past retention is pruned"
     envelope = client.fetch_result(first)
     assert envelope["status"] == "unreachable"
     assert envelope["error"]["code"] == "TASK_NOT_FOUND"
@@ -890,7 +898,10 @@ def test_oversized_output_is_bounded_and_deterministically_truncated(tmp_path: P
 
 def test_active_runs_are_never_evicted_under_capacity_pressure(tmp_path: Path) -> None:
     """W2 capacity bound counts durable ACTIVE runs; live evidence is never
-    reclaimed to make room, only terminal evidence past its retention."""
+    reclaimed to make room.  M2/W4: terminal evidence past retention is also
+    kept until the EXPLICIT canonical-safe maintenance pass — a new dispatch
+    under capacity pressure never deletes another execution's terminal
+    evidence, aged or not."""
     pad = DurableSupervisorPad()
     client = HermesHostClient(
         str(tmp_path / "unused"),
@@ -914,8 +925,15 @@ def test_active_runs_are_never_evicted_under_capacity_pressure(tmp_path: Path) -
     assert wait_for_status(client, first, {"done"}) == "done"
     third = client.dispatch(host_payload())["adapter_handle"]
     assert run_paths(client, third).run_dir.is_dir()
-    assert not run_paths(client, first).run_dir.is_dir(), "terminal run past retention is pruned"
+    # The dispatch-side capacity pass freed the ACTIVE slot (first went
+    # terminal), but the aged terminal receipt itself SURVIVES untouched:
+    # NEW_DISPATCH_CAN_PRUNE_UNCANONICALIZED_RECEIPT=no.
+    assert run_paths(client, first).run_dir.is_dir(), "dispatch must never prune uncanonicalized terminal receipts"
     assert run_paths(client, second).run_dir.is_dir(), "an active run must never be evicted"
+    # Only the explicit canonical-safe maintenance pass reclaims it.
+    assert client.prune_canonicalized_receipts(eligible_handles=[first]) == 1
+    assert not run_paths(client, first).run_dir.is_dir()
+    assert run_paths(client, second).run_dir.is_dir(), "active evidence stays protected after maintenance"
     pad.close()
 
 

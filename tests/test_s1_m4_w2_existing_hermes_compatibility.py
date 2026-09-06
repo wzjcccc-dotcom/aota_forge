@@ -12,6 +12,7 @@ No live daemon, no new Core contract, TEST-ONLY fake host.
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import subprocess
 from typing import Any, Mapping
@@ -804,28 +805,127 @@ def test_t27_hermes_production_unchanged():
 
 
 # ---------------------------------------------------------------------------
-# T28 Core unchanged
+# T28 Core architecture invariants (M2/W4 supersedes the legacy history guard)
 # ---------------------------------------------------------------------------
 
-def test_t28_core_unchanged():
-    # core execution/results, package, dispatcher, journal, result_governance must not import work_plane
-    for p in [
-        "aota_forge/core/execution/package.py",
-        "aota_forge/core/execution/results.py",
-        "aota_forge/core/execution/dispatcher.py",
-        "aota_forge/core/result_governance/common.py",
-        "aota_forge/core/journal/retry.py",
-        "aota_forge/core/journal/store.py",
-    ]:
-        path = _REPO_ROOT / p
-        if path.exists():
-            text = path.read_text(encoding="utf-8")
-            assert "work_plane" not in text, f"{p} should not import work_plane"
-            assert "WorkerResultCard" not in text or "result_governance" in p or "test_" in p
-    # git diff vs parent for core should be empty
-    diff = subprocess.check_output(["git", "diff", f"{M4_W1_CANDIDATE}..HEAD", "--", "aota_forge/core/execution", "aota_forge/core/result_governance", "aota_forge/core/journal"], cwd=_GIT_CWD, text=True)
-    assert diff.strip() == "", f"Core changed: {diff[:500]}"
-    # also spec: frozen core production change count ==0 verified via git
+# The historical guard asserted `git diff 7c9ddc1..HEAD == empty` over
+# core/execution, core/result_governance, and core/journal. That rule is
+# stale: M2/W1 intentionally and legitimately extended core/execution with
+# the executor-neutral durable seam (plan #36 I9). A byte-frozen core is not
+# the invariant; the ACTUAL safety intent is architectural, so T28 now proves
+# architecture semantics via AST/import-graph inspection of the current tree:
+#   - core does not import work_plane (TaskHandoff/CARD upper-plane authority);
+#   - core does not import adapters.hermes (or the Hermes runtime layer at all);
+#   - core does not import composition/runtime (deployment wiring authority);
+#   - core carries no runtime-deployment or TaskHandoff authority literals.
+# No git history, branch name, worktree path, or commit count is consulted.
+
+_CORE_FORBIDDEN_IMPORT_ROOTS = (
+    "aota_forge.work_plane",
+    "aota_forge.adapters.hermes",
+    "aota_forge.composition",
+    "aota_forge.runtime",
+)
+
+# Executor-private / deployment-owned identity material that must never appear
+# as a core string constant or imported name (plan #36 I4/I9 boundaries).
+_CORE_FORBIDDEN_LITERALS = (
+    "aota-worker",
+    "aota-task-main",
+    "opencode-go",
+    "deepseek",
+    "muse-spark",
+    "/home/latios",
+    "hermes-host-",
+    ".aota-forge",
+    "hermes-runtime",
+    "task_handoff",
+    "AOTA_FORGE_RUNTIME",
+)
+
+
+def _core_import_and_literal_facts() -> tuple[list[str], list[str]]:
+    """AST-collect core import names and string constants (source inspection)."""
+    import_offenses: list[str] = []
+    literal_offenses: list[str] = []
+    core_root = _REPO_ROOT / "aota_forge" / "core"
+    modules = sorted(core_root.rglob("*.py"))
+    assert modules, "aota_forge/core must contain modules to inspect"
+    for module_path in modules:
+        tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+        imported: list[str] = []
+        literals: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:  # relative import: stays inside the core package
+                    continue
+                if node.module:
+                    imported.append(node.module)
+                    imported.extend(f"{node.module}.{alias.name}" for alias in node.names)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literals.append(node.value)
+        for name in imported:
+            for root in _CORE_FORBIDDEN_IMPORT_ROOTS:
+                if name == root or name.startswith(root + "."):
+                    import_offenses.append(f"{module_path.relative_to(_REPO_ROOT)}: import {name}")
+        for literal in literals:
+            lowered = literal.lower()
+            for token in _CORE_FORBIDDEN_LITERALS:
+                if token in lowered:
+                    literal_offenses.append(f"{module_path.relative_to(_REPO_ROOT)}: literal {token!r}")
+    return import_offenses, literal_offenses
+
+
+def test_t28_core_architecture_invariants():
+    import_offenses, literal_offenses = _core_import_and_literal_facts()
+    # Executor-neutrality + upper-plane isolation of ALL of core, including
+    # the M2 durable execution seam:
+    assert not import_offenses, "core must not import work_plane/hermes/composition/runtime: " + "; ".join(import_offenses[:8])
+    assert not literal_offenses, "core must carry no Hermes/deployment/TaskHandoff authority literals: " + "; ".join(literal_offenses[:8])
+    # The durable execution seam is the M2-intentional core area: prove it
+    # exists and is exercised executor-neutrally (W1 durable state + CARD
+    # digest seam live in core without touching any adapter layer).
+    durable = _REPO_ROOT / "aota_forge" / "core" / "execution" / "durable_state.py"
+    assert durable.is_file(), "executor-neutral durable execution seam must exist in core"
+    tree = ast.parse(durable.read_text(encoding="utf-8"), filename=str(durable))
+    top_names = {n.name for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef))}
+    assert {"DurableExecutionRecord", "ExecutionStateStore", "InMemoryExecutionStateStore"} <= top_names, (
+        "core/execution/durable_state.py must expose the executor-neutral durable contract"
+    )
+    assigned = {
+        t.id: c
+        for n in tree.body
+        if isinstance(n, ast.Assign)
+        for t in n.targets
+        if isinstance(t, ast.Name)
+        if (c := n.value) is not None
+    }
+    schema = assigned.get("EXECUTION_DURABLE_SCHEMA_VERSION")
+    assert isinstance(schema, ast.Constant) and isinstance(schema.value, int) and schema.value >= 2, (
+        "durable execution schema version must stay an explicit int constant"
+    )
+
+
+def test_t28_legacy_history_guard_is_gone():
+    """The frontier-dependent `git diff <SHA>..HEAD == empty` core rule must
+    not return; T28 now tests architecture semantics only. This guard scans
+    THIS file's own AST for any revived `subprocess.check_output(["git",
+    "diff", ...])` invocation."""
+    tree = ast.parse(pathlib.Path(__file__).read_text(encoding="utf-8"), filename=str(__file__))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "check_output" or not node.args:
+            continue
+        first = node.args[0]
+        if not isinstance(first, (ast.List, ast.Tuple)):
+            continue
+        argv = [e.value for e in first.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        assert not ("git" in argv and "diff" in argv), (
+            "legacy git-diff history guard returned in the T28 file: " + " ".join(argv)
+        )
 
 # Additional coverage: status matrix representative, bootstrap boundary, event/card, capabilities
 

@@ -35,7 +35,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -505,7 +505,9 @@ def process_matches_identity(
 
 
 # --------------------------------------------------------------------------
-# bounded retention (executor-private cleanup; never touches live evidence)
+# bounded retention (executor-private cleanup; never touches live evidence,
+# and NEVER deletes evidence that a trusted AF runtime layer has not
+# explicitly declared canonically safe — M2/W4 RV1 F01 repair)
 # --------------------------------------------------------------------------
 
 
@@ -520,17 +522,47 @@ def list_run_dirs(root: Path) -> list[str]:
     return [name for name in names if _RUN_DIR_NAME_RE.match(name)]
 
 
-def prune_finished_runs(root: Path, *, retention_seconds: float, now_wall: float | None = None) -> int:
-    """Delete terminal runs whose mechanical receipt is older than retention.
+def prune_finished_runs(
+    root: Path,
+    *,
+    retention_seconds: float,
+    eligible_handles: Collection[str],
+    now_wall: float | None = None,
+) -> int:
+    """Delete only terminal receipts a trusted AF runtime layer declared safe.
 
-    Strictly bounded and conservative: only directories with a VALID receipt
-    whose ``completed_at_wall`` is older than the cutoff are removed.  Live,
-    pending, or unknown-evidence runs are never removed, and malformed
-    records are never garbage-collected (they fail closed for operators).
+    Cleanup principle (M2/W4, plan #36): a terminal Hermes receipt may become
+    cleanup-eligible ONLY after a trusted AF runtime layer has established
+    durable terminal ``CanonicalResult`` + ``WorkerResultCard`` truth with a
+    verified CARD digest.  That determination is made OUTSIDE this module and
+    arrives as the explicit ``eligible_handles`` set.  Mechanical age is an
+    ADDITIONAL retention criterion here and never the sole criterion:
+
+        canonical_safe_to_gc (eligible_handles) AND retention_satisfied AND
+        mechanically-valid terminal receipt -> receipt may be pruned.
+
+    This locator remains executor-private mechanical evidence: it does not
+    import, consult, or grow into the AF canonical store.  An empty eligible
+    set removes nothing.  Runs that are active, receipt-less (UNKNOWN),
+    nonterminal, or whose receipt evidence is malformed are never removed.
     """
+    if isinstance(eligible_handles, (str, bytes)) or not isinstance(eligible_handles, Iterable):
+        raise TypeError("eligible_handles must be a collection of adapter handle strings")
+    eligible_run_ids: set[str] = set()
+    for handle in eligible_handles:
+        if not isinstance(handle, str):
+            raise TypeError("eligible_handles entries must be adapter handle strings")
+        run_id = run_id_from_adapter_handle(handle)
+        if run_id is not None:
+            eligible_run_ids.add(run_id)
+    if not eligible_run_ids:
+        return 0
     cutoff = (now_wall if now_wall is not None else time.time()) - max(0.0, float(retention_seconds))
     removed = 0
     for name in list_run_dirs(Path(root)):
+        if name not in eligible_run_ids:
+            # Not canonically safe (or foreign evidence): never time-pruned.
+            continue
         paths = HermesRunPaths(Path(root), name)
         try:
             receipt = read_receipt(paths)

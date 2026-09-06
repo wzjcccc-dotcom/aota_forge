@@ -13,6 +13,10 @@ recoverable Hermes runtime boundary. It implements runtime mechanics only:
 - ``admit_dispatch()`` — bounded concurrency admission enforced against the
   durable active-set (survives restart), with UNKNOWN and unresolved PREPARED
   counted as active conservatively.
+- ``canonicalized_terminal_handles()`` — M2/W4 exposure seam: the explicit
+  adapter handles whose durable terminal CanonicalResult + digest-verified
+  WorkerResultCard make executor-private receipts GC-eligible (age alone
+  never authorizes receipt deletion).
 
 Hard ordering (M2/W3 §19): a delivery attempt may only happen after the
 terminal CanonicalResult AND the Worker Result CARD are durable on the same
@@ -36,6 +40,11 @@ Authority boundaries (wzjcccc-dotcom/aota-hermes-tools#36):
   recovery, W3 policy is PREPARED_WITHOUT_LOCATOR -> durable UNKNOWN ->
   never blindly redispatched (§17). No heuristic "newest Hermes run/session"
   scan exists in this module or may be added.
+- ACK boundary (M2/W4 clarification): AOTA_COMPLETION_ACK_V1 proves an
+  exact-session, identity-bound completion receipt/reconciliation AT THE
+  RUNTIME DELIVERY BOUNDARY. Governed task-main progression/application of
+  the CARD into Milestone working truth is M3 scope; nothing in this module
+  claims it.
 - Terminal/nonterminal/delivery state vocabularies and CAS rules are W1's;
   this module performs no store-side invariant work of its own beyond issuing
   bounded CAS updates the W1 contract already allows.
@@ -788,6 +797,40 @@ class DurableCompletionCoordinator:
             if not record.canonical_task_state.is_terminal:
                 count += 1
         return count
+
+    # -- receipt retention exposure (M2/W4 RV1 F01 repair) ---------------------
+
+    def canonicalized_terminal_handles(self) -> list[str]:
+        """Adapter handles whose canonical terminal truth is durable + verified.
+
+        This is the ONLY AF-side basis for declaring an executor-private
+        mechanical receipt GC-eligible (plan #36 W4 §13): a handle is exposed
+        exactly when the durable record already carries a terminal
+        ``CanonicalResult`` AND a ``WorkerResultCard`` whose digest re-verifies.
+        Until that CAS-successful persistence and re-read hold, the Hermes
+        receipt may remain the SOLE terminal evidence and must never be pruned
+        — a failed/crashed canonicalization exposes nothing here.
+
+        Delivery ACK is deliberately NOT required (§14): AF durable state
+        protects pending/claimed delivery independently of executor evidence.
+        Returned handles are opaque strings; this module keeps its zero Hermes
+        imports and decides no executor-private mechanics.
+        """
+        handles: list[str] = []
+        for record in self._store.list_all():
+            if record.adapter_handle is None or not record.canonical_task_state.is_terminal:
+                continue
+            if record.terminal_result is None or record.worker_result_card is None:
+                continue
+            digest = record.worker_result_card_digest
+            if not isinstance(digest, str) or not digest:
+                continue
+            if card_digest_for(dict(record.worker_result_card)) != digest:
+                # Corrupted CARD truth: never GC-eligible (fail closed).
+                continue
+            handles.append(record.adapter_handle)
+        handles.sort()
+        return handles
 
 
 __all__ = [

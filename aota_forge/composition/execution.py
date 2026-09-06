@@ -217,6 +217,42 @@ def create_durable_completion_coordinator(
     )
 
 
+def prune_reconciled_hermes_receipts(
+    *,
+    coordinator: DurableCompletionCoordinator,
+    host_client: Any,
+    now_wall: float | None = None,
+) -> int:
+    """One bounded explicit maintenance pass for canonically safe receipts.
+
+    M2/W4 RV1 F01 repair wiring: the trusted runtime layer (this composition
+    seam, the only place in the Hermes runtime graph that already imports both
+    sides) asks the W3 coordinator which adapter handles have durable terminal
+    canonical results plus digest-verified result-CARD truth, and hands
+    that EXPLICIT set to the executor-private client maintenance API. Ownership
+    stays separated:
+
+    - the Hermes locator/client still performs only mechanical checks
+      (terminal receipt validity, bounded retention age) and never imports the
+      AF canonical store;
+    - the AF coordinator never touches executor files;
+    - no new dispatch can prune an uncanonicalized receipt (§11), and GC
+      eligibility exists only AFTER canonical persist + verify (§13).
+
+    No generic GC framework: this is the one bounded maintenance seam.
+    """
+    prune = getattr(host_client, "prune_canonicalized_receipts", None)
+    if not callable(prune):
+        raise TypeError(
+            "host_client must expose prune_canonicalized_receipts(eligible_handles=...); "
+            "implicit dispatch-side pruning was removed with the W4 receipt-retention repair"
+        )
+    eligible = coordinator.canonicalized_terminal_handles()
+    if not eligible:
+        return 0
+    return prune(eligible_handles=eligible, now_wall=now_wall)
+
+
 def bind_production_execution_dispatcher(**kwargs: Any) -> ExecutionDispatcher:
     """Build and bind the production dispatcher at the application boundary."""
     dispatcher = create_production_execution_dispatcher(**kwargs)

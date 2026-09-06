@@ -273,41 +273,66 @@ def test_dead_or_nonsense_pids_are_never_running() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_prune_only_removes_terminal_evidence_past_retention(tmp_path: Path) -> None:
+def _aged_terminal_run(root: Path, *, completed_ago: float):
+    paths = prepare_run(root, new_run_id())
+    write_receipt(
+        paths,
+        status="done",
+        exit_code=0,
+        started_at_wall=time.time() - completed_ago - 10,
+        completed_at_wall=time.time() - completed_ago,
+        stdout_bytes=0,
+        stderr_bytes=0,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        read_failure=False,
+    )
+    return paths
+
+
+def test_prune_requires_explicit_canonical_eligibility_and_age(tmp_path: Path) -> None:
+    """M2/W4 RV1 F01: terminal age alone NEVER authorizes deletion.
+
+    Cleanup = eligible_handles (supplied by a trusted AF runtime layer after
+    durable CanonicalResult + WorkerResultCard persistence) AND mechanical
+    terminal-receipt validity AND retention age. Aged terminal evidence that
+    was NOT declared eligible must survive untouched.
+    """
     root = tmp_path / "root"
-    terminal_paths = prepare_run(root, new_run_id())
-    write_receipt(
-        terminal_paths,
-        status="done",
-        exit_code=0,
-        started_at_wall=time.time() - 100,
-        completed_at_wall=time.time() - 90,
-        stdout_bytes=0,
-        stderr_bytes=0,
-        stdout_truncated=False,
-        stderr_truncated=False,
-        read_failure=False,
-    )
-    fresh_paths = prepare_run(root, new_run_id())
-    write_receipt(
-        fresh_paths,
-        status="done",
-        exit_code=0,
-        started_at_wall=time.time(),
-        completed_at_wall=time.time(),
-        stdout_bytes=0,
-        stderr_bytes=0,
-        stdout_truncated=False,
-        stderr_truncated=False,
-        read_failure=False,
-    )
+    eligible_aged = _aged_terminal_run(root, completed_ago=100)
+    uncanon_aged = _aged_terminal_run(root, completed_ago=100)  # never declared safe
+    eligible_fresh = _aged_terminal_run(root, completed_ago=0)  # young: age criterion unmet
     active_paths = prepare_run(root, new_run_id())  # no receipt: never pruned
     corrupt_paths = prepare_run(root, new_run_id())
     corrupt_paths.receipt.write_bytes(b"{{{corrupt")  # corrupt: operator decision, not GC
 
-    removed = prune_finished_runs(root, retention_seconds=60, now_wall=time.time())
+    # Empty eligibility set removes NOTHING, even past-retention terminal runs.
+    assert prune_finished_runs(root, retention_seconds=60, eligible_handles=(), now_wall=time.time()) == 0
+    assert uncanon_aged.run_dir.exists(), "CAN_W2_TERMINAL_RECEIPT_BE_DELETED_BEFORE_AF_CANONICAL_PERSIST must be impossible"
+
+    removed = prune_finished_runs(
+        root,
+        retention_seconds=60,
+        eligible_handles=[eligible_aged.adapter_handle(), eligible_fresh.adapter_handle(), active_paths.adapter_handle(), corrupt_paths.adapter_handle()],
+        now_wall=time.time(),
+    )
     assert removed == 1
-    assert not terminal_paths.run_dir.exists()
-    assert fresh_paths.run_dir.exists()
+    assert not eligible_aged.run_dir.exists()
+    assert uncanon_aged.run_dir.exists(), "uncanonicalized terminal evidence is never GC'd"
+    assert eligible_fresh.run_dir.exists(), "retention age is an additional criterion"
     assert active_paths.run_dir.exists(), "UNKNOWN_FROM_PREMATURE_ACTIVE_EVICTION=no"
     assert corrupt_paths.run_dir.exists(), "malformed evidence fails closed; it is never guessed away"
+
+
+def test_prune_rejects_non_handle_inputs(tmp_path: Path) -> None:
+    """The explicit eligibility surface is bounded: foreign or malformed
+    inputs fail closed deterministically and delete nothing."""
+    root = tmp_path / "root"
+    aged = _aged_terminal_run(root, completed_ago=100)
+    with pytest.raises(TypeError):
+        prune_finished_runs(root, retention_seconds=1, eligible_handles="hermes-host-" + aged.run_id)
+    with pytest.raises(TypeError):
+        prune_finished_runs(root, retention_seconds=1, eligible_handles=[42])
+    # A foreign handle simply matches nothing of ours; the run survives.
+    assert prune_finished_runs(root, retention_seconds=1, eligible_handles=["other-executor-xyz"]) == 0
+    assert aged.run_dir.exists()

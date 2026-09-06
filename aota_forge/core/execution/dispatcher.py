@@ -409,6 +409,19 @@ class ExecutionDispatcher:
         record = self.state_store.get(canonical_task_id)
         if record is None:
             raise ExecutionRecordNotFoundError(f"execution record not found: {canonical_task_id}")
+        # M2/W4 RV1 F04 hardening: the CARD must independently identify the SAME
+        # canonical task as the durable execution record BEFORE any digest or
+        # attachment semantics are considered. Reuses the existing CARD
+        # identity field (task_ref; no third ontology, no new field). A
+        # mismatch is a deterministic protocol-integrity rejection: the record
+        # is not mutated and no digest is attached.
+        card_task_ref = card_dict.get("task_ref") if isinstance(card_dict, Mapping) else None
+        if card_task_ref != record.canonical_task_id:
+            raise AdapterProtocolError(
+                f"worker_result_card task_ref {card_task_ref!r} does not match the durable "
+                f"execution canonical_task_id {record.canonical_task_id!r}; "
+                f"CARD/execution identity mismatch rejected without mutation"
+            )
         if record.worker_result_card is not None:
             if card_digest_for(dict(record.worker_result_card)) == record.worker_result_card_digest == digest:
                 return record
