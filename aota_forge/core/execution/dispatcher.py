@@ -25,6 +25,15 @@ from aota_forge.core.execution.adapter import (
     ResumeResult,
     TaskStatusResult,
 )
+from aota_forge.core.execution.durable_state import (
+    DurableExecutionRecord,
+    ExecutionIdempotencyConflictError,
+    ExecutionPhase,
+    ExecutionRecordNotFoundError,
+    ExecutionStateStore,
+    OriginSessionRef,
+    card_digest_for,
+)
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import (
     AmbiguousExecutorError,
@@ -206,20 +215,76 @@ class NeedsSemanticChoiceError(DispatcherError, ValueError):
         )
 
 
+class DispatchOutcomeUnresolvedError(DispatcherError):
+    """Raised when a durable record exists but physical dispatch outcome is unconfirmed.
+
+    M2/W1 crash-window semantics: a PREPARED record means the durable intent
+    identity exists while the adapter_handle/dispatch outcome was never
+    persisted (crash between physical dispatch success and DISPATCHED CAS, or
+    crash before physical dispatch). Recovery must reconcile externally; the
+    dispatcher never assumes completion, never deletes the record, and never
+    blindly redispatches. Reuses the accepted TASK_STATE_UNKNOWN code — not a
+    new canonical error ontology.
+    """
+
+    code = "TASK_STATE_UNKNOWN"
+
+    def __init__(self, canonical_task_id: str) -> None:
+        self.canonical_task_id = canonical_task_id
+        super().__init__(
+            f"TASK_STATE_UNKNOWN: durable execution record {canonical_task_id!r} is PREPARED "
+            f"with unconfirmed dispatch outcome; reconciliation required, blind redispatch prohibited"
+        )
+
+
 class ExecutionDispatcher:
     """Deterministic core execution dispatcher.
 
     Provides dependency-injected execution routing, mechanical adapter resolution, idempotency
     preservation, and status reconciliation. Does not maintain persistent project state or
     perform automatic semantic retries.
+
+    M2/W1 durable mode (optional): when an ``ExecutionStateStore`` is supplied,
+    dispatch identity, idempotency truth, route binding, task state, terminal
+    CanonicalResult, Worker Result CARD payload, and the runtime-side origin
+    session binding become durable and restart-safe. Routes lost with the
+    process are reconstructed from the store, and the adapter object is
+    re-resolved from the ExecutorRegistry by durable ``executor_id`` — the
+    ``RouteRecord._adapter`` Python object itself is never persisted. With
+    ``state_store=None`` the dispatcher keeps the M1 process-local behavior;
+    production composition wiring is M2/W3 scope.
+
+    Crash-window truth with a store (no exactly-once dispatch is claimed):
+    - durable PREPARED identity is written before physical dispatch;
+    - a crash after PREPARED and before ``adapter.dispatch`` returns leaves a
+      PREPARED record; same key + intent afterwards fails closed with
+      DispatchOutcomeUnresolvedError instead of redispatching;
+    - a crash after physical dispatch succeeded but before the DISPATCHED CAS
+      (or a DISPATCHED persist failure) leaves the durable record PREPARED
+      while an execution may physically exist and the adapter_handle is lost
+      to the durable store; recovery keeps sticky uncertainty and never
+      assumes completion.
     """
 
-    def __init__(self, registry: ExecutorRegistry) -> None:
+    def __init__(
+        self,
+        registry: ExecutorRegistry,
+        *,
+        state_store: ExecutionStateStore | None = None,
+        origin_session_ref: OriginSessionRef | str | None = None,
+    ) -> None:
         if not isinstance(registry, ExecutorRegistry):
             raise TypeError(
                 f"registry must be an ExecutorRegistry, got {type(registry).__name__}"
             )
+        if state_store is not None and not isinstance(state_store, ExecutionStateStore):
+            raise TypeError(
+                f"state_store must be an ExecutionStateStore or None, got {type(state_store).__name__}"
+            )
         self.registry: ExecutorRegistry = registry
+        self.state_store: ExecutionStateStore | None = state_store
+        # Trusted-runtime supplied; opaque; never model-self-asserted.
+        self.origin_session_ref: OriginSessionRef | None = OriginSessionRef.from_value(origin_session_ref)
         # Process-local routing table: canonical_task_id -> RouteRecord
         self._routes: dict[str, RouteRecord] = {}
         # Idempotency index: idempotency_key -> (canonical_task_id, intent_fingerprint, DispatchResult)
@@ -228,12 +293,125 @@ class ExecutionDispatcher:
         self._dispatch_results: dict[str, DispatchResult] = {}
 
     def _get_internal_route(self, canonical_task_id: str) -> RouteRecord:
-        """Lookup the mutable route used only by Core lifecycle operations."""
+        """Lookup the mutable route used only by Core lifecycle operations.
+
+        Durable mode: on an in-memory miss, reconstruct the route from the
+        durable record; the adapter object is re-resolved mechanically through
+        the registry by durable executor_id.
+        """
         if not isinstance(canonical_task_id, str) or not canonical_task_id.strip():
             raise ValueError("canonical_task_id must be a non-empty string")
         if canonical_task_id not in self._routes:
+            if self.state_store is not None:
+                durable = self.state_store.get(canonical_task_id)
+                if durable is not None:
+                    return self._rehydrate_route(durable)
             raise TaskNotFoundError(canonical_task_id)
         return self._routes[canonical_task_id]
+
+    def _rehydrate_route(self, record: DurableExecutionRecord) -> RouteRecord:
+        """Reconstruct a process-local RouteRecord from a durable record."""
+        if record.execution_phase != ExecutionPhase.DISPATCHED or record.adapter_handle is None:
+            raise DispatchOutcomeUnresolvedError(record.canonical_task_id)
+        adapter = self.registry.get(record.executor_id)
+        route = RouteRecord(
+            canonical_task_id=record.canonical_task_id,
+            executor_id=record.executor_id,
+            adapter_handle=record.adapter_handle,
+            package_id=record.package_id,
+            correlation_id=record.correlation_id,
+            dispatch_attempt_id=record.dispatch_attempt_id,
+            idempotency_key=record.idempotency_key,
+            intent_fingerprint=record.intent_fingerprint,
+            initial_state=record.initial_state or record.canonical_task_state,
+            dispatched_at=record.dispatched_at or record.created_at,
+            last_known_state=record.canonical_task_state,
+            _adapter=adapter,
+        )
+        self._routes[record.canonical_task_id] = route
+        return route
+
+    def _persist_route_state(
+        self, canonical_task_id: str, state: CanonicalTaskState
+    ) -> None:
+        """Durably persist an observed task state (no-op without a store)."""
+        if self.state_store is None:
+            return
+        current = self.state_store.get(canonical_task_id)
+        if current is None:
+            raise ExecutionRecordNotFoundError(
+                f"execution record not found for state persistence: {canonical_task_id}"
+            )
+        if current.canonical_task_state == state:
+            return
+        if current.canonical_task_state.is_terminal:
+            # Durable terminal truth is sticky; nothing may un-terminate it.
+            return
+        self.state_store.compare_and_swap(
+            canonical_task_id,
+            current.record_revision,
+            {"canonical_task_state": state.value},
+        )
+
+    def bind_origin_session_ref(
+        self, canonical_task_id: str, origin_session_ref: OriginSessionRef | str
+    ) -> DurableExecutionRecord:
+        """Bind the trusted-runtime origin session onto a durable record once.
+
+        Requires a store; the binding is runtime evidence, never authority.
+        """
+        if self.state_store is None:
+            raise DispatcherError("bind_origin_session_ref requires an ExecutionStateStore")
+        ref = OriginSessionRef.from_value(origin_session_ref)
+        if ref is None:
+            raise ValueError("origin_session_ref must be a non-empty opaque value")
+        record = self.state_store.get(canonical_task_id)
+        if record is None:
+            raise ExecutionRecordNotFoundError(f"execution record not found: {canonical_task_id}")
+        if record.origin_session_ref is not None:
+            if record.origin_session_ref == ref:
+                return record
+            raise DispatcherError(
+                f"origin_session_ref already durably bound for {canonical_task_id}; rewrites rejected"
+            )
+        return self.state_store.compare_and_swap(
+            canonical_task_id, record.record_revision, {"origin_session_ref": ref}
+        )
+
+    def attach_worker_result_card(
+        self, canonical_task_id: str, card: object
+    ) -> DurableExecutionRecord:
+        """Durably attach an existing-ontology Worker Result CARD payload + digest.
+
+        Reuses the CARD canonical projection (no third result ontology); the
+        persisted CARD is evidence for later reconciliation and grants no
+        authority by possession.
+        """
+        if self.state_store is None:
+            raise DispatcherError("attach_worker_result_card requires an ExecutionStateStore")
+        canonical_dict = getattr(card, "canonical_dict", None)
+        compute_digest = getattr(card, "compute_card_digest", None)
+        if not callable(canonical_dict) or not callable(compute_digest):
+            raise TypeError(
+                "card must expose canonical_dict() and compute_card_digest() "
+                "(reuses the existing worker-result CARD ontology; no third result model)"
+            )
+        card_dict = canonical_dict()
+        digest = compute_digest()
+        record = self.state_store.get(canonical_task_id)
+        if record is None:
+            raise ExecutionRecordNotFoundError(f"execution record not found: {canonical_task_id}")
+        if record.worker_result_card is not None:
+            if card_digest_for(dict(record.worker_result_card)) == record.worker_result_card_digest == digest:
+                return record
+            raise AdapterProtocolError(
+                f"worker_result_card already durable for {canonical_task_id!r} contradicts the proposed CARD"
+            )
+        return self.state_store.compare_and_swap(
+            canonical_task_id,
+            record.record_revision,
+            {"worker_result_card": card_dict, "worker_result_card_digest": digest},
+        )
 
     @staticmethod
     def _validate_response_task_id(
@@ -299,7 +477,7 @@ class ExecutionDispatcher:
 
         idem_key = package.idempotency_key
 
-        # 1. Idempotency Check
+        # 1. Idempotency Check (in-memory fast path, then durable truth)
         if idem_key in self._idempotency_index:
             prev_task_id, prev_intent_fp, prev_dispatch = self._idempotency_index[idem_key]
             if prev_intent_fp == package.intent_fingerprint:
@@ -309,8 +487,18 @@ class ExecutionDispatcher:
                 # Idempotency conflict: same key, altered intent fingerprint
                 raise IdempotencyConflictError(idem_key)
 
+        if self.state_store is not None:
+            durable = self.state_store.get_by_idempotency(idem_key)
+            if durable is not None:
+                if durable.intent_fingerprint == package.intent_fingerprint:
+                    # Restart-safe REPLAY: no physical redispatch, ever.
+                    return self._replay_from_durable(durable)
+                raise IdempotencyConflictError(idem_key)
+
         # Duplicate canonical_task_id check (typed dispatch rejection, F01)
         if package.canonical_task_id in self._routes:
+            raise DuplicateCanonicalTaskIdError(package.canonical_task_id)
+        if self.state_store is not None and self.state_store.get(package.canonical_task_id) is not None:
             raise DuplicateCanonicalTaskIdError(package.canonical_task_id)
 
         # 2. Registry Mechanical Resolution
@@ -341,9 +529,25 @@ class ExecutionDispatcher:
         if not validation.valid:
             raise PackageInvalidError(executor_id, validation.errors)
 
-        # 4. Dispatch to adapter
+        # 4. Dispatch: durable intent first, physical dispatch second
+        #    (only when an ExecutionStateStore is wired; crash windows are
+        #    documented in the class docstring — no exactly-once claim).
         dispatch_attempt_id = str(uuid.uuid4())
-        dispatch_result = adapter.dispatch(package)
+        prepared: DurableExecutionRecord | None = None
+        if self.state_store is not None:
+            created = self._create_prepared_record(package, executor_id, dispatch_attempt_id)
+            if isinstance(created, DispatchResult):
+                # Lost a create race against an identical-intent dispatch:
+                # durable truth says REPLAY, so no physical dispatch happens.
+                return created
+            prepared = created
+        try:
+            dispatch_result = adapter.dispatch(package)
+        except Exception:
+            # Honest crash-window behavior: keep the durable PREPARED record
+            # (physical outcome unknown), leave sticky uncertainty for
+            # recovery, never delete, never redispatch blindly.
+            raise
         self._validate_response_task_id(
             dispatch_result, package.canonical_task_id, "dispatch"
         )
@@ -372,7 +576,76 @@ class ExecutionDispatcher:
             dispatch_result,
         )
 
+        # 5b. Persist the dispatch confirmation (adapter_handle/state) so the
+        #     route survives restart. If this persistence fails after physical
+        #     dispatch succeeded, the durable record stays PREPARED with the
+        #     in-memory route still live in this process; recovery keeps
+        #     sticky uncertainty instead of redispatching.
+        if self.state_store is not None and prepared is not None:
+            self.state_store.compare_and_swap(
+                package.canonical_task_id,
+                prepared.record_revision,
+                {
+                    "execution_phase": ExecutionPhase.DISPATCHED,
+                    "adapter_handle": dispatch_result.adapter_handle,
+                    "initial_state": dispatch_result.initial_state,
+                    "dispatched_at": dispatch_result.dispatch_time,
+                    "canonical_task_state": dispatch_result.initial_state.value,
+                },
+            )
+
         return dispatch_result
+
+    def _create_prepared_record(
+        self,
+        package: ExecutionPackage,
+        executor_id: str,
+        dispatch_attempt_id: str,
+    ) -> DurableExecutionRecord | DispatchResult:
+        """Durably persist intent identity before physical dispatch.
+
+        Returns the PREPARED record, or a replay DispatchResult if a
+        concurrent dispatcher already persisted the identical intent.
+        """
+        assert self.state_store is not None
+        record = DurableExecutionRecord(
+            canonical_task_id=package.canonical_task_id,
+            executor_id=executor_id,
+            package_id=package.package_id,
+            correlation_id=package.correlation_id,
+            dispatch_attempt_id=dispatch_attempt_id,
+            idempotency_key=package.idempotency_key,
+            intent_fingerprint=package.intent_fingerprint,
+            execution_phase=ExecutionPhase.PREPARED,
+            canonical_task_state=CanonicalTaskState.CREATED,
+            origin_session_ref=self.origin_session_ref,
+        )
+        try:
+            return self.state_store.create(record)
+        except ExecutionIdempotencyConflictError:
+            competing = self.state_store.get_by_idempotency(package.idempotency_key)
+            if competing is not None and competing.intent_fingerprint == package.intent_fingerprint:
+                return self._replay_from_durable(competing)
+            raise IdempotencyConflictError(package.idempotency_key) from None
+
+    def _replay_from_durable(self, record: DurableExecutionRecord) -> DispatchResult:
+        """Reconstruct the replay DispatchResult from durable truth."""
+        if record.execution_phase != ExecutionPhase.DISPATCHED or record.adapter_handle is None:
+            raise DispatchOutcomeUnresolvedError(record.canonical_task_id)
+        replay = DispatchResult(
+            canonical_task_id=record.canonical_task_id,
+            adapter_handle=record.adapter_handle,
+            initial_state=record.initial_state or record.canonical_task_state,
+            dispatch_time=record.dispatched_at or record.created_at,
+        )
+        self._rehydrate_route(record)
+        self._dispatch_results[record.canonical_task_id] = replay
+        self._idempotency_index[record.idempotency_key] = (
+            record.canonical_task_id,
+            record.intent_fingerprint,
+            replay,
+        )
+        return replay
 
     def get_route(self, canonical_task_id: str) -> RouteRecord:
         """Lookup stored mechanical route by canonical_task_id.
@@ -384,10 +657,14 @@ class ExecutionDispatcher:
         return copy(self._get_internal_route(canonical_task_id))
 
     def has_route(self, canonical_task_id: str) -> bool:
-        """Check whether a route exists for canonical_task_id."""
+        """Check whether a route exists for canonical_task_id (memory or durable)."""
         if not isinstance(canonical_task_id, str):
             return False
-        return canonical_task_id in self._routes
+        if canonical_task_id in self._routes:
+            return True
+        if self.state_store is not None:
+            return self.state_store.get(canonical_task_id) is not None
+        return False
 
     def list_routes(self) -> list[RouteRecord]:
         """List all registered routes sorted deterministically by canonical_task_id."""
@@ -403,6 +680,7 @@ class ExecutionDispatcher:
         route.last_known_state = self._validated_response_state(
             route, status_res.state, "status"
         )
+        self._persist_route_state(canonical_task_id, route.last_known_state)
         return status_res
 
     def result(self, canonical_task_id: str) -> CanonicalResult:
@@ -419,7 +697,47 @@ class ExecutionDispatcher:
         route.last_known_state = self._validated_response_state(
             route, canonical_res.canonical_task_state, "result"
         )
+        self._persist_terminal_result(canonical_task_id, canonical_res)
         return canonical_res
+
+    def _persist_terminal_result(
+        self, canonical_task_id: str, result: CanonicalResult
+    ) -> None:
+        """Attach the terminal CanonicalResult to the durable record (no-op without a store)."""
+        if self.state_store is None:
+            return
+        current = self.state_store.get(canonical_task_id)
+        if current is None:
+            raise ExecutionRecordNotFoundError(
+                f"execution record not found for result persistence: {canonical_task_id}"
+            )
+        state = parse_state(result.canonical_task_state)
+        if current.terminal_result is not None:
+            if current.terminal_result.to_json() != result.to_json():
+                raise AdapterProtocolError(
+                    f"durable terminal result for {canonical_task_id!r} contradicts the "
+                    f"adapter-reported CanonicalResult"
+                )
+            if current.canonical_task_state != state:
+                raise AdapterProtocolError(
+                    f"durable terminal state {current.canonical_task_state.value!r} contradicts "
+                    f"adapter-reported result state {state.value!r}"
+                )
+            return
+        if not state.is_terminal:
+            # Non-terminal observation (e.g., UNKNOWN); no terminal attachment.
+            if current.canonical_task_state != state and not current.canonical_task_state.is_terminal:
+                self.state_store.compare_and_swap(
+                    canonical_task_id,
+                    current.record_revision,
+                    {"canonical_task_state": state.value},
+                )
+            return
+        self.state_store.compare_and_swap(
+            canonical_task_id,
+            current.record_revision,
+            {"terminal_result": result.to_dict(), "canonical_task_state": state.value},
+        )
 
     def cancel(self, canonical_task_id: str, executor: str | None = None) -> CancelResult:
         """Request cancellation using the exact stored route and optional executor identity."""
@@ -448,6 +766,7 @@ class ExecutionDispatcher:
         route.last_known_state = self._validated_response_state(
             route, cancel_res.state, "cancel"
         )
+        self._persist_route_state(canonical_task_id, route.last_known_state)
         if cancel_res.cancelled and cancel_res.state == CanonicalTaskState.CANCELLED:
             setattr(route, "_successful_cancel_result", cancel_res)
         return cancel_res
@@ -491,6 +810,7 @@ class ExecutionDispatcher:
         route.last_known_state = self._validated_response_state(
             route, resume_res.state, "resume", enforce_terminal=False
         )
+        self._persist_route_state(canonical_task_id, route.last_known_state)
         return resume_res
 
     def reconcile_status(self, canonical_task_id: str) -> CanonicalTaskState:
@@ -522,4 +842,5 @@ class ExecutionDispatcher:
             state = CanonicalTaskState.UNKNOWN
 
         route.last_known_state = state
+        self._persist_route_state(canonical_task_id, state)
         return state

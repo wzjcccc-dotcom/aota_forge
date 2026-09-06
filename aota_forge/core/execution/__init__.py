@@ -1,7 +1,9 @@
-"""Canonical Execution Contracts Foundation (M5-1).
+"""Canonical Execution Contracts Foundation (M5-1) with M2-W1 durable execution state.
 
 Executor-neutral canonical execution foundation for ExecutorCapabilities,
-ExecutionPackage, CanonicalTaskState, CanonicalResult, RoleMapping, and ExecutorAdapter.
+ExecutionPackage, CanonicalTaskState, CanonicalResult, RoleMapping, and
+ExecutorAdapter, plus the M2/W1 agent-neutral durable execution seam
+(DurableExecutionRecord, ExecutionStateStore).
 """
 
 from __future__ import annotations
@@ -21,6 +23,28 @@ from aota_forge.core.execution.capabilities import (
     ALLOWED_ISOLATION_MODES,
     FORBIDDEN_SEMANTIC_FIELDS,
     ExecutorCapabilities,
+)
+from aota_forge.core.execution.durable_state import (
+    CAS_MUTABLE_EXECUTION_FIELDS,
+    EXECUTION_DURABLE_SCHEMA_VERSION,
+    EXECUTION_IDEMPOTENCY_CONFLICT,
+    EXECUTION_PERSISTENCE_FAILURE,
+    EXECUTION_RECORD_NOT_FOUND,
+    STALE_EXECUTION_REVISION,
+    DeliveryState,
+    DurableExecutionRecord,
+    ExecutionIdempotencyConflictError,
+    ExecutionPersistenceFailureError,
+    ExecutionPhase,
+    ExecutionRecordNotFoundError,
+    ExecutionStateError,
+    ExecutionStateStore,
+    FileBackedExecutionStateStore,
+    InMemoryExecutionStateStore,
+    OriginSessionRef,
+    StaleExecutionRevisionError,
+    card_digest_for,
+    parse_delivery_state,
 )
 from aota_forge.core.execution.package import (
     ALLOWED_OPERATIONS,
@@ -144,6 +168,27 @@ __all__ = [
     "ResumeResult",
     "TaskStatusResult",
     "ValidationResult",
+    # M2/W1 durable execution state
+    "DurableExecutionRecord",
+    "ExecutionStateStore",
+    "InMemoryExecutionStateStore",
+    "FileBackedExecutionStateStore",
+    "ExecutionPhase",
+    "DeliveryState",
+    "OriginSessionRef",
+    "parse_delivery_state",
+    "card_digest_for",
+    "CAS_MUTABLE_EXECUTION_FIELDS",
+    "EXECUTION_DURABLE_SCHEMA_VERSION",
+    "EXECUTION_RECORD_NOT_FOUND",
+    "STALE_EXECUTION_REVISION",
+    "EXECUTION_PERSISTENCE_FAILURE",
+    "EXECUTION_IDEMPOTENCY_CONFLICT",
+    "ExecutionStateError",
+    "ExecutionRecordNotFoundError",
+    "StaleExecutionRevisionError",
+    "ExecutionPersistenceFailureError",
+    "ExecutionIdempotencyConflictError",
     # Error taxonomy
     "ADAPTER_PROTOCOL_ERROR",
     "CANCEL_UNSUPPORTED",
