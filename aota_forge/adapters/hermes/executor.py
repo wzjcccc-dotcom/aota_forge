@@ -210,14 +210,11 @@ def canonical_to_hermes_payload(
     # and keeps TaskHandoff free of deployment authority.
     runtime_binding = None
     if runtime_config is not None:
-        try:
-            from aota_forge.runtime.config import resolve_binding_for_canonical_role as _resolve
+        from aota_forge.runtime.config import resolve_binding_for_canonical_role as _resolve
 
-            runtime_binding = _resolve(package.canonical_role, runtime_config)
-        except Exception:
-            # If runtime config cannot resolve canonical role, fall back to role_mapping
-            # for fail-closed validation (so missing mapping still raises RoleMappingNotFoundError).
-            runtime_binding = None
+        # A supplied operator binding is authoritative for this invocation.
+        # Missing/invalid binding must not silently become a static fallback.
+        runtime_binding = _resolve(package.canonical_role, runtime_config)
 
     if runtime_binding is not None:
         profile = runtime_binding.profile

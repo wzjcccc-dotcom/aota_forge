@@ -24,6 +24,7 @@ DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_RECORDS = 128
 READER_DRAIN_TIMEOUT_SECONDS = 1.0
 _WORKING_DIRECTORY_KEYS = ("cwd", "working_directory", "working_dir", "repo_path", "repo_root", "dir")
+_SEMANTIC_CONTEXT_KEYS = frozenset({"bounded_scope", "handoff_digest", "task_kind", "work_role", "refs"})
 _SUPPORTED_CONSTRAINTS = frozenset({"timeout_seconds", "execution_mode", "isolation", "isolation_mode"})
 _SUPPORTED_REQUIREMENTS = frozenset(
     {
@@ -178,7 +179,9 @@ class HermesHostClient:
         working_context = context.get("working_context", {})
         if not isinstance(working_context, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: working_context must be a mapping", "PACKAGE_INVALID")
-        unsupported_context = sorted(set(working_context) - set(_WORKING_DIRECTORY_KEYS))
+        unsupported_context = sorted(
+            set(working_context) - set(_WORKING_DIRECTORY_KEYS) - _SEMANTIC_CONTEXT_KEYS
+        )
         if unsupported_context:
             raise HermesHostClientError(
                 "CAPABILITY_MISMATCH: unsupported working_context values cannot be dropped",
@@ -235,14 +238,23 @@ class HermesHostClient:
             raise HermesHostClientError("DISPATCH_REJECTED: only task_dispatch is supported", "DISPATCH_REJECTED")
         if not isinstance(payload["artifacts"], (list, tuple)):
             raise HermesHostClientError("PACKAGE_INVALID: artifacts must be a list", "PACKAGE_INVALID")
-        if payload["artifacts"]:
+        metadata_artifacts = all(
+            isinstance(item, Mapping) and item.get("handoff_kind") == "task_handoff"
+            for item in payload["artifacts"]
+        )
+        if payload["artifacts"] and not metadata_artifacts:
             raise HermesHostClientError(
                 "CAPABILITY_MISMATCH: artifact transport is not supported by the production Hermes slice",
                 "CAPABILITY_MISMATCH",
             )
         if not isinstance(payload["result_expectations"], Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: result_expectations must be a mapping", "PACKAGE_INVALID")
-        if payload["result_expectations"]:
+        semantic_expectations = payload["result_expectations"]
+        metadata_expectations = (
+            set(semantic_expectations) <= {"validation_expectations", "semantic_stop_expectations"}
+            and all(isinstance(value, list) and all(isinstance(item, str) for item in value) for value in semantic_expectations.values())
+        )
+        if semantic_expectations and not metadata_expectations:
             raise HermesHostClientError(
                 "CAPABILITY_MISMATCH: result expectations are not supported by the production Hermes slice",
                 "CAPABILITY_MISMATCH",

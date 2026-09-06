@@ -70,19 +70,16 @@ def _production_capabilities() -> ExecutorCapabilities:
 
 
 def _load_runtime_config_for_composition(validate_executable: bool) -> Any | None:
-    """Load operator runtime config for composition, fail-closed but test-friendly.
+    """Load operator runtime config for composition.
 
     When validate_executable=False (tests inject fake host_client), we skip
     filesystem validation so tests don't require a real hermes binary.
     """
-    try:
-        from aota_forge.runtime.config import load_runtime_config
+    from aota_forge.runtime.config import load_runtime_config
 
-        return load_runtime_config(validate_executable=validate_executable)
-    except Exception:
-        # No operator config or invalid -> fallback to None; adapter will use static mapping.
-        # This keeps existing offline tests working without env var.
-        return None
+    # load_runtime_config supplies the explicit, deterministic default when no
+    # operator file is configured. Invalid explicit configuration must surface.
+    return load_runtime_config(validate_executable=validate_executable)
 
 
 def create_production_execution_dispatcher(
@@ -123,21 +120,14 @@ def create_production_execution_dispatcher(
     # otherwise use static shared worker mapping.
     effective_mapping = PRODUCTION_HERMES_PROFILE_MAPPING
     if runtime_config is not None and hasattr(runtime_config, "bindings"):
-        try:
-            # Build mapping from runtime_config worker bindings: canonical_role -> profile
-            from aota_forge.runtime.config import _CANONICAL_TO_WORK_ROLE
+        # Build mapping from runtime_config worker bindings: canonical_role ->
+        # profile. Missing required bindings fail closed; no static fallback.
+        from aota_forge.runtime.config import _CANONICAL_TO_WORK_ROLE
 
-            mapping_dict: dict[str, str] = {}
-            for canonical, work_role in _CANONICAL_TO_WORK_ROLE.items():
-                try:
-                    binding = runtime_config.get_binding(work_role)
-                    mapping_dict[canonical] = binding.profile
-                except Exception:
-                    continue
-            if mapping_dict:
-                effective_mapping = mapping_dict
-        except Exception:
-            pass
+        effective_mapping = {
+            canonical: runtime_config.get_binding(work_role).profile
+            for canonical, work_role in _CANONICAL_TO_WORK_ROLE.items()
+        }
 
     role_mapping = RoleMapping.create("hermes", effective_mapping)
     # Production capabilities reflect effective mapping's supported roles
