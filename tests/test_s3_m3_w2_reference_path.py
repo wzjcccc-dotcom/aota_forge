@@ -44,17 +44,18 @@ import json
 import os
 import threading
 import time
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any
 
 import pytest
 
+from aota_forge.adapters.hermes import locator
 from aota_forge.adapters.hermes.executor import HERMES_EXECUTOR_ID, HermesAdapter
 from aota_forge.adapters.hermes.host_client import HermesHostClient
 from aota_forge.composition.execution import (
     PRODUCTION_HERMES_DEFAULT_CWD,
     bind_production_execution_dispatcher,
-    create_production_execution_dispatcher,
 )
 from aota_forge.core.execution.results import FORBIDDEN_HERMES_RESULT_KEYS
 from aota_forge.core.execution.state import CanonicalTaskState
@@ -72,6 +73,8 @@ REAL_POLL_INTERVAL_SECONDS = 2.0
 REAL_POLL_COUNT_LIMIT = 75  # ~150s wall bound, larger than the host deadline
 
 TERMINAL_STATE_VALUES = {s.value for s in CanonicalTaskState if s.is_terminal}
+
+from hermes_durable_support import DurableSupervisorPad
 
 PRODUCTION_HOST_CLIENT_SOURCE = inspect.getsource(HermesHostClient)
 
@@ -246,14 +249,24 @@ class ScriptedJointHost:
         return {"status": "error", "error": {"code": "RESUME_UNSUPPORTED"}}
 
 
-def controlled_client(runner: RecordingRunner, tmp_path: Path) -> HermesHostClient:
+def controlled_client(runner: Any, tmp_path: Path) -> HermesHostClient:
     return HermesHostClient(
         str(tmp_path / "unused-joint-w2-launcher"),
         default_cwd=str(tmp_path),
         popen_factory=runner,
         validate_launcher=False,
         timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
     )
+
+
+def joint_child_pid(client: HermesHostClient, handle: str) -> int:
+    run_id = str(locator.run_id_from_adapter_handle(handle))
+    child = locator.read_json_object(
+        locator.HermesRunPaths(Path(client.runtime_root), run_id).child
+    )
+    assert child is not None
+    return int(child["child_pid"])
 
 
 def _iter_keys(obj: Any) -> Iterator[str]:
@@ -507,8 +520,8 @@ def test_unavailable_active_result_matches_accepted_s2_contract(joint_ingress) -
 def test_real_host_drain_delay_compatible_with_forge_reconciliation(joint_ingress, tmp_path) -> None:
     """Terminal publication waits for output stabilization; S2 must tolerate it."""
     gate = threading.Event()
-    process = ControlledProcess(exit_code=0, stdout=GatedStream([b"head-", b"tail"], gate), stderr=io.BytesIO(b""))
-    client = controlled_client(RecordingRunner(lambda: process), tmp_path)
+    pad = DurableSupervisorPad(stdout=b"head-tail", stderr=b"")
+    client = controlled_client(pad, tmp_path)
     dispatcher = bind_production_execution_dispatcher(host_client=client)
 
     task_id = "s3-m3-w2-drain-delay"
@@ -516,9 +529,9 @@ def test_real_host_drain_delay_compatible_with_forge_reconciliation(joint_ingres
     assert start["ok"], start
     assert CanonicalTaskState(start["data"]["initial_state"]) is CanonicalTaskState.QUEUED
 
-    # OS process exits while the stdout reader has not stabilized
-    process.release(0)
-    assert process.poll() == 0, "the underlying runtime process is terminal"
+    # OS process exits while the durable capture has not stabilized
+    pad.last.release(0, stream_gate=gate)
+    assert pad.last.child_returncode() is not None, "the underlying runtime process is terminal"
     drain_observations: list[str] = [CanonicalTaskState.QUEUED.value]
     for _ in range(3):
         during = query_status(task_id)
@@ -552,6 +565,7 @@ def test_real_host_drain_delay_compatible_with_forge_reconciliation(joint_ingres
     )
     assert dispatcher.get_route(task_id).last_known_state is CanonicalTaskState.COMPLETED
     client.close()
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -560,14 +574,14 @@ def test_real_host_drain_delay_compatible_with_forge_reconciliation(joint_ingres
 
 
 def test_reader_failure_with_exit_zero_fails_closed_joint(joint_ingress, tmp_path) -> None:
-    process = ControlledProcess(exit_code=0, stdout=ExplodingStream(), stderr=io.BytesIO(b""))
-    client = controlled_client(RecordingRunner(lambda: process), tmp_path)
+    pad = DurableSupervisorPad()
+    client = controlled_client(pad, tmp_path)
     bind_production_execution_dispatcher(host_client=client)
 
     task_id = "s3-m3-w2-reader-failure"
     start = start_task(task_id, "reader failure joint regression")
     assert start["ok"], start
-    process.release(0)
+    pad.last.release(0, read_failure=True)
 
     terminal, observed = wait_for_terminal(task_id)
     assert terminal == CanonicalTaskState.FAILED.value, (
@@ -583,6 +597,7 @@ def test_reader_failure_with_exit_zero_fails_closed_joint(joint_ingress, tmp_pat
     )
     assert_no_private_hermes_leakage(result)
     client.close()
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +623,12 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     )
     echo_launcher.chmod(0o755)
 
-    client = HermesHostClient(str(echo_launcher), default_cwd=str(tmp_path), timeout_seconds=30)
+    client = HermesHostClient(
+        str(echo_launcher),
+        default_cwd=str(tmp_path),
+        timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
+    )
     bind_production_execution_dispatcher(host_client=client)
 
     task_id = "s3-m3-w2-argv-safety"
@@ -731,14 +751,14 @@ def test_profile_and_working_directory_boundaries_fail_closed(joint_ingress, tmp
 
 
 def test_private_hermes_semantics_stay_inside_the_adapter(joint_ingress, tmp_path) -> None:
-    process = ControlledProcess(exit_code=0, stdout=io.BytesIO(b"private-check"), stderr=io.BytesIO(b""))
-    client = controlled_client(RecordingRunner(lambda: process), tmp_path)
+    pad = DurableSupervisorPad(stdout=b"private-check", stderr=b"")
+    client = controlled_client(pad, tmp_path)
     dispatcher = bind_production_execution_dispatcher(host_client=client)
 
     task_id = "s3-m3-w2-privacy"
     start = start_task(task_id, "privacy containment")
     handle = start["data"]["adapter_handle"]
-    process.release(0)
+    pad.last.release(0)
     terminal, _ = wait_for_terminal(task_id)
     assert terminal == CanonicalTaskState.COMPLETED.value
     result = query_result(task_id)
@@ -749,11 +769,12 @@ def test_private_hermes_semantics_stay_inside_the_adapter(joint_ingress, tmp_pat
     # adapter-private bindings exist only inside the adapter, never in Core schema
     adapter = dispatcher.registry.get(HERMES_EXECUTOR_ID)
     assert isinstance(adapter, HermesAdapter)
-    assert adapter._task_handles[task_id] == handle  # noqa: SLF001
+    assert adapter._task_handles[task_id] == handle
     route_fields = set(dispatcher.get_route(task_id).to_dict())
     assert "profile" not in route_fields and "cwd" not in route_fields
     assert not any(key.startswith("hermes_") for key in route_fields)
     client.close()
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -791,7 +812,7 @@ def test_current_frontier_real_hermes_vertical_slice(joint_ingress) -> None:
     dispatcher = bind_production_execution_dispatcher(runtime_config=real_config)
     adapter = dispatcher.registry.get(HERMES_EXECUTOR_ID)
     assert isinstance(adapter, HermesAdapter)
-    client = adapter._host_client  # noqa: SLF001
+    client = adapter._host_client
     assert type(client) is HermesHostClient
     assert client.launcher_path == real_config.executable
 
@@ -821,7 +842,7 @@ def test_current_frontier_real_hermes_vertical_slice(joint_ingress) -> None:
         assert len(pairwise) == 4, "current frontier collapsed canonical identity domains"
 
         # Hermes-private runtime identity is observable only through private seams
-        pid = client._records[handle].process.pid  # noqa: SLF001
+        pid = joint_child_pid(client, handle)
 
         observed: list[str] = [data["initial_state"]]
         terminal: str | None = None

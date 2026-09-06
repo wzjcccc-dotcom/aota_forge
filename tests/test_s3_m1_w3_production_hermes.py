@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ import pytest
 
 from aota_forge.adapters.hermes.executor import HermesAdapter
 from aota_forge.adapters.hermes.host_client import HermesHostClient, HermesHostClientError
+from hermes_durable_support import DurableSupervisorPad, launch_spec
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution import CanonicalTaskState, ExecutionPackage
 from aota_forge.core.ingress import (
@@ -24,6 +26,7 @@ from aota_forge.core.ingress import (
 
 class FakeProcess:
     def __init__(self, returncode: int | None = None) -> None:
+        self.pid = os.getpid()
         self.returncode = returncode
         self.stdout = io.BytesIO(b"fake stdout")
         self.stderr = io.BytesIO(b"fake stderr")
@@ -110,15 +113,21 @@ def test_launcher_invocation_profile_instruction_and_cwd(tmp_path: Path) -> None
         "/fake/hermes-host",
         popen_factory=runner,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
 
     response = client.dispatch(host_payload(working_context={"cwd": str(tmp_path)}))
 
     assert response["status"] == "pending"
-    assert runner.calls[0]["args"] == [
+    # W2 durable boundary: the dispatching process launches the detached
+    # supervisor; the REAL Hermes invocation lives in the durable launch spec.
+    expected_usage = str(tmp_path / "af-runtime" / "runs" / response["adapter_handle"].removeprefix("hermes-host-") / "usage.json")
+    assert launch_spec(runner.calls[0]["args"])["hermes_argv"] == [
         "/fake/hermes-host",
         "-p",
         "coder",
+        "--usage-file",
+        expected_usage,
         "-z",
         "Return exactly: AOTA_FORGE_W3_OK",
     ]
@@ -127,14 +136,13 @@ def test_launcher_invocation_profile_instruction_and_cwd(tmp_path: Path) -> None
 
 
 def test_status_result_failure_unknown_and_bounded_output(tmp_path: Path) -> None:
-    process = FakeProcess(returncode=1)
-    process.stdout = io.BytesIO(b"x" * 1024)
-    process.stderr = io.BytesIO(b"failure")
+    pad = DurableSupervisorPad(stdout=b"x" * 1024, stderr=b"failure", release_on_spawn=1)
     client = HermesHostClient(
         "/fake/hermes-host",
         output_limit_bytes=32,
-        popen_factory=FakeRunner(process),
+        popen_factory=pad,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
     handle = client.dispatch(host_payload(working_context={"cwd": str(tmp_path)}))["adapter_handle"]
 
@@ -147,6 +155,7 @@ def test_status_result_failure_unknown_and_bounded_output(tmp_path: Path) -> Non
     assert len(result["stdout"].encode()) <= 32
     assert result["error"]["code"] == "EXECUTION_FAILED"
     assert client.query_status("unknown") ["status"] == "unreachable"
+    pad.close()
 
 
 def test_missing_launcher_and_unsupported_semantics_fail_closed(tmp_path: Path) -> None:
@@ -163,28 +172,39 @@ def test_missing_launcher_and_unsupported_semantics_fail_closed(tmp_path: Path) 
 
 
 def test_timeout_and_owned_process_cancellation(tmp_path: Path) -> None:
-    process = FakeProcess()
+    """Timeout and cancellation are owned by the detached durable supervisor:
+    the AF-side observation only ever reports what the terminal receipt says."""
+    pad = DurableSupervisorPad()
     client = HermesHostClient(
         "/fake/hermes-host",
         timeout_seconds=0.01,
-        popen_factory=FakeRunner(process),
+        popen_factory=pad,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
     handle = client.dispatch(host_payload(working_context={"cwd": str(tmp_path)}))["adapter_handle"]
-    time.sleep(0.03)
-    assert client.query_status(handle)["status"] == "timeout"
-    assert process.terminated is True
+    deadline = time.monotonic() + 10.0
+    status = ""
+    while time.monotonic() < deadline:
+        status = client.query_status(handle)["status"]
+        if status in {"timeout", "done", "failed"}:
+            break
+        time.sleep(0.02)
+    assert status == "timeout"
 
-    process2 = FakeProcess()
+    pad2 = DurableSupervisorPad()
     client2 = HermesHostClient(
         "/fake/hermes-host",
-        popen_factory=FakeRunner(process2),
+        popen_factory=pad2,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime-2",
     )
     handle2 = client2.dispatch(host_payload(working_context={"cwd": str(tmp_path)}))["adapter_handle"]
     assert client2.cancel_task(handle2) == {"cancelled": True, "status": "cancelled"}
-    assert process2.terminated is True
+    assert pad2.last.terminate_calls >= 1
     assert client2.resume_task(handle2, {})["error"]["code"] == "RESUME_UNSUPPORTED"
+    pad.close()
+    pad2.close()
 
 
 def test_production_capabilities_and_explicit_profile_mapping() -> None:

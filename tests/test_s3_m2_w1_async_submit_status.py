@@ -11,6 +11,7 @@ No runtime source change is expected here; these tests freeze the contract.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import subprocess
@@ -21,6 +22,7 @@ from typing import Any, Mapping
 
 import pytest
 
+from aota_forge.adapters.hermes import locator
 from aota_forge.adapters.hermes.executor import (
     HERMES_STATUS_MAP,
     HermesAdapter,
@@ -31,6 +33,7 @@ from aota_forge.adapters.hermes.executor import (
 from aota_forge.adapters.hermes.host_client import HermesHostClient
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution import CanonicalTaskState, ExecutionPackage
+from hermes_durable_support import DurableSupervisorPad
 
 HANDLE_SHAPE = re.compile(r"^hermes-host-[0-9a-f]{32}$")
 
@@ -177,9 +180,14 @@ def package(task_id: str, **kwargs: Any) -> ExecutionPackage:
     )
 
 
-def concrete_client(tmp_path: Path, runner: RecordingRunner, **kwargs: Any) -> HermesHostClient:
+def concrete_client(tmp_path: Path, runner: Any, **kwargs: Any) -> HermesHostClient:
     kwargs.setdefault("validate_launcher", False)
+    kwargs.setdefault("runtime_root", tmp_path / "af-runtime")
     return HermesHostClient(str(tmp_path / "unused-launcher"), popen_factory=runner, **kwargs)
+
+
+def run_dirs(client: HermesHostClient) -> list[str]:
+    return locator.list_run_dirs(Path(client.runtime_root))
 
 
 def wait_for_status(client: HermesHostClient, handle: str, terminal: set[str], budget: float = 5.0) -> str:
@@ -199,9 +207,8 @@ def wait_for_status(client: HermesHostClient, handle: str, terminal: set[str], b
 
 
 def test_dispatch_returns_handle_without_waiting_for_worker_completion(tmp_path: Path) -> None:
-    process = ControlledProcess()
-    runner = RecordingRunner(process)
-    client = concrete_client(tmp_path, runner, timeout_seconds=30)
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad, timeout_seconds=30)
 
     started = time.monotonic()
     response = client.dispatch(payload_with_cwd(tmp_path))
@@ -211,20 +218,22 @@ def test_dispatch_returns_handle_without_waiting_for_worker_completion(tmp_path:
     assert HANDLE_SHAPE.fullmatch(response["adapter_handle"])
     assert response["status"] == "pending"
     assert set(response) == {"adapter_handle", "status", "dispatch_time"}
-    assert process.poll() is None, "worker must still be running when dispatch returns"
+    assert pad.last.poll() is None, "worker must still be running when dispatch returns"
 
     assert client.query_status(response["adapter_handle"])["status"] == "running"
-    process.release(0)
+    pad.last.release(0)
     assert wait_for_status(client, response["adapter_handle"], {"done"}) == "done"
+    pad.close()
 
 
 def test_adapter_handle_is_opaque_and_carries_no_runtime_identity(tmp_path: Path) -> None:
-    process = ControlledProcess()
+    pad = DurableSupervisorPad()
     client = HermesHostClient(
         str(tmp_path / "unused"),
         default_cwd=str(tmp_path),
-        popen_factory=RecordingRunner(process),
+        popen_factory=pad,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
     response = client.dispatch(host_payload(profile="reviewer"))
     handle = response["adapter_handle"]
@@ -241,25 +250,34 @@ def test_adapter_handle_is_opaque_and_carries_no_runtime_identity(tmp_path: Path
     assert "coder" not in dispatch_result.adapter_handle
     leaked = [key for key in dispatch_result.to_dict() if "pid" in key or "profile" in key or "session" in key]
     assert leaked == []
-    process.release(0)
+    # W2: the opaque handle maps deterministically to durable private evidence,
+    # but the handle string itself carries no runtime identity.
+    run_id = locator.run_id_from_adapter_handle(handle)
+    assert run_id is not None and run_id in handle
+    pad.last.release(0)
+    pad.close()
 
 
-def test_execution_record_stays_private_and_status_is_derived_from_poll(tmp_path: Path) -> None:
-    process = ControlledProcess()
-    runner = RecordingRunner(process)
-    client = concrete_client(tmp_path, runner, timeout_seconds=30)
+def test_execution_record_stays_private_and_status_is_derived_from_durable_evidence(tmp_path: Path) -> None:
+    pad = DurableSupervisorPad()
+    client = concrete_client(tmp_path, pad, timeout_seconds=30)
 
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
-    records = client._records  # private namespace, never surfaced through envelopes
-    assert handle in records
-    record = records[handle]
-    assert record.process is process
-    assert record.status == "pending"
+    # Durable evidence is executor-private and never surfaced through envelopes.
+    run_id = locator.run_id_from_adapter_handle(handle)
+    paths = locator.HermesRunPaths(Path(client.runtime_root), str(run_id))
+    marker = locator.read_json_object(paths.marker)
+    assert marker is not None and marker["state"] == "spawned"
+    assert client.query_status(handle)["status"] == "running"
+    status_envelope = json.dumps(client.query_status(handle))
+    for private in ("pid", "supervisor", "launcher", "marker", "receipt"):
+        assert private not in status_envelope
 
-    process.release(3)
+    pad.last.release(3)
     assert wait_for_status(client, handle, {"failed"}) == "failed"
-    assert record.status == "failed"
-    assert record.exit_code == 3
+    receipt = locator.read_receipt(paths)
+    assert receipt is not None and receipt["status"] == "failed" and receipt["exit_code"] == 3
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -271,11 +289,15 @@ def test_returned_real_handle_is_immediately_queryable_no_registration_race(tmp_
     launcher = tmp_path / "quick-exit.sh"
     launcher.write_text("#!/bin/sh\necho ok\nexit 0\n")
     launcher.chmod(0o755)
-    client = HermesHostClient(str(launcher), default_cwd=str(tmp_path))
+    client = HermesHostClient(
+        str(launcher), default_cwd=str(tmp_path), runtime_root=tmp_path / "af-runtime"
+    )
 
+    handles = []
     for _ in range(25):
         response = client.dispatch(host_payload())
         handle = response["adapter_handle"]
+        handles.append(handle)
         # Registration must precede handle return: the first status observation
         # for a returned handle can never be an unreachable/unknown artifact.
         first = client.query_status(handle)
@@ -283,10 +305,15 @@ def test_returned_real_handle_is_immediately_queryable_no_registration_race(tmp_
         terminal = wait_for_status(client, handle, {"done", "failed"})
         assert terminal == "done"
     client.close()
-    with client._records_lock:
-        pids = [record.process.pid for record in client._records.values()]
-    live = [pid for pid in pids if _pid_alive(pid)]
-    assert live == []
+    # Durable terminal evidence is complete and supervised workers exited.
+    for handle in handles:
+        run_id = str(locator.run_id_from_adapter_handle(handle))
+        paths = locator.HermesRunPaths(Path(client.runtime_root), run_id)
+        receipt = locator.read_receipt(paths)
+        assert receipt is not None and receipt["status"] == "done"
+        child = locator.read_json_object(paths.child)
+        assert child is not None
+        assert not _pid_alive(int(child["child_pid"]))
 
 
 def _pid_alive(pid: int) -> bool:
@@ -300,13 +327,12 @@ def _pid_alive(pid: int) -> bool:
 
 
 def test_fake_record_registration_ordering_returns_queryable_handle(tmp_path: Path) -> None:
-    process = ControlledProcess(exit_code=0)
-    process.release(0)  # worker already terminal at dispatch time
-    runner = RecordingRunner(process)
-    client = concrete_client(tmp_path, runner)
+    pad = DurableSupervisorPad(release_on_spawn=0)
+    client = concrete_client(tmp_path, pad)
 
     handle = client.dispatch(payload_with_cwd(tmp_path))["adapter_handle"]
     assert client.query_status(handle)["status"] == "done"
+    pad.close()
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +426,12 @@ def test_real_timeout_projects_unknown_not_completion(tmp_path: Path) -> None:
     launcher = tmp_path / "sleeper.sh"
     launcher.write_text("#!/bin/sh\nexec sleep 30\n")
     launcher.chmod(0o755)
-    client = HermesHostClient(str(launcher), default_cwd=str(tmp_path), timeout_seconds=30)
+    client = HermesHostClient(
+        str(launcher),
+        default_cwd=str(tmp_path),
+        timeout_seconds=30,
+        runtime_root=tmp_path / "af-runtime",
+    )
     adapter = HermesAdapter(host_client=client)
 
     dispatch_result = adapter.dispatch(
@@ -419,8 +450,13 @@ def test_real_timeout_projects_unknown_not_completion(tmp_path: Path) -> None:
     assert state is CanonicalTaskState.UNKNOWN, "timeout must project to UNKNOWN, never COMPLETED/FAILED"
     host_status = client.query_status(dispatch_result.adapter_handle)["status"]
     assert host_status == "timeout"
-    record = client._records[dispatch_result.adapter_handle]
-    assert record.process.poll() is not None, "timed-out worker must be terminated"
+    run_id = str(locator.run_id_from_adapter_handle(dispatch_result.adapter_handle))
+    paths = locator.HermesRunPaths(Path(client.runtime_root), run_id)
+    receipt = locator.read_receipt(paths)
+    assert receipt is not None and receipt["status"] == "timeout"
+    child = locator.read_json_object(paths.child)
+    assert child is not None
+    assert not _pid_alive(int(child["child_pid"])), "timed-out worker must be terminated"
     client.close()
 
 
@@ -580,7 +616,7 @@ def test_popen_failure_fails_closed_without_handle_or_record(tmp_path: Path, fai
     with pytest.raises(HermesHostUnavailableError, match="EXECUTOR_UNAVAILABLE"):
         client.dispatch(payload_with_cwd(tmp_path))
 
-    assert client._records == {}  # no private record, no fake handle
+    assert run_dirs(client) == []  # no durable evidence, no fake handle
     assert runner.calls == []
 
 
@@ -598,6 +634,7 @@ def test_production_composition_launch_failure_creates_no_identity_binding(tmp_p
             default_cwd=default_cwd,
             popen_factory=failing,
             validate_launcher=False,
+            runtime_root=tmp_path / "af-runtime",
         )
 
     dispatcher = create_production_execution_dispatcher(host_client_factory=factory)
@@ -648,7 +685,12 @@ def test_conflicting_execution_mode_rejected_before_process_start(tmp_path: Path
 
 def test_implicit_shell_cwd_fallback_is_not_used(tmp_path: Path) -> None:
     runner = RecordingRunner()
-    client = HermesHostClient(str(tmp_path / "unused"), popen_factory=runner, validate_launcher=False)
+    client = HermesHostClient(
+        str(tmp_path / "unused"),
+        popen_factory=runner,
+        validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
+    )
 
     with pytest.raises(Exception, match="PACKAGE_INVALID"):
         client.dispatch(host_payload())
@@ -656,17 +698,21 @@ def test_implicit_shell_cwd_fallback_is_not_used(tmp_path: Path) -> None:
 
     working = tmp_path / "work"
     working.mkdir()
+    pad = DurableSupervisorPad()
     client_with_default = HermesHostClient(
         str(tmp_path / "unused"),
         default_cwd=str(tmp_path),
-        popen_factory=runner,
+        popen_factory=pad,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
     handle = client_with_default.dispatch(host_payload(context={"working_context": {"cwd": str(working)}}))[
         "adapter_handle"
     ]
-    assert runner.calls[0]["cwd"] == str(working.resolve())
-    client_with_default._records[handle].process.release(0)
+    assert HANDLE_SHAPE.fullmatch(handle)
+    assert pad.calls[0]["cwd"] == str(working.resolve())
+    pad.last.release(0)
+    pad.close()
 
 
 def test_malformed_terminal_result_never_becomes_false_success(tmp_path: Path) -> None:

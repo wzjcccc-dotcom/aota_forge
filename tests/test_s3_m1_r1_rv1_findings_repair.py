@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -24,6 +25,9 @@ from aota_forge.core.execution.dispatcher import PackageInvalidError
 
 class FakeProcess:
     def __init__(self, returncode: int | None = 0) -> None:
+        # W2 durable boundary: every supervised launch must have a real
+        # process-identity carrier for the marker.
+        self.pid = os.getpid()
         self.returncode = returncode
         self.stdout = io.BytesIO(b"")
         self.stderr = io.BytesIO(b"")
@@ -250,6 +254,7 @@ def test_explicit_task_cwd_is_forwarded(tmp_path: Path) -> None:
         "/fake/hermes-host",
         popen_factory=runner,
         validate_launcher=False,
+        runtime_root=tmp_path / "af-runtime",
     )
 
     client.dispatch(host_payload(working_context={"cwd": str(tmp_path)}))
