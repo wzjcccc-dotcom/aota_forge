@@ -199,7 +199,7 @@ class HermesHostClient:
             return self._validate_cwd(value)
         return self.default_cwd or self._validate_cwd(None)
 
-    def _validate_payload(self, payload: Mapping[str, Any]) -> tuple[str, str, str, float]:
+    def _validate_payload(self, payload: Mapping[str, Any]) -> tuple[str, str, str, float, str | None, str | None]:
         required = {
             "profile",
             "instruction",
@@ -220,6 +220,17 @@ class HermesHostClient:
             raise HermesHostClientError("PACKAGE_INVALID: Hermes profile is invalid", "PACKAGE_INVALID")
         if not isinstance(instruction, str) or not instruction.strip():
             raise HermesHostClientError("PACKAGE_INVALID: instruction is invalid", "PACKAGE_INVALID")
+        # Optional provider/model fields for W1 runtime binding (operator-owned, not semantic)
+        provider = payload.get("provider")
+        model = payload.get("model")
+        if provider is not None:
+            if not isinstance(provider, str) or not provider.strip() or any(ch.isspace() for ch in provider):
+                raise HermesHostClientError("PACKAGE_INVALID: provider is invalid", "PACKAGE_INVALID")
+            provider = provider.strip()
+        if model is not None:
+            if not isinstance(model, str) or not model.strip():
+                raise HermesHostClientError("PACKAGE_INVALID: model is invalid", "PACKAGE_INVALID")
+            model = model.strip()
         if payload["operation"] != "task_dispatch":
             raise HermesHostClientError("DISPATCH_REJECTED: only task_dispatch is supported", "DISPATCH_REJECTED")
         if not isinstance(payload["artifacts"], (list, tuple)):
@@ -289,7 +300,7 @@ class HermesHostClient:
         if timeout > self.timeout_seconds:
             raise HermesHostClientError("CAPABILITY_MISMATCH: requested timeout exceeds host bound", "CAPABILITY_MISMATCH")
         cwd = self._resolve_cwd(payload)
-        return profile, instruction, cwd, float(timeout)
+        return profile, instruction, cwd, float(timeout), provider, model
 
     def _evict_records(self) -> None:
         with self._records_lock:
@@ -402,10 +413,18 @@ class HermesHostClient:
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: host payload must be a mapping", "PACKAGE_INVALID")
-        profile, instruction, cwd, timeout = self._validate_payload(payload)
+        profile, instruction, cwd, timeout, provider, model = self._validate_payload(payload)
         self._evict_records()
         adapter_handle = f"hermes-host-{uuid.uuid4().hex}"
-        args = [self.launcher_path, "-p", profile, "-z", instruction]
+        # Direct Hermes invocation per W1 launcher resolution Path A:
+        # reuse real Hermes binary, translate runtime binding -> hermes -p <profile> [--provider X] [-m Y] -z <instruction>
+        # Flags verified against Hermes v0.21 `hermes --help`: --provider, -m.
+        args = [self.launcher_path, "-p", profile]
+        if provider is not None:
+            args.extend(["--provider", provider])
+        if model is not None:
+            args.extend(["-m", model])
+        args.extend(["-z", instruction])
         try:
             process = self._popen_factory(
                 args,
