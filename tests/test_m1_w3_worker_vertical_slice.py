@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from aota_forge.adapters.hermes.executor import canonical_to_hermes_payload
-from aota_forge.adapters.hermes.host_client import HermesHostClient, HermesHostClientError
+from aota_forge.adapters.hermes.host_client import (
+    HermesHostClient,
+    HermesHostClientError,
+)
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.composition.worker_vertical_slice import build_worker_binding
 from aota_forge.core.execution.results import CanonicalResult
