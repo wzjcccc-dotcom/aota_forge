@@ -276,15 +276,19 @@ class W1ProductionHermesCompositionTestCase(unittest.TestCase):
 
         self.assertEqual(len(self.host.dispatched_payloads), 1)
         payload = self.host.dispatched_payloads[0]
-        self.assertEqual(payload["profile"], "coder")
+        # M1 accepted architecture: all Worker roles share the aota-worker
+        # profile with the shared AOTA MCP toolset pin.
+        self.assertEqual(payload["profile"], "aota-worker")
+        self.assertEqual(payload["toolsets"], ["aota"])
         self.assertEqual(payload["context"]["canonical_task_id"], task_id)
 
     def test_production_hermes_capabilities_unchanged(self) -> None:
-        """S3/M1 accepted production capability vector is read-only preserved for W1."""
+        """The accepted production Hermes capability vector is read-only preserved for W1."""
         desc = self.dispatcher.registry.get_descriptor("hermes")
         self.assertEqual(desc.executor_id, "hermes")
         self.assertEqual(tuple(desc.supported_execution_modes), ("async",))
-        self.assertEqual(tuple(desc.supported_canonical_roles), ("coder",))
+        # M1/W1 binds the four Worker canonical roles on the shared profile.
+        self.assertEqual(tuple(desc.supported_canonical_roles), ("coder", "planner", "reviewer", "steward"))
         self.assertTrue(desc.supports_task_cancellation)
         self.assertFalse(desc.supports_task_resume)
         self.assertFalse(desc.supports_structured_result)

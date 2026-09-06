@@ -62,6 +62,11 @@ MCP_WORKTREE_ENV = "AOTA_W3_WORKTREE_ID"
 MCP_TASK_ENV = "AOTA_W3_TASK_ID"
 MCP_HANDOFF_ENV = "AOTA_W3_HANDOFF_JSON"
 MCP_TRACE_ENV = "AOTA_W3_TOOL_TRACE"
+# Trusted per-server env seam consumed by the Hermes profile config
+# (`PYTHONPATH: ${AOTA_FORGE_REPO_ROOT}`): the operator/runtime selects which
+# checkout the shared MCP child imports from. Absent -> the MCP child fails
+# closed (literal placeholder cannot import); there is no cwd fallback.
+MCP_REPO_ROOT_ENV = "AOTA_FORGE_REPO_ROOT"
 
 REAL_HERMES_VERSION = "Hermes Agent v0.21.0"
 MCP_PROFILE_NAME = "aota-worker"
@@ -205,10 +210,16 @@ def _worker_environment(
     old_pythonpath = os.environ.get("PYTHONPATH")
     os.environ.update(names)
     repo_root = str(Path(__file__).resolve().parents[2])
+    old_repo_root = os.environ.get(MCP_REPO_ROOT_ENV)
+    os.environ[MCP_REPO_ROOT_ENV] = repo_root
     os.environ["PYTHONPATH"] = repo_root + (os.pathsep + old_pythonpath if old_pythonpath else "")
     try:
         yield
     finally:
+        if old_repo_root is None:
+            os.environ.pop(MCP_REPO_ROOT_ENV, None)
+        else:
+            os.environ[MCP_REPO_ROOT_ENV] = old_repo_root
         for key, value in old.items():
             if value is None:
                 os.environ.pop(key, None)
@@ -325,6 +336,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "MCP_PROFILE_NAME",
+    "MCP_REPO_ROOT_ENV",
     "MCP_SERVER_MODULE",
     "REAL_HERMES_VERSION",
     "WorkerSliceResult",

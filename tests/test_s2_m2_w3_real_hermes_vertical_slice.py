@@ -1,34 +1,39 @@
 """S2/M2/W3 proof: Joint First Real Hermes Vertical Slice (RENDEZVOUS_ID=S2S3-JRV1).
 
-Primary empirical chain, executed against the real Hermes runtime on the
-accepted joint lineage (S2/M1 dcff60b + S3/M1 204b740 + W1 239dfa7 + W2 5f12207):
+W4 synchronization (accepted M1 architecture): the production real-runtime
+proof now belongs to the M1/W3 governed Worker vertical slice (shared
+``aota-worker`` profile + shared AOTA MCP + result governance). This
+predecessor JRV1 slice keeps its own chain as an OPT-IN bounded real Hermes
+probe over the current ingress seam, because the repository's full suite must
+stay deterministic and the production composition now requires an
+operator-owned RuntimeConfig (fail-closed; no source-owned deployment
+default). When opted in, the test constructs its own explicit config fixture
+(a bounded temporary probe, not production deployment authority).
+
+Chain proven when enabled:
 
     execution.task_start (canonical ingress)
     -> ExecutionPackage
     -> ExecutionDispatcher (accepted production composition)
     -> real HermesAdapter
     -> real HermesHostClient (no host_client injection)
-    -> real hermes-host launcher, bounded one-shot `coder` worker
+    -> direct Hermes binary, bounded one-shot Worker on the shared profile
     -> execution.task_status polling
     -> execution.task_result
     -> Forge/Core terminal reconciliation
 
-FakeHost, FakeProcess, mock-only adapters, and synthetic dispatcher-only
-tasks cannot satisfy this file; W1/W2 already froze those offline seams.
+Offline seams (host protocol, projection) are exercised by the W1/W2/W3 M1
+test files; the capability-vector preservation assertion below always runs
+through an injected host (no process launch).
 
-Environment policy (S2/M2/W3 SPEC): this is the repository's only
-real-runtime test. It skips ONLY when the accepted production launcher or
-default working directory is unavailable (RUNTIME_ENVIRONMENT /
-LAUNCHER_UNAVAILABLE per the W3 preflight contract). A skip never counts
-as JRV1 acceptance.
-
-Durability stays D0 / process-local: no restart, no persistence, no
-resume, no cancellation of the primary worker, no S3/M2 source.
+Durability stays D0 / process-local: no restart, no persistence, no resume,
+no cancellation of the primary worker.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import time
 import unittest
 import uuid
@@ -39,22 +44,29 @@ from aota_forge.adapters.hermes.executor import HERMES_EXECUTOR_ID, HermesAdapte
 from aota_forge.adapters.hermes.host_client import HermesHostClient
 from aota_forge.composition.execution import (
     PRODUCTION_HERMES_DEFAULT_CWD,
-    PRODUCTION_HERMES_HOST_LAUNCHER,
-    PRODUCTION_HERMES_PROFILE_MAPPING,
     bind_production_execution_dispatcher,
+    create_production_execution_dispatcher,
 )
 from aota_forge.core.execution.results import FORBIDDEN_HERMES_RESULT_KEYS
 from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.ingress import execute, reset_execution_dispatcher
+from aota_forge.runtime.config import SHARED_MCP_TOOLSET, RuntimeBinding, RuntimeConfig
 
 REAL_MARKER = "AOTA_S2S3_JRV1_OK"
 WORKER_INSTRUCTION = f"Return exactly: {REAL_MARKER}"
+
+REAL_SMOKE_GATE = "AOTA_S2_M2_W3_REAL_HERMES_SMOKE"
 
 # Bounded runtime envelope: a one-shot echo-style worker with a host-side
 # deadline below the accepted production maximum (300s).
 WORKER_TIMEOUT_SECONDS = 120
 POLL_INTERVAL_SECONDS = 2.0
 POLL_COUNT_LIMIT = 75  # ~150s wall bound, larger than the host-side deadline
+
+# Test-owned explicit operator pins (JRV1-era probe values, chosen by this
+# fixture; never consulted by production source).
+JRV1_TEST_PROVIDER = "opencode-go"
+JRV1_TEST_MODEL = "deepseek-v4-flash"
 
 INITIAL_NON_TERMINAL_STATES = {
     CanonicalTaskState.QUEUED.value,
@@ -65,23 +77,97 @@ INITIAL_NON_TERMINAL_STATES = {
 TERMINAL_STATE_VALUES = {state.value for state in CanonicalTaskState if state.is_terminal}
 
 
-def _production_launcher_available() -> bool:
-    launcher = Path(PRODUCTION_HERMES_HOST_LAUNCHER)
-    return launcher.is_file() and not launcher.is_symlink() and os.access(launcher, os.X_OK)
+class _Jrv1FakeHost:
+    """Offline recording host for the capability-vector seam (no process)."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+
+    def dispatch(self, payload):
+        self.payloads.append(dict(payload))
+        return {"adapter_handle": "jrv1-fake-1", "status": "pending"}
+
+    def query_status(self, handle):
+        return {"status": "running"}
+
+    def fetch_result(self, handle):
+        return {"status": "pending"}
+
+    def cancel_task(self, handle):
+        return {"cancelled": True, "status": "cancelled"}
+
+    def resume_task(self, handle, payload):
+        return {"status": "error", "error": {"code": "RESUME_UNSUPPORTED"}}
+
+
+def _jrv1_runtime_config() -> RuntimeConfig | None:
+    """Explicit opt-in operator config fixture over the discovered Hermes binary."""
+    executable = shutil.which("hermes")
+    if executable is None:
+        return None
+    exe = Path(executable)
+    if exe.is_symlink() or not exe.is_file() or not os.access(exe, os.X_OK):
+        return None
+    bindings = tuple(
+        RuntimeBinding(
+            work_role=role,
+            executor="hermes",
+            profile="aota-worker" if role != "task-main" else "aota-task-main",
+            provider=JRV1_TEST_PROVIDER,
+            model=JRV1_TEST_MODEL,
+            concurrency=1,
+            executable=str(exe),
+            toolsets=(SHARED_MCP_TOOLSET,) if role != "task-main" else None,
+        )
+        for role in ("analyst", "coder", "reviewer", "project-steward", "task-main")
+    )
+    return RuntimeConfig(
+        executor="hermes",
+        executable=str(exe),
+        concurrency=1,
+        provider=JRV1_TEST_PROVIDER,
+        model=JRV1_TEST_MODEL,
+        bindings=bindings,
+    )
 
 
 class S2M2W3RealHermesVerticalSliceTest(unittest.TestCase):
     """JRV1: one bounded real Hermes worker across the full canonical seam."""
 
+    def test_production_capability_vector_is_frozen_for_jrv1(self) -> None:
+        """The accepted production Hermes capability vector stays async/process/concurrency 1
+        and covers exactly the four shared-profile Worker canonical roles."""
+        reset_execution_dispatcher()
+        try:
+            fake = _Jrv1FakeHost()
+            dispatcher = create_production_execution_dispatcher(host_client=fake)
+            descriptor = dispatcher.registry.get_descriptor(HERMES_EXECUTOR_ID)
+            self.assertEqual(descriptor.executor_id, HERMES_EXECUTOR_ID)
+            self.assertEqual(tuple(descriptor.supported_execution_modes), ("async",))
+            self.assertEqual(
+                tuple(descriptor.supported_canonical_roles),
+                ("coder", "planner", "reviewer", "steward"),
+            )
+            self.assertTrue(descriptor.supports_task_cancellation)
+            self.assertFalse(descriptor.supports_task_resume)
+            self.assertFalse(descriptor.supports_structured_result)
+            self.assertFalse(descriptor.supports_artifact_transport)
+            self.assertTrue(descriptor.supports_working_directory)
+        finally:
+            reset_execution_dispatcher()
+
     def setUp(self) -> None:
         reset_execution_dispatcher()
         self.dispatcher = None
         self.client = None
-        if not _production_launcher_available():
+        if os.environ.get(REAL_SMOKE_GATE) != "1":
             self.skipTest(
-                "JRV1_NOT_SATISFIED_BY_SKIP: accepted production Hermes launcher is "
-                f"unavailable at {PRODUCTION_HERMES_HOST_LAUNCHER} (RUNTIME_ENVIRONMENT)"
+                "JRV1 real slice is opt-in (bounded real-runtime proof); the M1/W3 "
+                "governed Worker slice is the current production real-runtime proof"
             )
+        self.config = _jrv1_runtime_config()
+        if self.config is None:
+            self.skipTest("JRV1_NOT_SATISFIED_BY_SKIP: no trusted Hermes executable available (RUNTIME_ENVIRONMENT)")
         if not Path(PRODUCTION_HERMES_DEFAULT_CWD).is_dir():
             self.skipTest(
                 "JRV1_NOT_SATISFIED_BY_SKIP: accepted production default working "
@@ -89,8 +175,8 @@ class S2M2W3RealHermesVerticalSliceTest(unittest.TestCase):
                 "(RUNTIME_ENVIRONMENT)"
             )
         # No host_client argument: the accepted composition must build the real
-        # HermesHostClient against the real production launcher path.
-        self.dispatcher = bind_production_execution_dispatcher()
+        # HermesHostClient against the operator-configured executable.
+        self.dispatcher = bind_production_execution_dispatcher(runtime_config=self.config)
         adapter = self.dispatcher.registry.get(HERMES_EXECUTOR_ID)
         self.assertIsInstance(adapter, HermesAdapter)
         client = getattr(adapter, "_host_client", None)
@@ -103,19 +189,6 @@ class S2M2W3RealHermesVerticalSliceTest(unittest.TestCase):
                 self.client.close()
         finally:
             reset_execution_dispatcher()
-
-    def test_production_capability_vector_is_frozen_for_jrv1(self) -> None:
-        """W3 must not mutate the accepted production Hermes capability vector."""
-        descriptor = self.dispatcher.registry.get_descriptor(HERMES_EXECUTOR_ID)
-        self.assertEqual(descriptor.executor_id, HERMES_EXECUTOR_ID)
-        self.assertEqual(tuple(descriptor.supported_execution_modes), ("async",))
-        self.assertEqual(tuple(descriptor.supported_canonical_roles), ("coder",))
-        self.assertTrue(descriptor.supports_task_cancellation)
-        self.assertFalse(descriptor.supports_task_resume)
-        self.assertFalse(descriptor.supports_structured_result)
-        self.assertFalse(descriptor.supports_artifact_transport)
-        self.assertTrue(descriptor.supports_working_directory)
-        self.assertEqual(PRODUCTION_HERMES_PROFILE_MAPPING, {"coder": "coder"})
 
     def _status_data(self, task_id: str) -> dict[str, Any]:
         envelope = execute(
@@ -207,7 +280,7 @@ class S2M2W3RealHermesVerticalSliceTest(unittest.TestCase):
             "real Hermes worker did not reach a terminal state inside the bounded "
             f"poll window; observed canonical sequence: {observed}. Classify as "
             "WORKER_FAILURE / LAUNCHER / RUNTIME_ENVIRONMENT from host evidence; "
-            "do not patch production source in W3.",
+            "do not patch production source here.",
         )
         self.assertEqual(
             terminal,

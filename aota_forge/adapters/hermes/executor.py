@@ -197,7 +197,7 @@ def canonical_to_hermes_payload(
     - artifacts: list of dicts
     - constraints: package.constraints
     - capability_requirements: package.capability_requirements
-    - provider/model: optional operator runtime binding (W1, deterministic)
+    - provider/model/toolsets: optional operator runtime binding (W1/W4, deterministic)
 
     Fails closed if role mapping is missing.
     Does NOT rewrite instructions, weaken constraints, or drop requirements.
@@ -216,10 +216,12 @@ def canonical_to_hermes_payload(
         # Missing/invalid binding must not silently become a static fallback.
         runtime_binding = _resolve(package.canonical_role, runtime_config)
 
+    toolsets = None
     if runtime_binding is not None:
         profile = runtime_binding.profile
         provider = runtime_binding.provider
         model = runtime_binding.model
+        toolsets = runtime_binding.toolsets
     else:
         mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
         profile = mapping.get_target_role(package.canonical_role)
@@ -245,11 +247,14 @@ def canonical_to_hermes_payload(
         "operation": package.operation,
         "package_id": package.package_id,
     }
-    # Provider/model are operator deployment, not semantic; include only when pinned.
+    # Provider/model/toolsets are operator deployment binding, not semantic;
+    # include only when pinned by the trusted runtime config.
     if provider is not None:
         payload["provider"] = provider
     if model is not None:
         payload["model"] = model
+    if toolsets:
+        payload["toolsets"] = list(toolsets)
     return canonicalize(payload, path="hermes_payload")
 
 

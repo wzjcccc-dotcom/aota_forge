@@ -19,7 +19,6 @@ from typing import Any, Mapping
 import pytest
 
 from aota_forge.composition.execution import (
-    PRODUCTION_HERMES_PROFILE_MAPPING,
     create_production_execution_dispatcher,
 )
 from aota_forge.core.execution import ExecutionPackage
@@ -151,54 +150,73 @@ def test_t01b_branch_isolation():
 
 
 # ---------------------------------------------------------------------------
-# T02 production Hermes supports coder route
+# T02 production Hermes supports the accepted Worker role routes (M1 sync)
 # ---------------------------------------------------------------------------
+
+# Accepted M1 architecture: analyst/coder/reviewer/project-steward compile to
+# canonical planner/coder/reviewer/steward and share the aota-worker profile
+# through the operator-owned runtime config; task-main is not a Worker role.
+ACCEPTED_PRODUCTION_ROLES = ("coder", "planner", "reviewer", "steward")
+
 
 def test_t02_production_hermes_supports_coder_route():
     fake = FakeHermesHost()
     dispatcher = create_production_execution_dispatcher(host_client=fake)
     pkg = _make_package("task-t02-coder")
-    # should resolve and dispatch via production mapping
+    # should resolve and dispatch via the operator-config-derived production mapping
     dispatch = dispatcher.dispatch(pkg)
     assert dispatch.canonical_task_id == "task-t02-coder"
-    # verify production mapping narrow
-    assert PRODUCTION_HERMES_PROFILE_MAPPING == {"coder": "coder"}
+    assert fake.dispatched[0]["profile"] == "aota-worker"
     caps = dispatcher.registry.get("hermes").capabilities()
-    assert caps.supported_canonical_roles == ("coder",)
+    assert tuple(caps.supported_canonical_roles) == ACCEPTED_PRODUCTION_ROLES
     assert caps.supports_task_cancellation is True
     assert caps.supports_task_resume is False
 
 
 # ---------------------------------------------------------------------------
-# T03 production surface is not expanded to all five roles
+# T03 production surface is exactly the shared-profile Worker roles (M1 sync)
 # ---------------------------------------------------------------------------
 
 def test_t03_production_surface_not_expanded():
-    assert PRODUCTION_HERMES_PROFILE_MAPPING == {"coder": "coder"}
-    assert set(PRODUCTION_HERMES_PROFILE_MAPPING.keys()) == {"coder"}
-    # ensure not containing analyst/reviewer etc
-    for forbidden in ["analyst", "reviewer", "project-steward", "task-main", "planner", "steward", "executor"]:
-        assert forbidden not in PRODUCTION_HERMES_PROFILE_MAPPING
     fake = FakeHermesHost()
     dispatcher = create_production_execution_dispatcher(host_client=fake)
     caps = dispatcher.registry.get("hermes").capabilities()
-    assert caps.supported_canonical_roles == ("coder",)
-    assert len(caps.supported_canonical_roles) == 1
-    # verify analyst package rejected via dispatcher (production narrow)
-    handoff_analyst = TaskHandoff(
-        work_role="analyst",
-        task_kind="analysis",
-        objective="Analyze",
-        bounded_scope="bounded",
-        validation_expectations=("check",),
-        semantic_stop_expectations=("ambiguous",),
-        project_ref=SemanticReference(ref=PROJECT_ID),
+    # exactly the four Worker canonical roles; no task-main, no legacy executor
+    assert tuple(caps.supported_canonical_roles) == ACCEPTED_PRODUCTION_ROLES
+    for forbidden in ["analyst", "project-steward", "task-main", "executor"]:
+        assert forbidden not in caps.supported_canonical_roles
+    # All four Worker roles dispatch through the ONE shared worker profile
+    for work_role, expected_canonical in [
+        ("analyst", "planner"),
+        ("coder", "coder"),
+        ("reviewer", "reviewer"),
+        ("project-steward", "steward"),
+    ]:
+        handoff = TaskHandoff(
+            work_role=work_role,
+            task_kind="implementation",
+            objective="Bounded worker proof",
+            bounded_scope="bounded",
+            validation_expectations=("check",),
+            semantic_stop_expectations=("ambiguous",),
+            project_ref=SemanticReference(ref=PROJECT_ID),
+        )
+        pkg = compile_handoff_to_execution_package(
+            handoff=handoff, binding=_make_binding(f"task-t03-{work_role}")
+        )
+        assert pkg.canonical_role == expected_canonical
+        dispatcher.dispatch(pkg)
+        assert fake.dispatched[-1]["profile"] == "aota-worker"
+        assert fake.dispatched[-1]["toolsets"] == ["aota"]
+    # A valid canonical role without an operator binding (executor) fails closed
+    executor_pkg = ExecutionPackage.create(
+        canonical_task_id="task-t03-executor",
+        project_id=PROJECT_ID,
+        canonical_role="executor",
+        instruction="no production binding",
     )
-    # analyst maps to planner via work_plane, but production hermes only supports coder -> should fail
-    pkg_analyst = compile_handoff_to_execution_package(handoff=handoff_analyst, binding=_make_binding("task-analyst"))
-    assert pkg_analyst.canonical_role == "planner"
     with pytest.raises(Exception):
-        dispatcher.dispatch(pkg_analyst)
+        dispatcher.dispatch(executor_pkg)
 
 
 # ---------------------------------------------------------------------------
@@ -290,8 +308,9 @@ def test_t07_fake_host_receives_hermes_shaped_payload():
     # ensure not CanonicalResult
     assert "ok" not in payload
     assert "canonical_task_state" not in payload
-    # production mapping: coder -> coder
-    assert payload["profile"] == "coder"
+    # accepted M1 production binding: shared Worker profile + MCP-only toolsets
+    assert payload["profile"] == "aota-worker"
+    assert payload["toolsets"] == ["aota"]
 
 
 # ---------------------------------------------------------------------------
@@ -760,24 +779,28 @@ def test_t26_no_live_hermes_daemon():
 
 
 # ---------------------------------------------------------------------------
-# T27 Hermes production code unchanged
+# T27 Hermes production shape matches the accepted M1 authority boundary
 # ---------------------------------------------------------------------------
 
 def test_t27_hermes_production_unchanged():
-    # PRODUCTION_HERMES_PROFILE_MAPPING and capabilities must remain narrow
-    assert PRODUCTION_HERMES_PROFILE_MAPPING == {"coder": "coder"}
-    # files must not import work_plane and must not have expanded roles
+    # Accepted M1 architecture supersedes the pre-M1 narrow {"coder": "coder"}
+    # mapping: the production profile mapping is derived ONLY from the
+    # operator-owned runtime config and there is no static mapping constant.
+    fake = FakeHermesHost()
+    dispatcher = create_production_execution_dispatcher(host_client=fake)
+    caps = dispatcher.registry.get("hermes").capabilities()
+    assert tuple(caps.supported_canonical_roles) == ACCEPTED_PRODUCTION_ROLES
+    # files must not import work_plane (adapter/composition stay mechanical, no
+    # semantic authority) and must not hardcode deployment provider/model paths
     for p in ["aota_forge/composition/execution.py", "aota_forge/adapters/hermes/executor.py", "aota_forge/adapters/hermes/host_client.py"]:
         text = (_REPO_ROOT / p).read_text(encoding="utf-8")
         assert "work_plane" not in text, f"{p} should not import work_plane"
-    # composition still advertises only coder
+        lowered = text.lower()
+        for vendor in ("opencode-go", "muse-spark", "deepseek", "/home/latios"):
+            assert vendor not in lowered, f"{p} carries source-owned deployment string {vendor!r}"
     comp_text = (_REPO_ROOT / "aota_forge" / "composition" / "execution.py").read_text(encoding="utf-8")
-    assert 'supported_canonical_roles=("coder",)' in comp_text
-    assert 'PRODUCTION_HERMES_PROFILE_MAPPING = {"coder": "coder"}' in comp_text
-    # hermes adapter default capabilities not changed for production test (production caps are narrow, but default adapter may be broader - ensure production caps not broadened)
-    # verify git diff for these paths vs M4_W1 parent is empty (test-only change)
-    diff = subprocess.check_output(["git", "diff", f"{M4_W1_CANDIDATE}..HEAD", "--", "aota_forge/composition/execution.py", "aota_forge/adapters/hermes/executor.py", "aota_forge/adapters/hermes/host_client.py"], cwd=_GIT_CWD, text=True)
-    assert diff.strip() == "", f"production Hermes files changed: {diff[:500]}"
+    assert "worker_canonical_profile_mapping" in comp_text, "mapping must derive from operator config"
+    assert "PRODUCTION_HERMES_PROFILE_MAPPING" not in comp_text, "static source-owned mapping must not return"
 
 
 # ---------------------------------------------------------------------------
@@ -881,9 +904,23 @@ def test_no_hermes_result_card_or_event_ontology():
 
 
 def test_no_all_five_roles_production_claim():
-    assert PRODUCTION_HERMES_PROFILE_MAPPING != {"coder": "coder", "planner": "planner", "reviewer": "reviewer", "steward": "steward", "executor": "executor"}
+    # The accepted M1 surface is four Worker canonical roles on ONE shared
+    # worker profile — never the legacy five-profile claim (executor stays
+    # unmapped) and never task-main (I2: task-main is not a Worker role).
+    legacy_five = {"coder", "planner", "reviewer", "steward", "executor"}
     caps = create_production_execution_dispatcher(host_client=FakeHermesHost()).registry.get("hermes").capabilities()
-    assert set(caps.supported_canonical_roles) != {"coder", "planner", "reviewer", "steward", "executor"}
+    assert set(caps.supported_canonical_roles) != legacy_five
+    assert "executor" not in caps.supported_canonical_roles
     assert "analyst" not in caps.supported_canonical_roles
-    assert "reviewer" not in PRODUCTION_HERMES_PROFILE_MAPPING
-    assert "project-steward" not in PRODUCTION_HERMES_PROFILE_MAPPING
+    assert "task-main" not in caps.supported_canonical_roles
+    # the four mapped roles share one profile rather than five per-role profiles
+    profiles = set()
+    for work_role in ("analyst", "coder", "reviewer", "project-steward"):
+        handoff = _make_handoff(work_role)
+        pkg = compile_handoff_to_execution_package(
+            handoff=handoff, binding=_make_binding(f"task-nofive-{work_role}")
+        )
+        fake = FakeHermesHost()
+        create_production_execution_dispatcher(host_client=fake).dispatch(pkg)
+        profiles.add(fake.dispatched[0]["profile"])
+    assert profiles == {"aota-worker"}

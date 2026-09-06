@@ -12,10 +12,7 @@ import pytest
 
 from aota_forge.adapters.hermes.executor import HermesAdapter
 from aota_forge.adapters.hermes.host_client import HermesHostClient, HermesHostClientError
-from aota_forge.composition.execution import (
-    PRODUCTION_HERMES_PROFILE_MAPPING,
-    create_production_execution_dispatcher,
-)
+from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution import CanonicalTaskState, ExecutionPackage
 from aota_forge.core.ingress import (
     bind_execution_dispatcher,
@@ -197,8 +194,9 @@ def test_production_capabilities_and_explicit_profile_mapping() -> None:
 
     assert adapter is not registered
     caps = registered.capabilities()
-    assert PRODUCTION_HERMES_PROFILE_MAPPING == {"coder": "coder"}
-    assert caps.supported_canonical_roles == ("coder",)
+    # M1 accepted architecture: the four Worker canonical roles share the
+    # aota-worker profile via the operator-owned runtime config binding.
+    assert caps.supported_canonical_roles == ("coder", "planner", "reviewer", "steward")
     assert caps.supported_execution_modes == ("async",)
     assert caps.supports_task_cancellation is True
     assert caps.supports_task_resume is False
@@ -241,6 +239,7 @@ def test_canonical_ingress_reaches_production_hermes_graph() -> None:
         assert status["data"]["state"] == CanonicalTaskState.COMPLETED.value
         assert result["ok"] is True
         assert result["data"]["stdout_summary"] == "AOTA_FORGE_W3_OK"
-        assert host.payloads[0]["profile"] == "coder"
+        assert host.payloads[0]["profile"] == "aota-worker"
+        assert host.payloads[0]["toolsets"] == ["aota"]
     finally:
         reset_execution_dispatcher()

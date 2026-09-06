@@ -53,13 +53,13 @@ from aota_forge.adapters.hermes.executor import HERMES_EXECUTOR_ID, HermesAdapte
 from aota_forge.adapters.hermes.host_client import HermesHostClient
 from aota_forge.composition.execution import (
     PRODUCTION_HERMES_DEFAULT_CWD,
-    PRODUCTION_HERMES_HOST_LAUNCHER,
     bind_production_execution_dispatcher,
     create_production_execution_dispatcher,
 )
 from aota_forge.core.execution.results import FORBIDDEN_HERMES_RESULT_KEYS
 from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.ingress import execute, reset_execution_dispatcher
+from aota_forge.runtime.config import SHARED_MCP_TOOLSET, RuntimeBinding, RuntimeConfig
 
 JOINT_MARKER = "AOTA_FORGE_S3_M3_W2_JOINT_DONE"
 REAL_MARKER = "AOTA_FORGE_S3_M3_W2_OK"
@@ -76,9 +76,48 @@ TERMINAL_STATE_VALUES = {s.value for s in CanonicalTaskState if s.is_terminal}
 PRODUCTION_HOST_CLIENT_SOURCE = inspect.getsource(HermesHostClient)
 
 
-def _production_launcher_available() -> bool:
-    launcher = Path(PRODUCTION_HERMES_HOST_LAUNCHER)
-    return launcher.is_file() and not launcher.is_symlink() and os.access(launcher, os.X_OK)
+def _discovered_hermes_executable() -> Path | None:
+    """Opt-in real slice: locate the Hermes binary the operator would pin.
+
+    The production composition no longer carries source-owned executable
+    authority, so the bounded real probe discovers the executable explicitly.
+    """
+    import shutil
+
+    found = shutil.which("hermes")
+    if found is None:
+        return None
+    path = Path(found)
+    if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+        return None
+    return path
+
+
+def _real_slice_runtime_config() -> RuntimeConfig | None:
+    executable = _discovered_hermes_executable()
+    if executable is None:
+        return None
+    bindings = tuple(
+        RuntimeBinding(
+            work_role=role,
+            executor="hermes",
+            profile="aota-worker" if role != "task-main" else "aota-task-main",
+            provider="opencode-go",
+            model="deepseek-v4-flash",
+            concurrency=1,
+            executable=str(executable),
+            toolsets=(SHARED_MCP_TOOLSET,) if role != "task-main" else None,
+        )
+        for role in ("analyst", "coder", "reviewer", "project-steward", "task-main")
+    )
+    return RuntimeConfig(
+        executor="hermes",
+        executable=str(executable),
+        concurrency=1,
+        provider="opencode-go",
+        model="deepseek-v4-flash",
+        bindings=bindings,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +353,9 @@ def test_joint_canonical_ingress_completion_reconciles_forge(joint_ingress) -> N
     assert CanonicalTaskState(start["data"]["initial_state"]) is CanonicalTaskState.QUEUED
 
     # role -> profile translation happens only inside the adapter/host payload
-    assert host.dispatched_payloads[0]["profile"] == "coder"
+    # (M1 sync: shared Worker profile + shared MCP toolset pin)
+    assert host.dispatched_payloads[0]["profile"] == "aota-worker"
+    assert host.dispatched_payloads[0]["toolsets"] == ["aota"]
 
     # QUEUED -> RUNNING -> COMPLETED, reconciled through canonical status
     host.status_by_handle[handle] = {"status": "running"}
@@ -550,13 +591,21 @@ def test_reader_failure_with_exit_zero_fails_closed_joint(joint_ingress, tmp_pat
 
 
 def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) -> None:
-    """Instructions travel as one argv element; nothing is shell-interpreted."""
+    """Instructions travel as one argv element; nothing is shell-interpreted.
+
+    W4 sync (§24): the real property is list-form argv with per-flag bounded
+    values, not a fixed argument index. The probe launcher echoes every argv
+    element on its own line, so the assertion below checks structure rather
+    than position.
+    """
     sentinel = tmp_path / "shell-pwned"
     injection = (
         f"Report: {JOINT_MARKER} $(touch {sentinel}) `touch {sentinel}` ; touch {sentinel}"
     )
     echo_launcher = tmp_path / "joint-w2-arg-echo.sh"
-    echo_launcher.write_text('#!/bin/sh\nprintf \'%s\\n\' "$4"\n')
+    echo_launcher.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$0"\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n'
+    )
     echo_launcher.chmod(0o755)
 
     client = HermesHostClient(str(echo_launcher), default_cwd=str(tmp_path), timeout_seconds=30)
@@ -571,13 +620,32 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     result = query_result(task_id)
     assert result["data"]["ok"] is True
     stdout = result["data"]["stdout_summary"] or ""
-    assert f"$(touch {sentinel})" in stdout, "argv must arrive verbatim inside the launcher"
-    assert "`touch" in stdout and f"; touch {sentinel}" in stdout
+    argv = stdout.splitlines()
+
+    # the instruction arrives as exactly ONE verbatim argv element, attached to -z
+    assert argv.count(injection) == 1, "instruction must arrive as a single argv element"
+    assert argv[argv.index("-z") + 1] == injection, "instruction must follow -z as one element"
+
+    # flags and values are separately bounded elements (operator config pins)
+    assert argv[0] == str(echo_launcher)
+    for flag, value in (
+        ("-p", "aota-worker"),
+        ("-t", "aota"),
+        ("--provider", "aota-test-provider"),
+        ("-m", "aota-test-model"),
+    ):
+        assert flag in argv, f"missing bounded flag element {flag}"
+        assert argv[argv.index(flag) + 1] == value
+    assert not any(
+        line != injection and ("$(touch" in line or "`touch" in line or "; touch" in line)
+        for line in argv
+    ), "shell metacharacters must never be split/merged into other argv elements"
     assert not sentinel.exists(), "SHELL_INJECTION: shell metacharacters must never be evaluated"
 
     # production construction mechanics: list argv, no shell, inherited environment only
     dispatch_source = inspect.getsource(HermesHostClient.dispatch)
     assert "shell=True" not in PRODUCTION_HOST_CLIENT_SOURCE
+    assert "shell=" not in dispatch_source, "no shell execution at the host seam"
     assert "env=" not in dispatch_source, "no explicit environment rewriting at the host seam"
     client.close()
 
@@ -588,7 +656,7 @@ def test_profile_and_working_directory_boundaries_fail_closed(joint_ingress, tmp
     bind_production_execution_dispatcher(host_client=client)
 
     base_payload: dict[str, Any] = {
-        "profile": "coder",
+        "profile": "aota-worker",
         "instruction": "boundary probe",
         "context": {"working_context": {}},
         "artifacts": [],
@@ -601,6 +669,10 @@ def test_profile_and_working_directory_boundaries_fail_closed(joint_ingress, tmp
     bad_payloads = [
         {**base_payload, "profile": "bad profile"},
         {**base_payload, "profile": ""},
+        {**base_payload, "toolsets": []},
+        {**base_payload, "toolsets": ["aota terminal"]},
+        {**base_payload, "toolsets": ["aota", "aota"]},
+        {**base_payload, "toolsets": ["aota,terminal"]},
         {
             **base_payload,
             "context": {
@@ -633,14 +705,16 @@ def test_profile_and_working_directory_boundaries_fail_closed(joint_ingress, tmp
 
     assert not get_execution_dispatcher().has_route("s3-m3-w2-bad-role-2")
 
-    # valid canonical role without production mapping fails closed before host
+    # valid canonical role without a Worker binding fails closed before host
+    # (M1 sync: all four Worker canonical roles are bound to the shared
+    # profile; the legacy "executor" canonical role has no Worker binding)
     unmapped = execute(
         "execution.task_start",
         {
             "canonical_task_id": "s3-m3-w2-unmapped-role",
             "executor": HERMES_EXECUTOR_ID,
-            "role": "planner",
-            "instruction": "role has no coder profile mapping",
+            "role": "executor",
+            "instruction": "role has no worker binding",
             "project_id": "aota_forge",
         },
     )
@@ -689,33 +763,37 @@ def test_private_hermes_semantics_stay_inside_the_adapter(joint_ingress, tmp_pat
 
 @pytest.mark.skipif(
     os.environ.get("AOTA_S3_REAL_HERMES_SMOKE") != "1",
-    reason="bounded real Hermes current-frontier slice (requires the production launcher)",
+    reason="bounded real Hermes current-frontier slice (requires a trusted Hermes executable)",
 )
 def test_current_frontier_real_hermes_vertical_slice(joint_ingress) -> None:
-    assert PRODUCTION_HERMES_HOST_LAUNCHER == "/home/latios/.local/bin/hermes-host"
+    # M1/W4 sync: the production composition has no source-owned launcher
+    # constant; the bounded real probe supplies an explicit operator-style
+    # config fixture discovered from the environment.
     from aota_forge.composition import execution as composition_module
 
     composition_source = inspect.getsource(composition_module)
     assert "/usr/local/bin/hermes" not in composition_source, (
         "legacy container wrapper must not be part of the production composition"
     )
-    if not _production_launcher_available():
-        pytest.skip(
-            f"production Hermes launcher unavailable at {PRODUCTION_HERMES_HOST_LAUNCHER} (RUNTIME_ENVIRONMENT)"
-        )
+    assert "/home/latios" not in composition_source, (
+        "source-owned host deployment path must not return to production composition"
+    )
+    real_config = _real_slice_runtime_config()
+    if real_config is None:
+        pytest.skip("production Hermes executable unavailable via environment discovery (RUNTIME_ENVIRONMENT)")
     if not Path(PRODUCTION_HERMES_DEFAULT_CWD).is_dir():
         pytest.skip(f"production default cwd unavailable at {PRODUCTION_HERMES_DEFAULT_CWD} (RUNTIME_ENVIRONMENT)")
 
     baseline_threads = threading.active_count()
 
     # No host_client / factory arguments: the accepted production composition
-    # must build the real HermesHostClient against the real production launcher.
-    dispatcher = bind_production_execution_dispatcher()
+    # must build the real HermesHostClient against the operator config executable.
+    dispatcher = bind_production_execution_dispatcher(runtime_config=real_config)
     adapter = dispatcher.registry.get(HERMES_EXECUTOR_ID)
     assert isinstance(adapter, HermesAdapter)
     client = adapter._host_client  # noqa: SLF001
     assert type(client) is HermesHostClient
-    assert client.launcher_path == PRODUCTION_HERMES_HOST_LAUNCHER
+    assert client.launcher_path == real_config.executable
 
     task_id = f"s3-m3-w2-real-{int(time.time())}"
     pid: int | None = None

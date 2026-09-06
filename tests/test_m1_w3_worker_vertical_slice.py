@@ -17,7 +17,7 @@ from aota_forge.composition.worker_vertical_slice import build_worker_binding
 from aota_forge.core.execution.results import CanonicalResult
 from aota_forge.core.result_governance import ResultGovernanceProjection
 from aota_forge.mcp_transport import MCP_PUBLIC_TOOLS, create_shared_mcp_server
-from aota_forge.runtime.config import RuntimeConfigError, get_default_runtime_config
+from aota_forge.runtime.config import RuntimeBinding, RuntimeConfig, RuntimeConfigError
 from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
     compile_handoff_to_execution_package,
@@ -25,6 +25,37 @@ from aota_forge.work_plane.compiler import (
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.result_card import project_worker_result_card
 from aota_forge.work_plane.roles import AgentWorkRole
+
+
+def _test_runtime_config(tmp_path: Path) -> RuntimeConfig:
+    """Explicit test-owned operator config over a bounded temp executable."""
+    exe = tmp_path / "hermes-stub"
+    exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    import stat
+
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    executable = str(exe)
+    bindings = tuple(
+        RuntimeBinding(
+            work_role=role,
+            executor="hermes",
+            profile="aota-worker" if role != "task-main" else "aota-task-main",
+            provider="aota-test-provider",
+            model="aota-test-model",
+            concurrency=1,
+            executable=executable,
+            toolsets=("aota",) if role != "task-main" else None,
+        )
+        for role in ("analyst", "coder", "reviewer", "project-steward", "task-main")
+    )
+    return RuntimeConfig(
+        executor="hermes",
+        executable=executable,
+        concurrency=1,
+        provider="aota-test-provider",
+        model="aota-test-model",
+        bindings=bindings,
+    )
 
 
 def _handoff() -> TaskHandoff:
@@ -44,8 +75,8 @@ def test_w3_semantic_handoff_excludes_runtime_authority():
     assert {"provider", "model", "profile"}.isdisjoint(_handoff().to_dict())
 
 
-def test_w3_coder_compiles_to_explicit_w1_binding():
-    runtime = get_default_runtime_config(validate_executable=False)
+def test_w3_coder_compiles_to_explicit_w1_binding(tmp_path: Path):
+    runtime = _test_runtime_config(tmp_path)
     package = compile_handoff_to_execution_package(
         _handoff(),
         TrustedExecutionBinding(canonical_task_id="w3-task", project_id="aota_forge"),
@@ -59,7 +90,7 @@ def test_w3_coder_compiles_to_explicit_w1_binding():
 
 
 def test_w3_host_accepts_compiler_metadata_but_rejects_real_artifacts(tmp_path: Path):
-    runtime = get_default_runtime_config(validate_executable=False)
+    runtime = _test_runtime_config(tmp_path)
     package = compile_handoff_to_execution_package(
         _handoff(),
         TrustedExecutionBinding(canonical_task_id="w3-task", project_id="aota_forge"),
@@ -104,9 +135,9 @@ def test_w3_shared_server_is_existing_restricted_surface(tmp_path: Path):
     assert [tool.name for tool in server._tool_manager.list_tools()] == list(MCP_PUBLIC_TOOLS)
 
 
-def test_w3_missing_runtime_binding_fails_closed():
-    full = get_default_runtime_config(validate_executable=False)
-    partial = type(full)(
+def test_w3_missing_runtime_binding_fails_closed(tmp_path: Path):
+    full = _test_runtime_config(tmp_path)
+    partial_doc = dict(
         executor=full.executor,
         executable=full.executable,
         concurrency=full.concurrency,
@@ -115,12 +146,10 @@ def test_w3_missing_runtime_binding_fails_closed():
         bindings=(full.get_binding("coder"),),
     )
 
-    class FakeHost:
-        def dispatch(self, payload):
-            return {"adapter_handle": "w3-fake", "status": "pending"}
-
-    with pytest.raises(RuntimeConfigError, match="no runtime binding"):
-        create_production_execution_dispatcher(host_client=FakeHost(), runtime_config=partial)
+    # Fail-closed at the earliest seam: an incomplete operator config can
+    # never be constructed, let alone reach composition/dispatch.
+    with pytest.raises(RuntimeConfigError, match="incomplete"):
+        type(full)(**partial_doc)
 
 
 def test_w3_result_uses_canonical_governance_and_card():

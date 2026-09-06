@@ -54,10 +54,45 @@ from aota_forge.adapters.hermes.host_client import (
     HermesHostClient,
     HermesHostClientError,
 )
-from aota_forge.composition.execution import (
-    PRODUCTION_HERMES_HOST_LAUNCHER,
-    create_production_execution_dispatcher,
-)
+from aota_forge.composition.execution import create_production_execution_dispatcher
+from aota_forge.runtime.config import SHARED_MCP_TOOLSET, RuntimeBinding, RuntimeConfig
+
+
+def _operator_real_config() -> RuntimeConfig | None:
+    """Explicit operator-style config fixture for bounded real smokes.
+
+    Production source carries no launcher authority; the real-runtime probes
+    discover the Hermes binary and pin provider/model as test fixtures.
+    """
+    import shutil
+
+    found = shutil.which("hermes")
+    if found is None:
+        return None
+    exe = Path(found)
+    if exe.is_symlink() or not exe.is_file() or not os.access(exe, os.X_OK):
+        return None
+    bindings = tuple(
+        RuntimeBinding(
+            work_role=role,
+            executor="hermes",
+            profile="aota-worker" if role != "task-main" else "aota-task-main",
+            provider="opencode-go",
+            model="deepseek-v4-flash",
+            concurrency=1,
+            executable=str(exe),
+            toolsets=(SHARED_MCP_TOOLSET,) if role != "task-main" else None,
+        )
+        for role in ("analyst", "coder", "reviewer", "project-steward", "task-main")
+    )
+    return RuntimeConfig(
+        executor="hermes",
+        executable=str(exe),
+        concurrency=1,
+        provider="opencode-go",
+        model="deepseek-v4-flash",
+        bindings=bindings,
+    )
 from aota_forge.core.execution import CanonicalTaskState, ExecutionPackage
 
 FORBIDDEN_PROJECTION_KEYS = (
@@ -386,11 +421,14 @@ def test_host_unavailable_probe_is_non_destructive_to_production_launcher(tmp_pa
         stat = os.stat(path)
         return (stat.st_mode, stat.st_mtime_ns, stat.st_size, hashlib.sha256(Path(path).read_bytes()).hexdigest())
 
-    before = snapshot(PRODUCTION_HERMES_HOST_LAUNCHER)
+    launcher = _operator_real_config()
+    if launcher is None:
+        pytest.skip("no trusted Hermes executable available (RUNTIME_ENVIRONMENT)")
+    before = snapshot(launcher.executable)
     with pytest.raises(HermesHostUnavailableError, match="EXECUTOR_UNAVAILABLE"):
         HermesHostClient(str(tmp_path / "pretend" / "hermes-host"))
     HermesHostClient(str(tmp_path / "x"), popen_factory=RecordingRunner(), validate_launcher=False).close()
-    assert snapshot(PRODUCTION_HERMES_HOST_LAUNCHER) == before, "production launcher must remain untouched"
+    assert snapshot(launcher.executable) == before, "production launcher must remain untouched"
 
 
 # ---------------------------------------------------------------------------
@@ -1317,14 +1355,15 @@ def test_failure_envelopes_carry_no_private_runtime_metadata(tmp_path: Path) -> 
     reason="bounded real Hermes production regression smoke (requires the production launcher)",
 )
 def test_real_production_hermes_happy_path_after_w3_hardening(tmp_path: Path) -> None:
-    assert os.path.isfile(PRODUCTION_HERMES_HOST_LAUNCHER)
-    assert os.access(PRODUCTION_HERMES_HOST_LAUNCHER, os.X_OK)
+    real_config = _operator_real_config()
+    if real_config is None:
+        pytest.skip("production Hermes executable unavailable via environment discovery (RUNTIME_ENVIRONMENT)")
 
     def factory(launcher_path: str, default_cwd: Any = None) -> HermesHostClient:
         return HermesHostClient(launcher_path, default_cwd=default_cwd, timeout_seconds=180)
 
     dispatcher = create_production_execution_dispatcher(
-        default_cwd=str(tmp_path), host_client_factory=factory
+        default_cwd=str(tmp_path), host_client_factory=factory, runtime_config=real_config
     )
     adapter = dispatcher.registry.get("hermes")
     dispatch_result = adapter.dispatch(

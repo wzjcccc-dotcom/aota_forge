@@ -202,7 +202,9 @@ class HermesHostClient:
             return self._validate_cwd(value)
         return self.default_cwd or self._validate_cwd(None)
 
-    def _validate_payload(self, payload: Mapping[str, Any]) -> tuple[str, str, str, float, str | None, str | None]:
+    def _validate_payload(
+        self, payload: Mapping[str, Any]
+    ) -> tuple[str, str, str, float, str | None, str | None, tuple[str, ...] | None]:
         required = {
             "profile",
             "instruction",
@@ -234,6 +236,25 @@ class HermesHostClient:
             if not isinstance(model, str) or not model.strip():
                 raise HermesHostClientError("PACKAGE_INVALID: model is invalid", "PACKAGE_INVALID")
             model = model.strip()
+        # Optional toolsets field for the W4 mechanical Worker restriction:
+        # operator-pinned Hermes toolset allowlist (shared MCP server names),
+        # translated to a single bounded `-t <a,b>` argument. Deployment policy,
+        # never semantic payload.
+        toolsets = payload.get("toolsets")
+        if toolsets is not None:
+            if isinstance(toolsets, str) or not isinstance(toolsets, (list, tuple)) or len(toolsets) == 0:
+                raise HermesHostClientError("PACKAGE_INVALID: toolsets must be a non-empty list", "PACKAGE_INVALID")
+            for toolset in toolsets:
+                if (
+                    not isinstance(toolset, str)
+                    or not toolset.strip()
+                    or any(ch.isspace() for ch in toolset)
+                    or "," in toolset
+                ):
+                    raise HermesHostClientError("PACKAGE_INVALID: toolset names are invalid", "PACKAGE_INVALID")
+            if len({str(toolset) for toolset in toolsets}) != len(toolsets):
+                raise HermesHostClientError("PACKAGE_INVALID: duplicate toolset names", "PACKAGE_INVALID")
+            toolsets = tuple(str(toolset).strip() for toolset in toolsets)
         if payload["operation"] != "task_dispatch":
             raise HermesHostClientError("DISPATCH_REJECTED: only task_dispatch is supported", "DISPATCH_REJECTED")
         if not isinstance(payload["artifacts"], (list, tuple)):
@@ -312,7 +333,7 @@ class HermesHostClient:
         if timeout > self.timeout_seconds:
             raise HermesHostClientError("CAPABILITY_MISMATCH: requested timeout exceeds host bound", "CAPABILITY_MISMATCH")
         cwd = self._resolve_cwd(payload)
-        return profile, instruction, cwd, float(timeout), provider, model
+        return profile, instruction, cwd, float(timeout), provider, model, toolsets
 
     def _evict_records(self) -> None:
         with self._records_lock:
@@ -425,13 +446,17 @@ class HermesHostClient:
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: host payload must be a mapping", "PACKAGE_INVALID")
-        profile, instruction, cwd, timeout, provider, model = self._validate_payload(payload)
+        profile, instruction, cwd, timeout, provider, model, toolsets = self._validate_payload(payload)
         self._evict_records()
         adapter_handle = f"hermes-host-{uuid.uuid4().hex}"
         # Direct Hermes invocation per W1 launcher resolution Path A:
-        # reuse real Hermes binary, translate runtime binding -> hermes -p <profile> [--provider X] [-m Y] -z <instruction>
-        # Flags verified against Hermes v0.21 `hermes --help`: --provider, -m.
+        # the executable comes from the operator RuntimeConfig; runtime binding is
+        # translated -> hermes -p <profile> [-t <allowlist>] [--provider X] [-m Y] -z <instruction>.
+        # Flags verified against Hermes v0.21 `hermes --help` / hermes_cli.oneshot:
+        # -p, -t (toolset allowlist incl. MCP server names), --provider, -m, -z.
         args = [self.launcher_path, "-p", profile]
+        if toolsets is not None:
+            args.extend(["-t", ",".join(toolsets)])
         if provider is not None:
             args.extend(["--provider", provider])
         if model is not None:
