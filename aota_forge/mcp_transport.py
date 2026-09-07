@@ -1,12 +1,23 @@
-"""Restricted shared AOTA MCP transport.
+"""Restricted shared AOTA MCP transport — single-entry.
 
 This module is an adapter boundary, not an authority boundary.  A trusted
 runtime constructs :class:`TrustedWorkerBinding` and passes it to
-``create_shared_mcp_server``.  The MCP caller receives only the three typed
-workspace operations and cannot supply or replace the binding fields.
+``create_shared_mcp_server``.  The MCP caller receives exactly one
+Agent-facing tool ``aota.invoke(operation, arguments)`` and cannot supply or
+replace the binding fields.
 
 The optional ``mcp`` import is intentionally confined to this module.  Core
 and the existing tool providers remain usable when the MCP extra is absent.
+
+W1 single-entry invariants:
+
+* HERMES_AGENT_FACING_AOTA_TOOL_COUNT=1, AGENT_FACING_AOTA_TOOL=aota.invoke
+* TRANSPORT_OPERATION_IDENTITY_SEPARATED=yes
+* TOOL_VISIBILITY_IS_AUTHORITY=no
+* Reuses existing OperationContractDescriptor / validate_inputs / ToolProvider
+* Exact operation resolution (case-sensitive, no fuzzy) → UNKNOWN_OPERATION
+* Unknown input → UNKNOWN_INPUT, oversized/deep → INPUT_SIZE_EXCEEDED,
+  missing authority → AUTHORITY_DENIED, error identity preserved end-to-end.
 """
 
 from __future__ import annotations
@@ -16,6 +27,8 @@ from dataclasses import dataclass
 from typing import Any, TypedDict
 
 from aota_forge.core.context import TrustedContext
+from aota_forge.core.contracts.errors import ForgeError
+from aota_forge.core.contracts.validation import validate_inputs
 from aota_forge.core.providers.tool import ToolRequest, ToolResponse
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.tool_surface import ToolRoleSurface
@@ -25,6 +38,8 @@ from aota_forge.work_plane.workspace_mutation import (
     WorkspaceMutationAuthority,
 )
 from aota_forge.work_plane.workspace_tools import (
+    WORKSPACE_READ_DESCRIPTOR,
+    WORKSPACE_SEARCH_DESCRIPTOR,
     BoundedWorkspaceToolProvider,
     WorkspaceAuthorityEvidence,
 )
@@ -51,12 +66,22 @@ GENERIC_STRINGLY_AOTA_CLI_TOOL = False
 MCP_RESULT_IS_AUTHORITY = False
 CORE_MCP_CONTAMINATION = False
 
-MCP_PUBLIC_TOOLS: tuple[str, ...] = (
+# Transport surface (Agent-facing MCP tools) — W1 single-entry.
+MCP_PUBLIC_TOOLS: tuple[str, ...] = ("aota.invoke",)
+MCP_PUBLIC_TOOL_COUNT = len(MCP_PUBLIC_TOOLS)
+AGENT_FACING_AOTA_TOOL = "aota.invoke"
+HERMES_AGENT_FACING_AOTA_TOOL_COUNT = 1
+
+# Logical capability surface (existing typed operations, not MCP tool names).
+WORKSPACE_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
     "workspace.write",
 )
-MCP_PUBLIC_TOOL_COUNT = len(MCP_PUBLIC_TOOLS)
+# Back-compat alias: the bounded logical operations before transport convergence.
+BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
+LOGICAL_CAPABILITY_SURFACE = WORKSPACE_OPERATIONS
+
 TYPED_OPERATION_SURFACE = True
 TRUSTED_SERVER_BINDING_PRESENT = True
 VISIBLE_TOOL_CAN_STILL_BE_UNAUTHORIZED = True
@@ -64,9 +89,23 @@ READ_AUTHORITY_IS_WRITE_AUTHORITY = False
 NEW_PERMISSION_ENGINE = False
 NEW_TOOL_REGISTRY = False
 NEW_RESULT_ONTOLOGY = False
+TRANSPORT_OPERATION_IDENTITY_SEPARATED = True
+TOOL_VISIBILITY_IS_AUTHORITY = False
+SINGLE_ENTRY_TRANSPORT = True
+MCP_TRANSPORT_TOOL_COUNT = 1
+NEW_OPERATION_AUTHORITY_REGISTRY_CREATED = False
+DEFAULT_REGISTRY_MIGRATION_REQUIRED = False
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _MAX_FAILURE_MESSAGE = 512
+
+# Exact deterministic operation -> descriptor map (no fuzzy, no alias).
+_DESCRIPTOR_MAP: dict[str, Any] = {
+    WORKSPACE_SEARCH_DESCRIPTOR.name: WORKSPACE_SEARCH_DESCRIPTOR,
+    WORKSPACE_READ_DESCRIPTOR.name: WORKSPACE_READ_DESCRIPTOR,
+    WORKSPACE_WRITE_DESCRIPTOR.name: WORKSPACE_WRITE_DESCRIPTOR,
+}
+SUPPORTED_OPERATIONS: frozenset[str] = frozenset(WORKSPACE_OPERATIONS)
 
 
 class McpTransportUnavailable(RuntimeError):
@@ -93,8 +132,15 @@ class TrustedWorkerBinding:
     This is a thin carrier of already-authoritative objects.  It does not
     decide permissions, resolve projects, or mint capabilities.  In
     particular, a model-facing MCP argument can never construct this object.
-    ``mutation_authority`` is optional deliberately: the write tool remains
-    visible while rejecting calls when mutation authority is absent.
+    ``mutation_authority`` is optional deliberately: the write operation
+    remains callable via aota.invoke while rejecting calls when mutation
+    authority is absent (AUTHORITY_DENIED).
+
+    Transport vs capability separation (W1):
+    * MCP transport surface is ``aota.invoke`` (exactly one).
+    * Logical capability surface is ``workspace.search/read/write`` carried
+      by ``ToolRoleSurface``.  Visibility (eager/progressive) never grants
+      authority; authority lives in Workspace*AuthorityEvidence.
     """
 
     canonical_task_id: str
@@ -128,8 +174,15 @@ class TrustedWorkerBinding:
             raise TrustedBindingError("typed ToolRoleSurface is required")
         if self.tool_surface.work_role != self.handoff.work_role:
             raise TrustedBindingError("tool surface role does not match TaskHandoff role")
-        if set(self.tool_surface.all_capability_names()) != set(MCP_PUBLIC_TOOLS):
-            raise TrustedBindingError("tool surface must contain exactly the bounded MCP v1 tools")
+        # W1 separation: tool_surface carries logical capabilities, not MCP transport names.
+        # It must contain exactly the bounded workspace operations, not the transport tool.
+        if set(self.tool_surface.all_capability_names()) != set(WORKSPACE_OPERATIONS):
+            raise TrustedBindingError(
+                f"tool surface must contain exactly the bounded workspace operations "
+                f"(expected {sorted(WORKSPACE_OPERATIONS)}, got {sorted(self.tool_surface.all_capability_names())})"
+            )
+        if "aota.invoke" in set(self.tool_surface.all_capability_names()):
+            raise TrustedBindingError("tool surface must not contain transport name aota.invoke (transport != capability)")
         if not isinstance(self.read_authorities, tuple) or len(self.read_authorities) != 2:
             raise TrustedBindingError("read authorities for workspace.search and workspace.read are required")
         read_names = {authority.operation.name for authority in self.read_authorities}
@@ -189,7 +242,14 @@ def _project_response(operation: str, response: ToolResponse) -> McpToolResult:
 
 
 class _SharedAotaMcpAdapter:
-    """Transport-local dispatch using only existing provider seams."""
+    """Transport-local dispatch using only existing provider seams.
+
+    Single-entry: ``aota.invoke(operation, arguments)`` -> exact operation
+    resolution -> existing OperationContractDescriptor -> validate_inputs ->
+    existing authority -> existing ToolProvider -> bounded transport response.
+
+    No new registry, permission engine, or generic gateway is created.
+    """
 
     def __init__(self, binding: TrustedWorkerBinding) -> None:
         self.binding = binding
@@ -204,7 +264,59 @@ class _SharedAotaMcpAdapter:
             else None
         )
 
-    def invoke(self, operation: str, inputs: dict[str, Any]) -> McpToolResult:
+    def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:  # noqa: C901
+        # ---- outer envelope validation (operation, arguments) ----
+        if not isinstance(operation, str):
+            return {
+                "ok": False,
+                "operation": str(operation) if isinstance(operation, (str, bytes)) else "unknown",
+                "payload": None,
+                "error": {"code": "UNKNOWN_OPERATION", "message": f"operation must be string, got {type(operation).__name__}"},
+            }
+        # Exact, deterministic, case-sensitive resolution — no fuzzy, no alias.
+        if operation not in SUPPORTED_OPERATIONS:
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": "UNKNOWN_OPERATION", "message": f"unknown operation: {operation!r}"},
+            }
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": "INPUT_TYPE_INVALID", "message": f"arguments must be object, got {type(arguments).__name__}"},
+            }
+        # ---- nested argument validation via existing descriptor seam ----
+        descriptor = _DESCRIPTOR_MAP.get(operation)
+        if descriptor is None:
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": "UNKNOWN_OPERATION", "message": f"unknown operation: {operation!r}"},
+            }
+        try:
+            validated = validate_inputs(descriptor, arguments)
+        except ForgeError as exc:
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": getattr(exc, "code", "INVALID_INPUT"), "message": _bounded_failure_message(str(exc))},
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": "INVALID_INPUT", "message": _bounded_failure_message(str(exc))},
+            }
+
+        # ---- authority-preserved provider dispatch (reuse existing providers) ----
         try:
             if operation == "workspace.write":
                 if self._write_provider is None:
@@ -216,7 +328,7 @@ class _SharedAotaMcpAdapter:
                     )
                 request = ToolRequest(
                     operation=WORKSPACE_WRITE_DESCRIPTOR,
-                    inputs=inputs,
+                    inputs=validated,
                 )
                 return _project_response(operation, self._write_provider.invoke(request))
 
@@ -227,19 +339,41 @@ class _SharedAotaMcpAdapter:
                     operation,
                     ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted read authority is absent"}),
                 )
-            request = ToolRequest(operation=authority.operation, inputs=inputs)
+            if authority.operation.contract_hash() != descriptor.contract_hash():
+                return _project_response(
+                    operation,
+                    ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from authority"}),
+                )
+            request = ToolRequest(operation=authority.operation, inputs=validated)
             return _project_response(operation, provider.invoke(request))
-        except Exception as exc:  # adapter boundary: never turn failures into success  # noqa: BLE001
+        except ForgeError as exc:
             return {
                 "ok": False,
                 "operation": operation,
                 "payload": None,
-                "error": {"code": "INVALID_INPUT", "message": _bounded_failure_message(str(exc))},
+                "error": {"code": getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), "message": _bounded_failure_message(str(exc))},
+            }
+        except Exception as exc:  # adapter boundary: never turn failures into success  # noqa: BLE001
+            msg = _bounded_failure_message(str(exc))
+            return {
+                "ok": False,
+                "operation": operation,
+                "payload": None,
+                "error": {"code": "GOVERNED_OPERATION_FAILURE", "message": msg},
             }
 
 
 def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
-    """Create one shared standard MCP server with exactly three typed tools."""
+    """Create one shared standard MCP server with exactly one Agent-facing tool.
+
+    After W1 the Agent-facing surface is:
+
+    * ``aota.invoke(operation: string, arguments: object)``
+
+    ``workspace.search``, ``workspace.read``, and ``workspace.write`` are
+    logical operation identities dispatched through that single transport.
+    They are NOT separate MCP Tools (MCP_TRANSPORT_TOOL_COUNT=1).
+    """
     if MCPServer is None or ToolAnnotations is None:
         raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
     if not isinstance(trusted_binding, TrustedWorkerBinding):
@@ -248,44 +382,17 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
     adapter = _SharedAotaMcpAdapter(trusted_binding)
     server = MCPServer(
         "aota",
-        instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority.",
+        instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority. Single entry: aota.invoke(operation, arguments).",
     )
 
     @server.tool(
-        name="workspace.search",
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+        name="aota.invoke",
+        description="Typed AOTA dispatch. operation is exact canonical name (e.g. workspace.search); arguments is the operation's typed input object.",
         structured_output=True,
     )
-    def workspace_search(query: str, max_results: int | None = None, scope: str | None = None) -> McpToolResult:
-        """Search the trusted worker worktree with bounded lexical matching."""
-        return adapter.invoke(
-            "workspace.search",
-            {"query": query, "max_results": max_results, "scope": scope},
-        )
-
-    @server.tool(
-        name="workspace.read",
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
-        structured_output=True,
-    )
-    def workspace_read(path: str, max_bytes: int | None = None, offset: int | None = None) -> McpToolResult:
-        """Read bounded UTF-8 content from the trusted worker worktree."""
-        return adapter.invoke(
-            "workspace.read",
-            {"path": path, "max_bytes": max_bytes, "offset": offset},
-        )
-
-    @server.tool(
-        name="workspace.write",
-        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False),
-        structured_output=True,
-    )
-    def workspace_write(path: str, content: str, mode: str) -> McpToolResult:
-        """Write bounded content only when trusted mutation authority is bound."""
-        return adapter.invoke(
-            "workspace.write",
-            {"path": path, "content": content, "mode": mode},
-        )
+    def aota_invoke(operation: str, arguments: dict[str, Any] | None = None) -> McpToolResult:  # type: ignore[no-redef]
+        """Single-entry AOTA dispatch: exact operation resolution → existing descriptor → validate_inputs → existing authority → existing provider."""
+        return adapter.invoke(operation, arguments if arguments is not None else {})
 
     return server
 
@@ -302,6 +409,13 @@ __all__ = [
     "MCP_IS_AUTHORITY_ENGINE",
     "MCP_PUBLIC_TOOLS",
     "MCP_PUBLIC_TOOL_COUNT",
+    "AGENT_FACING_AOTA_TOOL",
+    "HERMES_AGENT_FACING_AOTA_TOOL_COUNT",
+    "WORKSPACE_OPERATIONS",
+    "BOUNDED_MCP_OPERATIONS",
+    "LOGICAL_CAPABILITY_SURFACE",
+    "SUPPORTED_OPERATIONS",
+    "MCP_TRANSPORT_TOOL_COUNT",
     "MCP_RESULT_IS_AUTHORITY",
     "NEW_AUTHORITY_PLANE_REQUIRED",
     "NEW_PERMISSION_ENGINE",
@@ -315,6 +429,11 @@ __all__ = [
     "TRUSTED_SERVER_BINDING_PRESENT",
     "TYPED_OPERATION_SURFACE",
     "VISIBLE_TOOL_CAN_STILL_BE_UNAUTHORIZED",
+    "TRANSPORT_OPERATION_IDENTITY_SEPARATED",
+    "TOOL_VISIBILITY_IS_AUTHORITY",
+    "SINGLE_ENTRY_TRANSPORT",
+    "DEFAULT_REGISTRY_MIGRATION_REQUIRED",
+    "NEW_OPERATION_AUTHORITY_REGISTRY_CREATED",
     "McpToolResult",
     "McpTransportUnavailable",
     "TrustedBindingError",

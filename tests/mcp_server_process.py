@@ -89,14 +89,16 @@ async def main() -> None:
     async with stdio_client(params) as (read_stream, write_stream), ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             listed = await session.list_tools()
-            assert [tool.name for tool in listed.tools] == [
-                "workspace.search", "workspace.read", "workspace.write"
-            ]
-            called = await session.call_tool("workspace.search", {"query": "missing"})
+            assert [tool.name for tool in listed.tools] == ["aota.invoke"]
+            # also ensure logical operations are NOT separate tools
+            assert "workspace.search" not in [tool.name for tool in listed.tools]
+            assert "workspace.read" not in [tool.name for tool in listed.tools]
+            assert "workspace.write" not in [tool.name for tool in listed.tools]
+            called = await session.call_tool("aota.invoke", {"operation": "workspace.search", "arguments": {"query": "missing"}})
             assert _is_error(called) is False
             assert _structured_content(called)["ok"] is True
             denied = await session.call_tool(
-                "workspace.write", {"path": "not-authorized.txt", "content": "x", "mode": "create_only"}
+                "aota.invoke", {"operation": "workspace.write", "arguments": {"path": "not-authorized.txt", "content": "x", "mode": "create_only"}}
             )
             assert _is_error(denied) is False
             assert _structured_content(denied)["ok"] is False
