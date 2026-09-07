@@ -186,19 +186,19 @@ TEST_ENV_KEYS_BOUNDED: bool = True
 DANGEROUS_CALLER_OVERRIDES_REJECTED: bool = True
 
 # ---------------------------------------------------------------------------
-# Descriptor — structured inputs, no raw shell string
+# Descriptor — canonical YAML projection (thin compatibility reference)
 # ---------------------------------------------------------------------------
+# Single semantic authority is .aota/contracts/operations.yaml via loader.
+# TOOL_SCHEMA_SECOND_AUTHORITY=no
 
-TEST_RUN_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="test.run",
-    description="Governed bounded test execution (worktree-scoped, sandboxed, timeout, bounded output)",
-    inputs=(
-        InputSpec(name="runner", type="str"),
-        InputSpec(name="targets", type="list"),
-        InputSpec(name="extra_args", type="list?"),
-        InputSpec(name="timeout", type="int?"),
-    ),
-)
+def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
+
+    root = discover_canonical_project_root()
+    return load_operation_descriptor_map(root)[name]
+
+
+TEST_RUN_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("test.run")
 
 # Validate descriptor at import time: note read_write default is read, but test.run is not read-only.
 # For test execution we explicitly set read_write to read to keep descriptor simple; side-effect semantics

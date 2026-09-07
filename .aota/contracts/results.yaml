@@ -20,3 +20,9 @@ contracts:
   - execution.task_cancel
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'
+- name: result.workspace.write.v1
+  description: Workspace file write result
+  compatible_operations:
+  - workspace.write
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'

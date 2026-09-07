@@ -183,28 +183,24 @@ MAX_TOTAL_OUTPUT_BYTES: int = 64 * 1024
 MAX_PATH_LENGTH: int = 512  # mirror worktree_resources
 
 # ---------------------------------------------------------------------------
-# Descriptors — reuse existing OperationContractDescriptor, read-only
+# Descriptors — canonical YAML projection (thin compatibility reference)
 # ---------------------------------------------------------------------------
+# Single semantic authority is .aota/contracts/operations.yaml loaded via
+# core/contracts/loader.  These symbols are compatibility projections that
+# deterministically derive from the canonical source; they do not constitute
+# an independently maintained hard-coded authority.
+# TOOL_SCHEMA_SECOND_AUTHORITY=no
 
-WORKSPACE_READ_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="workspace.read",
-    description="Bounded workspace file read (text, worktree-scoped)",
-    inputs=(
-        InputSpec(name="path", type="str"),
-        InputSpec(name="max_bytes", type="int?"),
-        InputSpec(name="offset", type="int?"),
-    ),
-)
+def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
 
-WORKSPACE_SEARCH_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="workspace.search",
-    description="Bounded workspace lexical search (worktree-scoped, read-only)",
-    inputs=(
-        InputSpec(name="query", type="str"),
-        InputSpec(name="max_results", type="int?"),
-        InputSpec(name="scope", type="str?"),
-    ),
-)
+    root = discover_canonical_project_root()
+    return load_operation_descriptor_map(root)[name]
+
+
+WORKSPACE_READ_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("workspace.read")
+
+WORKSPACE_SEARCH_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("workspace.search")
 
 # Validate read-only invariants at import time
 assert WORKSPACE_READ_DESCRIPTOR.read_write == READ_ONLY

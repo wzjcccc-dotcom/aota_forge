@@ -554,8 +554,8 @@ def run_guard(project_root: pathlib.Path | None = None) -> dict[str, Any]:
         ops_doc = load_operations(root)
         descriptors = load_operation_descriptors(root)
         operation_count = len(descriptors)
-        if operation_count != 13:
-            violations.append(_violation("OPERATION_COUNT", ".aota/contracts/operations.yaml", 0, f"expected 13, found {operation_count}"))
+        if operation_count != 20:
+            violations.append(_violation("OPERATION_COUNT", ".aota/contracts/operations.yaml", 0, f"expected 20, found {operation_count}"))
 
         # Build deterministic snapshot: sorted by name
         for desc in sorted(descriptors, key=lambda d: d.name):
@@ -586,8 +586,8 @@ def run_guard(project_root: pathlib.Path | None = None) -> dict[str, Any]:
         results_doc = load_results(root)
         results_entries = results_doc.get("contracts", [])
         result_count = len(results_entries)
-        if result_count != 3:
-            violations.append(_violation("RESULT_COUNT", ".aota/contracts/results.yaml", 0, f"expected 3, found {result_count}"))
+        if result_count != 4:
+            violations.append(_violation("RESULT_COUNT", ".aota/contracts/results.yaml", 0, f"expected 4, found {result_count}"))
         results_canonical = canonical_json(sorted(results_entries, key=lambda x: x.get("name","")))
         result_digest = hashlib.sha256(results_canonical.encode("utf-8")).hexdigest()
 

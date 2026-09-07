@@ -50,6 +50,13 @@ EXPECTED_HASHES: dict[str, str] = {
     "execution.task_cancel": "9427554269c8d9e7396da7b0399b9056da82fb5a70364fca24d49eb67a3e7c89",
     "execution.executor_list": "6545ce8064ff3a85a3a6c2ffb8f726f304fadeaa6be68148e648d294a9b57abd",
     "execution.executor_capabilities": "cdbdf720384a774ec2057b8651fe33b96b3a97a1257459f00345ab470f02477b",
+    "git.diff": "df121f6330775e158ca5666e1bd4aa6ba08ff9fcff25656d9a2a54f9530f15b9",
+    "git.status": "8a631d905bd75fee1fc4b3f9b3e325bae772833a40b6610da726db06b6e89891",
+    "restricted_shell.run": "4ee42ab0718e6a463ad740d0a6bd6a53f50ff03f287b5553efd2f4d4cbce7df2",
+    "test.run": "23e551c085105eba63e08539bd3fecdf62b16eaeda9240bb36b1f5ea9cb60261",
+    "workspace.read": "e44277ebe5f5f32a6dad623e8fab5544ff14a84c72bc6fc4d2fe635bb8d3076d",
+    "workspace.search": "e0d551bfbd5714c8ced95098c9603e46133aa3779510c388372c17916dff9cfc",
+    "workspace.write": "a00ae7da102e27b386da0dfcc10d4a6646f9cbefaf0481c277d218c88a6c841d",
 }
 
 EXPECTED_NAMES = frozenset(EXPECTED_HASHES.keys())
@@ -93,9 +100,9 @@ def test_operations_yaml_exists_at_canonical_root():
     assert doc["schema_version"] == 1
     assert doc["kind"] == "operations"
     assert isinstance(doc["contracts"], list)
-    assert len(doc["contracts"]) == 13
+    assert len(doc["contracts"]) == 20
     names = [c["name"] for c in doc["contracts"]]
-    assert len(set(names)) == 13
+    assert len(set(names)) == 20
     assert set(names) == set(EXPECTED_NAMES)
     # No capability/result content
     for entry in doc["contracts"]:
@@ -148,7 +155,7 @@ def test_execution_descriptor_hash_parity():
 
 def test_total_hash_parity_and_to_dict_parity():
     m = load_operation_descriptor_map(canonical_project_root())
-    assert len(m) == 13
+    assert len(m) == 20
     for name, expected_hash in EXPECTED_HASHES.items():
         desc = m[name]
         assert desc.contract_hash() == expected_hash, f"hash {name}"

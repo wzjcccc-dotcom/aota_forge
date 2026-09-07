@@ -149,24 +149,23 @@ HARD_MAX_GIT_OUTPUT_BYTES: int = 64 * 1024
 EXPOSED_GIT_OPERATIONS: tuple[str, ...] = ("git.status", "git.diff")
 
 # ---------------------------------------------------------------------------
-# Descriptors — reuse OperationContractDescriptor, read-only, no mutation
+# Descriptors — canonical YAML projection (thin compatibility reference)
 # ---------------------------------------------------------------------------
+# Single semantic authority is .aota/contracts/operations.yaml via loader.
+# These symbols are compatibility projections deterministically derived from
+# the canonical source.
+# TOOL_SCHEMA_SECOND_AUTHORITY=no
 
-GIT_STATUS_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="git.status",
-    description="Bounded git status inspection (worktree-scoped, read-only)",
-    inputs=(
-        InputSpec(name="max_entries", type="int?"),
-    ),
-)
+def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
 
-GIT_DIFF_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="git.diff",
-    description="Bounded git diff inspection (worktree-scoped, read-only, bounded stat)",
-    inputs=(
-        InputSpec(name="max_entries", type="int?"),
-    ),
-)
+    root = discover_canonical_project_root()
+    return load_operation_descriptor_map(root)[name]
+
+
+GIT_STATUS_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("git.status")
+
+GIT_DIFF_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("git.diff")
 
 assert GIT_STATUS_DESCRIPTOR.read_write == READ_ONLY
 assert GIT_DIFF_DESCRIPTOR.read_write == READ_ONLY

@@ -388,3 +388,186 @@ contracts:
   result_contract: null
   errors: []
   protocol_version: '1.0'
+- name: git.diff
+  description: Bounded git diff inspection (worktree-scoped, read-only, bounded stat)
+  inputs:
+  - name: max_entries
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: git.status
+  description: Bounded git status inspection (worktree-scoped, read-only)
+  inputs:
+  - name: max_entries
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: restricted_shell.run
+  description: Governed restricted shell fallback (worktree-scoped, bounded argv, no shell)
+  inputs:
+  - name: args
+    type: list?
+  - name: command_id
+    type: str
+  - name: timeout
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: test.run
+  description: Governed bounded test execution (worktree-scoped, sandboxed, timeout, bounded output)
+  inputs:
+  - name: extra_args
+    type: list?
+  - name: runner
+    type: str
+  - name: targets
+    type: list
+  - name: timeout
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: workspace.read
+  description: Bounded workspace file read (text, worktree-scoped)
+  inputs:
+  - name: max_bytes
+    type: int?
+  - name: offset
+    type: int?
+  - name: path
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: workspace.search
+  description: Bounded workspace lexical search (worktree-scoped, read-only)
+  inputs:
+  - name: max_results
+    type: int?
+  - name: query
+    type: str
+  - name: scope
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors: []
+  protocol_version: '1.0'
+- name: workspace.write
+  description: Bounded workspace file write (worktree-scoped, mutation)
+  inputs:
+  - name: content
+    type: str
+  - name: mode
+    type: str
+  - name: path
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: workspace
+  required_authority: trusted_workspace_mutation
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: not_idempotent
+  result_contract: result.workspace.write.v1
+  errors:
+  - AUTHORITY_DENIED
+  - PATH_ESCAPE
+  - SYMLINK_ESCAPE
+  - OVERSIZED_PAYLOAD
+  - INVALID_MODE
+  - DIGEST_CONFLICT
+  - PHYSICAL_WRITE_FAILURE
+  protocol_version: '1.0'
