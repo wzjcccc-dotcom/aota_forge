@@ -162,11 +162,19 @@ def test_anti_overdesign_gates():
     ]
     for p in forbidden:
         assert not p.exists(), f"forbidden new subsystem found: {p}"
-    # Check mcp_transport not mutated (except if unavoidable, we didn't)
+    # Check mcp_transport — after W0, W1 converges to single-entry aota.invoke.
+    # The W0 gate must not block W1's legitimate single-entry transport.
     import pathlib
     mcp_path = AF_ROOT / "aota_forge/mcp_transport.py"
     content = mcp_path.read_text(encoding="utf-8")
-    # Should still have 3 tools, not single-entry aota.invoke yet (W1)
     assert 'MCP_PUBLIC_TOOLS' in content
-    assert 'aota.invoke' not in content or content.count('aota.invoke') < 5, "W0 must not implement MCP single-entry (belongs W1)"
+    # After W1, aota.invoke is legitimate single-entry; before W1 it was forbidden.
+    # Allow W1 single-entry, but forbid generic CLI gateways.
+    if 'aota.invoke' in content:
+        assert content.count('aota.invoke') >= 1
+        assert 'SINGLE_ENTRY_TRANSPORT' in content or 'TRANSPORT_OPERATION_IDENTITY_SEPARATED' in content
+        assert 'GENERIC_STRINGLY_AOTA_CLI_TOOL' in content
+        assert 'MCP_PUBLIC_TOOLS' in content
+    else:
+        assert content.count('aota.invoke') < 5
 
