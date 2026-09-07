@@ -610,6 +610,50 @@ class TaskMainCoordinator:
             return self._state
         return self._cas({"status": CoordinatorStatus.CLOSED.value})
 
+    def reconcile_completion(
+        self,
+        canonical_task_id: str,
+        card_digest: str,
+        live_plan_view: MilestonePlanView | None,
+        governed_evidence: Any,
+        handoff_resolver: Callable[[str], TaskHandoff] | None = None,
+    ) -> Any:
+        """CARD-first governed semantic reconciliation for one Worker completion.
+
+        Narrow M3/W2 integration: delegates to
+        ``aota_forge.runtime.task_main.reconciliation.reconcile_worker_completion``
+        with this handle's durable stores. The coordinator itself never
+        judges CARD semantics; the reconciliation module hydrates trusted
+        M2 truth, runs existing progression evaluators, CAS-persists the
+        receipt, and only then reports ACK eligibility. (Local import keeps
+        the module dependency direction acyclic: reconciliation may import
+        coordinator, never the reverse at module level.)
+        """
+        from aota_forge.runtime.task_main.reconciliation import (
+            reconcile_worker_completion,
+        )
+
+        if live_plan_view is not None and not isinstance(live_plan_view, MilestonePlanView):
+            raise TypeError(
+                f"live_plan_view must be MilestonePlanView or None, got {type(live_plan_view).__name__}"
+            )
+        if live_plan_view is None:
+            raise CoordinatorBindingError(
+                "reconciliation requires the live governed plan view; refusing viewless semantic apply"
+            )
+        execution_store = self._dispatcher.state_store
+        assert execution_store is not None
+        return reconcile_worker_completion(
+            store=self._store,
+            execution_store=execution_store,
+            coordinator_id=self._coordinator_id,
+            canonical_task_id=canonical_task_id,
+            card_digest=card_digest,
+            live_plan_view=live_plan_view,
+            governed_evidence=governed_evidence,
+            handoff_resolver=handoff_resolver,
+        )
+
 
 def activate_milestone(
     *,

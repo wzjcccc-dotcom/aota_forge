@@ -22,6 +22,15 @@ WorkingTruthProjection / SessionCheckpoint / MilestoneWorkItemGraph /
 progression-review-closure evaluators are reused where they already exist;
 this state only references their identities and never duplicates their
 semantics.
+
+M3/W2 bounded extension (schema v1 -> v2): the coordinator durably retains
+governed semantic reconciliation working state alongside the W1 dispatch
+lifecycle — reconciled completion identities (receipt payloads keyed by
+canonical_task_id), per-Work-Item semantic status, a WorkingTruthProjection
+payload/ref/digest, and the current progression revision. No migration
+framework: v1 records fail closed under v2 (no production W1 coordinator
+data exists). The v2 semantic fields are working truth only, never Plan
+authority.
 """
 
 from __future__ import annotations
@@ -33,7 +42,7 @@ from datetime import datetime, timezone
 from enum import Enum, unique
 from typing import Any
 
-COORDINATOR_STATE_SCHEMA_VERSION = 1
+COORDINATOR_STATE_SCHEMA_VERSION = 2
 
 COORDINATOR_STATE_IS_PLAN_AUTHORITY = False
 EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE = False
@@ -64,12 +73,29 @@ class WorkItemCoordinatorStatus(str, Enum):
 COORDINATOR_STATUSES: frozenset[str] = frozenset(v.value for v in CoordinatorStatus)
 WORK_ITEM_STATUSES: frozenset[str] = frozenset(v.value for v in WorkItemCoordinatorStatus)
 
+# M3/W2 post-reconciliation semantic status vocabulary (durable working
+# truth only — never Plan authority, never Work Item acceptance by itself).
+# The W1 dispatch lifecycle (wi_status) is untouched: a reconciled Work Item
+# keeps wi_status == COMPLETION_PENDING_RECONCILIATION and records
+# RECONCILED here. No second lifecycle state machine is created.
+WI_SEMANTIC_RECONCILED = "RECONCILED"
+
+WI_SEMANTIC_STATUSES: frozenset[str] = frozenset({WI_SEMANTIC_RECONCILED})
+
+# Bounded durable semantic working state: receipts are keyed by
+# canonical_task_id; the cap fails closed rather than truncating.
+MAX_RECONCILED_COMPLETIONS = 256
+
 _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
     {
         "status",
         "user_approval_satisfied",
         "wi_status",
         "bindings",
+        "wi_semantic_status",
+        "reconciled_completions",
+        "working_truth",
+        "progression_revision",
     }
 )
 
@@ -91,6 +117,10 @@ _ALLOWED_STATE_FIELDS: frozenset[str] = frozenset(
         "dependencies",
         "wi_status",
         "bindings",
+        "wi_semantic_status",
+        "reconciled_completions",
+        "working_truth",
+        "progression_revision",
         "created_at",
         "updated_at",
         "coordinator_revision",
@@ -229,6 +259,65 @@ def _normalize_bindings_map(raw: Mapping[str, Any], work_items: tuple[str, ...])
     return normalized
 
 
+def _normalize_wi_semantic_status_map(
+    raw: Mapping[str, Any],
+    work_items: tuple[str, ...],
+) -> dict[str, str]:
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"wi_semantic_status must be a mapping, got {type(raw).__name__}")
+    items = set(work_items)
+    normalized: dict[str, str] = {}
+    for key, val in raw.items():
+        if not isinstance(key, str) or type(key) is not str:
+            raise TypeError(f"wi_semantic_status key must be a string, got {type(key).__name__}")
+        if key not in items:
+            raise ValueError(f"wi_semantic_status references unknown Work Item: {key!r}")
+        if not isinstance(val, str) or type(val) is not str or val not in WI_SEMANTIC_STATUSES:
+            raise ValueError(
+                f"wi_semantic_status[{key!r}] must be one of {sorted(WI_SEMANTIC_STATUSES)}, "
+                f"got {val!r}"
+            )
+        normalized[key] = val
+    return normalized
+
+
+def _normalize_reconciled_completions_map(raw: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"reconciled_completions must be a mapping, got {type(raw).__name__}")
+    if len(raw) > MAX_RECONCILED_COMPLETIONS:
+        raise ValueError(
+            f"reconciled_completions count ({len(raw)}) exceeds maximum {MAX_RECONCILED_COMPLETIONS}"
+        )
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, val in raw.items():
+        if not isinstance(key, str) or type(key) is not str or not key.strip():
+            raise TypeError("reconciled_completions key must be a non-empty canonical_task_id string")
+        if not isinstance(val, Mapping):
+            raise TypeError(f"reconciled_completions[{key!r}] must be a receipt mapping")
+        normalized[key] = dict(val)
+    return normalized
+
+
+_ALLOWED_WORKING_TRUTH_FIELDS: frozenset[str] = frozenset({"projection", "digest"})
+
+
+def _normalize_working_truth(raw: Any) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"working_truth must be a mapping or None, got {type(raw).__name__}")
+    extra = set(raw.keys()) - _ALLOWED_WORKING_TRUTH_FIELDS
+    if extra:
+        raise ValueError(f"Unknown field(s) in working_truth: {sorted(extra)}")
+    if "projection" not in raw or "digest" not in raw:
+        raise ValueError("working_truth requires 'projection' and 'digest'")
+    projection = raw["projection"]
+    if not isinstance(projection, Mapping):
+        raise TypeError("working_truth.projection must be a mapping")
+    digest = _require_non_empty_str(raw["digest"], "working_truth.digest", max_length=128)
+    return {"projection": dict(projection), "digest": digest}
+
+
 @dataclass(frozen=True)
 class TaskMainCoordinatorState:
     """Durable lifecycle + dispatch-progression state for one Milestone activation.
@@ -256,6 +345,13 @@ class TaskMainCoordinatorState:
     status: CoordinatorStatus = CoordinatorStatus.ACTIVE
     wi_status: dict[str, str] = field(default_factory=dict)
     bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # M3/W2 durable semantic working state (schema v2): reconciled completion
+    # receipts keyed by canonical_task_id, per-Work-Item semantic status, a
+    # WorkingTruthProjection payload + digest, and the progression revision.
+    wi_semantic_status: dict[str, str] = field(default_factory=dict)
+    reconciled_completions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    working_truth: dict[str, Any] | None = None
+    progression_revision: int = 0
     created_at: str = ""
     updated_at: str = ""
     coordinator_revision: int = 1
@@ -326,10 +422,27 @@ class TaskMainCoordinatorState:
 
         object.__setattr__(self, "wi_status", _normalize_wi_status_map(self.wi_status, canonical_items))
         object.__setattr__(self, "bindings", _normalize_bindings_map(self.bindings, canonical_items))
+        object.__setattr__(
+            self,
+            "wi_semantic_status",
+            _normalize_wi_semantic_status_map(self.wi_semantic_status, canonical_items),
+        )
+        object.__setattr__(
+            self, "reconciled_completions", _normalize_reconciled_completions_map(self.reconciled_completions)
+        )
+        object.__setattr__(self, "working_truth", _normalize_working_truth(self.working_truth))
 
         for wi in self.bindings:
             if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
                 raise ValueError(f"bindings entry for PENDING Work Item {wi!r} contradicts progression state")
+        for wi in self.wi_semantic_status:
+            if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
+                raise ValueError(f"semantic status for PENDING Work Item {wi!r} contradicts progression state")
+
+        if type(self.progression_revision) is not int or self.progression_revision < 0:
+            raise ValueError(
+                f"progression_revision must be an int >= 0, got {self.progression_revision!r}"
+            )
 
         if type(self.coordinator_revision) is not int or self.coordinator_revision < 1:
             raise ValueError(f"coordinator_revision must be an int >= 1, got {self.coordinator_revision!r}")
@@ -360,6 +473,21 @@ class TaskMainCoordinatorState:
             kwargs["wi_status"] = _normalize_wi_status_map(updates["wi_status"], self.work_items)
         if "bindings" in updates:
             kwargs["bindings"] = _normalize_bindings_map(updates["bindings"], self.work_items)
+        if "wi_semantic_status" in updates:
+            kwargs["wi_semantic_status"] = _normalize_wi_semantic_status_map(
+                updates["wi_semantic_status"], self.work_items
+            )
+        if "reconciled_completions" in updates:
+            kwargs["reconciled_completions"] = _normalize_reconciled_completions_map(
+                updates["reconciled_completions"]
+            )
+        if "working_truth" in updates:
+            kwargs["working_truth"] = _normalize_working_truth(updates["working_truth"])
+        if "progression_revision" in updates:
+            revision = updates["progression_revision"]
+            if type(revision) is not int or revision < 0:
+                raise ValueError(f"progression_revision must be an int >= 0, got {revision!r}")
+            kwargs["progression_revision"] = revision
         candidate = replace(
             self,
             coordinator_revision=self.coordinator_revision + 1,
@@ -393,6 +521,19 @@ class TaskMainCoordinatorState:
             "dependencies": [list(edge) for edge in self.dependencies],
             "wi_status": dict(self.wi_status),
             "bindings": {wi: dict(entry) for wi, entry in self.bindings.items()},
+            "wi_semantic_status": dict(self.wi_semantic_status),
+            "reconciled_completions": {
+                key: dict(receipt) for key, receipt in self.reconciled_completions.items()
+            },
+            "working_truth": (
+                {
+                    "projection": dict(self.working_truth["projection"]),
+                    "digest": self.working_truth["digest"],
+                }
+                if self.working_truth is not None
+                else None
+            ),
+            "progression_revision": self.progression_revision,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "coordinator_revision": self.coordinator_revision,
@@ -437,6 +578,10 @@ class TaskMainCoordinatorState:
             dependencies=tuple(tuple(edge) for edge in data.get("dependencies", ())),
             wi_status=dict(data.get("wi_status", {})),
             bindings=dict(data.get("bindings", {})),
+            wi_semantic_status=dict(data.get("wi_semantic_status", {})),
+            reconciled_completions=dict(data.get("reconciled_completions", {})),
+            working_truth=data.get("working_truth"),
+            progression_revision=data.get("progression_revision", 0),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             coordinator_revision=data.get("coordinator_revision", 1),
@@ -460,10 +605,13 @@ __all__ = [
     "COORDINATOR_STATUSES",
     "EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE",
     "HERMES_SESSION_DB_IS_COORDINATOR_AUTHORITY",
+    "MAX_RECONCILED_COMPLETIONS",
     "MILESTONE_CLOSURE_AUTOMATION_IMPLEMENTED",
     "REPAIR_AUTOMATION_IMPLEMENTED",
     "REVIEW_AUTOMATION_IMPLEMENTED",
     "W1_CARD_SEMANTIC_APPLICATION_IMPLEMENTED",
+    "WI_SEMANTIC_RECONCILED",
+    "WI_SEMANTIC_STATUSES",
     "WORK_ITEM_STATUSES",
     "CoordinatorStatus",
     "TaskMainCoordinatorState",
