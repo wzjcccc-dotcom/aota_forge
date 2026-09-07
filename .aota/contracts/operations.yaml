@@ -571,3 +571,43 @@ contracts:
   - DIGEST_CONFLICT
   - PHYSICAL_WRITE_FAILURE
   protocol_version: '1.0'
+- name: result.hydrate
+  description: Durable selective hydration of a bounded governed result reference (worktree-scoped, digest-verified, reauthorized)
+  inputs:
+  - name: ref
+    type: str
+  - name: digest
+    type: str
+  - name: project_id
+    type: str
+  - name: worktree_id
+    type: str
+  - name: kind
+    type: str?
+  - name: byte_length
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - UNKNOWN_REF
+  - DIGEST_MISMATCH
+  - CROSS_SCOPE_DENIED
+  - TAMPERED_REF
+  - TAMPERED_PAYLOAD
+  - UNSUPPORTED_REF_KIND
+  - OVERSIZED_HYDRATION
+  - HYDRATION_FAILED
+  protocol_version: '1.0'
