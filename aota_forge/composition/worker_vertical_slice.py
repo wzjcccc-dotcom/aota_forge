@@ -55,6 +55,10 @@ from aota_forge.work_plane.workspace_tools import (
     create_workspace_authority,
 )
 from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
+from aota_forge.work_plane.restricted_shell import (
+    create_restricted_shell_authority,
+    RESTRICTED_SHELL_DESCRIPTOR,
+)
 
 MCP_ROOT_ENV = "AOTA_W3_MCP_ROOT"
 MCP_PROJECT_ENV = "AOTA_W3_PROJECT_ID"
@@ -115,7 +119,17 @@ def build_worker_binding(
     canonical_task_id: str,
     handoff: TaskHandoff,
 ) -> TrustedWorkerBinding:
-    """Build one trusted server-side W2 binding from typed existing evidence."""
+    """Build one trusted server-side W2 binding from typed existing evidence.
+
+    M2 convergence: per-role progressive disclosure
+    - workspace.* remain eager
+    - result.hydrate is progressive for all worker roles (broader than shell)
+    - restricted_shell.run is progressive fallback only for coder/analyst (residual)
+      and requires trusted shell authority; other roles (reviewer/project-steward/task-main)
+      do not gain shell even though transport is single aota.invoke.
+    Reuses existing mapping seam work_plane/mapping.py and runtime/config for profile binding;
+    unknown role/profile mapping fails closed (no shell by guess).
+    """
     sandbox = bind_worktree_sandbox(_project_evidence(root, project_id), worktree_id, root)
     policy = AgentsPolicyCandidate(
         policy_id="m1-w3-disposable-smoke",
@@ -134,6 +148,38 @@ def build_worker_binding(
         (policy,),
         WORKSPACE_WRITE_DESCRIPTOR,
     )
+    # Determine work_role string (handoff owns role)
+    try:
+        role_str = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
+    except Exception:
+        role_str = "coder"
+    # M2 per-role progressive surface (visibility only, not authority)
+    # Use handoff's actual role for surface, not hardcoded coder, to preserve role/profile mapping truth
+    eager_ops = ("workspace.search", "workspace.read", "workspace.write")
+    if role_str in ("coder", "analyst"):
+        progressive_ops = ("result.hydrate", "restricted_shell.run")
+    elif role_str in ("reviewer", "project-steward", "task-main", "analyst"):
+        # reviewer, project-steward, task-main get hydration but not shell (task-main explicitly excluded)
+        # analyst already handled above; keep hydration for all others
+        progressive_ops = ("result.hydrate",)
+    else:
+        progressive_ops = ("result.hydrate",)
+    # Allow analyst to be treated as coder-like for shell residual
+    if role_str == "analyst":
+        progressive_ops = ("result.hydrate", "restricted_shell.run")
+    # For task-main, reviewer, project-steward, ensure no shell
+    if role_str in ("task-main", "reviewer", "project-steward"):
+        progressive_ops = ("result.hydrate",)
+    tool_surface = create_role_tool_surface(role_str, eager=eager_ops, progressive=progressive_ops)
+    # Restricted shell authority only for coder/analyst (existing BoundedRestrictedShellProvider reuse)
+    shell_authority = None
+    if "restricted_shell.run" in progressive_ops:
+        try:
+            shell_authority = create_restricted_shell_authority(
+                sandbox, handoff, (policy,), RESTRICTED_SHELL_DESCRIPTOR
+            )
+        except Exception:
+            shell_authority = None
     return TrustedWorkerBinding(
         canonical_task_id=canonical_task_id,
         project_id=project_id,
@@ -145,9 +191,10 @@ def build_worker_binding(
         ),
         handoff=handoff,
         sandbox=sandbox,
-        tool_surface=create_role_tool_surface("coder", eager=("workspace.search", "workspace.read", "workspace.write")),
+        tool_surface=tool_surface,
         read_authorities=read_authorities,
         mutation_authority=mutation_authority,
+        restricted_shell_authority=shell_authority,
     )
 
 

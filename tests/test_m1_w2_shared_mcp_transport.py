@@ -138,7 +138,12 @@ def test_one_shared_server_has_exactly_one_typed_tool(tmp_path: Path):
     assert MCP_PUBLIC_TOOL_COUNT == 1
     assert HERMES_AGENT_FACING_AOTA_TOOL_COUNT == 1
     assert AGENT_FACING_AOTA_TOOL == "aota.invoke"
-    assert SUPPORTED_OPERATIONS == frozenset(WORKSPACE_OPERATIONS)
+    # M2 convergence: logical surface expands to 5 ops (workspace.* + result.hydrate + restricted_shell.run)
+    # M1 regression: workspace.* must remain subset of supported (not necessarily exact equality)
+    assert frozenset(WORKSPACE_OPERATIONS).issubset(SUPPORTED_OPERATIONS)
+    # For M2, full set is 5; for M1 backward compat, keep at least workspace.* subset
+    from aota_forge.mcp_transport import LOGICAL_OPERATIONS as _LO
+    assert set(_LO).issuperset(set(WORKSPACE_OPERATIONS))
     # transport vs logical separation
     assert TRANSPORT_OPERATION_IDENTITY_SEPARATED is True
     assert TOOL_VISIBILITY_IS_AUTHORITY is False
