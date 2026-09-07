@@ -285,18 +285,19 @@ EXPOSED_COMMAND_IDS: tuple[str, ...] = tuple(sorted(_CATALOG.keys()))
 COMMAND_CATALOG_BOUNDED_COUNT: int = len(_CATALOG)
 
 # ---------------------------------------------------------------------------
-# Descriptor — structured inputs, no raw shell string
+# Descriptor — canonical YAML projection (thin compatibility reference)
 # ---------------------------------------------------------------------------
+# Single semantic authority is .aota/contracts/operations.yaml via loader.
+# TOOL_SCHEMA_SECOND_AUTHORITY=no
 
-RESTRICTED_SHELL_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="restricted_shell.run",
-    description="Governed restricted shell fallback (worktree-scoped, bounded argv, no shell)",
-    inputs=(
-        InputSpec(name="command_id", type="str"),
-        InputSpec(name="args", type="list?"),
-        InputSpec(name="timeout", type="int?"),
-    ),
-)
+def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
+
+    root = discover_canonical_project_root()
+    return load_operation_descriptor_map(root)[name]
+
+
+RESTRICTED_SHELL_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("restricted_shell.run")
 RESTRICTED_SHELL_DESCRIPTOR.validate()
 
 # For convenience, alias

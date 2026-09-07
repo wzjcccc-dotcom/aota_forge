@@ -162,35 +162,22 @@ WRITE_MODES: frozenset[str] = frozenset({"create_only", "replace_existing", "cre
 _DIGEST_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # ---------------------------------------------------------------------------
-# Descriptors
+# Descriptors — canonical YAML projection (thin compatibility reference)
 # ---------------------------------------------------------------------------
+# Single semantic authority is .aota/contracts/operations.yaml via loader.
+# This symbol is a compatibility projection deterministically derived from
+# the canonical source; it does not constitute an independently maintained
+# hard-coded authority.
+# TOOL_SCHEMA_SECOND_AUTHORITY=no
 
-WORKSPACE_WRITE_DESCRIPTOR: OperationContractDescriptor = OperationContractDescriptor(
-    name="workspace.write",
-    description="Bounded workspace file write (worktree-scoped, mutation)",
-    inputs=(
-        InputSpec(name="path", type="str"),
-        InputSpec(name="content", type="str"),
-        InputSpec(name="mode", type="str"),
-    ),
-    required_context=(),
-    optional_context=(),
-    internal_ids_required=(),
-    internal_ids_created=(),
-    read_write="write",
-    mutation_scope="workspace",
-    required_authority="trusted_workspace_mutation",
-    approval_required=False,
-    valid_predecessor_state="any",
-    valid_successor_state="any",
-    idempotency="not_idempotent",
-    errors=("AUTHORITY_DENIED", "PATH_ESCAPE", "SYMLINK_ESCAPE", "OVERSIZED_PAYLOAD", "INVALID_MODE", "DIGEST_CONFLICT", "PHYSICAL_WRITE_FAILURE"),
-    protocol_version=PROTOCOL_VERSION,
-    decision_required=False,
-    subject_revision_precondition=False,
-    external_authority_precondition=False,
-    result_contract="result.workspace.write.v1",
-)
+def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
+
+    root = discover_canonical_project_root()
+    return load_operation_descriptor_map(root)[name]
+
+
+WORKSPACE_WRITE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("workspace.write")
 
 assert WORKSPACE_WRITE_DESCRIPTOR.read_write == "write"
 assert WORKSPACE_WRITE_DESCRIPTOR.mutation_scope == "workspace"

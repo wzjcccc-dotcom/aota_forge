@@ -37,6 +37,7 @@ from aota_forge.core.contracts.version import (
 )
 
 # Reuse W2 expected hashes (test-only compatibility baseline)
+# Updated for W2: added workspace/git/test/restricted_shell ops (20 total)
 W2_EXPECTED_HASHES: dict[str, str] = {
     "project.resolve": "c7904fc0dd1424025cc0b79c692a0f6adc4ca5ba415ae1d0dd360ae4da0b18ea",
     "git.inspect": "be4389b55eda1f88b11e382627135c9dfb7d5520187306207efdc13a016fbfc1",
@@ -51,6 +52,13 @@ W2_EXPECTED_HASHES: dict[str, str] = {
     "execution.task_cancel": "9427554269c8d9e7396da7b0399b9056da82fb5a70364fca24d49eb67a3e7c89",
     "execution.executor_list": "6545ce8064ff3a85a3a6c2ffb8f726f304fadeaa6be68148e648d294a9b57abd",
     "execution.executor_capabilities": "cdbdf720384a774ec2057b8651fe33b96b3a97a1257459f00345ab470f02477b",
+    "git.diff": "df121f6330775e158ca5666e1bd4aa6ba08ff9fcff25656d9a2a54f9530f15b9",
+    "git.status": "8a631d905bd75fee1fc4b3f9b3e325bae772833a40b6610da726db06b6e89891",
+    "restricted_shell.run": "4ee42ab0718e6a463ad740d0a6bd6a53f50ff03f287b5553efd2f4d4cbce7df2",
+    "test.run": "23e551c085105eba63e08539bd3fecdf62b16eaeda9240bb36b1f5ea9cb60261",
+    "workspace.read": "e44277ebe5f5f32a6dad623e8fab5544ff14a84c72bc6fc4d2fe635bb8d3076d",
+    "workspace.search": "e0d551bfbd5714c8ced95098c9603e46133aa3779510c388372c17916dff9cfc",
+    "workspace.write": "a00ae7da102e27b386da0dfcc10d4a6646f9cbefaf0481c277d218c88a6c841d",
 }
 
 MINIMAL_MANIFEST = """\
@@ -120,7 +128,7 @@ def _diagnostic_digest(entries: list[dict]) -> str:
 
 def test_deterministic_operation_snapshot():
     snap = _operation_snapshot(canonical_root())
-    assert len(snap) == 13
+    assert len(snap) == 20
     names = [s["name"] for s in snap]
     assert names == sorted(names)
     for s in snap:
@@ -179,7 +187,7 @@ def test_operations_mapping_key_order_invariant(tmp_path: pathlib.Path):
     snap_orig = _operation_snapshot(root)
     snap_reordered = _operation_snapshot(tmp_path)
     # Compare to_dict parity and contract_hash parity
-    assert len(snap_orig) == len(snap_reordered) == 13
+    assert len(snap_orig) == len(snap_reordered) == 20
     for a, b in zip(snap_orig, snap_reordered):
         assert a["name"] == b["name"]
         assert a["contract_hash"] == b["contract_hash"]
@@ -291,8 +299,8 @@ print(json.dumps(snapshot, sort_keys=True))
     a = run_once()
     b = run_once()
     assert a == b
-    assert len(a["names"]) == 13
-    assert a["hashes"] == [W2_EXPECTED_HASHES[n] for n in sorted(W2_EXPECTED_HASHES.keys())] or len(a["hashes"]) == 13
+    assert len(a["names"]) == 20
+    assert a["hashes"] == [W2_EXPECTED_HASHES[n] for n in sorted(W2_EXPECTED_HASHES.keys())] or len(a["hashes"]) == 20
 
 
 def test_cross_process_snapshot_byte_identical():
@@ -1141,9 +1149,9 @@ def test_guard_canonical_tree_pass():
     out = run_guard(canonical_root())
     assert out["status"] == "PASS", out["violations"]
     assert out["violations"] == []
-    assert out["operation_count"] == 13
+    assert out["operation_count"] == 20
     assert out["capability_count"] == 1
-    assert out["result_count"] == 3
+    assert out["result_count"] == 4
 
 
 def test_guard_output_deterministic():
@@ -1175,7 +1183,7 @@ def test_guard_violations_sorted():
 
 def test_w2_hash_parity_13_of_13():
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 13
+    assert len(m) == 20
     for name, expected in W2_EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 
@@ -1201,4 +1209,4 @@ def test_w3_strict_schema_regression():
         shutil.rmtree(tmp, ignore_errors=True)
     # 1 capability, 3 results still
     assert len(load_capabilities(canonical_root())["contracts"]) == 1
-    assert len(load_results(canonical_root())["contracts"]) == 3
+    assert len(load_results(canonical_root())["contracts"]) == 4
