@@ -1431,45 +1431,95 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
     )
 
     def _to_call_tool_result(mcp_result: McpToolResult) -> Any:
-        """Wrap McpToolResult into CallToolResult with single model-visible copy.
+        """Wrap McpToolResult into CallToolResult with bounded model-visible payload.
 
-        Bounded repair I37-B001 FastMCP double-emission: previously FastMCP emitted
-        the same McpToolResult as both TextContent (JSON dump) and structuredContent,
-        giving 2x wire duplication (4x with internal hydrate duplication).
-        This wrapper emits one canonical copy in structuredContent and a minimal
-        summary in content, achieving MODEL_VISIBLE_DUPLICATE_COUNT=1 and
-        MODEL_VISIBLE_AMPLIFICATION_RATIO~1.x while preserving MCP compatibility.
+        Repair for I40-B001 / W1 inline model-visible projection:
+        - output_mode==inline and is_success: TextContent is deterministic bounded
+          serialization of the already-governed inline result (inline_output or
+          governed payload), preserving redaction/size/digest governance.
+          Raw provider result is never bypassed (TEXT_CONTENT_SOURCE=governed_projection).
+        - output_mode==by_ref or failure: TextContent stays bounded summary/ref metadata,
+          payload not eagerly inlined.
+        Generic repair, not role.bootstrap special case.
+        Preserves structuredContent canonical, digest semantics, boundedness.
         """
         if CallToolResult is None or TextContent is None:
             return mcp_result
         try:
-            # Minimal summary for TextContent – no large hydrated bytes duplicated.
-            # For task-main controls, include disposition/next_action so the Agent can observe progression without needing the full inline body.
-            summary = {
-                "ok": mcp_result.get("ok"),
-                "operation": mcp_result.get("operation"),
-                "outcome": mcp_result.get("outcome"),
-                "output_mode": mcp_result.get("output_mode"),
-                "byte_length": mcp_result.get("output_byte_length"),
-                "digest": mcp_result.get("output_digest"),
-            }
-            # Task-main progression is driven by disposition/next_action; surface it in the minimal summary so the model can decide next step.
-            try:
+            output_mode = mcp_result.get("output_mode")
+            is_success = mcp_result.get("is_success")
+            if is_success is None:
+                is_success = mcp_result.get("ok")
+            # Generic inline success: expose governed semantic payload in TextContent
+            if output_mode == "inline" and is_success:
+                inline_output = mcp_result.get("inline_output")
                 payload = mcp_result.get("payload")
-                if isinstance(payload, dict):
-                    for _k in ("disposition", "next_action", "status", "coordinator_id", "dispatched", "reconciled_work_item", "reconciled_canonical_task_id", "user_gate_required", "milestone_closure_ready", "next_milestone_gate", "integrated_review_required", "session_recovery_required"):
-                        if _k in payload:
-                            summary[_k] = payload[_k]
-                    # Also surface error code for failures
+                if isinstance(inline_output, str) and inline_output != "":
+                    # Governed canonical JSON (already bounded 4096, deterministic, redacted)
+                    text = inline_output
+                elif isinstance(payload, dict) and payload:
+                    # Fallback for inline cases where inline_output is None (e.g., result.hydrate special)
+                    # payload is governed, so deterministic bounded serialization preserves invariants
+                    text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
+                elif isinstance(payload, str) and payload:
+                    text = payload
+                else:
+                    # Empty inline payload edge: minimal summary
+                    summary = {
+                        "ok": mcp_result.get("ok"),
+                        "operation": mcp_result.get("operation"),
+                        "outcome": mcp_result.get("outcome"),
+                        "output_mode": output_mode,
+                        "byte_length": mcp_result.get("output_byte_length"),
+                        "digest": mcp_result.get("output_digest"),
+                    }
+                    summary = {k: v for k, v in summary.items() if v is not None}
+                    text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+            else:
+                # by_ref or failure: bounded summary/ref metadata, never eager payload
+                summary = {
+                    "ok": mcp_result.get("ok"),
+                    "operation": mcp_result.get("operation"),
+                    "outcome": mcp_result.get("outcome"),
+                    "output_mode": output_mode,
+                    "byte_length": mcp_result.get("output_byte_length"),
+                    "digest": mcp_result.get("output_digest"),
+                }
+                try:
+                    payload = mcp_result.get("payload")
+                    if isinstance(payload, dict):
+                        for _k in (
+                            "disposition",
+                            "next_action",
+                            "status",
+                            "coordinator_id",
+                            "dispatched",
+                            "reconciled_work_item",
+                            "reconciled_canonical_task_id",
+                            "user_gate_required",
+                            "milestone_closure_ready",
+                            "next_milestone_gate",
+                            "integrated_review_required",
+                            "session_recovery_required",
+                        ):
+                            if _k in payload:
+                                summary[_k] = payload[_k]
                     if not mcp_result.get("ok"):
                         err = mcp_result.get("error") or {}
                         if isinstance(err, dict) and "code" in err:
                             summary["error_code"] = err.get("code")
-            except Exception:
-                pass
-            # Remove None values for compactness
-            summary = {k: v for k, v in summary.items() if v is not None}
-            text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+                    if output_mode == "by_ref":
+                        ref = mcp_result.get("output_ref")
+                        if isinstance(ref, dict):
+                            summary["output_ref"] = {
+                                "ref": ref.get("ref"),
+                                "digest": ref.get("digest"),
+                                "byte_length": ref.get("byte_length"),
+                            }
+                except Exception:
+                    pass
+                summary = {k: v for k, v in summary.items() if v is not None}
+                text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
         except Exception:
             text = json.dumps({"ok": bool(mcp_result.get("ok"))})
         try:
