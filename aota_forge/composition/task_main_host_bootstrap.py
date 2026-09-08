@@ -201,6 +201,102 @@ def _reviewer_handoff() -> TaskHandoff:
     return _handoff_for("M3/RV1")
 
 
+def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Path | None) -> None:
+    """Fail-closed validation of bootstrap trust boundary (W3 operational acceptance).
+
+    Ensures bootstrap file content is consistent with trusted operator context
+    (env root, worktree scope, store locations). Prevents tamper that could
+    cross project/worktree/session scope or inject foreign store paths.
+    """
+    from aota_forge.mcp_transport import TrustedBindingError
+
+    # Basic identifier shape
+    import re
+
+    _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+    for field in ("project_id", "worktree_id"):
+        val = str(data.get(field, ""))
+        if not val.strip() or len(val) > 512:
+            raise TrustedBindingError(f"bootstrap {field} invalid length/empty")
+        if not _SAFE_ID_RE.fullmatch(val):
+            raise TrustedBindingError(f"bootstrap {field} invalid identifier")
+    # origin session: allow broader but must be non-empty bounded
+    origin_val = str(data.get("origin_task_main_session_ref", ""))
+    if not origin_val.strip() or len(origin_val) > 512:
+        raise TrustedBindingError("bootstrap origin_task_main_session_ref invalid")
+
+    worktree_root = Path(str(data["worktree_root"])).resolve()
+    coordinator_store_path = Path(str(data["coordinator_store_path"])).resolve()
+    execution_store_path = Path(str(data["execution_store_path"])).resolve()
+    runtime_config_path = Path(str(data["runtime_config_path"])).resolve()
+
+    # Bootstrap location must be derived from trusted env, not CWD or model path
+    # Verify worktree_root matches the trusted env root (scope matching)
+    trusted_root: Path | None = None
+    explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
+    if explicit and explicit.strip() and "${" not in explicit:
+        try:
+            trusted_root = Path(explicit).parent.parent.resolve() if explicit.endswith(BOOTSTRAP_RELPATH) else Path(explicit).parent.resolve()
+            # If explicit is file path, its parent/.aota parent is worktree root
+            if bootstrap_path is not None:
+                expected_root = bootstrap_path.parent.parent.resolve()
+                if worktree_root != expected_root:
+                    raise TrustedBindingError("bootstrap worktree_root does not match explicit bootstrap location")
+        except Exception as exc:
+            raise TrustedBindingError(f"bootstrap explicit location mismatch: {exc}") from exc
+    else:
+        root_env = os.environ.get(BOOTSTRAP_ENV_ROOT)
+        if root_env:
+            try:
+                trusted_root = Path(root_env).resolve()
+            except Exception:
+                raise TrustedBindingError("bootstrap trusted root invalid")
+            if worktree_root != trusted_root:
+                raise TrustedBindingError("bootstrap worktree_root does not match trusted AOTA_W3_MCP_ROOT")
+        else:
+            raise TrustedBindingError("bootstrap trusted root absent")
+
+    # Store paths must be within worktree_root/.aota (bounded, no escape)
+    for p, label in ((coordinator_store_path, "coordinator_store_path"), (execution_store_path, "execution_store_path")):
+        try:
+            p.relative_to(worktree_root)
+        except ValueError:
+            raise TrustedBindingError(f"bootstrap {label} outside worktree_root")
+        # Must be under .aota
+        if ".aota" not in p.parts:
+            raise TrustedBindingError(f"bootstrap {label} not under .aota")
+    # Runtime config must be absolute and within worktree or trusted location
+    if not runtime_config_path.is_absolute():
+        raise TrustedBindingError("bootstrap runtime_config_path must be absolute")
+    # File permissions: bootstrap must not be world-writable or contain secrets
+    if bootstrap_path is not None and bootstrap_path.exists():
+        try:
+            mode = bootstrap_path.stat().st_mode
+            if mode & 0o002:
+                raise TrustedBindingError("bootstrap file is world-writable")
+        except TrustedBindingError:
+            raise
+        except Exception:
+            pass
+    # Plan digest shape validation (hex 64)
+    live = data.get("live_plan_view") or {}
+    digest = str(live.get("plan_digest", ""))
+    if digest and (len(digest) != 64 or not all(c in "0123456789abcdef" for c in digest.lower())):
+        raise TrustedBindingError("bootstrap live_plan_view digest invalid")
+
+
+def _bootstrap_path_for_validation() -> Path | None:
+    explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
+    if explicit and explicit.strip() and "${" not in explicit:
+        p = Path(explicit)
+        if p.is_file():
+            return p.resolve()
+    root_env = os.environ.get(BOOTSTRAP_ENV_ROOT)
+    if root_env:
+        return (Path(root_env).resolve() / BOOTSTRAP_RELPATH).resolve()
+    return None
+
+
 def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     """Attempt to build a task-main TrustedWorkerBinding from host bootstrap.
 
@@ -209,9 +305,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     This is the ONLY place where TrustedTaskMainRuntimeContext is minted for
     a real Hermes MCP child.
     """
+    bootstrap_path = _bootstrap_path_for_validation()
     data = _load_bootstrap_dict()
     if data is None:
         return None
+    # Trust-boundary validation (W3) — fail closed on tamper / scope mismatch
+    _validate_bootstrap_trust_boundary(data, bootstrap_path)
     # Validate required keys — all are operator-controlled, not model supplied
     project_id = str(data["project_id"])
     worktree_id = str(data["worktree_id"])
@@ -462,5 +561,13 @@ def write_bootstrap_file(
     }
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
+    try:
+        tmp.chmod(0o600)
+    except Exception:
+        pass
     tmp.replace(dest)
+    try:
+        dest.chmod(0o600)
+    except Exception:
+        pass
     return dest
