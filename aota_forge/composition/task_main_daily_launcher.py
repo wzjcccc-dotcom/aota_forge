@@ -35,6 +35,8 @@ Responsibility (orchestration/composition only):
   ↓
   materialize trusted bootstrap (operator-controlled, 0600, digest-bound)
   ↓
+  startup prompt resolution (operator-owned ~/.config/aota-forge/task-main-startup.md, bounded, non-authoritative; missing => fail closed, never silent seed fallback)
+  ↓
   construct MCP child environment (production path, no pre-exported test env)
   ↓
   launch or resume Hermes profile=aota-task-main
@@ -111,6 +113,39 @@ from aota_forge.runtime.config import RuntimeConfig, load_runtime_config
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 
 # ---------------------------------------------------------------------------
+# Task-main startup prompt surface (M1/W1 — Operator RuntimeConfig & User Startup Surface)
+# ---------------------------------------------------------------------------
+# AF source seed (SEED_ONLY, never runtime authority):
+#   prompts/task-main-startup.default.md   (repo root)
+# Effective operator surface (OPERATOR_OWNED, operator-editable):
+#   ~/.config/aota-forge/task-main-startup.md
+#
+# Invariants:
+#   TASK_MAIN_STARTUP_PROMPT_OPERATOR_OWNED=yes
+#   TASK_MAIN_STARTUP_PROMPT_IS_AUTHORITY=no
+#   AF_ROLE_AUTHORITY_FROM_STARTUP_PROMPT=no
+#   PLAN_AUTHORITY_FROM_STARTUP_PROMPT=no
+#   SOURCE_SEED_SILENT_RUNTIME_FALLBACK=no
+#   TASK_MAIN_STARTUP_PROMPT_BOUNDED=yes (≤8 KiB)
+#
+# Production launcher relationship:
+#   AF source seed --(operator materialization)--> ~/.config/aota-forge/task-main-startup.md --(DailyTaskMainLauncher)--> Hermes task-main
+# Effective operator file missing => fail closed / preflight not ready, never silent fallback to seed.
+
+
+OPERATOR_STARTUP_PROMPT_PATH: Path = Path.home() / ".config" / "aota-forge" / "task-main-startup.md"
+SEED_STARTUP_PROMPT_PATH: Path = Path(__file__).resolve().parents[2] / "prompts" / "task-main-startup.default.md"
+MAX_STARTUP_PROMPT_BYTES = 8 * 1024
+MAX_STARTUP_PROMPT_CHARS = 8 * 1024
+
+TASK_MAIN_STARTUP_PROMPT_OPERATOR_OWNED = "yes"
+TASK_MAIN_STARTUP_PROMPT_IS_AUTHORITY = "no"
+AF_ROLE_AUTHORITY_FROM_STARTUP_PROMPT = "no"
+PLAN_AUTHORITY_FROM_STARTUP_PROMPT = "no"
+SOURCE_SEED_SILENT_RUNTIME_FALLBACK = "no"
+TASK_MAIN_STARTUP_PROMPT_BOUNDED = "yes"
+
+# ---------------------------------------------------------------------------
 # Env classification — exact current required set (M3/W2 proven + W3 hardship)
 # ---------------------------------------------------------------------------
 
@@ -162,6 +197,140 @@ PLAN_AUTHORITY_OPERATOR_SELECTABLE = "yes"
 PLAN_AUTHORITY_HARDCODED_TO_ISSUE_37 = "no"
 GITHUB_PLATFORM_KNOWLEDGE_ADAPTER_PRIVATE = "yes"
 MODEL_CAN_SELECT_PLAN_AUTHORITY = "no"
+
+
+# ---------------------------------------------------------------------------
+# Startup prompt helpers — operator-owned, bounded, non-authoritative
+# ---------------------------------------------------------------------------
+
+def _read_operator_startup_prompt(operator_path: Path | None = None) -> str:
+    """Read effective operator task-main startup prompt, fail closed if absent.
+
+    Production launcher relationship:
+      AF source seed --(operator materialization)--> OPERATOR_STARTUP_PROMPT_PATH --(launcher)--> Hermes task-main
+
+    This helper NEVER falls back to SEED_STARTUP_PROMPT_PATH silently.
+    If the effective operator file is missing, it raises (fail-closed / preflight not ready).
+    The seed is only for explicit materialization via ``materialize_operator_startup_from_seed()``
+    or install/setup guidance and tests.
+
+    Bounded: ≤ MAX_STARTUP_PROMPT_BYTES / chars, non-empty, must contain
+    the minimal AF bootstrap reference (aota.invoke + role.bootstrap).
+    """
+    raw = Path(operator_path) if operator_path is not None else OPERATOR_STARTUP_PROMPT_PATH
+    if raw.is_symlink():
+        raise RuntimeError(f"operator startup prompt is a symlink (rejected fail-closed): {raw}")
+    try:
+        path = raw.resolve()
+    except Exception:
+        path = Path(str(raw))
+    if not path.is_file():
+        raise RuntimeError(
+            f"operator task-main startup prompt missing: {path} (fail-closed, no silent fallback to seed {SEED_STARTUP_PROMPT_PATH}; "
+            f"operator must materialize effective file via explicit seed copy: cp {SEED_STARTUP_PROMPT_PATH} {path})"
+        )
+    try:
+        size = path.stat().st_size
+        if size > MAX_STARTUP_PROMPT_BYTES:
+            raise RuntimeError(f"operator startup prompt too large: {path} ({size} > {MAX_STARTUP_PROMPT_BYTES} bytes)")
+        text = path.read_text(encoding="utf-8")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"operator startup prompt unreadable: {type(exc).__name__}: {exc}") from exc
+    if not text.strip():
+        raise RuntimeError(f"operator startup prompt is empty: {path}")
+    if len(text) > MAX_STARTUP_PROMPT_CHARS:
+        raise RuntimeError(f"operator startup prompt exceeds char bound: {len(text)} > {MAX_STARTUP_PROMPT_CHARS}")
+    if len(text.encode("utf-8")) > MAX_STARTUP_PROMPT_BYTES:
+        raise RuntimeError(f"operator startup prompt exceeds byte bound: {path}")
+    lowered = text.lower()
+    if "aota.invoke" not in lowered or "role.bootstrap" not in lowered:
+        raise RuntimeError(
+            f"operator startup prompt does not contain required AF bootstrap reference "
+            f"(must mention aota.invoke and role.bootstrap): {path}"
+        )
+    # Guard against prompt becoming authority: it must remain minimal and not embed
+    # full Plan body, operation catalog, or other control-plane material.
+    # We keep the check bounded: prompt must not be excessively large (already bounded)
+    # and must not contain obvious authority markers as literal strings.
+    # This is a cheap bounded heuristic, not a full semantic review.
+    forbidden_markers = [
+        "PLAN_TYPE=portable_plan",
+        "OPERATION_CATALOG",
+        "FULL_PLAN_BODY",
+    ]
+    for marker in forbidden_markers:
+        if marker in text:
+            raise RuntimeError(f"operator startup prompt must not contain authority marker {marker!r}: {path}")
+    return text
+
+
+def _resolve_task_main_startup_prompt(initial_prompt: str | None) -> str:
+    """Resolve task-main initial prompt for Hermes launch.
+
+    If ``initial_prompt`` is explicitly supplied (non-empty), use it directly
+    (tests / operator override path) but still enforce bounded size.
+
+    Otherwise, load the effective operator file via ``_read_operator_startup_prompt()``
+    — fail closed if missing, never silently use the repository seed.
+    """
+    if initial_prompt is not None:
+        cleaned = initial_prompt.strip()
+        if cleaned:
+            if len(cleaned) > MAX_STARTUP_PROMPT_CHARS:
+                raise ValueError(f"initial_prompt exceeds char bound: {len(cleaned)} > {MAX_STARTUP_PROMPT_CHARS}")
+            if len(cleaned.encode("utf-8")) > MAX_STARTUP_PROMPT_BYTES:
+                raise ValueError(f"initial_prompt exceeds byte bound")
+            return cleaned
+    return _read_operator_startup_prompt()
+
+
+def materialize_operator_startup_from_seed(
+    operator_path: Path | None = None,
+    seed_path: Path | None = None,
+) -> Path:
+    """Explicitly materialize the operator startup file from the AF source seed.
+
+    This is the ONLY sanctioned path for the seed to become the effective
+    operator prompt: an explicit operator action (install/setup or test helper).
+    Production ``_read_operator_startup_prompt`` / ``_resolve_task_main_startup_prompt``
+    never calls this automatically.
+    """
+    op = (operator_path or OPERATOR_STARTUP_PROMPT_PATH)
+    seed = (seed_path or SEED_STARTUP_PROMPT_PATH)
+    # Resolve without following symlink for seed check (fail closed on symlink)
+    if seed.is_symlink():
+        raise RuntimeError(f"seed startup prompt is a symlink (rejected): {seed}")
+    if not seed.is_file():
+        raise RuntimeError(f"seed startup prompt missing: {seed}")
+    try:
+        if seed.stat().st_size > MAX_STARTUP_PROMPT_BYTES:
+            raise RuntimeError(f"seed startup prompt too large: {seed}")
+        text = seed.read_text(encoding="utf-8")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"seed startup prompt unreadable: {exc}") from exc
+    if not text.strip():
+        raise RuntimeError(f"seed startup prompt is empty: {seed}")
+    if len(text.encode("utf-8")) > MAX_STARTUP_PROMPT_BYTES:
+        raise RuntimeError(f"seed startup prompt exceeds byte bound: {seed}")
+    op = Path(op)
+    op.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic write via temp then replace for durability
+    tmp = op.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        tmp.chmod(0o600)
+    except Exception:
+        pass
+    tmp.replace(op)
+    try:
+        op.chmod(0o600)
+    except Exception:
+        pass
+    return op.resolve()
 
 
 @dataclass(frozen=True)
@@ -543,10 +712,15 @@ class DailyTaskMainLauncher:
         hermes_env = {**os.environ, **env}
         hermes_bin = ctx_pending.hermes_bin
 
-        if initial_prompt is None:
-            # Generic standby prompt; milestone identity comes from Plan authority, not hardcoded.
-            milestone = ctx_pending.live_plan_view.milestone_id
-            initial_prompt = f"You are the AOTA task-main agent for milestone {milestone}. Acknowledge with exactly: AOTA_TASKMAIN_STANDBY and wait for further instructions."
+        # M1/W1 operator startup surface (after trusted bootstrap, before Hermes launch):
+        #   live Plan authority resolution → normalize/projection → approval truth validation
+        #   → RuntimeConfig resolution → trusted task-main bootstrap → startup prompt resolution
+        #   → Hermes task-main launch/resume
+        # Effective operator prompt (~/.config/aota-forge/task-main-startup.md) is required;
+        # missing effective file => fail closed / preflight not ready, never silent fallback to
+        # the AF source seed (prompts/task-main-startup.default.md). The seed is only for
+        # explicit materialization (install/setup, tests).
+        initial_prompt = _resolve_task_main_startup_prompt(initial_prompt)
 
         with tempfile.TemporaryDirectory(prefix="aota-task-main-launch-") as td:
             usage_path = Path(td) / "usage.json"
@@ -684,4 +858,15 @@ __all__ = [
     "PRODUCTION_LAUNCHER_SEMANTIC_CONTROL_CALLS",
     "PLAN_AUTHORITY_OPERATOR_SELECTABLE",
     "PLAN_AUTHORITY_HARDCODED_TO_ISSUE_37",
+    "OPERATOR_STARTUP_PROMPT_PATH",
+    "SEED_STARTUP_PROMPT_PATH",
+    "MAX_STARTUP_PROMPT_BYTES",
+    "TASK_MAIN_STARTUP_PROMPT_OPERATOR_OWNED",
+    "TASK_MAIN_STARTUP_PROMPT_IS_AUTHORITY",
+    "AF_ROLE_AUTHORITY_FROM_STARTUP_PROMPT",
+    "PLAN_AUTHORITY_FROM_STARTUP_PROMPT",
+    "SOURCE_SEED_SILENT_RUNTIME_FALLBACK",
+    "_read_operator_startup_prompt",
+    "_resolve_task_main_startup_prompt",
+    "materialize_operator_startup_from_seed",
 ]
