@@ -549,7 +549,7 @@ def test_w2_regression_operations_13_and_hashes():
     EXPECTED_HASHES = mod.EXPECTED_HASHES  # type: ignore
 
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 20
+    assert len(m) == 21
     for name, expected in EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 

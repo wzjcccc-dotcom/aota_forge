@@ -91,7 +91,8 @@ except Exception:
     RESTRICTED_SHELL_DESCRIPTOR = None  # type: ignore
 
 try:  # The MCP SDK is an adapter dependency, never a Core dependency.
-    from mcp.types import ToolAnnotations
+    from mcp.types import CallToolResult, TextContent, ToolAnnotations
+
     try:
         from mcp.server import MCPServer
     except ImportError:  # mcp 1.x exposes the same stdio server as FastMCP.
@@ -99,6 +100,8 @@ try:  # The MCP SDK is an adapter dependency, never a Core dependency.
 except ImportError:  # pragma: no cover - exercised in installations without [mcp]
     MCPServer = None  # type: ignore[assignment,misc]
     ToolAnnotations = None  # type: ignore[assignment,misc]
+    CallToolResult = None  # type: ignore[assignment,misc]
+    TextContent = None  # type: ignore[assignment,misc]
 
 
 ONE_SHARED_AOTA_MCP = True
@@ -377,6 +380,7 @@ def _sanitize_tool_response(response: ToolResponse) -> ToolResponse:
 
     Reuses existing transport safety semantics:
     * success: strip canonical_path (physical path not useful MCP payload)
+    * sanitize known internal absolute-path fields (cwd, worktree_root, etc.)
     * failure: bound and redact absolute paths in error message, preserve typed code
     Order is critical: safety → governed projection, so the governed projection
     never serializes a previously hidden field.
@@ -386,6 +390,13 @@ def _sanitize_tool_response(response: ToolResponse) -> ToolResponse:
     if response.ok:
         payload = dict(response.payload or {})
         payload.pop("canonical_path", None)
+        # Bounded path sanitization for known internal path-bearing fields.
+        # Provider may internally need absolute root, but Agent does not.
+        # Transform Agent-facing value to "<bounded-path>" (existing sanitization convention).
+        # Scope only trusted/internal metadata fields, not arbitrary user stdout.
+        for _field in ("cwd", "absolute_path", "worktree_root", "store_path", "artifact_path", "payload_path", "durable_path", "worktree_path"):
+            if _field in payload and isinstance(payload[_field], str) and payload[_field].startswith("/"):
+                payload[_field] = "<bounded-path>"
         return ToolResponse.success(payload)
     error = dict(response.error or {})
     projected_error: dict[str, Any] = {
@@ -778,6 +789,9 @@ class _SharedAotaMcpAdapter:
                             ToolResponse.failure({"code": "OVERSIZED_HYDRATION", "message": f"hydrated content {len(content_bytes)} exceeds durable bound {DURABLE_PAYLOAD_MAX_BYTES}"}),
                         )
                     # Return inline hydration result (whole_object, no silent truncation)
+                    # Bounded repair I37-B001: deduplicate hydrated payload to single model-visible copy.
+                    # Previous shape duplicated content in payload.content AND inline_output.
+                    # Keep one canonical copy in payload, set inline_output=None (MCP_TOOL_RESULT_INTERNAL_DUPLICATE_COUNT=1).
                     return {
                         "ok": True,
                         "operation": operation,
@@ -791,7 +805,7 @@ class _SharedAotaMcpAdapter:
                         "capability_name": "result.hydrate",
                         "output_digest": payload.get("digest", "0" * 64),
                         "output_byte_length": len(content_bytes),
-                        "inline_output": content,
+                        "inline_output": None,
                         "output_ref": None,
                     }
                 else:
@@ -852,14 +866,54 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
         instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority. Single entry: aota.invoke(operation, arguments).",
     )
 
+    def _to_call_tool_result(mcp_result: McpToolResult) -> Any:
+        """Wrap McpToolResult into CallToolResult with single model-visible copy.
+
+        Bounded repair I37-B001 FastMCP double-emission: previously FastMCP emitted
+        the same McpToolResult as both TextContent (JSON dump) and structuredContent,
+        giving 2x wire duplication (4x with internal hydrate duplication).
+        This wrapper emits one canonical copy in structuredContent and a minimal
+        summary in content, achieving MODEL_VISIBLE_DUPLICATE_COUNT=1 and
+        MODEL_VISIBLE_AMPLIFICATION_RATIO~1.x while preserving MCP compatibility.
+        """
+        if CallToolResult is None or TextContent is None:
+            return mcp_result
+        try:
+            # Minimal summary for TextContent – no large hydrated bytes duplicated.
+            summary = {
+                "ok": mcp_result.get("ok"),
+                "operation": mcp_result.get("operation"),
+                "outcome": mcp_result.get("outcome"),
+                "output_mode": mcp_result.get("output_mode"),
+                "byte_length": mcp_result.get("output_byte_length"),
+                "digest": mcp_result.get("output_digest"),
+            }
+            # Remove None values for compactness
+            summary = {k: v for k, v in summary.items() if v is not None}
+            text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+        except Exception:
+            text = json.dumps({"ok": bool(mcp_result.get("ok"))})
+        try:
+            return CallToolResult(
+                content=[TextContent(type="text", text=text)],
+                structuredContent=dict(mcp_result),
+                isError=False,
+            )
+        except Exception:
+            return mcp_result
+
     @server.tool(
         name="aota.invoke",
         description="Typed AOTA dispatch. operation is exact canonical name (e.g. workspace.search); arguments is the operation's typed input object.",
-        structured_output=True,
     )
-    def aota_invoke(operation: str, arguments: dict[str, Any] | None = None) -> McpToolResult:  # type: ignore[no-redef]
+    def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
         """Single-entry AOTA dispatch: exact operation resolution → existing descriptor → validate_inputs → existing authority → existing provider."""
-        return adapter.invoke(operation, arguments if arguments is not None else {})
+        mcp_result = adapter.invoke(operation, arguments if arguments is not None else {})
+        # FastMCP double-emission repair: return explicit CallToolResult so
+        # lowlevel server does not re-emit the same dict as both TextContent
+        # and structuredContent. This keeps one canonical copy in
+        # structuredContent and a minimal summary in content.
+        return _to_call_tool_result(mcp_result)
 
     return server
 

@@ -37,7 +37,7 @@ from aota_forge.core.contracts.version import (
 )
 
 # Reuse W2 expected hashes (test-only compatibility baseline)
-# Updated for W2: added workspace/git/test/restricted_shell ops (20 total)
+# Updated for M2: added result.hydrate (21 total) — only legitimate M2 evolution beyond W2's 20 is result.hydrate
 W2_EXPECTED_HASHES: dict[str, str] = {
     "project.resolve": "c7904fc0dd1424025cc0b79c692a0f6adc4ca5ba415ae1d0dd360ae4da0b18ea",
     "git.inspect": "be4389b55eda1f88b11e382627135c9dfb7d5520187306207efdc13a016fbfc1",
@@ -55,6 +55,7 @@ W2_EXPECTED_HASHES: dict[str, str] = {
     "git.diff": "df121f6330775e158ca5666e1bd4aa6ba08ff9fcff25656d9a2a54f9530f15b9",
     "git.status": "8a631d905bd75fee1fc4b3f9b3e325bae772833a40b6610da726db06b6e89891",
     "restricted_shell.run": "4ee42ab0718e6a463ad740d0a6bd6a53f50ff03f287b5553efd2f4d4cbce7df2",
+    "result.hydrate": "d8216343b719747183bcf01b41de699342495b7776e24b6c376ac29a620ccee6",
     "test.run": "23e551c085105eba63e08539bd3fecdf62b16eaeda9240bb36b1f5ea9cb60261",
     "workspace.read": "e44277ebe5f5f32a6dad623e8fab5544ff14a84c72bc6fc4d2fe635bb8d3076d",
     "workspace.search": "e0d551bfbd5714c8ced95098c9603e46133aa3779510c388372c17916dff9cfc",
@@ -128,7 +129,7 @@ def _diagnostic_digest(entries: list[dict]) -> str:
 
 def test_deterministic_operation_snapshot():
     snap = _operation_snapshot(canonical_root())
-    assert len(snap) == 20
+    assert len(snap) == 21
     names = [s["name"] for s in snap]
     assert names == sorted(names)
     for s in snap:
@@ -187,7 +188,7 @@ def test_operations_mapping_key_order_invariant(tmp_path: pathlib.Path):
     snap_orig = _operation_snapshot(root)
     snap_reordered = _operation_snapshot(tmp_path)
     # Compare to_dict parity and contract_hash parity
-    assert len(snap_orig) == len(snap_reordered) == 20
+    assert len(snap_orig) == len(snap_reordered) == 21
     for a, b in zip(snap_orig, snap_reordered):
         assert a["name"] == b["name"]
         assert a["contract_hash"] == b["contract_hash"]
@@ -299,8 +300,8 @@ print(json.dumps(snapshot, sort_keys=True))
     a = run_once()
     b = run_once()
     assert a == b
-    assert len(a["names"]) == 20
-    assert a["hashes"] == [W2_EXPECTED_HASHES[n] for n in sorted(W2_EXPECTED_HASHES.keys())] or len(a["hashes"]) == 20
+    assert len(a["names"]) == 21
+    assert a["hashes"] == [W2_EXPECTED_HASHES[n] for n in sorted(W2_EXPECTED_HASHES.keys())] or len(a["hashes"]) == 21
 
 
 def test_cross_process_snapshot_byte_identical():
@@ -1149,7 +1150,7 @@ def test_guard_canonical_tree_pass():
     out = run_guard(canonical_root())
     assert out["status"] == "PASS", out["violations"]
     assert out["violations"] == []
-    assert out["operation_count"] == 20
+    assert out["operation_count"] == 21
     assert out["capability_count"] == 1
     assert out["result_count"] == 4
 
@@ -1183,7 +1184,7 @@ def test_guard_violations_sorted():
 
 def test_w2_hash_parity_13_of_13():
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 20
+    assert len(m) == 21
     for name, expected in W2_EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 

@@ -127,7 +127,13 @@ def _call(server, operation: str, arguments: dict):
     async def run():
         # Single-entry tool is always aota.invoke
         tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-        return tool.fn(operation=operation, arguments=arguments)
+        res = tool.fn(operation=operation, arguments=arguments)
+        # I37-B001 repair: tool now returns CallToolResult with structuredContent containing McpToolResult
+        if hasattr(res, "structuredContent") and res.structuredContent is not None:
+            return res.structuredContent
+        if isinstance(res, dict) and "structuredContent" in res:
+            return res["structuredContent"]
+        return res
     return asyncio.run(run())
 
 

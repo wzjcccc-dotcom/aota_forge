@@ -285,7 +285,8 @@ NORMALIZER_PLUGIN_SYSTEM_CREATED = False
 
 # Hydrate boundary measurement (from proof harness)
 # These are expected observed ranges, not exact constants
-RESULT_HYDRATE_AGENT_FACING_MAX_OBSERVED_BYTES = 120575  # 60KB payload + JSON overhead
+# After I37-B001 repair: single copy in payload, inline_output None → ~60615 bytes (60KB + JSON overhead), not 120575 (2x)
+RESULT_HYDRATE_AGENT_FACING_MAX_OBSERVED_BYTES = 60615  # 60KB payload + JSON overhead single copy (deduped)
 DOES_RESULT_HYDRATE_BYPASS_NORMAL_RESULT_BOUNDARY = True  # yes, hydrate inline exceeds 4096
 RESULT_HYDRATE_CONTEXT_BOUNDARY_SAFE = True  # explicit selective, not unsolicited flood
 RESULT_HYDRATE_CONTEXT_BOUNDARY_REPAIR_REQUIRED = False
@@ -453,12 +454,15 @@ class TestResultHydrateContextBoundary:
         assert r6k["ok"] is True
         assert r6k["output_mode"] == "inline"
         assert r6k["output_byte_length"] == 6000
-        assert len(r6k["inline_output"]) == 6000
+        # I37-B001 repair: single copy in payload, inline_output None
+        assert r6k["payload"] is not None and r6k["payload"]["content"] == payload_6k
+        assert r6k["inline_output"] is None
+        assert len(r6k["payload"]["content"]) == 6000
         # bypass check
         assert DOES_RESULT_HYDRATE_BYPASS_NORMAL_RESULT_BOUNDARY is True
         # but safe due to explicit selective
         assert RESULT_HYDRATE_CONTEXT_BOUNDARY_SAFE is True
-        assert _measure(r6k) == 12573 or _measure(r6k) > 6000  # approx
+        assert _measure(r6k) == 12573 or _measure(r6k) > 6000  # approx (deduped)
         assert r6k["output_byte_length"] > TOOL_INLINE_OUTPUT_MAX_BYTES
         assert r6k["is_truncated"] is False
         assert r6k["complete"] is True
@@ -471,14 +475,18 @@ class TestResultHydrateContextBoundary:
             r = adapter.invoke("result.hydrate", {"ref": ref.ref, "digest": ref.digest, "project_id": binding.project_id, "worktree_id": binding.worktree_id, "kind": "evidence", "byte_length": ref.byte_length})
             assert r["ok"] is True
             assert r["output_byte_length"] == size
-            assert len(r["inline_output"]) == size
-            # max observed bytes includes JSON overhead
+            # I37-B001 repair: single copy
+            assert r["payload"] is not None and len(r["payload"]["content"]) == size
+            assert r["inline_output"] is None
+            # max observed bytes includes JSON overhead (single copy)
             measured = _measure(r)
             assert measured > size
+            assert measured < size + 2000  # overhead bounded, not 2x
             # Ensure bounded to 64KiB durable max
             assert size <= DURABLE_PAYLOAD_MAX_BYTES
-        # Record actual max observed: 60k -> 120575 bytes agent-facing
-        assert RESULT_HYDRATE_AGENT_FACING_MAX_OBSERVED_BYTES >= 120000
+        # Record actual max observed: 60k -> ~60615 bytes agent-facing (single copy, not 120575)
+        assert RESULT_HYDRATE_AGENT_FACING_MAX_OBSERVED_BYTES >= 60000
+        assert RESULT_HYDRATE_AGENT_FACING_MAX_OBSERVED_BYTES < 70000
 
     def test_hydrate_selective_evidence_bound_4096(self, tmp_path):
         # evidence/artifact selective remains 4096, tool_output allows larger
@@ -696,8 +704,11 @@ class TestTargetedProof:
         payload = "P"*6000
         ref = persist_tool_output_payload(sandbox, payload, "tool_test")
         r = adapter.invoke("result.hydrate", {"ref": ref.ref, "digest": ref.digest, "project_id": binding.project_id, "worktree_id": binding.worktree_id})
-        assert len(r["inline_output"]) == 6000
+        # I37-B001: payload contains content, inline_output None
+        assert r["payload"] is not None and len(r["payload"]["content"]) == 6000
+        assert r["inline_output"] is None
         assert _measure(r) > 6000
+        assert _measure(r) < 7000 + 6000  # single copy overhead
 
     def test_universal_llm_summarizer_absent(self):
         assert UNIVERSAL_LLM_SUMMARIZER_CREATED is False

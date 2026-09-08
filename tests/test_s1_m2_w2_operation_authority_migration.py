@@ -53,6 +53,7 @@ EXPECTED_HASHES: dict[str, str] = {
     "git.diff": "df121f6330775e158ca5666e1bd4aa6ba08ff9fcff25656d9a2a54f9530f15b9",
     "git.status": "8a631d905bd75fee1fc4b3f9b3e325bae772833a40b6610da726db06b6e89891",
     "restricted_shell.run": "4ee42ab0718e6a463ad740d0a6bd6a53f50ff03f287b5553efd2f4d4cbce7df2",
+    "result.hydrate": "d8216343b719747183bcf01b41de699342495b7776e24b6c376ac29a620ccee6",
     "test.run": "23e551c085105eba63e08539bd3fecdf62b16eaeda9240bb36b1f5ea9cb60261",
     "workspace.read": "e44277ebe5f5f32a6dad623e8fab5544ff14a84c72bc6fc4d2fe635bb8d3076d",
     "workspace.search": "e0d551bfbd5714c8ced95098c9603e46133aa3779510c388372c17916dff9cfc",
@@ -100,9 +101,9 @@ def test_operations_yaml_exists_at_canonical_root():
     assert doc["schema_version"] == 1
     assert doc["kind"] == "operations"
     assert isinstance(doc["contracts"], list)
-    assert len(doc["contracts"]) == 20
+    assert len(doc["contracts"]) == 21
     names = [c["name"] for c in doc["contracts"]]
-    assert len(set(names)) == 20
+    assert len(set(names)) == 21
     assert set(names) == set(EXPECTED_NAMES)
     # No capability/result content
     for entry in doc["contracts"]:
@@ -155,7 +156,7 @@ def test_execution_descriptor_hash_parity():
 
 def test_total_hash_parity_and_to_dict_parity():
     m = load_operation_descriptor_map(canonical_project_root())
-    assert len(m) == 20
+    assert len(m) == 21
     for name, expected_hash in EXPECTED_HASHES.items():
         desc = m[name]
         assert desc.contract_hash() == expected_hash, f"hash {name}"
