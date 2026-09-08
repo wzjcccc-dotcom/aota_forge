@@ -191,8 +191,8 @@ _ROLE_SKILL_DEFS: dict[str, tuple[list[str], list[str]]] = {
         ["aota-result-hydration"],
     ),
     "project-steward": (
-        ["aota-pcf-project-steward", "aota-workspace-operations"],
-        ["aota-multi-phase-doc-closure", "aota-result-hydration"],
+        ["aota-workspace-operations"],
+        ["aota-result-hydration"],
     ),
 }
 
