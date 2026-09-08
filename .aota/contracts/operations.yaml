@@ -486,6 +486,58 @@ contracts:
   result_contract: null
   errors: []
   protocol_version: '1.0'
+- name: role.bootstrap
+  description: Trusted AF role bootstrap via server-side binding (empty model intent, AF supplies Role/Soul/Tool surface/Skill universe/TaskHandoff)
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  protocol_version: '1.0'
+- name: skill.open
+  description: Trusted AF skill open via allowed universe and digest verification (opaque logical ref)
+  inputs:
+  - name: ref
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - SKILL_NOT_FOUND
+  - FOREIGN_SKILL_DENIED
+  - DIGEST_MISMATCH
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  protocol_version: '1.0'
 - name: workspace.read
   description: Bounded workspace file read (text, worktree-scoped)
   inputs:

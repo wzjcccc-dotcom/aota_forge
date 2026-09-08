@@ -135,6 +135,14 @@ def build_worker_binding(
     - restricted_shell.run is progressive fallback only for coder/analyst (residual)
       and requires trusted shell authority; other roles (reviewer/project-steward/task-main)
       do not gain shell even though transport is single aota.invoke.
+
+    W2 M1/W2 AF Role Bootstrap convergence:
+    - role.bootstrap is implicit via trusted binding (no model authority)
+    - skill.open via allowed universe + registry + open_skill (W2)
+    - test.run via BoundedTestExecutionToolProvider, per-role least-privilege:
+      coder required, reviewer default deny (conditional only for trusted review),
+      analyst/project-steward/task-main no automatic.
+
     Reuses existing mapping seam work_plane/mapping.py and runtime/config for profile binding;
     unknown role/profile mapping fails closed (no shell by guess).
     """
@@ -163,20 +171,15 @@ def build_worker_binding(
         role_str = "coder"
     # M2 per-role progressive surface (visibility only, not authority)
     # Use handoff's actual role for surface, not hardcoded coder, to preserve role/profile mapping truth
+    # W2 extension: test.run visibility per-role least-privilege (coder required, reviewer default deny)
     eager_ops = ("workspace.search", "workspace.read", "workspace.write")
-    if role_str in ("coder", "analyst"):
+    if role_str == "coder":
+        progressive_ops = ("result.hydrate", "restricted_shell.run", "test.run")
+    elif role_str == "analyst":
         progressive_ops = ("result.hydrate", "restricted_shell.run")
-    elif role_str in ("reviewer", "project-steward", "task-main", "analyst"):
-        # reviewer, project-steward, task-main get hydration but not shell (task-main explicitly excluded)
-        # analyst already handled above; keep hydration for all others
+    elif role_str in ("reviewer", "project-steward", "task-main"):
         progressive_ops = ("result.hydrate",)
     else:
-        progressive_ops = ("result.hydrate",)
-    # Allow analyst to be treated as coder-like for shell residual
-    if role_str == "analyst":
-        progressive_ops = ("result.hydrate", "restricted_shell.run")
-    # For task-main, reviewer, project-steward, ensure no shell
-    if role_str in ("task-main", "reviewer", "project-steward"):
         progressive_ops = ("result.hydrate",)
     tool_surface = create_role_tool_surface(role_str, eager=eager_ops, progressive=progressive_ops)
     # Restricted shell authority only for coder/analyst (existing BoundedRestrictedShellProvider reuse)
@@ -188,6 +191,23 @@ def build_worker_binding(
             )
         except Exception:
             shell_authority = None
+    # W2 test execution authority — minimal bounded extension per role least-privilege
+    test_execution_authority = None
+    if "test.run" in progressive_ops:
+        try:
+            from aota_forge.work_plane.test_execution import create_test_execution_authority, TEST_RUN_DESCRIPTOR  # type: ignore
+
+            test_execution_authority = create_test_execution_authority(
+                sandbox=sandbox,
+                handoff=handoff,
+                applicable_policies=(policy,),
+                operation=TEST_RUN_DESCRIPTOR,
+            )
+        except Exception:
+            test_execution_authority = None
+    # Reviewer conditional: default deny, only when trusted review TaskHandoff validation semantics justify.
+    # For W2, reviewer has no automatic test.run; conditional path requires explicit review handoff which we treat as deny here.
+    # Analyst/project-steward/task-main no automatic test.run — remain None.
     return TrustedWorkerBinding(
         canonical_task_id=canonical_task_id,
         project_id=project_id,
@@ -203,6 +223,7 @@ def build_worker_binding(
         read_authorities=read_authorities,
         mutation_authority=mutation_authority,
         restricted_shell_authority=shell_authority,
+        test_execution_authority=test_execution_authority,
     )
 
 

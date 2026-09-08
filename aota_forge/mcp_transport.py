@@ -102,6 +102,30 @@ except Exception:  # pragma: no cover - fallback for isolated test discovery wit
     TASK_MAIN_ADVANCE_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_RECOVER_DESCRIPTOR = None  # type: ignore
 
+# M1/W2 AF Role Bootstrap — role.bootstrap, skill.open, test.run reuse
+try:
+    from aota_forge.work_plane.test_execution import TEST_RUN_DESCRIPTOR as _W2_TEST_RUN_DESCRIPTOR  # type: ignore
+except Exception:  # pragma: no cover
+    _W2_TEST_RUN_DESCRIPTOR = None  # type: ignore
+
+TEST_RUN_DESCRIPTOR = _W2_TEST_RUN_DESCRIPTOR
+
+# Load role.bootstrap and skill.open descriptors from canonical operations.yaml (single authority)
+try:
+    from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
+
+    _W2_CANONICAL_MAP = load_operation_descriptor_map(discover_canonical_project_root())
+    ROLE_BOOTSTRAP_DESCRIPTOR = _W2_CANONICAL_MAP.get("role.bootstrap")
+    SKILL_OPEN_DESCRIPTOR = _W2_CANONICAL_MAP.get("skill.open")
+    # Canonical test.run descriptor from map should match TEST_RUN_DESCRIPTOR
+    _CANONICAL_TEST_RUN = _W2_CANONICAL_MAP.get("test.run")
+    if _CANONICAL_TEST_RUN is not None and TEST_RUN_DESCRIPTOR is None:
+        TEST_RUN_DESCRIPTOR = _CANONICAL_TEST_RUN
+except Exception:  # pragma: no cover - fallback for isolated test discovery
+    ROLE_BOOTSTRAP_DESCRIPTOR = None  # type: ignore
+    SKILL_OPEN_DESCRIPTOR = None  # type: ignore
+    _CANONICAL_TEST_RUN = None  # type: ignore
+
 try:  # The MCP SDK is an adapter dependency, never a Core dependency.
     from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
@@ -200,6 +224,12 @@ TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.recover_coordinator",
     "task_main.advance_once",
 )
+# W2 AF Role Bootstrap / Skill / Test — newly canonical for #41, plus existing test.run
+W2_OPERATIONS: tuple[str, ...] = (
+    "role.bootstrap",
+    "skill.open",
+    "test.run",
+)
 # Internal task-main controls must never become canonical Agent-facing operations
 INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.reconcile_worker_completion",
@@ -207,7 +237,7 @@ INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.observe_terminal_completions",
     "task_main.dispatch_ready",
 )
-LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS
+LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
 LOGICAL_CAPABILITY_SURFACE = LOGICAL_OPERATIONS
@@ -243,6 +273,13 @@ if RESULT_HYDRATE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[RESULT_HYDRATE_DESCRIPTOR.name] = RESULT_HYDRATE_DESCRIPTOR
 if RESTRICTED_SHELL_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[RESTRICTED_SHELL_DESCRIPTOR.name] = RESTRICTED_SHELL_DESCRIPTOR
+# W2 AF Role Bootstrap descriptors (canonical, loaded via single authority .aota/contracts/operations.yaml)
+if ROLE_BOOTSTRAP_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[ROLE_BOOTSTRAP_DESCRIPTOR.name] = ROLE_BOOTSTRAP_DESCRIPTOR
+if SKILL_OPEN_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[SKILL_OPEN_DESCRIPTOR.name] = SKILL_OPEN_DESCRIPTOR
+if TEST_RUN_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TEST_RUN_DESCRIPTOR.name] = TEST_RUN_DESCRIPTOR
 # M3/W1 task-main descriptors (canonical, exactly 3)
 if TASK_MAIN_ACTIVATE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ACTIVATE_DESCRIPTOR.name] = TASK_MAIN_ACTIVATE_DESCRIPTOR
@@ -401,6 +438,8 @@ class TrustedWorkerBinding:
     mutation_authority: WorkspaceMutationAuthority | None = None
     # M2: residual shell authority (optional, not per-binding required)
     restricted_shell_authority: Any | None = None
+    # W2: test execution authority (optional, per-role least-privilege)
+    test_execution_authority: Any | None = None
     # M3/W1: trusted task-main runtime context (optional, task-main only)
     trusted_task_main_context: Any | None = None
 
@@ -481,6 +520,29 @@ class TrustedWorkerBinding:
             else:
                 # If descriptor missing, allow None only
                 raise TrustedBindingError("restricted_shell authority unavailable (descriptor missing)")
+        # W2 test execution authority (optional, per-role least-privilege)
+        if self.test_execution_authority is not None:
+            # Lazy import to avoid circularity; duck check if import not available
+            try:
+                from aota_forge.work_plane.test_execution import TestExecutionAuthorityEvidence as _TestEvidence  # type: ignore
+            except Exception:
+                _TestEvidence = None  # type: ignore
+            if _TestEvidence is not None:
+                if not isinstance(self.test_execution_authority, _TestEvidence):
+                    raise TrustedBindingError(
+                        f"test_execution_authority must be TestExecutionAuthorityEvidence, got {type(self.test_execution_authority).__name__}"
+                    )
+            # Generic checks via duck typing if class not available or for safety
+            ev = self.test_execution_authority
+            if not hasattr(ev, "sandbox") or not hasattr(ev, "handoff") or not hasattr(ev, "operation"):
+                raise TrustedBindingError("test_execution_authority missing required fields")
+            if ev.sandbox != self.sandbox or ev.handoff != self.handoff:
+                raise TrustedBindingError("test execution authority does not match trusted binding")
+            if ev.operation.name != "test.run":  # type: ignore[union-attr]
+                raise TrustedBindingError(f"test execution authority operation must be test.run, got {ev.operation.name!r}")  # type: ignore[union-attr]
+            # Enforce per-role policy: coder has required, reviewer default deny, analyst/project-steward/task-main no automatic
+            # The binding construction enforces this; here we just validate that reviewer has no authority unless review semantics justify.
+            # No automatic enforcement here beyond existence; dispatch will still check authority.
         # M3/W1 trusted task-main context (optional, task-main only)
         if self.trusted_task_main_context is not None:
             if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
@@ -1015,6 +1077,101 @@ class _SharedAotaMcpAdapter:
                     )
                 request = ToolRequest(operation=RESTRICTED_SHELL_DESCRIPTOR, inputs=validated)
                 return _governed_from_response(self.binding, operation, self._shell_provider.invoke(request))
+
+            # W2 AF Role Bootstrap / Skill / Test — share single MCP aota.invoke
+            if operation == "role.bootstrap":
+                # Trusted bootstrap: no model authority fields, all derived from binding
+                if descriptor.contract_hash() != ROLE_BOOTSTRAP_DESCRIPTOR.contract_hash():  # type: ignore[union-attr]
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "role.bootstrap contract hash mismatch"}),
+                    )
+                try:
+                    from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap  # type: ignore
+                except Exception as exc:
+                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"role.bootstrap handler unavailable: {exc}")
+                try:
+                    payload = handle_role_bootstrap(self.binding, validated)
+                except Exception as exc:
+                    code = "AUTHORITY_DENIED" if "AUTHORITY" in str(exc) else "INVALID_INPUT" if "empty" in str(exc).lower() else "GOVERNED_OPERATION_FAILURE"
+                    # Preserve fail-closed identity: unknown role, digest mismatch, etc. all map to GOVERNED_OPERATION_FAILURE unless typed
+                    if isinstance(exc, ValueError) and "authority" in str(exc).lower():
+                        code = "AUTHORITY_DENIED"
+                    elif isinstance(exc, ValueError):
+                        code = "GOVERNED_OPERATION_FAILURE"
+                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}))
+                return _governed_from_response(self.binding, operation, ToolResponse.success(payload))
+
+            if operation == "skill.open":
+                if descriptor.contract_hash() != SKILL_OPEN_DESCRIPTOR.contract_hash():  # type: ignore[union-attr]
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "skill.open contract hash mismatch"}),
+                    )
+                try:
+                    from aota_forge.work_plane.role_bootstrap import handle_skill_open  # type: ignore
+                except Exception as exc:
+                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"skill.open handler unavailable: {exc}")
+                try:
+                    payload = handle_skill_open(self.binding, validated)
+                except Exception as exc:
+                    msg = str(exc).lower()
+                    if "not in allowed" in msg or "outside allowed" in msg:
+                        code = "AUTHORITY_DENIED"
+                    elif "foreign" in msg:
+                        code = "FOREIGN_SKILL_DENIED"
+                    elif "digest" in msg:
+                        code = "DIGEST_MISMATCH"
+                    elif "not found" in msg:
+                        code = "SKILL_NOT_FOUND"
+                    elif "missing" in msg:
+                        code = "SKILL_NOT_FOUND"
+                    else:
+                        code = "GOVERNED_OPERATION_FAILURE"
+                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}))
+                return _governed_from_response(self.binding, operation, ToolResponse.success(payload))
+
+            if operation == "test.run":
+                # Per-role least-privilege: only bindings with test_execution_authority may invoke
+                if operation not in set(self.binding.tool_surface.all_capability_names()):
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run not authorized for this role/task (tool surface deny)"}),
+                    )
+                if TEST_RUN_DESCRIPTOR is None:
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run descriptor unavailable"}),
+                    )
+                if descriptor.contract_hash() != TEST_RUN_DESCRIPTOR.contract_hash():
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "test.run contract hash mismatch"}),
+                    )
+                # Check trusted authority exists
+                t_auth = getattr(self.binding, "test_execution_authority", None)
+                if t_auth is None:
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted test execution authority absent for this binding (per-role deny)"}),
+                    )
+                # Validate authority matches binding
+                try:
+                    from aota_forge.work_plane.test_execution import BoundedTestExecutionToolProvider  # type: ignore
+                except Exception as exc:
+                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"test provider unavailable: {exc}")
+                try:
+                    provider = BoundedTestExecutionToolProvider(t_auth)
+                except Exception as exc:
+                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": _bounded_failure_message(str(exc))}))
+                request = ToolRequest(operation=TEST_RUN_DESCRIPTOR, inputs=validated)
+                return _governed_from_response(self.binding, operation, provider.invoke(request))
 
             if operation in TASK_MAIN_OPERATIONS:
                 return self._invoke_task_main(operation, validated, descriptor)
