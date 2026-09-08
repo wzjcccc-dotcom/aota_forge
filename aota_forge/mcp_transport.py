@@ -1287,6 +1287,7 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
             return mcp_result
         try:
             # Minimal summary for TextContent – no large hydrated bytes duplicated.
+            # For task-main controls, include disposition/next_action so the Agent can observe progression without needing the full inline body.
             summary = {
                 "ok": mcp_result.get("ok"),
                 "operation": mcp_result.get("operation"),
@@ -1295,6 +1296,20 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
                 "byte_length": mcp_result.get("output_byte_length"),
                 "digest": mcp_result.get("output_digest"),
             }
+            # Task-main progression is driven by disposition/next_action; surface it in the minimal summary so the model can decide next step.
+            try:
+                payload = mcp_result.get("payload")
+                if isinstance(payload, dict):
+                    for _k in ("disposition", "next_action", "status", "coordinator_id", "dispatched", "reconciled_work_item", "reconciled_canonical_task_id", "user_gate_required", "milestone_closure_ready", "next_milestone_gate", "integrated_review_required", "session_recovery_required"):
+                        if _k in payload:
+                            summary[_k] = payload[_k]
+                    # Also surface error code for failures
+                    if not mcp_result.get("ok"):
+                        err = mcp_result.get("error") or {}
+                        if isinstance(err, dict) and "code" in err:
+                            summary["error_code"] = err.get("code")
+            except Exception:
+                pass
             # Remove None values for compactness
             summary = {k: v for k, v in summary.items() if v is not None}
             text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)

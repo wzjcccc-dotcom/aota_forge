@@ -138,7 +138,13 @@ def _binding(root: Path, *, with_write: bool = True) -> TrustedWorkerBinding:
 def _call(server, operation: str, arguments: dict):
     async def run():
         tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-        return tool.fn(operation=operation, arguments=arguments)
+        res = tool.fn(operation=operation, arguments=arguments)
+        # c3fde75 repair wraps result in CallToolResult with structuredContent
+        if hasattr(res, "structuredContent") and res.structuredContent is not None:
+            return res.structuredContent
+        if hasattr(res, "structured_content") and res.structured_content is not None:
+            return res.structured_content
+        return res
     return asyncio.run(run())
 
 
@@ -361,14 +367,19 @@ def test_vector_15_real_mcp_protocol_smoke(tmp_path: Path):
     listed = asyncio.run(server.list_tools())
     assert [t.name for t in listed] == ["aota.invoke"]
     called = asyncio.run(server.call_tool("aota.invoke", {"operation": "workspace.search", "arguments": {"query": "missing"}}))
-    # call_tool returns (content_blocks, structured_content) for FastMCP
-    assert isinstance(called, tuple) or isinstance(called, list)
-    if isinstance(called, tuple):
+    # c3fde75 repair: call_tool now returns CallToolResult with structuredContent
+    if hasattr(called, "structuredContent") and called.structuredContent is not None:
+        assert called.structuredContent["ok"] is True
+    elif hasattr(called, "structured_content") and called.structured_content is not None:
+        assert called.structured_content["ok"] is True
+    elif isinstance(called, tuple):
         _, structured = called
         assert structured["ok"] is True
-    else:
-        # fallback list of ContentBlock
+    elif isinstance(called, list):
         pass
+    else:
+        # CallToolResult with minimal summary in content, structured in structuredContent
+        assert False, f"unexpected call_tool result type {type(called)}"
     denied = asyncio.run(server.call_tool("aota.invoke", {"operation": "workspace.write", "arguments": {"path": "not-authorized.txt", "content": "x", "mode": "create_only"}})) if not _binding(tmp_path, with_write=False) else None
     # Use fixture subprocess for true stdio transport
     fixture = Path(__file__).with_name("mcp_server_process.py")

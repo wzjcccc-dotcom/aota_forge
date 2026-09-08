@@ -17,6 +17,14 @@ import json
 import os
 import sys
 import time
+
+# Early startup log for hermes MCP diagnosis (writes to /tmp regardless of env)
+try:
+    with open("/tmp/aota_mcp_startup.log", "a", encoding="utf-8") as _log:
+        _log.write(f"STARTUP pid={os.getpid()} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')} AOTA_FORGE_REPO_ROOT={os.environ.get('AOTA_FORGE_REPO_ROOT')} PYTHONPATH={os.environ.get('PYTHONPATH','')[:500]}\n")
+        _log.flush()
+except Exception:
+    pass
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -210,22 +218,82 @@ def _read_worker_binding_from_environment() -> TrustedWorkerBinding:
     )
 
 
+def _try_read_task_main_binding() -> TrustedWorkerBinding | None:
+    """Host-controlled task-main bootstrap (M3/W2).
+
+    Consumes only the trusted filesystem reference AOTA_W3_MCP_ROOT and the
+    operator-written .aota/task-main-bootstrap.json it points to.  No
+    model-facing argument is consulted.  Returns None if no bootstrap file
+    exists (caller is a normal worker).
+    """
+    try:
+        from aota_forge.composition.task_main_host_bootstrap import try_build_task_main_binding
+
+        result = try_build_task_main_binding()
+        # Debug log for task-main bootstrap
+        try:
+            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
+                dbg.write(f"try_build result={result is not None} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')} bootstrap_exists={Path(os.environ.get('AOTA_W3_MCP_ROOT','') + '/.aota/task-main-bootstrap.json').exists() if os.environ.get('AOTA_W3_MCP_ROOT') else False}\n")
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        try:
+            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
+                dbg.write(f"try_build exception {type(e).__name__}: {e} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')}\n")
+        except Exception:
+            pass
+        return None
+
+
 async def _serve_mcp_child() -> None:
     """Run the actual W2 server used by Hermes, with server-side binding."""
     from aota_forge import mcp_transport
 
-    server = mcp_transport.create_shared_mcp_server(_read_worker_binding_from_environment())
-    trace_path = Path(os.environ[MCP_TRACE_ENV])
-    for tool in server._tool_manager.list_tools():
-        original = tool.fn
-        name = tool.name
+    # Debug: log env to /tmp for hermes diagnosis
+    try:
+        with open("/tmp/aota_mcp_debug.log", "a", encoding="utf-8") as dbg:
+            dbg.write(f"ENV AOTA_W3_MCP_ROOT={os.environ.get(MCP_ROOT_ENV)}\n")
+            dbg.write(f"ENV AOTA_FORGE_REPO_ROOT={os.environ.get(MCP_REPO_ROOT_ENV)}\n")
+            dbg.write(f"ENV AOTA_FORGE_RUNTIME_CONFIG={os.environ.get('AOTA_FORGE_RUNTIME_CONFIG')}\n")
+            dbg.write(f"BOOTSTRAP_PATH={Path(os.environ.get(MCP_ROOT_ENV, '')) / '.aota/task-main-bootstrap.json' if os.environ.get(MCP_ROOT_ENV) else 'none'}\n")
+            if os.environ.get(MCP_ROOT_ENV):
+                p = Path(os.environ[MCP_ROOT_ENV]) / ".aota/task-main-bootstrap.json"
+                dbg.write(f"BOOTSTRAP_EXISTS={p.exists()} {p}\n")
+    except Exception:
+        pass
+    # Task-main bootstrap has priority: if a task-main bootstrap file exists
+    # under the trusted root, this Hermes session is the exact task-main
+    # session and must receive the trusted task-main context, not a worker
+    # binding.  The file is operator-owned; the model never supplies it.
+    task_main_binding = _try_read_task_main_binding()
+    if task_main_binding is not None:
+        server = mcp_transport.create_shared_mcp_server(task_main_binding)
+        trace_path = None
+        # Optional invocation trace for W2 evidence (bounded)
+        t = os.environ.get(MCP_TRACE_ENV) or os.environ.get("AOTA_TASK_MAIN_TRACE")
+        if t:
+            try:
+                trace_path = Path(t)
+            except Exception:
+                trace_path = None
+    else:
+        server = mcp_transport.create_shared_mcp_server(_read_worker_binding_from_environment())
+        trace_path = Path(os.environ[MCP_TRACE_ENV]) if MCP_TRACE_ENV in os.environ else None
+    if trace_path is not None:
+        for tool in server._tool_manager.list_tools():
+            original = tool.fn
+            name = tool.name
 
-        def traced(*args: Any, _original=original, _name=name, **kwargs: Any):
-            with trace_path.open("a", encoding="utf-8") as trace:
-                trace.write(f"{_name}\n")
-            return _original(*args, **kwargs)
+            def traced(*args: Any, _original=original, _name=name, **kwargs: Any):
+                try:
+                    with trace_path.open("a", encoding="utf-8") as trace:
+                        trace.write(f"{_name}\n")
+                except Exception:
+                    pass
+                return _original(*args, **kwargs)
 
-        tool.fn = traced
+            tool.fn = traced
     await server.run_stdio_async()
 
 
