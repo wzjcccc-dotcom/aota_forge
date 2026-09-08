@@ -92,7 +92,7 @@ def snapshot_sha256(payload: dict[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class PortablePlanDocument:
-    """Canonical normalized Portable Plan document (M2-D).
+    """Canonical normalized Portable Plan document (M2-D / M3-RV2-B003).
 
     Built exclusively from the authoritative issue body by
     ``aota_forge.core.plan.normalize.normalize_portable_plan``.
@@ -100,6 +100,14 @@ class PortablePlanDocument:
     Executor-private IDs are NOT part of this schema; raw body KEY=VALUE
     observations are kept separately under ``current_fields`` for bounded
     diagnostics, never as typed schema fields.
+
+    M3-B003 extensions (executor-neutral, typed):
+      * ``milestone_work_items`` — work item identities per milestone
+      * ``milestone_dependencies`` — dependency edges per milestone
+      * ``milestone_approvals`` — explicit user approval per milestone (yes/no)
+        Missing/ambiguous remains absent (unknown) instead of default True/False.
+      * ``entry_base`` — canonical entry base from Plan authority (ENTRY_BASE)
+      * ``milestone_dag_raw`` — raw DAG source for diagnostics
     """
 
     plan_status: str | None = None
@@ -120,6 +128,12 @@ class PortablePlanDocument:
     source_revision: str | None = None
     source_digest: str = ""
     source_kind: str = "portable_plan_issue_body"
+    # M3-B003 canonical extensions (executor-neutral)
+    milestone_work_items: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    milestone_dependencies: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
+    milestone_approvals: dict[str, bool] = field(default_factory=dict)
+    milestone_dag_raw: dict[str, str] = field(default_factory=dict)
+    entry_base: str | None = None
 
     def canonical_dict(self) -> dict[str, Any]:
         """Digest payload: everything except the derived digest itself."""
@@ -140,6 +154,11 @@ class PortablePlanDocument:
             "governance": self.governance,
             "provenance_observations": self.provenance_observations,
             "current_fields": self.current_fields,
+            "milestone_work_items": {k: list(v) for k, v in self.milestone_work_items.items()},
+            "milestone_dependencies": {k: [list(e) for e in v] for k, v in self.milestone_dependencies.items()},
+            "milestone_approvals": dict(self.milestone_approvals),
+            "milestone_dag_raw": dict(self.milestone_dag_raw),
+            "entry_base": self.entry_base,
         }
 
     def to_dict(self) -> dict[str, Any]:

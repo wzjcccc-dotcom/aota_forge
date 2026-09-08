@@ -127,33 +127,50 @@ def _extract_key_values(lines: list[str]) -> tuple[dict[str, str], tuple[tuple[s
     return key_values, tuple(duplicates)
 
 
+def _has_root_current_signature(key_values: dict[str, str]) -> bool:
+    """Bounded deterministic check for root Plan current-state signature.
+
+    A root titled section is only promoted to ``current`` when it contains
+    a sufficient invariant — at minimum ``PLAN_STATUS`` + ``CURRENT_MILESTONE``.
+    Arbitrary single ``STATUS=`` lines must NOT promote an unclassified section.
+    """
+    return "PLAN_STATUS" in key_values and "CURRENT_MILESTONE" in key_values
+
+
 def parse_body_sections(body: str) -> list[BodySection]:
     """Split a body into classified sections (deterministic).
 
     Preamble (before the first heading) is classified as current state.
+    The root ``#`` (H1) Plan title section is also recognised as current
+    when it carries the canonical current-state signature (``PLAN_STATUS`` +
+    ``CURRENT_MILESTONE``).  This handles the real Portable Plan shape where
+    current state lives immediately under the H1 title instead of a preamble.
+    Arbitrary unclassified sections with a single STATUS line are never promoted.
     Empty sections and bodies are tolerated at parse time; emptiness is
     escalated by the normalizer.
     """
     lines = body.splitlines()
-    blocks: list[tuple[str | None, int, list[str]]] = []
+    blocks: list[tuple[str | None, int | None, int, list[str]]] = []
     current_title: str | None = None
+    current_level: int | None = None
     current_start = 0
     current_lines: list[str] = []
     for line_number, line in enumerate(lines):
         heading = HEADING_RE.match(line)
         if heading:
             if current_lines or current_title is not None:
-                blocks.append((current_title, current_start, current_lines))
+                blocks.append((current_title, current_level, current_start, current_lines))
             current_title = heading.group(2).strip()
+            current_level = len(heading.group(1))
             current_start = line_number
             current_lines = []
         else:
             current_lines.append(line)
     if current_lines or current_title is not None:
-        blocks.append((current_title, current_start, current_lines))
+        blocks.append((current_title, current_level, current_start, current_lines))
 
     sections: list[BodySection] = []
-    for title, start_line, block_lines in blocks:
+    for title, level, start_line, block_lines in blocks:
         if title is None:
             kind = KIND_CURRENT
             section_title = "(preamble)"
@@ -161,6 +178,9 @@ def parse_body_sections(body: str) -> list[BodySection]:
             kind = classify_section(title)
             section_title = title
         key_values, duplicates = _extract_key_values(block_lines)
+        # Bounded root-current promotion: H1 with canonical signature becomes current.
+        if title is not None and level == 1 and kind == KIND_UNCLASSIFIED and _has_root_current_signature(key_values):
+            kind = KIND_CURRENT
         sections.append(
             BodySection(
                 title=section_title,

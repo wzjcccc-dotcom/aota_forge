@@ -1,7 +1,7 @@
-"""Live GitHub Plan authority read adapter — thin production read seam (M3 RV1 B003).
+"""Live GitHub Plan authority read adapter — thin production read seam (M3 RV2 B003).
 
 Implements the existing PlanAuthorityReadAdapter boundary for the current
-external authority mechanism (GitHub Issue wzjcccc-dotcom/aota-hermes-tools#37).
+external authority mechanism (GitHub Issue, operator-selected).
 
 Core remains platform-neutral: it never sees GitHub issue numbers, gh CLI,
 comment IDs, REST API pagination, or comment role markers. The adapter hides
@@ -10,11 +10,14 @@ control_projections). Transport is read-only.
 
 This is the thinnest production concrete reader under the existing
 aota_forge/adapters/plan_authority/ boundary. No new Plan authority system
-is created; the existing boundary is reused.
+is created; the existing boundary is reused. Plan authority is operator-
+selectable and adapter-private; no universal production default is encoded.
 
-Required by AOTA Forge Operational Plan #37 M3 RV1 B003 repair:
+Required by AOTA Forge Operational Plan M3 RV2 B003 repair:
   EXISTING_PLAN_AUTHORITY_BOUNDARY_REUSED=yes
   NEW_PLAN_AUTHORITY_SYSTEM_CREATED=no
+  PLAN_AUTHORITY_OPERATOR_SELECTABLE=yes
+  GITHUB_PLATFORM_KNOWLEDGE_ADAPTER_PRIVATE=yes
 """
 
 from __future__ import annotations
@@ -29,10 +32,6 @@ from typing import Any
 
 from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter, PlanAuthoritySnapshot
 
-# Current governing Plan authority (external). This is adapter-private
-# knowledge. Core never imports it.
-DEFAULT_GITHUB_REPO = "wzjcccc-dotcom/aota-hermes-tools"
-DEFAULT_ISSUE_NUMBER = 37
 GH_RTK_BIN = "rtk"
 GH_CONFIG_ENV = "GH_CONFIG_DIR"
 GH_CONFIG_DEFAULT = "/home/latios/.config/gh"
@@ -74,12 +73,16 @@ class GitHubPlanAuthorityReadAdapter(PlanAuthorityReadAdapter):
 
     Fallback: if AOTA_PLAN_AUTHORITY_SNAPSHOT_PATH is set, read body from
     that file (deterministic fixture path for disposable tests).
+
+    Plan authority (repo + issue_number) is operator-selected and
+    adapter-private. No universal default is encoded; callers must supply
+    explicit trusted configuration.
     """
 
     def __init__(
         self,
-        repo: str = DEFAULT_GITHUB_REPO,
-        issue_number: int = DEFAULT_ISSUE_NUMBER,
+        repo: str,
+        issue_number: int,
         *,
         gh_bin: str = GH_RTK_BIN,
         gh_config_dir: str | os.PathLike[str] | None = None,
@@ -92,6 +95,11 @@ class GitHubPlanAuthorityReadAdapter(PlanAuthorityReadAdapter):
         self._issue = int(issue_number)
         self._gh_bin = gh_bin
         self._gh_config_dir = str(gh_config_dir) if gh_config_dir is not None else os.environ.get(GH_CONFIG_ENV, GH_CONFIG_DEFAULT)
+
+    @property
+    def plan_authority(self) -> str:
+        """Operator-bound plan authority reference (repo#issue)."""
+        return f"{self._repo}#{self._issue}"
 
     def load(self) -> PlanAuthoritySnapshot:
         # Deterministic fixture path for tests (no gh required)
@@ -176,4 +184,4 @@ class GitHubPlanAuthorityReadAdapter(PlanAuthorityReadAdapter):
         return PlanAuthoritySnapshot(body=body, revision=revision, digest=digest, control_projections=control_projections)
 
 
-__all__ = ["GitHubPlanAuthorityReadAdapter", "DEFAULT_GITHUB_REPO", "DEFAULT_ISSUE_NUMBER"]
+__all__ = ["GitHubPlanAuthorityReadAdapter"]

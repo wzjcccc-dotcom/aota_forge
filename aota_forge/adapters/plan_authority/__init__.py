@@ -64,7 +64,10 @@ class StaticPlanAuthorityAdapter(PlanAuthorityReadAdapter):
 
     Fixture/offline adapter used by M2-D validators.  Any GitHub-specific
     source metadata passed at construction time is kept adapter-private and
-    is NOT exposed on the snapshot.
+    is NOT exposed on the snapshot.  For generic disposable Plan proof,
+    ``plan_authority`` may be supplied as the operator-selected authority
+    reference (e.g. ``example-owner/example-governance#123``) and is exposed
+    via the ``plan_authority`` property for the canonical projection layer.
     """
 
     def __init__(
@@ -74,13 +77,20 @@ class StaticPlanAuthorityAdapter(PlanAuthorityReadAdapter):
         revision: str | None = None,
         digest: str | None = None,
         control_projections: dict[str, dict[str, str]] | None = None,
+        plan_authority: str | None = None,
         _source_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._body = body
         self._revision = revision
         self._digest = digest
         self._control_projections = dict(control_projections or {})
+        self._plan_authority = str(plan_authority).strip() if isinstance(plan_authority, str) and plan_authority.strip() else None
         self._source_metadata = dict(_source_metadata or {})  # adapter-private
+
+    @property
+    def plan_authority(self) -> str | None:
+        """Operator-bound plan authority reference if supplied."""
+        return self._plan_authority
 
     def load(self) -> PlanAuthoritySnapshot:
         return PlanAuthoritySnapshot(
