@@ -624,8 +624,12 @@ class TestSingleEntryAndProgressiveDisclosure:
         assert MCP_PUBLIC_TOOLS == ("aota.invoke",)
         assert AGENT_FACING_AOTA_TOOL == "aota.invoke"
         assert HERMES_AGENT_FACING_AOTA_TOOL_COUNT == 1
-        # logical operations remain 5 but not separate tools
-        assert set(LOGICAL_OPERATIONS) == {"workspace.search","workspace.read","workspace.write","result.hydrate","restricted_shell.run"}
+        # logical operations include M2's 5 plus M3's 3 task_main controls, but still not separate MCP tools
+        assert {"workspace.search","workspace.read","workspace.write","result.hydrate","restricted_shell.run"}.issubset(set(LOGICAL_OPERATIONS))
+        # M3 adds task_main controls (single-entry still 1 tool, logical ops now 8 including task_main)
+        # Verify task_main ops are present after M3 without being separate MCP tools
+        if "task_main.activate_milestone" in set(LOGICAL_OPERATIONS):
+            assert {"task_main.activate_milestone","task_main.recover_coordinator","task_main.advance_once"}.issubset(set(LOGICAL_OPERATIONS))
         assert "workspace.search" not in [t.name for t in tools]
 
     def test_full_catalog_not_eager(self):
