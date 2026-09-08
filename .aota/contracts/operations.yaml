@@ -611,3 +611,90 @@ contracts:
   - OVERSIZED_HYDRATION
   - HYDRATION_FAILED
   protocol_version: '1.0'
+- name: task_main.activate_milestone
+  description: Trusted task-main Milestone activation via authoritative live Plan view (empty model intent, trusted runtime supplies Plan authority, approval, session, etc.)
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - USER_GATE_REQUIRED
+  - PLAN_DRIFT
+  - SESSION_RECOVERY_REQUIRED
+  - COORDINATOR_NOT_FOUND
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: task_main.advance_once
+  description: Trusted task-main single bounded advance (existing RunnerOutcome semantics, trusted runtime supplies resolvers and Plan truth)
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - USER_GATE_REQUIRED
+  - PLAN_DRIFT
+  - SESSION_RECOVERY_REQUIRED
+  - COORDINATOR_NOT_FOUND
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'
+- name: task_main.recover_coordinator
+  description: Trusted task-main coordinator recovery via authoritative live Plan view and durable coordinator truth (empty model intent, trusted runtime supplies Plan and session truth)
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: null
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - USER_GATE_REQUIRED
+  - PLAN_DRIFT
+  - SESSION_RECOVERY_REQUIRED
+  - COORDINATOR_NOT_FOUND
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'

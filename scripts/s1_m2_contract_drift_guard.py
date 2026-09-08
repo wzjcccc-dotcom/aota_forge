@@ -561,8 +561,8 @@ def run_guard(project_root: pathlib.Path | None = None) -> dict[str, Any]:
         ops_doc = load_operations(root)
         descriptors = load_operation_descriptors(root)
         operation_count = len(descriptors)
-        if operation_count != 21:
-            violations.append(_violation("OPERATION_COUNT", ".aota/contracts/operations.yaml", 0, f"expected 21, found {operation_count}"))
+        if operation_count != 24:
+            violations.append(_violation("OPERATION_COUNT", ".aota/contracts/operations.yaml", 0, f"expected 24, found {operation_count}"))
 
         # Build deterministic snapshot: sorted by name
         for desc in sorted(descriptors, key=lambda d: d.name):

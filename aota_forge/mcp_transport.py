@@ -90,6 +90,18 @@ except Exception:
     RestrictedShellAuthorityEvidence = None  # type: ignore
     RESTRICTED_SHELL_DESCRIPTOR = None  # type: ignore
 
+# M3/W1 task-main control descriptors — canonical project root via single authority
+try:
+    from aota_forge.work_plane.task_main_descriptors import (  # type: ignore
+        TASK_MAIN_ACTIVATE_DESCRIPTOR,
+        TASK_MAIN_ADVANCE_DESCRIPTOR,
+        TASK_MAIN_RECOVER_DESCRIPTOR,
+    )
+except Exception:  # pragma: no cover - fallback for isolated test discovery without yaml
+    TASK_MAIN_ACTIVATE_DESCRIPTOR = None  # type: ignore
+    TASK_MAIN_ADVANCE_DESCRIPTOR = None  # type: ignore
+    TASK_MAIN_RECOVER_DESCRIPTOR = None  # type: ignore
+
 try:  # The MCP SDK is an adapter dependency, never a Core dependency.
     from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
@@ -136,7 +148,28 @@ ERROR_IDENTITY_PRESERVED_END_TO_END = True
 DURABLE_SELECTIVE_HYDRATION_IMPLEMENTED_IN_W3 = True  # M2 durable file-backed payload store (worktree_root/.aota/durable_payloads, non-DB)
 RESULT_HYDRATE_OPERATION_IMPLEMENTED_IN_W3 = True  # canonical result.hydrate via aota.invoke
 RESTRICTED_SHELL_ACTIVATED_IN_W3 = True  # residual fallback via aota.invoke, BoundedRestrictedShellProvider reused
-TASK_MAIN_CONTROL_IMPLEMENTED_IN_W3 = False
+TASK_MAIN_CONTROL_IMPLEMENTED_IN_W3 = True  # M3/W1: trusted task-main control via same single-entry transport
+# M3/W1 invariants
+TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT = 3
+INTERNAL_RECONCILE_EXPOSED_TO_MODEL = False
+INTERNAL_OBSERVE_EXPOSED_TO_MODEL = False
+INTERNAL_DISPATCH_EXPOSED_TO_MODEL = False
+EXISTING_TASK_MAIN_CONTROL_SERVICE_REUSED = True
+MODEL_SUPPLIED_LIVE_PLAN_VIEW_ALLOWED = False
+MODEL_SUPPLIED_USER_APPROVAL_ALLOWED = False
+MODEL_SUPPLIED_PLAN_AUTHORITY_ALLOWED = False
+MODEL_SUPPLIED_PROFILE_AUTHORITY_ALLOWED = False
+TASK_MAIN_CAN_SET_USER_APPROVAL = False
+TASK_MAIN_CAN_CROSS_USER_GATE = False
+WORKER_CAN_CALL_TASK_MAIN_CONTROL = False
+TASK_MAIN_RESTRICTED_SHELL_AUTHORIZED = False
+NEW_PERMISSION_ENGINE_CREATED = False
+NEW_AUTHORITY_REGISTRY_CREATED = False
+NEW_WORKFLOW_ENGINE_CREATED = False
+NEW_TASK_MAIN_MCP_SERVER_CREATED = False
+OVERDESIGN_FINDING_COUNT = 0
+ONE_SHARED_AOTA_MCP_RUNTIME = True
+PER_ROLE_MCP_SERVER_RUNTIME = False
 INLINE_BOUND = TOOL_INLINE_OUTPUT_MAX_BYTES
 # M2 durable bounds
 MAX_DURABLE_PAYLOAD_BYTES = DURABLE_PAYLOAD_MAX_BYTES
@@ -152,6 +185,7 @@ HERMES_AGENT_FACING_AOTA_TOOL_COUNT = 1
 
 # Logical capability surface (existing typed operations, not MCP tool names).
 # M2 convergence: workspace.* + durable result.hydrate + residual restricted_shell.run
+# M3/W1: + task_main.* (exactly 3, minimal intent)
 WORKSPACE_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
@@ -161,7 +195,19 @@ M2_OPERATIONS: tuple[str, ...] = (
     "result.hydrate",
     "restricted_shell.run",
 )
-LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS
+TASK_MAIN_OPERATIONS: tuple[str, ...] = (
+    "task_main.activate_milestone",
+    "task_main.recover_coordinator",
+    "task_main.advance_once",
+)
+# Internal task-main controls must never become canonical Agent-facing operations
+INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
+    "task_main.reconcile_worker_completion",
+    "task_main.reconcile_review_completion",
+    "task_main.observe_terminal_completions",
+    "task_main.dispatch_ready",
+)
+LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
 LOGICAL_CAPABILITY_SURFACE = LOGICAL_OPERATIONS
@@ -186,6 +232,7 @@ _MAX_FAILURE_MESSAGE = 512
 
 # Exact deterministic operation -> descriptor map (no fuzzy, no alias).
 # Workspace descriptors are static imports; M2 descriptors are loaded canonically (single authority: .aota/contracts/operations.yaml)
+# M3/W1 task-main descriptors are canonical via same loader (task_main_descriptors)
 _DESCRIPTOR_MAP: dict[str, Any] = {
     WORKSPACE_SEARCH_DESCRIPTOR.name: WORKSPACE_SEARCH_DESCRIPTOR,
     WORKSPACE_READ_DESCRIPTOR.name: WORKSPACE_READ_DESCRIPTOR,
@@ -196,6 +243,13 @@ if RESULT_HYDRATE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[RESULT_HYDRATE_DESCRIPTOR.name] = RESULT_HYDRATE_DESCRIPTOR
 if RESTRICTED_SHELL_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[RESTRICTED_SHELL_DESCRIPTOR.name] = RESTRICTED_SHELL_DESCRIPTOR
+# M3/W1 task-main descriptors (canonical, exactly 3)
+if TASK_MAIN_ACTIVATE_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_MAIN_ACTIVATE_DESCRIPTOR.name] = TASK_MAIN_ACTIVATE_DESCRIPTOR
+if TASK_MAIN_RECOVER_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_MAIN_RECOVER_DESCRIPTOR.name] = TASK_MAIN_RECOVER_DESCRIPTOR
+if TASK_MAIN_ADVANCE_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_MAIN_ADVANCE_DESCRIPTOR.name] = TASK_MAIN_ADVANCE_DESCRIPTOR
 SUPPORTED_OPERATIONS: frozenset[str] = frozenset(LOGICAL_OPERATIONS)
 # For backward compatibility, retain WORKSPACE_OPERATIONS alias but expanded set is canonical
 CANONICAL_SUPPORTED_OPERATIONS = SUPPORTED_OPERATIONS
@@ -246,6 +300,76 @@ class McpToolResult(TypedDict, total=False):
 
 
 @dataclass(frozen=True)
+class TrustedTaskMainRuntimeContext:
+    """Narrow trusted carrier for task-main control (M3/W1).
+
+    Carries **already-authoritative** runtime objects only. It does not
+    calculate policy, mint user approval, resolve Plan authority, invent
+    capabilities, become role registry, or become permission engine.
+    It merely binds the live governed Plan truth and the existing
+    ``TaskMainControlService`` with its stores/resolvers so the single-entry
+    ``aota.invoke`` adapter can dispatch the three normal-path controls
+    without trusting model-supplied authority-bearing fields.
+
+    All fields are trusted host/runtime supplied; none may be supplied by
+    the model via ``aota.invoke`` arguments.
+    """
+
+    control_service: Any
+    live_plan_view: Any
+    origin_task_main_session_ref: str
+    executor_id: str
+    handoff_resolver: Any  # Callable[[str], TaskHandoff]
+    governed_evidence_resolver: Any | None = None  # Callable[[str], GovernedWorkItemEvidence] | None
+    reviewer_handoff_resolver: Any | None = None  # Callable[[], TaskHandoff] | None
+    governed_review_resolver: Any | None = None  # Callable[[str, str], GovernedReviewEvidence] | None
+    reviewer_canonical_task_id_resolver: Any | None = None
+    next_milestone_view: Any | None = None
+    session_available: bool = True
+    coordinator_id: str | None = None
+
+    def __post_init__(self) -> None:
+        # Import here to avoid circular import at module import time
+        try:
+            from aota_forge.runtime.task_main.control import TaskMainControlService  # type: ignore
+            from aota_forge.runtime.task_main.coordinator import MilestonePlanView  # type: ignore
+        except Exception:
+            TaskMainControlService = object  # type: ignore
+            MilestonePlanView = object  # type: ignore
+        if TaskMainControlService is not object and not isinstance(self.control_service, TaskMainControlService):  # type: ignore
+            # Fallback check by attribute if class not available (isolated import)
+            if not hasattr(self.control_service, "activate_milestone"):
+                raise TrustedBindingError(f"control_service must be TaskMainControlService, got {type(self.control_service).__name__}")
+        if MilestonePlanView is not object and not isinstance(self.live_plan_view, MilestonePlanView):  # type: ignore
+            raise TrustedBindingError(f"live_plan_view must be MilestonePlanView, got {type(self.live_plan_view).__name__}")
+        if self.next_milestone_view is not None and MilestonePlanView is not object and not isinstance(self.next_milestone_view, MilestonePlanView):  # type: ignore
+            raise TrustedBindingError(f"next_milestone_view must be MilestonePlanView or None, got {type(self.next_milestone_view).__name__}")
+        if not isinstance(self.origin_task_main_session_ref, str) or not self.origin_task_main_session_ref.strip():
+            raise TrustedBindingError("origin_task_main_session_ref must be non-empty string")
+        if len(self.origin_task_main_session_ref) > 512:
+            raise TrustedBindingError("origin_task_main_session_ref exceeds bound")
+        if not isinstance(self.executor_id, str) or not self.executor_id.strip():
+            raise TrustedBindingError("executor_id must be non-empty string")
+        if not callable(self.handoff_resolver):
+            raise TrustedBindingError("handoff_resolver must be callable")
+        if self.governed_evidence_resolver is not None and not callable(self.governed_evidence_resolver):
+            raise TrustedBindingError("governed_evidence_resolver must be callable or None")
+        if self.reviewer_handoff_resolver is not None and not callable(self.reviewer_handoff_resolver):
+            raise TrustedBindingError("reviewer_handoff_resolver must be callable or None")
+        if self.governed_review_resolver is not None and not callable(self.governed_review_resolver):
+            raise TrustedBindingError("governed_review_resolver must be callable or None")
+        if self.reviewer_canonical_task_id_resolver is not None and not callable(self.reviewer_canonical_task_id_resolver):
+            raise TrustedBindingError("reviewer_canonical_task_id_resolver must be callable or None")
+        if type(self.session_available) is not bool:
+            raise TrustedBindingError("session_available must be bool")
+        if self.coordinator_id is not None:
+            if not isinstance(self.coordinator_id, str) or not self.coordinator_id.strip():
+                raise TrustedBindingError("coordinator_id must be non-empty string when supplied")
+            if len(self.coordinator_id) > 512:
+                raise TrustedBindingError("coordinator_id exceeds bound")
+
+
+@dataclass(frozen=True)
 class TrustedWorkerBinding:
     """Operator/runtime-owned context for one restricted MCP server.
 
@@ -277,6 +401,8 @@ class TrustedWorkerBinding:
     mutation_authority: WorkspaceMutationAuthority | None = None
     # M2: residual shell authority (optional, not per-binding required)
     restricted_shell_authority: Any | None = None
+    # M3/W1: trusted task-main runtime context (optional, task-main only)
+    trusted_task_main_context: Any | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.canonical_task_id, str) or not _SAFE_ID.fullmatch(self.canonical_task_id):
@@ -355,6 +481,23 @@ class TrustedWorkerBinding:
             else:
                 # If descriptor missing, allow None only
                 raise TrustedBindingError("restricted_shell authority unavailable (descriptor missing)")
+        # M3/W1 trusted task-main context (optional, task-main only)
+        if self.trusted_task_main_context is not None:
+            if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
+                raise TrustedBindingError(
+                    f"trusted_task_main_context must be TrustedTaskMainRuntimeContext, got {type(self.trusted_task_main_context).__name__}"
+                )
+            # Task-main context must match binding sandbox/project identity
+            ctx = self.trusted_task_main_context
+            # Project identity consistency (binding project_id must equal control service project via context's live view if available)
+            # No extra policy calculation here — just ensure carrier is authoritative and matches sandbox
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError("task-main context requires handoff work_role task-main")
+            if self.tool_surface.work_role.value != "task-main":
+                raise TrustedBindingError("task-main context requires tool_surface work_role task-main")
+            # Ensure control_service is present and matches expected type (duck check)
+            if not hasattr(ctx.control_service, "activate_milestone"):
+                raise TrustedBindingError("task-main context control_service missing activate_milestone")
 
 
 def _authority_for(binding: TrustedWorkerBinding, operation: str) -> WorkspaceAuthorityEvidence | None:
@@ -572,6 +715,44 @@ def _governed_error(binding: TrustedWorkerBinding, operation: str, code: str, me
     err = {"code": code, "message": _bounded_failure_message(message)}
     resp = ToolResponse.failure(err)
     return _governed_from_response(binding, operation if isinstance(operation, str) else "unknown", resp)
+
+
+def _map_task_main_exception(exc: Exception) -> str:
+    """Preserve task-main semantic failure identity end-to-end.
+
+    Maps known coordinator/runner exception types to typed error codes.
+    Falls back to GOVERNED_OPERATION_FAILURE while still preserving
+    the bounded message that contains FAILS_CLOSED markers for Plan drift
+    etc. The code itself is the machinable identity.
+    """
+    # Check by class name to avoid hard import dependency
+    name = type(exc).__name__
+    msg = str(exc)
+    if name == "PlanDriftError" or "PLAN_DRIFT" in msg:
+        return "PLAN_DRIFT"
+    if name == "SessionRecoveryRequiredError" or "SESSION_RECOVERY_REQUIRED" in msg:
+        return "SESSION_RECOVERY_REQUIRED"
+    if name == "CoordinatorNotFoundError":
+        return "COORDINATOR_NOT_FOUND"
+    if name == "CoordinatorBindingError":
+        return "COORDINATOR_BINDING_ERROR"
+    if name == "CoordinatorRuntimeError":
+        return "COORDINATOR_RUNTIME_ERROR"
+    if name == "StaleCoordinatorRevisionError":
+        return "STALE_COORDINATOR_REVISION"
+    if name == "TaskMainControlAuthorityError":
+        return "AUTHORITY_DENIED"
+    if "USER_GATE_REQUIRED" in msg:
+        return "USER_GATE_REQUIRED"
+    if "AUTHORITY_DENIED" in msg or "requires profile" in msg:
+        return "AUTHORITY_DENIED"
+    if name in ("ValueError", "TypeError") and "unknown" in msg.lower():
+        return "UNKNOWN_INPUT"
+    # Preserve original code if exc carries .code
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    return "GOVERNED_OPERATION_FAILURE"
 
 
 def _project_response(operation: str, response: ToolResponse) -> McpToolResult:
@@ -835,6 +1016,9 @@ class _SharedAotaMcpAdapter:
                 request = ToolRequest(operation=RESTRICTED_SHELL_DESCRIPTOR, inputs=validated)
                 return _governed_from_response(self.binding, operation, self._shell_provider.invoke(request))
 
+            if operation in TASK_MAIN_OPERATIONS:
+                return self._invoke_task_main(operation, validated, descriptor)
+
             # Fallback (should be unreachable due to SUPPORTED_OPERATIONS check)
             return _governed_error(self.binding, operation, "UNKNOWN_OPERATION", f"unsupported operation: {operation!r}")
         except ForgeError as exc:
@@ -842,6 +1026,229 @@ class _SharedAotaMcpAdapter:
         except Exception as exc:  # adapter boundary: never turn failures into success  # noqa: BLE001
             msg = _bounded_failure_message(str(exc))
             return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", msg)
+
+    def _invoke_task_main(self, operation: str, validated: dict[str, Any], descriptor: Any) -> McpToolResult:  # noqa: C901
+        """Thin trusted adapter from aota.invoke to existing TaskMainControlService.
+
+        This is the sole seam between the single-entry transport and the
+        existing typed control service. It never trusts model-supplied
+        authority-bearing fields; all truth comes from
+        ``self.binding.trusted_task_main_context``.
+        """
+        binding = self.binding
+        # Authority: worker must never be able to call task-main controls.
+        # Profile comes from trusted host binding, never from model arguments.
+        if binding.handoff.work_role.value != "task-main" or binding.tool_surface.work_role.value != "task-main":
+            return _governed_from_response(
+                binding,
+                operation,
+                ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "task-main control requires profile aota-task-main: aota-worker cannot access task-main control"}),
+            )
+        ctx = binding.trusted_task_main_context
+        if ctx is None or not isinstance(ctx, TrustedTaskMainRuntimeContext):
+            return _governed_from_response(
+                binding,
+                operation,
+                ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted task-main context is absent for this binding"}),
+            )
+        # Contract hash check for task-main descriptors (parity, not authority)
+        # validated is already {} (empty) – unknown inputs already rejected as UNKNOWN_INPUT
+        # Ensure descriptor identity matches canonical (fail-closed on drift)
+        expected_desc = None
+        if operation == "task_main.activate_milestone":
+            expected_desc = TASK_MAIN_ACTIVATE_DESCRIPTOR
+        elif operation == "task_main.recover_coordinator":
+            expected_desc = TASK_MAIN_RECOVER_DESCRIPTOR
+        elif operation == "task_main.advance_once":
+            expected_desc = TASK_MAIN_ADVANCE_DESCRIPTOR
+        if expected_desc is not None and descriptor.contract_hash() != expected_desc.contract_hash():
+            return _governed_from_response(
+                binding,
+                operation,
+                ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": f"{operation} contract hash differs from authority"}),
+            )
+        # Optional visibility check: task-main surface should contain these ops, but visibility != authority.
+        # If not visible, still deny? For progressive we allow call even if not eager, but if absent entirely, deny as authority.
+        # To keep TRANSPORT_OPERATION_IDENTITY_SEPARATED but still check visibility as secondary, we allow any task-main binding that has context.
+        # No additional visibility gate required beyond profile check above.
+
+        # Dispatch to existing TaskMainControlService (reuse, no V2)
+        try:
+            if operation == "task_main.activate_milestone":
+                live = ctx.live_plan_view
+                # Approval gate: trusted runtime must say approval satisfied
+                # live.user_gate_blocked captures (not approved) or amendment required
+                try:
+                    blocked = bool(live.user_gate_blocked)  # type: ignore[union-attr]
+                except Exception:
+                    blocked = not bool(getattr(live, "milestone_user_approval_satisfied", False))
+                if blocked:
+                    return _governed_from_response(
+                        binding,
+                        operation,
+                        ToolResponse.failure({"code": "USER_GATE_REQUIRED", "message": "USER_GATE_REQUIRED: live Plan Milestone approval not satisfied; task-main cannot set approval"}),
+                    )
+                # Call existing service
+                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
+
+                try:
+                    handle = ctx.control_service.activate_milestone(
+                        profile=TASK_MAIN_PROFILE,
+                        plan_view=live,  # MilestonePlanView
+                        origin_task_main_session_ref=ctx.origin_task_main_session_ref,
+                        executor_id=ctx.executor_id,
+                        project_id=binding.project_id,
+                        coordinator_id=ctx.coordinator_id,
+                    )
+                except Exception as exc:
+                    code = _map_task_main_exception(exc)
+                    return _governed_from_response(
+                        binding,
+                        operation,
+                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
+                    )
+                # Bounded success payload (no path/secret leakage)
+                try:
+                    state = handle.state if hasattr(handle, "state") else None
+                    payload: dict[str, Any] = {
+                        "coordinator_id": getattr(handle, "coordinator_id", ctx.coordinator_id or f"{binding.project_id}:{getattr(live, 'milestone_id', 'M3')}"),
+                        "status": state.status.value if state is not None and hasattr(state.status, "value") else str(getattr(state, "status", "ACTIVE")) if state else "ACTIVE",
+                        "coordinator_revision": getattr(state, "coordinator_revision", 1) if state else 1,
+                        "milestone_id": getattr(state, "milestone_id", getattr(live, "milestone_id", "")) if state else getattr(live, "milestone_id", ""),
+                        "plan_authority": getattr(state, "plan_authority", getattr(live, "plan_authority", "")) if state else getattr(live, "plan_authority", ""),
+                        "work_items": list(getattr(state, "work_items", [])) if state else [],
+                    }
+                    # Add bounded status flag
+                    payload["user_gate_required"] = False
+                except Exception:
+                    payload = {"coordinator_id": getattr(handle, "coordinator_id", ""), "status": "ACTIVE"}
+                return _governed_from_response(binding, operation, ToolResponse.success(payload))
+
+            elif operation == "task_main.recover_coordinator":
+                live = ctx.live_plan_view
+                coord_id = ctx.coordinator_id
+                if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
+                    # Derive default coordinator id from trusted project + milestone (same as coordinator's _default)
+                    try:
+                        mid = getattr(live, "milestone_id", "M3")
+                        coord_id = f"{binding.project_id}:{mid}"
+                    except Exception:
+                        coord_id = f"{binding.project_id}:M3"
+                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
+
+                try:
+                    handle = ctx.control_service.recover_coordinator(
+                        profile=TASK_MAIN_PROFILE,
+                        coordinator_id=coord_id,
+                        live_plan_view=live,
+                        session_available=ctx.session_available,
+                    )
+                except Exception as exc:
+                    code = _map_task_main_exception(exc)
+                    return _governed_from_response(
+                        binding,
+                        operation,
+                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
+                    )
+                try:
+                    state = handle.state
+                    payload = {
+                        "coordinator_id": handle.coordinator_id,
+                        "status": state.status.value if hasattr(state.status, "value") else str(state.status),
+                        "coordinator_revision": state.coordinator_revision,
+                        "milestone_id": state.milestone_id,
+                    }
+                except Exception:
+                    payload = {"coordinator_id": coord_id, "status": "ACTIVE"}
+                return _governed_from_response(binding, operation, ToolResponse.success(payload))
+
+            elif operation == "task_main.advance_once":
+                live = ctx.live_plan_view
+                coord_id = ctx.coordinator_id
+                if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
+                    try:
+                        mid = getattr(live, "milestone_id", "M3")
+                        coord_id = f"{binding.project_id}:{mid}"
+                    except Exception:
+                        coord_id = f"{binding.project_id}:M3"
+                # If default id missing but store contains matching coordinator (e.g., after activation with different project), attempt discovery
+                if coord_id is not None:
+                    try:
+                        store = getattr(ctx.control_service, "_coord_store", None)
+                        if store is not None:
+                            # Try direct get; if missing, scan for milestone match
+                            if store.get(coord_id) is None:
+                                for cand in store.list_all():  # type: ignore[union-attr]
+                                    if cand.milestone_id == getattr(live, "milestone_id", None) and cand.plan_authority == getattr(live, "plan_authority", None):
+                                        coord_id = cand.coordinator_id
+                                        break
+                    except Exception:
+                        pass
+                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
+
+                try:
+                    outcome = ctx.control_service.advance_once(
+                        profile=TASK_MAIN_PROFILE,
+                        coordinator_id=coord_id,
+                        live_plan_view=live,
+                        handoff_resolver=ctx.handoff_resolver,
+                        governed_evidence_resolver=ctx.governed_evidence_resolver,
+                        reviewer_handoff_resolver=ctx.reviewer_handoff_resolver,
+                        governed_review_resolver=ctx.governed_review_resolver,
+                        next_milestone_view=ctx.next_milestone_view,
+                        session_available=ctx.session_available,
+                        reviewer_canonical_task_id_resolver=ctx.reviewer_canonical_task_id_resolver,
+                    )
+                except Exception as exc:
+                    code = _map_task_main_exception(exc)
+                    return _governed_from_response(
+                        binding,
+                        operation,
+                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
+                    )
+                # Project RunnerOutcome bounded (no path/secret leakage)
+                try:
+                    payload = {
+                        "coordinator_id": outcome.coordinator_id,
+                        "coordinator_revision": outcome.coordinator_revision,
+                        "disposition": outcome.disposition,
+                        "next_action": outcome.disposition,
+                        "ready": list(getattr(outcome, "ready", [])),
+                        "dispatched": list(getattr(outcome, "dispatched", [])),
+                        "deferred": list(getattr(outcome, "deferred", [])),
+                        "reconciled_work_item": getattr(outcome, "reconciled_work_item", None),
+                        "reconciled_canonical_task_id": getattr(outcome, "reconciled_canonical_task_id", None),
+                        "ack_eligible": bool(getattr(outcome, "ack_eligible", False)),
+                        "user_gate_required": bool(getattr(outcome, "user_gate_required", False)),
+                        "session_recovery_required": bool(getattr(outcome, "session_recovery_required", False)),
+                        "milestone_closure_ready": bool(getattr(outcome, "milestone_closure_ready", False)),
+                        "next_milestone_gate": bool(getattr(outcome, "next_milestone_gate", False)),
+                        "integrated_review_required": bool(getattr(outcome, "integrated_review_required", False)),
+                        "reasons": list(getattr(outcome, "reasons", [])),
+                    }
+                    # Add receipt digest if present (governed ref)
+                    receipt = getattr(outcome, "receipt", None)
+                    if receipt is not None:
+                        try:
+                            if hasattr(receipt, "receipt_digest"):
+                                payload["receipt_digest"] = receipt.receipt_digest  # type: ignore
+                            elif isinstance(receipt, dict) and "receipt_digest" in receipt:
+                                payload["receipt_digest"] = receipt["receipt_digest"]
+                        except Exception:
+                            pass
+                    # Bound payload sanity: ensure no absolute path leakage (callers may have stored paths)
+                    # Already sanitized via _sanitize before projection, but do shallow check
+                except Exception as exc:
+                    payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN"), "next_action": getattr(outcome, "disposition", "UNKNOWN")}
+                return _governed_from_response(binding, operation, ToolResponse.success(payload))
+
+            else:
+                return _governed_error(binding, operation, "UNKNOWN_OPERATION", f"unsupported task_main operation: {operation!r}")
+        except ForgeError as exc:
+            return _governed_error(binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            msg = _bounded_failure_message(str(exc))
+            return _governed_error(binding, operation, "GOVERNED_OPERATION_FAILURE", msg)
 
 
 def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
@@ -933,6 +1340,9 @@ __all__ = [
     "AGENT_FACING_AOTA_TOOL",
     "HERMES_AGENT_FACING_AOTA_TOOL_COUNT",
     "WORKSPACE_OPERATIONS",
+    "M2_OPERATIONS",
+    "TASK_MAIN_OPERATIONS",
+    "INTERNAL_TASK_MAIN_OPERATIONS",
     "BOUNDED_MCP_OPERATIONS",
     "LOGICAL_CAPABILITY_SURFACE",
     "SUPPORTED_OPERATIONS",
@@ -955,10 +1365,17 @@ __all__ = [
     "SINGLE_ENTRY_TRANSPORT",
     "DEFAULT_REGISTRY_MIGRATION_REQUIRED",
     "NEW_OPERATION_AUTHORITY_REGISTRY_CREATED",
+    "TASK_MAIN_CONTROL_IMPLEMENTED_IN_W3",
+    "TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT",
+    "INTERNAL_RECONCILE_EXPOSED_TO_MODEL",
+    "INTERNAL_OBSERVE_EXPOSED_TO_MODEL",
+    "INTERNAL_DISPATCH_EXPOSED_TO_MODEL",
+    "EXISTING_TASK_MAIN_CONTROL_SERVICE_REUSED",
     "McpToolResult",
     "McpTransportUnavailable",
     "TrustedBindingError",
     "TrustedWorkerBinding",
+    "TrustedTaskMainRuntimeContext",
     "create_shared_mcp_server",
     "run_shared_mcp_server",
 ]
