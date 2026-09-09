@@ -211,8 +211,10 @@ class TestFreshProfileReproduction:
         binding, _ = _make_task_main_binding(tmp_path, view)
         from aota_forge.mcp_transport import MCP_PUBLIC_TOOLS
         assert MCP_PUBLIC_TOOLS == ("aota.invoke",)
-        # task-main binding should expose exactly 3 controls via tool_surface eager
-        assert set(binding.tool_surface.all_capability_names()) == {"task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"}
+        # task-main binding should expose exactly 3 controls via tool_surface eager + progressive result.hydrate (W2-R1)
+        caps = set(binding.tool_surface.all_capability_names())
+        assert {"task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"}.issubset(caps)
+        assert "result.hydrate" in caps
         # Verify MCP public tool count invariant
         assert binding.handoff.work_role.value == "task-main"
 

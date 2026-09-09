@@ -58,6 +58,10 @@ from aota_forge.runtime.task_main.reconciliation import GovernedWorkItemEvidence
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle, ReviewFindingEvidence, ReviewFindingClassification
 from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
 from aota_forge.composition.project_binding import resolve_trusted_project_evidence
+from aota_forge.composition.completion_evidence import (
+    create_automatic_governed_evidence_resolver,
+    derive_governed_review_evidence,
+)
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
 from aota_forge.work_plane.workspace_mutation import WORKSPACE_WRITE_DESCRIPTOR, create_workspace_mutation_authority
 from aota_forge.work_plane.restricted_shell import RESTRICTED_SHELL_DESCRIPTOR, create_restricted_shell_authority
@@ -457,13 +461,23 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             plan_digest=live_view.plan_digest,
         )
 
+    # Automatic governed evidence derivation via trusted durable stores (W2)
+    # Small generic bridge: execution/result/card -> GovernedWorkItemEvidence
+    # No operator insertion, no model construction, no second store.
+    _auto_resolver = create_automatic_governed_evidence_resolver(
+        execution_store=exec_store,
+        coordinator_store=coord_store,
+        coordinator_id=coordinator_id or f"{project_id}:{live_view.milestone_id}",
+        live_plan_view=live_view,
+        handoff_resolver=handoff_resolver,
+        project_id=project_id,
+        plan_authority=live_view.plan_authority,
+        milestone_id=live_view.milestone_id,
+    )
+
     def governed_evidence_resolver(wi: str):
-        return GovernedWorkItemEvidence(
-            validation_evidence=FocusedValidationEvidence(
-                work_item_ref=wi, verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=SemanticReference(ref=f"val:{wi}")
-            ),
-            risk_envelope=_neutral_envelope(live_view.milestone_id),
-        )
+        # Runtime-owned automatic derivation, card-first, fail-closed
+        return _auto_resolver(wi)
 
     def reviewer_handoff_resolver():
         return _reviewer_handoff(

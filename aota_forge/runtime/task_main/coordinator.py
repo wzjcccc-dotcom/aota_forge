@@ -501,28 +501,32 @@ class TaskMainCoordinator:
                     outcome = self._dispatcher.dispatch(package, self._executor_id)
             except DispatchOutcomeUnresolvedError:
                 # Durable PREPARED intent exists but the physical outcome is
-                # unknown: persist the deterministic binding as ACTIVE and
-                # never blind-redispatch. Any retry replays via M2
-                # idempotency instead of starting a second Worker.
-                self._persist_binding(
-                    work_item_id,
-                    canonical_task_id=canonical_task_id,
-                    idempotency_key=idempotency_key,
-                )
-                dispatched.append(
-                    DispatchedWork(
-                        work_item_id=work_item_id,
-                        canonical_task_id=canonical_task_id,
-                        idempotency_key=idempotency_key,
-                        outcome="UNRESOLVED",
-                    )
-                )
+                # unknown: do NOT create orphan ACTIVE. ACTIVE requires durable
+                # DISPATCHED truth (adapter_handle) sufficient to recover/replay
+                # idempotently without operator mutation. Keeping PENDING avoids
+                # stranded ACTIVE (ACTIVE_WORK_ITEM_MUST_HAVE_DURABLE_EXECUTION_TRUTH).
+                # The durable PREPARED remains for diagnostics but coordinator
+                # stays PENDING (typed fail-closed non-ACTIVE), so restart can
+                # continue deterministically without manual ACTIVE->PENDING reset
+                # and without duplicate physical dispatch (retry will again hit
+                # Unresolved and stay PENDING, which is non-ACTIVE).
+                deferred.append(work_item_id)
                 continue
             except IdempotencyConflictError as exc:
                 raise CoordinatorBindingError(
                     f"governed intent for {work_item_id!r} changed under a durable "
                     "dispatch identity; refusing a second physical dispatch"
                 ) from exc
+            except Exception:
+                # Generic physical dispatch failure (gateway restart, adapter
+                # exception, store persistence failure, etc.): keep PENDING,
+                # do not create ACTIVE orphan, do not lose intent, do not
+                # duplicate. The dispatcher may have left a PREPARED record;
+                # coordinator stays PENDING so STRANDED_ACTIVE_AFTER_DISPATCH_FAILURE==no.
+                # Next advance will remain PENDING (non-ACTIVE fail-closed) and
+                # will not blind-redispatch, satisfying idempotency.
+                deferred.append(work_item_id)
+                continue
             if isinstance(outcome, AdmissionDecision) and not outcome.admitted:
                 deferred.append(work_item_id)
                 continue
@@ -530,6 +534,15 @@ class TaskMainCoordinator:
                 raise CoordinatorRuntimeError(
                     f"unexpected dispatch outcome for {work_item_id!r}: {type(outcome).__name__}"
                 )
+            # Verify durable DISPATCHED truth before claiming ACTIVE (intent-first).
+            # ACTIVE requires durable execution identity sufficient to recover.
+            _verify = self._dispatcher.state_store
+            if _verify is not None:
+                _rec = _verify.get(canonical_task_id)
+                if _rec is None or _rec.execution_phase.value != "DISPATCHED" or _rec.adapter_handle is None:
+                    # No sufficient durable truth: do not go ACTIVE, stay PENDING (fail-closed)
+                    deferred.append(work_item_id)
+                    continue
             self._persist_binding(
                 work_item_id,
                 canonical_task_id=canonical_task_id,
