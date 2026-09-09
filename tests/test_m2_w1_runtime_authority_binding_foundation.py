@@ -791,24 +791,44 @@ class TestLProjectState:
 
 class TestMBootstrap:
     def test_eager_guidance_not_180_truncated(self, tmp_path: Path) -> None:
+        # M3/W1 production convergence: curated compact usable guidance, no truncation.
+        # Intentional contract change from M2 400-char truncation to W1 curated.
+        from aota_forge.work_plane import role_bootstrap as rb_mod
+
         h = _handoff(AgentWorkRole.CODER)
         b = build_worker_binding(root=tmp_path, project_id="aota_forge", worktree_id="wt-m", canonical_task_id="t-m", handoff=h)
         res = handle_role_bootstrap(b, {})
         assert BOOTSTRAP_TRUNCATION_REPAIRED is True
         assert BOOTSTRAP_CONTENT_UNBOUNDED is False
         assert ARBITRARY_180_CHAR_SEMANTIC_LOSS is False
+        assert rb_mod.M3_SKILL_REWRITE_STARTED is True
+        assert rb_mod.SEMANTIC_TRUNCATION_FOR_BOOTSTRAP is False
+        assert rb_mod.EAGER_SKILL_CONTENT_IS_USABLE_GUIDANCE is True
         for entry in res["BASE_SKILLS"]:
-            # Usable guidance: 400 chars (not arbitrary 180), structured with lengths.
-            assert entry["content_length"] == 400
+            # Curated usable guidance: complete, no truncation, bounded.
+            assert entry["is_truncated"] is False
+            # Totals omitted in W1 compact form (no hidden loss); when present must equal content.
+            if "total_content_length" in entry:
+                assert entry["total_content_length"] == entry["content_length"]
+            if "total_byte_length" in entry:
+                assert entry["total_byte_length"] == entry["byte_length"]
             assert entry["content_length"] > 180
+            assert entry["content_length"] <= 2048
             assert len(entry["materialized"]) == entry["content_length"]
             assert entry["byte_length"] <= 32 * 1024
-            assert entry["is_truncated"] is True
-            assert entry["total_content_length"] > entry["content_length"]
+            # Usable (not "you have Skill X" reference-only): contains workflow/tool/stop cues.
+            mat = entry["materialized"]
+            assert len(mat.strip()) > 300
+            assert ("aota.invoke" in mat or "Mode" in mat or "diagnosis" in mat or "workflow" in mat or "SPEC" in mat)
 
     def test_bootstrap_still_bounded(self, tmp_path: Path) -> None:
+        # M3/W1: curated eager keeps all role bootstraps within inline bound.
+        import json
+
         h = _handoff(AgentWorkRole.TASK_MAIN if False else AgentWorkRole.CODER)
         b = build_worker_binding(root=tmp_path, project_id="aota_forge", worktree_id="wt-m2", canonical_task_id="t-m2", handoff=h)
         res = handle_role_bootstrap(b, {})
         total = sum(e["byte_length"] for e in res["BASE_SKILLS"])
         assert total <= 32 * 1024
+        # W1 production: full bootstrap JSON fits inline 4096 (no extra navigation to start).
+        assert len(json.dumps(res).encode("utf-8")) <= 4096

@@ -205,9 +205,12 @@ def test_02_role_bootstrap_inline_semantic_visibility(tmp_path: Path):
 
 # 3. skill.open inline semantic visibility - small fixture + oversized by_ref
 def test_03_skill_open_inline_small_fixture_and_oversized_by_ref(tmp_path: Path, monkeypatch):
-    # Part A: oversized real skill should be by_ref (existing files 7-9k)
+    # Part A: M3/W1 production convergence — normal Skills are compact runtime
+    # (1-2.5 KiB) and open inline one-call (no hydrate). Oversized by_ref for
+    # genuinely large refs is covered via workspace.read fixtures (test_08/09),
+    # not via normal Skill loading. Pre-W1 7-9k Skill bodies are superseded.
     server, _ = _make_binding(tmp_path, role="coder")
-    # pick a real large skill
+    # pick a real normal skill (now compact inline per W1)
     large_ref = "aota-workspace-operations@1.0.0"
     structured, text = _call(server, "skill.open", {"ref": large_ref})
     # Depending on actual size, it is by_ref for large content
@@ -222,9 +225,15 @@ def test_03_skill_open_inline_small_fixture_and_oversized_by_ref(tmp_path: Path,
         # Ensure not inlined
         assert "aota-workspace-operations" not in text or "content" not in text
     else:
-        # If inline (if file small), check semantic
+        # W1 normal path: compact Skill opens inline one-call, usable, no hydrate.
         assert "content" in structured["payload"]
-        assert structured["payload"]["content"] in text
+        content = structured["payload"]["content"]
+        assert len(content.strip()) > 500
+        assert "workspace.search" in content or "aota.invoke" in content
+        # Text is JSON-escaped; check escaping-aware (skill_id/digest usable cues).
+        assert "aota-workspace-operations" in text
+        assert "content" in text.lower()
+        assert structured["payload"]["byte_length"] <= TOOL_INLINE_OUTPUT_MAX_BYTES
 
     # Part B: small fixture inline
     # Create small skill file

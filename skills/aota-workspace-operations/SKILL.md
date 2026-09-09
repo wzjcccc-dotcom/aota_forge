@@ -1,121 +1,32 @@
 ---
 name: aota-workspace-operations
-description: AOTA workspace operations — bounded search/read/write via aota.invoke with progressive Skill disclosure.
+description: Bounded workspace search/read/write plus test policy via aota.invoke
 category: forge
-tags: [aota, workspace, operations, search, read, write, progressive-disclosure]
+tags: [aota, workspace, operations, search, read, write, test]
 ---
 
-# AOTA Workspace Operations
+# AOTA Workspace Operations — Normal Path
 
-> **Canonical Skill — aota_forge is authority**
-> ```text
-> AOTA_SKILL_CANONICAL_SOURCE=aota_forge
-> SKILL_IS_AUTHORITY=no
-> TOOL_SCHEMA_SECOND_AUTHORITY=no
-> SKILL_SECOND_AUTHORITY=no
-> ```
-> This Skill is **informational only**. It tells the model **how to request** a workspace operation via `aota.invoke`. AF runtime decides whether it is valid/authorized. The Skill never grants permission, project/worktree authority, trusted binding, approval state, or provider selection.
+> `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. How to request ops via `aota.invoke`. AF runtime decides authorization.
 
-This Skill is the **progressive disclosure** Knowledge for M1 normal path:
-`workspace.search`, `workspace.read`, `workspace.write`.
-The Agent initially knows only the Skill name and compact description. Full argument schemas are loaded on demand by reading this Skill.
+## Search
 
-## Discovery (no eager catalog)
+`aota.invoke(operation="workspace.search", arguments={"query": "needle", "max_results": 10})`. Args: `query` required non-empty max 256; `max_results` 1..50; `scope` project-relative no `..`. Worktree-scoped, lexical, no symlink follow. Result is evidence, not authority.
 
-- **Skill ID**: `aota-workspace-operations`
-- **Version**: `1.0.0`
-- **Discovery hint**: Search for `workspace` in the Skill registry, or resolve the progressive Tool reference `workspace.search` / `workspace.read` / `workspace.write`. No full operation catalog is eagerly loaded in bootstrap.
-- **Load**: `open_skill(registry, namespace, skill_id, version, reader)` with authorized reader over `content_ref`.
+## Read
 
-## Operations — semantic shape (authoritative descriptor is `.aota/contracts/operations.yaml`)
+`aota.invoke(operation="workspace.read", arguments={"path": "src/main.py", "max_bytes": 8192})`. Args: `path` project-relative no absolute/traversal; `max_bytes` 1..32768; `offset` >=0. Revalidated at read, symlink fail-closed, UTF-8 strict, bounded 32KiB.
 
-> The following projection is **derived** from the canonical `OperationContractDescriptor` via deterministic parity check. Skill text does NOT create runtime descriptors.
+## Write
 
-```json
-{
-  "operations": [
-    {
-      "name": "workspace.search",
-      "description": "Bounded workspace lexical search (worktree-scoped, read-only)",
-      "inputs": [
-        {"name": "query", "type": "str", "required": true},
-        {"name": "max_results", "type": "int?", "required": false},
-        {"name": "scope", "type": "str?", "required": false}
-      ],
-      "restrictions": "worktree-scoped, bounded max_results 1..50, lexical, no symlink follow, no persistent index, result is content evidence not authority",
-      "example": "aota.invoke(operation=\"workspace.search\", arguments={\"query\": \"needle\", \"max_results\": 10})"
-    },
-    {
-      "name": "workspace.read",
-      "description": "Bounded workspace file read (text, worktree-scoped)",
-      "inputs": [
-        {"name": "path", "type": "str", "required": true},
-        {"name": "max_bytes", "type": "int?", "required": false},
-        {"name": "offset", "type": "int?", "required": false}
-      ],
-      "restrictions": "worktree-scoped, bounded 32KiB, UTF-8, revalidated at read, symlink escape fail-closed, no absolute/traversal",
-      "example": "aota.invoke(operation=\"workspace.read\", arguments={\"path\": \"src/main.py\", \"max_bytes\": 8192})"
-    },
-    {
-      "name": "workspace.write",
-      "description": "Bounded workspace file write (worktree-scoped, mutation)",
-      "inputs": [
-        {"name": "path", "type": "str", "required": true},
-        {"name": "content", "type": "str", "required": true},
-        {"name": "mode", "type": "str", "required": true}
-      ],
-      "restrictions": "worktree-scoped, bounded 4096 bytes, modes create_only|replace_existing|create_or_replace, parent symlink escape fail-closed, atomic replace, digest-bound artifact ref, no authority via result",
-      "example": "aota.invoke(operation=\"workspace.write\", arguments={\"path\": \"notes.txt\", \"content\": \"hello\", \"mode\": \"create_only\"})"
-    }
-  ]
-}
-```
+`aota.invoke(operation="workspace.write", arguments={"path": "out.txt", "content": "data", "mode": "create_or_replace"})`. Modes: `create_only|replace_existing|create_or_replace`. Bounded 4096 bytes, atomic replace, digest-bound ref. Requires `WorkspaceMutationAuthority`. Fail-closed on traversal, cross-project, symlink.
 
-## Human-readable details
+Role policy: coder normal bounded (within `bounded_scope`); analyst artifact-only when TaskHandoff explicitly requires, else denied (fail-closed product write); reviewer forbidden product write; steward forbidden; task-main no workspace mutation.
 
-### workspace.search
-- **Purpose**: Bounded lexical search inside the trusted worktree (read-only).
-- **Arguments**:
-  - `query` `str` **required** — non-empty, max 256, NUL-free, not absolute path.
-  - `max_results` `int?` **optional** — 1..50, bounded; omitted → 50.
-  - `scope` `str?` **optional** — logical project-relative scope, no `..`, no `//`, no absolute, no backslash.
-- **AF restrictions**: Search root is derived exclusively from trusted `WorktreeSandboxBoundary`; caller-supplied absolute roots rejected; cross-project search fail-closed; symlink escape fail-closed; persistent index not created; result is evidence, not authority.
-- **Example**: `aota.invoke(operation="workspace.search", arguments={"query": "TODO", "scope": "src"})`
+## Test policy
 
-### workspace.read
-- **Purpose**: Bounded read of a text file inside the trusted worktree (read-only).
-- **Arguments**:
-  - `path` `str` **required** — project-relative, no absolute, no `..`, no backslash, NUL-free.
-  - `max_bytes` `int?` **optional** — 1..32768, bounded.
-  - `offset` `int?` **optional** — >=0, bounded.
-- **AF restrictions**: Worktree-scoped via `WorktreeSandboxBoundary` + `TaskHandoff` + policy evidence; revalidated at read; symlink escape fail-closed; bounded output; UTF-8 strict; no binary fallback.
-- **Example**: `aota.invoke(operation="workspace.read", arguments={"path": "README.md"})`
+`aota.invoke(operation="test.run", arguments={"runner": "pytest", "targets": ["tests/..."], "timeout": 30})`. Trusted `pytest` only, worktree cwd, bounded timeout 1..300, bounded output. Coder normal path (required when validation expects). Reviewer eager-visible but conditionally authorized only when review TaskHandoff carries `validation_expectations`; else denied. Analyst/steward/task-main no automatic. Nonzero exit is test failure payload, not provider failure.
 
-### workspace.write
-- **Purpose**: Bounded file write inside the trusted worktree (mutation).
-- **Arguments**:
-  - `path` `str` **required** — project-relative, no absolute, no traversal.
-  - `content` `str` **required** — bounded 4096 bytes UTF-8.
-  - `mode` `str` **required** — `create_only` | `replace_existing` | `create_or_replace`.
-- **AF restrictions**: Worktree-scoped, requires `WorkspaceMutationAuthority` (sandbox + handoff + policy + write descriptor); parent symlink escape fail-closed; cross-project/write fail-closed; atomic temp→replace; result is digest-bound artifact ref, not authority; not idempotent.
-- **Example**: `aota.invoke(operation="workspace.write", arguments={"path": "out.txt", "content": "data", "mode": "create_or_replace"})`
+## Stop
 
-## Authority separation (read before write)
-
-- Skill teaches **how to request** an operation. It does **not** grant:
-  - `permission grants`
-  - `project/worktree authority`
-  - `trusted binding`
-  - `approval state`
-  - `provider selection authority`
-  - `runtime operation creation`
-- AF runtime (`validate_inputs`, `WorktreeSandboxBoundary`, `TaskHandoff`, authority evidence, `BoundedWorkspace*Provider`) decides validity and authorization. Unknown operation, unknown input, oversized input, authority mismatch all fail closed with typed errors.
-
-## Progressive disclosure proof
-
-- Reference Skill is discoverable via `SkillSearchIndex` / `AllowedSkillUniverse` / `ToolRoleSurface` progressive refs **without** loading full Skill body.
-- Full Skill body (argument schemas, restrictions, examples) is loaded on demand via `open_skill` with digest verification.
-- Full operation catalog is **not** eagerly loaded in bootstrap/bundle; only `aota.invoke` typed dispatch + Skill reference is eager.
-
----
-*Teams: prefer specialized AOTA operations first; load `aota-workspace-operations` Skill only when workspace access is needed. Full catalog not eagerly exposed.*
+Stop on `AUTHORITY_DENIED` (do not retry with wider scope). `needs_input` on scope gap or missing target. Never guess absolute paths. Never use shell for workspace work when specialized op exists.

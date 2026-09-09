@@ -94,12 +94,23 @@ TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY = False
 FREEFORM_PROMPT_CAN_MINT_BINDING_AUTHORITY = False
 PROJECT_ID_SPECIAL_CASE_ALLOWED = False
 DOGFOOD_LITERAL_SPECIAL_CASE_ALLOWED = False
-# Per-role least-privilege: only coder/analyst carry workspace mutation via
-# the worker path; reviewer/project-steward/task-main must not gain write
-# through the worker seam (reviewer cannot mutate product source; steward
+# Per-role least-privilege (M3/W1 production convergence, fail-closed):
+# only coder carries workspace mutation via the worker path. Analyst product
+# source write is denied (ANALYST_PRODUCT_SOURCE_WRITE=no); bounded analysis
+# artifact write would require explicit TaskHandoff-authorized context that the
+# current architecture cannot distinguish safely without W2 redesign, so fail
+# closed (ANALYST_WRITE_SCOPE_FAIL_CLOSED=yes). Reviewer/project-steward/
+# task-main must not gain write (reviewer cannot mutate product source; steward
 # mutates only via server-side trusted finalizer; task-main has no workspace
 # mutation).
-WORKER_MUTATION_ROLES = frozenset({"coder", "analyst"})
+WORKER_MUTATION_ROLES = frozenset({"coder"})
+# M3/W1 authority markers
+ANALYST_PRODUCT_SOURCE_WRITE = False
+ANALYST_WRITE_SCOPE_FAIL_CLOSED = True
+CODER_TEST_RUN_SERVER_AUTHORIZED = True
+REVIEWER_CAN_MUTATE_PRODUCT_SOURCE = False
+PROJECT_STEWARD_DIRECT_GENERIC_GIT_MUTATION = False
+PROJECT_STEWARD_DIRECT_GENERIC_GITHUB_MUTATION = False
 
 
 @dataclass(frozen=True)
@@ -164,9 +175,10 @@ def build_worker_binding(
     - worker path never treats freeform prompt as authority: handoff must be
       typed TaskHandoff (caller-enforced); no project/worktree/session IDs are
       hardcoded and no dogfood literal is accepted.
-    - mutation authority is per-role least-privilege: only coder/analyst carry
-      workspace.write via this path; reviewer/project-steward/task-main get
+    - mutation authority is per-role least-privilege (M3/W1): only coder carries
+      workspace.write via this path; analyst/reviewer/project-steward/task-main get
       None (AUTHORITY_DENIED at dispatch, not binding error for those roles).
+      Analyst product write denied fail-closed; artifact-only requires W2 scoping.
     """
     # Worker-path task-main gate FIRST (M2 construction blocker until fixed):
     # the worker seam must not accidentally require or mint task-main authority.
@@ -274,11 +286,12 @@ def build_worker_binding(
         role_str = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
     except Exception:
         raise TrustedBindingError("worker binding requires typed TaskHandoff work_role")
-    # Per-role least-privilege mutation: only coder/analyst carry
-    # workspace.write via the worker path. Reviewer/project-steward/task-main
-    # must not gain write here (reviewer cannot mutate product source;
-    # steward mutates only via trusted finalizer; task-main has no workspace
-    # mutation). Missing authority yields AUTHORITY_DENIED at dispatch.
+    # Per-role least-privilege mutation (M3/W1): only coder carries
+    # workspace.write via the worker path. Analyst/reviewer/project-steward/
+    # task-main must not gain write here (analyst product denied fail-closed;
+    # reviewer cannot mutate product source; steward mutates only via trusted
+    # finalizer; task-main has no workspace mutation). Missing authority yields
+    # AUTHORITY_DENIED at dispatch.
     if role_str in WORKER_MUTATION_ROLES:
         mutation_authority = create_workspace_mutation_authority(
             sandbox,
@@ -288,21 +301,29 @@ def build_worker_binding(
         )
     else:
         mutation_authority = None
-    # M2 per-role progressive surface (visibility only, not authority)
-    # Use handoff's actual role for surface, not hardcoded coder, to preserve role/profile mapping truth
-    # W2 extension: test.run visibility per-role least-privilege (coder required, reviewer default deny)
-    eager_ops = ("workspace.search", "workspace.read", "workspace.write")
+    # M3/W1 converged visibility (visibility != authority, matches af_roles):
+    # coder: search/read/write/test eager, hydrate+shell progressive
+    # analyst: search/read eager, write+hydrate+shell progressive conditional
+    # reviewer: search/read/test eager (no write), hydrate progressive
+    # steward: search/read eager (no write), hydrate progressive
+    # task-main never reaches here (denied above); steward/task-main default below.
+    # W2 extension preserved: test.run visibility per-role least-privilege.
+    eager_ops: tuple[str, ...] = ("workspace.search", "workspace.read", "workspace.write")
+    progressive_ops: tuple[str, ...] = ("result.hydrate",)
     if role_str == "coder":
-        progressive_ops = ("result.hydrate", "restricted_shell.run", "test.run")
-    elif role_str == "analyst":
-        progressive_ops = ("result.hydrate", "restricted_shell.run")
-    elif role_str == "reviewer":
-        # M2/W2 reviewer independent validation: test.run is eager visible
-        # but server authorization stays conditional (granted below only
-        # when review evidence requires it).
         eager_ops = ("workspace.search", "workspace.read", "workspace.write", "test.run")
+        progressive_ops = ("result.hydrate", "restricted_shell.run")
+    elif role_str == "analyst":
+        eager_ops = ("workspace.search", "workspace.read")
+        progressive_ops = ("workspace.write", "result.hydrate", "restricted_shell.run")
+    elif role_str == "reviewer":
+        # M2/W2 + M3/W1 reviewer independent validation: test.run is eager visible
+        # but server authorization stays conditional (granted below only
+        # when review evidence requires it). No workspace.write (forbidden).
+        eager_ops = ("workspace.search", "workspace.read", "test.run")
         progressive_ops = ("result.hydrate",)
     elif role_str in ("project-steward", "task-main"):
+        eager_ops = ("workspace.search", "workspace.read")
         progressive_ops = ("result.hydrate",)
     else:
         progressive_ops = ("result.hydrate",)
