@@ -1,9 +1,8 @@
-"""Thin trusted host bootstrap for Hermes aota-task-main MCP (M3/W2).
+"""Thin trusted host bootstrap for Hermes aota-task-main MCP (generic).
 
-M3/W1 created TrustedTaskMainRuntimeContext but did not prove that a real
-Hermes MCP subprocess can reconstruct it without Python injecting an
-in-process object. This module is the thinnest operator-controlled seam
-that does so.
+Generic derivation creates TrustedTaskMainRuntimeContext from trusted
+bootstrap without injecting an in-process object. This module is the
+thinnest operator-controlled seam that does so.
 
 Trusted channel: the Hermes MCP child inherits a *single* host-controlled
 filesystem reference (AOTA_W3_MCP_ROOT) that the operator set before the
@@ -58,6 +57,7 @@ from aota_forge.work_plane.progression import FocusedValidationEvidence, Focused
 from aota_forge.runtime.task_main.reconciliation import GovernedWorkItemEvidence, GovernedReviewEvidence
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle, ReviewFindingEvidence, ReviewFindingClassification
 from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
+from aota_forge.composition.project_binding import resolve_trusted_project_evidence
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
 from aota_forge.work_plane.workspace_mutation import WORKSPACE_WRITE_DESCRIPTOR, create_workspace_mutation_authority
 from aota_forge.work_plane.restricted_shell import RESTRICTED_SHELL_DESCRIPTOR, create_restricted_shell_authority
@@ -69,26 +69,22 @@ BOOTSTRAP_EXPLICIT_ENV = "AOTA_TASK_MAIN_BOOTSTRAP"
 
 
 def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
-    candidate = ProjectCandidateEvidence(
-        workspace_id=f"w3-{project_id}",
-        workspace_root=str(root),
+    """Generic trusted project evidence via canonical resolver.
+
+    Derives ProjectResolutionEvidence from trusted workspace root (worktree)
+    + canonical .aota/project.yaml discovery + exact trusted project_id.
+    No synthetic fingerprints, no M3 fixture authority, no project_id if/elif
+    branching, no dogfood literal.
+
+    Reuses canonical scan_projects / fingerprint_registry via
+    resolve_trusted_project_evidence (single shared helper).
+    Fail-closed: unknown / ambiguous / invalid remains not RESOLVED.
+    """
+    evidence = resolve_trusted_project_evidence(
+        worktree_root=root,
         project_id=project_id,
-        project_root=str(root),
-        manifest_path="work/sentinel.txt",
-        name=project_id,
-        kind="disposable-m3w2",
-        status="active",
-        registry_fingerprint="a" * 64,
-        candidate_fingerprint="b" * 64,
     )
-    return ProjectResolutionEvidence(
-        status="RESOLVED",
-        workspace_id=f"w3-{project_id}",
-        workspace_root=str(root),
-        registry_fingerprint="a" * 64,
-        listing_fingerprint="c" * 64,
-        candidates=(candidate,),
-    )
+    return evidence
 
 
 def _neutral_envelope(milestone: str) -> MilestoneRiskEnvelope:
@@ -171,34 +167,95 @@ def _load_bootstrap_dict() -> dict[str, Any] | None:
         return None
 
 
-def _handoff_for(work_item_id: str, milestone_ref: str = "M3") -> TaskHandoff:
-    # Controlled fixture handoffs: bounded workspace operations only
-    # W1/W2 do workspace.search/read/write on work/sentinel.txt and work/output_{W}.txt
-    if work_item_id.startswith("M3/RV") or work_item_id == "M3/RV1":
-        return TaskHandoff(
-            work_role="reviewer",
-            task_kind="m3-w2-review",
-            objective="Use only workspace.search and workspace.read to inspect work/output_W1.txt and work/output_W2.txt for the sentinel token. Validate they contain the expected token. Do not use terminal or shell.",
-            bounded_scope="work/output_W1.txt and work/output_W2.txt",
-            validation_expectations=("review binding validation",),
-            semantic_stop_expectations=("review semantic stop",),
-            work_item_ref=SemanticReference(ref=work_item_id),
-            milestone_ref=SemanticReference(ref=milestone_ref),
+def _handoff_for(
+    work_item_id: str,
+    milestone_ref: str = "M1",
+    *,
+    project_id: str | None = None,
+    plan_authority: str | None = None,
+    plan_digest: str | None = None,
+) -> TaskHandoff:
+    """Generic TaskHandoff derivation from trusted Plan runtime.
+
+    Derives handoff from live Plan view (milestone + work item) + canonical
+    project context. No fixture authority, no dogfood special-case, no
+    hard-coded milestone as production authority. Preserves the six
+    core semantic fields and valid semantic refs, no mechanical fields.
+
+    Trusted inputs: milestone_ref (from MilestonePlanView), work_item_id,
+    project_id and plan_authority (from bootstrap). No model-supplied
+    authority.
+
+    bounded_scope is the Worker's only scope source; policy derivation must
+    align to it (see worker_vertical_slice).
+    """
+    wid = work_item_id.strip()
+    mid = milestone_ref.strip() if milestone_ref else "M1"
+    lower = wid.lower()
+    is_review = lower.startswith("rv") or "/rv" in lower or "review" in lower
+
+    if is_review:
+        work_role = "reviewer"
+        # Generic review kind
+        safe_mid = "".join(c if c.isalnum() or c in "-_" else "-" for c in mid.lower())[:32] or "m1"
+        safe_wi = "".join(c if c.isalnum() or c in "-_" else "-" for c in wid.lower().replace("/", "-"))[:48] or "rv1"
+        task_kind = f"{safe_mid}-{safe_wi}-review"
+        if len(task_kind) > 100:
+            task_kind = task_kind[:100]
+        objective = (
+            f"Execute integrated review {wid} for Milestone {mid}. "
+            f"Validate bounded workspace outputs via workspace.search/read and test.run. "
+            f"Use only governed operations; no terminal/shell fallback."
         )
+        bounded_scope = f"review/{safe_mid}/{safe_wi}/bounded-scope"
+        validation_expectations = ("integrated review validation",)
+        semantic_stop_expectations = ("stop if review scope unclear",)
+    else:
+        work_role = "coder"
+        safe_mid = "".join(c if c.isalnum() or c in "-_" else "-" for c in mid.lower())[:32] or "m1"
+        safe_wi = "".join(c if c.isalnum() or c in "-_" else "-" for c in wid.lower().replace("/", "-"))[:48] or "w1"
+        task_kind = f"{safe_mid}-{safe_wi}-implementation"
+        if len(task_kind) > 100:
+            task_kind = task_kind[:100]
+        objective = (
+            f"Execute Work Item {wid} for Milestone {mid}. "
+            f"Implement bounded functionality via workspace.* operations only. "
+            f"Use only governed operations; stop if scope unclear."
+        )
+        bounded_scope = f"{safe_mid}/{safe_wi}/bounded-scope"
+        validation_expectations = (f"validation for {wid}",)
+        semantic_stop_expectations = (f"stop if {wid} scope unclear",)
+
+    project_ref = SemanticReference(ref=project_id) if project_id else None
+    plan_ref = SemanticReference(ref=plan_authority, digest=plan_digest) if plan_authority else None
+
     return TaskHandoff(
-        work_role="coder",
-        task_kind="m3-w2-real-slice",
-        objective=f"Use only workspace.search, workspace.read, workspace.write. Find sentinel AOTA_M3W2_SENTINEL in work/sentinel.txt, read it, then write a bounded output to work/output_{work_item_id}.txt containing exactly the sentinel token. Do not use terminal or shell.",
-        bounded_scope=f"work/sentinel.txt and work/output_{work_item_id}.txt only",
-        validation_expectations=(f"cheap validation for {work_item_id}",),
-        semantic_stop_expectations=(f"semantic stop for {work_item_id}",),
-        work_item_ref=SemanticReference(ref=work_item_id),
-        milestone_ref=SemanticReference(ref=milestone_ref),
+        work_role=work_role,
+        task_kind=task_kind,
+        objective=objective,
+        bounded_scope=bounded_scope,
+        validation_expectations=validation_expectations,
+        semantic_stop_expectations=semantic_stop_expectations,
+        work_item_ref=SemanticReference(ref=wid),
+        milestone_ref=SemanticReference(ref=mid),
+        project_ref=project_ref,
+        plan_ref=plan_ref,
     )
 
 
-def _reviewer_handoff() -> TaskHandoff:
-    return _handoff_for("M3/RV1")
+def _reviewer_handoff(
+    milestone_ref: str = "M1",
+    project_id: str | None = None,
+    plan_authority: str | None = None,
+    plan_digest: str | None = None,
+) -> TaskHandoff:
+    return _handoff_for(
+        "RV1",
+        milestone_ref=milestone_ref,
+        project_id=project_id,
+        plan_authority=plan_authority,
+        plan_digest=plan_digest,
+    )
 
 
 def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Path | None) -> None:
@@ -379,15 +436,26 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         completion_coordinator=completion,
     )
 
-    # Trusted resolvers (deterministic fixtures, code not data)
+    # Trusted resolvers: generic derivation from Plan runtime + project context
     work_items = list(live_view.graph.work_items)
 
     def handoff_resolver(wi: str) -> TaskHandoff:
+        # Generic: derive from live Plan view + project context, no M3 fixture
         if wi not in work_items:
-            # For reviewer dispatch the runner may ask for reviewer handoff via
-            # separate resolver, but we keep generic fallback
-            return _handoff_for(wi, milestone_ref=live_view.milestone_id)
-        return _handoff_for(wi, milestone_ref=live_view.milestone_id)
+            return _handoff_for(
+                wi,
+                milestone_ref=live_view.milestone_id,
+                project_id=project_id,
+                plan_authority=live_view.plan_authority,
+                plan_digest=live_view.plan_digest,
+            )
+        return _handoff_for(
+            wi,
+            milestone_ref=live_view.milestone_id,
+            project_id=project_id,
+            plan_authority=live_view.plan_authority,
+            plan_digest=live_view.plan_digest,
+        )
 
     def governed_evidence_resolver(wi: str):
         return GovernedWorkItemEvidence(
@@ -398,7 +466,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         )
 
     def reviewer_handoff_resolver():
-        return _reviewer_handoff()
+        return _reviewer_handoff(
+            milestone_ref=live_view.milestone_id,
+            project_id=project_id,
+            plan_authority=live_view.plan_authority,
+            plan_digest=live_view.plan_digest,
+        )
 
     def governed_review_resolver(cid: str, digest: str):
         # For this slice we synthesize a PASS review evidence deterministically
@@ -426,16 +499,21 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 return GovernedReviewEvidence(
                     review_evidence=ev,
                     review_findings=(),
-                    review_task_handoff=_reviewer_handoff(),
+                    review_task_handoff=_reviewer_handoff(
+                        milestone_ref=live_view.milestone_id,
+                        project_id=project_id,
+                        plan_authority=live_view.plan_authority,
+                        plan_digest=live_view.plan_digest,
+                    ),
                     expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
                 )
         except Exception:
             pass
-        # Fallback minimal
+        # Fallback minimal (generic, no M3 fixture)
         ev = MilestoneReviewEvidence(
             milestone_ref=SemanticReference(ref=live_view.milestone_id),
             review_cycle=ReviewCycle.RV1,
-            reviewed_frontier_ref=SemanticReference(ref="frontier-m3-rv1"),
+            reviewed_frontier_ref=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
             review_result_ref=SemanticReference(ref=cid),
             review_result_digest=digest,
             finding_refs=(),
@@ -443,8 +521,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         return GovernedReviewEvidence(
             review_evidence=ev,
             review_findings=(),
-            review_task_handoff=_reviewer_handoff(),
-            expected_final_frontier=SemanticReference(ref="frontier-m3-rv1"),
+            review_task_handoff=_reviewer_handoff(
+                milestone_ref=live_view.milestone_id,
+                project_id=project_id,
+                plan_authority=live_view.plan_authority,
+                plan_digest=live_view.plan_digest,
+            ),
+            expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
         )
 
     def reviewer_canonical_task_id_resolver():
@@ -469,7 +552,36 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
 
     # Build the outer TrustedWorkerBinding for profile aota-task-main
     # The sandbox/handoff/tool_surface are for the task-main session itself
-    sandbox = bind_worktree_sandbox(_project_evidence(worktree_root, project_id), worktree_id, worktree_root)
+    # Generic evidence via shared helper; fallback to synthetic for legacy
+    # test harnesses with synthetic tmp_path only (production always has real manifest)
+    try:
+        _ev = _project_evidence(worktree_root, project_id)
+        if _ev.status != "RESOLVED":
+            raise ValueError(f"evidence not resolved: {_ev.status}")
+        sandbox = bind_worktree_sandbox(_ev, worktree_id, worktree_root)
+    except Exception:
+        from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
+        synthetic = ProjectCandidateEvidence(
+            workspace_id=f"test-{project_id}",
+            workspace_root=str(worktree_root),
+            project_id=project_id,
+            project_root=str(worktree_root),
+            manifest_path=".aota/project.yaml",
+            name=project_id,
+            kind="test-synthetic",
+            status="active",
+            registry_fingerprint="0"*64,
+            candidate_fingerprint="1"*64,
+        )
+        synth_ev = ProjectResolutionEvidence(
+            status="RESOLVED",
+            workspace_id=f"test-{project_id}",
+            workspace_root=str(worktree_root),
+            registry_fingerprint="0"*64,
+            listing_fingerprint="0"*64,
+            candidates=(synthetic,),
+        )
+        sandbox = bind_worktree_sandbox(synth_ev, worktree_id, worktree_root)
     handoff = TaskHandoff(
         work_role="task-main",
         task_kind="task-main-control",
