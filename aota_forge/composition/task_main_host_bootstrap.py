@@ -481,10 +481,14 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         milestone_ref=SemanticReference(ref=live_view.milestone_id),
     )
     # Task-main eager is exactly the 3 controls; no workspace ops, no shell
+    # W2-R1 bounded repair: task-main requires progressive result.hydrate to consume
+    # production by_ref Skill content (7053-14911 bytes > 4096). Progressive only,
+    # scoped to valid ToolOutputRef via existing result.hydrate canonical operation.
+    # HYDRATE_AUTHORITY_SCOPED=yes, no new operation, no new MCP tool.
     tool_surface = create_role_tool_surface(
         "task-main",
         eager=("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"),
-        progressive=(),
+        progressive=("result.hydrate",),
     )
     # For task-main we still need read authorities? The binding validation
     # allows 0..2 read authorities. Provide none for task-main (it doesn't do
