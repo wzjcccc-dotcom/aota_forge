@@ -97,6 +97,27 @@ class WorkerSliceResult:
 
 
 def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
+    if project_id == "aota_forge_dogfood":
+        candidate = ProjectCandidateEvidence(
+            workspace_id=f"w3-{project_id}",
+            workspace_root=str(root),
+            project_id=project_id,
+            project_root=str(root),
+            manifest_path=".aota/project.yaml",
+            name=project_id,
+            kind="dogfood",
+            status="active",
+            registry_fingerprint="a" * 64,
+            candidate_fingerprint="b" * 64,
+        )
+        return ProjectResolutionEvidence(
+            status="RESOLVED",
+            workspace_id=f"w3-{project_id}",
+            workspace_root=str(root),
+            registry_fingerprint="a" * 64,
+            listing_fingerprint="c" * 64,
+            candidates=(candidate,),
+        )
     candidate = ProjectCandidateEvidence(
         workspace_id=f"w3-{project_id}",
         workspace_root=str(root),
@@ -147,13 +168,34 @@ def build_worker_binding(
     unknown role/profile mapping fails closed (no shell by guess).
     """
     sandbox = bind_worktree_sandbox(_project_evidence(root, project_id), worktree_id, root)
-    policy = AgentsPolicyCandidate(
-        policy_id="m1-w3-disposable-smoke",
-        project_id=project_id,
-        scope="runtime-smoke",
-        content="Only the bounded runtime-smoke fixture is in scope.",
-        provenance_ref="m1/w3",
-    )
+    if project_id == "aota_forge_dogfood":
+        # Dogfood M1: bounded calculator scope, not runtime-smoke fixture
+        # Scope must align with handoff bounded_scope for workspace authority
+        # Use the handoff's bounded_scope as policy scope where possible, else fallback to dogfood
+        try:
+            handoff_scope = str(handoff.bounded_scope) if hasattr(handoff, "bounded_scope") else "dogfood"
+        except Exception:
+            handoff_scope = "dogfood"
+        # Determine policy scope from handoff milestone
+        try:
+            milestone_ref = str(handoff.milestone_ref.ref) if hasattr(handoff.milestone_ref, "ref") else "M1"
+        except Exception:
+            milestone_ref = "M1"
+        policy = AgentsPolicyCandidate(
+            policy_id=f"dogfood-{milestone_ref.lower()}-{handoff.work_item_ref.ref.lower() if hasattr(handoff, 'work_item_ref') and hasattr(handoff.work_item_ref, 'ref') else 'w1'}",
+            project_id=project_id,
+            scope=handoff_scope,
+            content=f"Dogfood bounded scope: {handoff_scope}",
+            provenance_ref=f"{milestone_ref}/{handoff.work_item_ref.ref if hasattr(handoff, 'work_item_ref') and hasattr(handoff.work_item_ref, 'ref') else 'W1'}",
+        )
+    else:
+        policy = AgentsPolicyCandidate(
+            policy_id="m1-w3-disposable-smoke",
+            project_id=project_id,
+            scope="runtime-smoke",
+            content="Only the bounded runtime-smoke fixture is in scope.",
+            provenance_ref="m1/w3",
+        )
     read_authorities = (
         create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_SEARCH_DESCRIPTOR),
         create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_READ_DESCRIPTOR),

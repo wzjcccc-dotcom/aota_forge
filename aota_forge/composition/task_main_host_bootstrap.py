@@ -69,6 +69,28 @@ BOOTSTRAP_EXPLICIT_ENV = "AOTA_TASK_MAIN_BOOTSTRAP"
 
 
 def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
+    # Dogfood handling: use real project manifest and kind
+    if project_id == "aota_forge_dogfood":
+        candidate = ProjectCandidateEvidence(
+            workspace_id=f"w3-{project_id}",
+            workspace_root=str(root),
+            project_id=project_id,
+            project_root=str(root),
+            manifest_path=".aota/project.yaml",
+            name=project_id,
+            kind="dogfood",
+            status="active",
+            registry_fingerprint="a" * 64,
+            candidate_fingerprint="b" * 64,
+        )
+        return ProjectResolutionEvidence(
+            status="RESOLVED",
+            workspace_id=f"w3-{project_id}",
+            workspace_root=str(root),
+            registry_fingerprint="a" * 64,
+            listing_fingerprint="c" * 64,
+            candidates=(candidate,),
+        )
     candidate = ProjectCandidateEvidence(
         workspace_id=f"w3-{project_id}",
         workspace_root=str(root),
@@ -172,9 +194,75 @@ def _load_bootstrap_dict() -> dict[str, Any] | None:
 
 
 def _handoff_for(work_item_id: str, milestone_ref: str = "M3") -> TaskHandoff:
-    # Controlled fixture handoffs: bounded workspace operations only
-    # W1/W2 do workspace.search/read/write on work/sentinel.txt and work/output_{W}.txt
-    if work_item_id.startswith("M3/RV") or work_item_id == "M3/RV1":
+    # Dogfood M1 handling: bounded calculator implementation
+    # Preserve M3 fixture for existing M3 tests, but handle M1/W1..W3 for dogfood.
+    if milestone_ref == "M1" and work_item_id in ("W1", "W2", "W3"):
+        if work_item_id == "W1":
+            return TaskHandoff(
+                work_role="coder",
+                task_kind="dogfood-w1-core-calculator",
+                objective=(
+                    "Use only aota.invoke workspace.* and test.run. Create minimal Python calculator package "
+                    "with add/subtract/multiply/divide, handling division-by-zero as defined error. "
+                    "Do not implement CLI concerns. Use standard library only. Place package under src/calculator or equivalent "
+                    "as per .aota/project.yaml source_root. Provide deterministic core arithmetic."
+                ),
+                bounded_scope="src/calculator",
+                validation_expectations=("core arithmetic add/sub/mul/div, division-by-zero defined",),
+                semantic_stop_expectations=("stop if scope unclear, do not expand to CLI",),
+                work_item_ref=SemanticReference(ref=work_item_id),
+                milestone_ref=SemanticReference(ref=milestone_ref),
+            )
+        if work_item_id == "W2":
+            return TaskHandoff(
+                work_role="coder",
+                task_kind="dogfood-w2-cli-contract",
+                objective=(
+                    "Use only aota.invoke workspace.* and test.run. Implement bounded CLI with commands "
+                    "calc add/sub/mul/div, support --json flag, human-readable output, deterministic "
+                    "non-success for invalid numeric input and division-by-zero. Use argparse or stdlib. "
+                    "Reuse core calculator from W1."
+                ),
+                bounded_scope="src/calculator",
+                validation_expectations=("CLI add/sub/mul/div, --json, invalid input and division-by-zero handled",),
+                semantic_stop_expectations=("stop if scope unclear",),
+                work_item_ref=SemanticReference(ref=work_item_id),
+                milestone_ref=SemanticReference(ref=milestone_ref),
+            )
+        if work_item_id == "W3":
+            return TaskHandoff(
+                work_role="coder",
+                task_kind="dogfood-w3-tests-readme",
+                objective=(
+                    "Use only aota.invoke workspace.* and test.run (do not use raw terminal). "
+                    "Add deterministic tests for core and CLI, and bounded README usage. "
+                    "Use pytest via test.run if available; if test.run unavailable or unusable, return BLOCKED. "
+                    "Do not bypass via raw shell."
+                ),
+                bounded_scope="tests",
+                validation_expectations=("core tests, CLI tests, README usage, test execution via governed AF path",),
+                semantic_stop_expectations=("stop if test.run unavailable",),
+                work_item_ref=SemanticReference(ref=work_item_id),
+                milestone_ref=SemanticReference(ref=milestone_ref),
+            )
+    # Reviewer for M1 integrated review (dogfood) and M3
+    if work_item_id.startswith("M3/RV") or work_item_id == "M3/RV1" or work_item_id.startswith("M1/RV") or work_item_id == "RV1" or work_item_id == "M1/RV1":
+        # For dogfood M1, the integrated review validates all W1/W2/W3 together
+        if milestone_ref == "M1":
+            return TaskHandoff(
+                work_role="reviewer",
+                task_kind="dogfood-m1-integrated-review",
+                objective=(
+                    "Use only aota.invoke workspace.* and test.run. Perform integrated review for Milestone M1: "
+                    "validate calculator core, CLI, error contracts, --json, tests, README, integration. "
+                    "Do not use native terminal/file fallback. One integrated review only."
+                ),
+                bounded_scope="review of src/calculator, CLI, tests, README",
+                validation_expectations=("integrated review PASS/FAIL with findings",),
+                semantic_stop_expectations=("review semantic stop",),
+                work_item_ref=SemanticReference(ref=work_item_id),
+                milestone_ref=SemanticReference(ref=milestone_ref),
+            )
         return TaskHandoff(
             work_role="reviewer",
             task_kind="m3-w2-review",
@@ -185,6 +273,7 @@ def _handoff_for(work_item_id: str, milestone_ref: str = "M3") -> TaskHandoff:
             work_item_ref=SemanticReference(ref=work_item_id),
             milestone_ref=SemanticReference(ref=milestone_ref),
         )
+    # Fallback for M3 and other milestones: controlled fixture
     return TaskHandoff(
         work_role="coder",
         task_kind="m3-w2-real-slice",
@@ -398,7 +487,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         )
 
     def reviewer_handoff_resolver():
-        return _reviewer_handoff()
+        # Dogfood M1: use M1 reviewer handoff, not M3
+        return _handoff_for("RV1", milestone_ref=live_view.milestone_id)
 
     def governed_review_resolver(cid: str, digest: str):
         # For this slice we synthesize a PASS review evidence deterministically
@@ -426,7 +516,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 return GovernedReviewEvidence(
                     review_evidence=ev,
                     review_findings=(),
-                    review_task_handoff=_reviewer_handoff(),
+                    review_task_handoff=_handoff_for("RV1", milestone_ref=live_view.milestone_id),
                     expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
                 )
         except Exception:
@@ -435,7 +525,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         ev = MilestoneReviewEvidence(
             milestone_ref=SemanticReference(ref=live_view.milestone_id),
             review_cycle=ReviewCycle.RV1,
-            reviewed_frontier_ref=SemanticReference(ref="frontier-m3-rv1"),
+            reviewed_frontier_ref=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
             review_result_ref=SemanticReference(ref=cid),
             review_result_digest=digest,
             finding_refs=(),
@@ -443,8 +533,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         return GovernedReviewEvidence(
             review_evidence=ev,
             review_findings=(),
-            review_task_handoff=_reviewer_handoff(),
-            expected_final_frontier=SemanticReference(ref="frontier-m3-rv1"),
+            review_task_handoff=_handoff_for("RV1", milestone_ref=live_view.milestone_id),
+            expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
         )
 
     def reviewer_canonical_task_id_resolver():
