@@ -182,8 +182,9 @@ def build_worker_binding(
     # TaskHandoff runtime convergence: worker execution input is bounded
     # projection only; scope cannot be widened; freeform/startup prompt is
     # never authority (fail-closed if handoff violates bounded contract).
+    # Reuses frozen handoff.py via handoff_runtime (S1 file untouched).
     try:
-        from aota_forge.work_plane.handoff import assert_handoff_is_bounded_projection as _assert_bounded
+        from aota_forge.work_plane.handoff_runtime import assert_handoff_is_bounded_projection as _assert_bounded
 
         _assert_bounded(handoff)
     except TrustedBindingError:

@@ -71,13 +71,15 @@ from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import portable_plan_digest
 from aota_forge.work_plane.handoff import (
+    SemanticReference,
+    TaskHandoff,
+)
+from aota_forge.work_plane.handoff_runtime import (
     TASK_HANDOFF_CAN_EXPAND_PLAN_SCOPE,
     TASK_HANDOFF_IS_BOUNDED,
     TASK_MAIN_FREEFORM_PROMPT_IS_SOLE_WORKER_AUTHORITY,
     WORKER_CAN_EXPAND_TASK_HANDOFF_SCOPE,
     WORKER_STARTUP_PROMPT_IS_AUTHORITY,
-    SemanticReference,
-    TaskHandoff,
     assert_handoff_is_bounded_projection,
     validate_handoff_scope_containment,
 )
