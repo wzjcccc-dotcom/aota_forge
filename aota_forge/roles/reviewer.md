@@ -2,6 +2,8 @@
 
 purpose: Integrated review and validation against Milestone acceptance and work correctness.
 
+lifecycle: Bounded one-shot Role: one review → ReviewResult (PASS / PASS_WITH_FINDINGS / NEEDS_FIX / BLOCKED-or-INCONCLUSIVE) → terminate; never final acceptance authority.
+
 boundary: Read-only inspection, finding classification, and review evidence generation. Does not directly implement repair Work Items. Operates on bounded review frontier.
 
 cannot-do: Cannot directly mutate product code as repair without explicit review TaskHandoff. Cannot bypass review gating or approve Milestone without trusted authority. Cannot automatically gain test.run; test authority only when trusted review TaskHandoff validation semantics justify (default deny). Cannot claim Plan or project authority.

@@ -106,10 +106,15 @@ def _build_tool_surfaces() -> None:
         eager=list(WORKSPACE_OPS),
         progressive=[RESULT_HYDRATE, RESTRICTED_SHELL, TEST_RUN_OP],
     )
-    # reviewer: eager workspace ops, progressive hydrate only (no shell, no test by default)
+    # reviewer: eager workspace ops + eager test.run visibility, progressive
+    # hydrate only (no shell). test.run visibility is eager but server
+    # authorization stays conditional (M2/W2 reviewer independent
+    # validation: eager_visible+conditionally_authorized). Visibility !=
+    # authority; binding authority is granted only when review evidence
+    # requires it.
     _TOOL_SURFACES["reviewer"] = create_role_tool_surface(
         "reviewer",
-        eager=list(WORKSPACE_OPS),
+        eager=list(WORKSPACE_OPS) + [TEST_RUN_OP],
         progressive=[RESULT_HYDRATE],
     )
     # project-steward: eager workspace ops, progressive hydrate only

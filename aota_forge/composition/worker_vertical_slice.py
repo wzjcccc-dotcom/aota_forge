@@ -149,8 +149,10 @@ def build_worker_binding(
     - role.bootstrap is implicit via trusted binding (no model authority)
     - skill.open via allowed universe + registry + open_skill (W2)
     - test.run via BoundedTestExecutionToolProvider, per-role least-privilege:
-      coder required, reviewer default deny (conditional only for trusted review),
-      analyst/project-steward/task-main no automatic.
+      coder required (normal path), reviewer eager-visible but
+      conditionally authorized only when the trusted review TaskHandoff
+      carries validation expectations (M2/W2 reviewer independent
+      validation), analyst/project-steward/task-main no automatic.
 
     Reuses existing mapping seam work_plane/mapping.py and runtime/config for profile binding;
     unknown role/profile mapping fails closed (no shell by guess).
@@ -294,7 +296,13 @@ def build_worker_binding(
         progressive_ops = ("result.hydrate", "restricted_shell.run", "test.run")
     elif role_str == "analyst":
         progressive_ops = ("result.hydrate", "restricted_shell.run")
-    elif role_str in ("reviewer", "project-steward", "task-main"):
+    elif role_str == "reviewer":
+        # M2/W2 reviewer independent validation: test.run is eager visible
+        # but server authorization stays conditional (granted below only
+        # when review evidence requires it).
+        eager_ops = ("workspace.search", "workspace.read", "workspace.write", "test.run")
+        progressive_ops = ("result.hydrate",)
+    elif role_str in ("project-steward", "task-main"):
         progressive_ops = ("result.hydrate",)
     else:
         progressive_ops = ("result.hydrate",)
@@ -309,8 +317,29 @@ def build_worker_binding(
         except Exception:
             shell_authority = None
     # W2 test execution authority — minimal bounded extension per role least-privilege
+    # coder: normal path (required); reviewer: conditional only when the
+    # trusted review TaskHandoff carries validation expectations (review
+    # evidence requires validation capability), else default deny.
+    # Analyst/project-steward/task-main: no automatic test.run.
     test_execution_authority = None
-    if "test.run" in progressive_ops:
+    _test_run_visible = "test.run" in progressive_ops or "test.run" in eager_ops
+    _test_run_authorized = False
+    if _test_run_visible:
+        if role_str == "coder":
+            _test_run_authorized = True
+        elif role_str == "reviewer":
+            try:
+                from aota_forge.work_plane.reviewer_runtime import reviewer_test_run_authorized as _reviewer_authorized
+
+                _test_run_authorized = bool(
+                    _reviewer_authorized(
+                        work_role=role_str,
+                        validation_expectations=tuple(handoff.validation_expectations),
+                    )
+                )
+            except Exception:
+                _test_run_authorized = False
+    if _test_run_authorized:
         try:
             from aota_forge.work_plane.test_execution import create_test_execution_authority, TEST_RUN_DESCRIPTOR  # type: ignore
 
@@ -323,7 +352,6 @@ def build_worker_binding(
         except Exception:
             test_execution_authority = None
     # Reviewer conditional: default deny, only when trusted review TaskHandoff validation semantics justify.
-    # For W2, reviewer has no automatic test.run; conditional path requires explicit review handoff which we treat as deny here.
     # Analyst/project-steward/task-main no automatic test.run — remain None.
     # Worker path never carries task-main context (fail-closed if violated).
     return TrustedWorkerBinding(

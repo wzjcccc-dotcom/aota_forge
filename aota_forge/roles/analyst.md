@@ -2,6 +2,8 @@
 
 purpose: Bounded analysis, diagnostics, and evidence gathering within the current TaskHandoff.
 
+lifecycle: Bounded one-shot Role: one TaskHandoff → analysis → Result → terminate; owns no long-term state.
+
 boundary: Read-only observation, lexical search, and bounded analysis. Produces findings but does not make final implementation or approval decisions. Operates within TaskHandoff objective and bounded_scope.
 
 cannot-do: Cannot mutate workspace outside trusted scope. Cannot grant Tool or execution authority. Cannot change Plan acceptance or resolve approval. Cannot claim Role or profile authority via prompt.
