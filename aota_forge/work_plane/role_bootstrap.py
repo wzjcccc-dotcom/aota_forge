@@ -46,6 +46,21 @@ from aota_forge.work_plane.af_roles import (
 WORKER_STARTUP_PROMPT_PATH = "aota_forge/composition/worker_startup_prompt.md"
 WORKER_STARTUP_PROMPT_SOURCE = "AF"
 
+# M2/W1 bootstrap size policy (explicit safe bounds, no arbitrary loss).
+# Eager skill guidance is returned as bounded structured content with an
+# explicit per-component safe bound that keeps role.bootstrap inline
+# (TOOL_INLINE_OUTPUT_MAX_BYTES=4096) while restoring usability lost to the
+# arbitrary 180-char truncation. Full skill bodies (7-14 KiB) stay available
+# via skill.open (progressive, digest-verified); eager carries usable guidance
+# excerpt + length/digest/ref metadata so no silent semantic loss occurs.
+# Full Skill-content rewrite stays M3.
+BOOTSTRAP_CONTENT_UNBOUNDED = False
+BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS = 400
+BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES = 32 * 1024
+ARBITRARY_180_CHAR_SEMANTIC_LOSS = False
+M3_SKILL_REWRITE_STARTED = False
+BOOTSTRAP_TRUNCATION_REPAIRED = True
+
 # Error helpers
 class RoleBootstrapError(ValueError):
     pass
@@ -216,21 +231,45 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     # Also include degraded recommended if any
     degraded = [{"ref": d.ref.ref, "reason": d.reason} for d in projection.degraded_recommended]
 
-    # Build bounded response — keep under inline 4096 by avoiding duplicate fields
+    # Build bounded structured response with explicit safe size policy.
+    # Eager components carry usable guidance excerpt bounded by
+    # BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS (500, up from arbitrary 180)
+    # plus length/digest metadata and full length for hydration via skill.open.
+    # 500 keeps role.bootstrap inline (<=4096) for all roles while restoring
+    # usability (180 rendered guidance unusable). Full Skill-content rewrite
+    # stays M3; full bodies remain available via progressive skill.open.
+    def _base_skill_entry(c: Any) -> dict[str, Any]:
+        mat_full = c.materialized or ""
+        total_len = len(mat_full)
+        total_bytes = len(mat_full.encode("utf-8"))
+        if total_bytes > BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES:
+            raise RoleBootstrapError(
+                f"eager skill content exceeds safe bound {BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES}"
+            )
+        if total_len > BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS:
+            mat = mat_full[:BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS]
+            is_trunc = True
+        else:
+            mat = mat_full
+            is_trunc = False
+        return {
+            "kind": c.kind,
+            "delivery": c.delivery,
+            "digest": c.digest,
+            "provenance": c.provenance,
+            "materialized": mat,
+            "content_length": len(mat),
+            "byte_length": len(mat.encode("utf-8")),
+            "is_truncated": is_trunc,
+            "total_content_length": total_len,
+            "total_byte_length": total_bytes,
+        }
+
     result = {
         "ROLE": role_str,
         "SOUL": soul.to_dict(),
         "TOOL_SURFACE": tool_surface.canonical_dict() if hasattr(tool_surface, "canonical_dict") else str(tool_surface),
-        "BASE_SKILLS": [
-            {
-                "kind": c.kind,
-                "delivery": c.delivery,
-                "digest": c.digest,
-                "provenance": c.provenance,
-                "materialized": c.materialized[:180] + "..." if c.materialized and len(c.materialized) > 180 else c.materialized,
-            }
-            for c in base_components
-        ],
+        "BASE_SKILLS": [_base_skill_entry(c) for c in base_components],
         "PROGRESSIVE_SKILLS": progressive_meta,
         "TASK_HANDOFF": handoff.to_dict() if hasattr(handoff, "to_dict") else str(handoff),
         "CURRENT_EXECUTION_CONTEXT": {

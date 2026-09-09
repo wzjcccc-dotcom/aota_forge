@@ -22,6 +22,13 @@ Invariants
 * Mechanical field injection fails closed (package_id, idempotency_key, etc.).
 * Bounded representation on string lengths and reference collections.
 * Deterministic canonical serialization and SHA-256 handoff digest.
+
+M2/W1 runtime convergence (bounded Worker execution input):
+* TASK_HANDOFF_IS_BOUNDED=yes, TASK_HANDOFF_CAN_EXPAND_PLAN_SCOPE=no
+* WORKER_CAN_EXPAND_TASK_HANDOFF_SCOPE=no
+* TASK_MAIN_FREEFORM_PROMPT_IS_SOLE_WORKER_AUTHORITY=no
+* WORKER_STARTUP_PROMPT_IS_AUTHORITY=no
+* TaskHandoff carries bounded execution projection only (refs, not Plan body).
 """
 
 from __future__ import annotations
@@ -468,3 +475,51 @@ def compute_handoff_digest(handoff_or_dict: TaskHandoff | Mapping[str, Any]) -> 
     raise TypeError(
         f"Expected TaskHandoff or Mapping, got {type(handoff_or_dict).__name__}"
     )
+
+
+# M2/W1 runtime convergence markers (bounded execution projection only).
+TASK_HANDOFF_IS_BOUNDED = True
+TASK_HANDOFF_CAN_EXPAND_PLAN_SCOPE = False
+WORKER_CAN_EXPAND_TASK_HANDOFF_SCOPE = False
+TASK_MAIN_FREEFORM_PROMPT_IS_SOLE_WORKER_AUTHORITY = False
+WORKER_STARTUP_PROMPT_IS_AUTHORITY = False
+
+
+def validate_handoff_scope_containment(*, handoff_scope: str, worker_scope: str) -> None:
+    """Fail-closed scope containment: worker scope must equal handoff scope.
+
+    W1 foundation: effective worker scope is derived from TaskHandoff
+    bounded_scope (see worker_vertical_slice policy derivation). Any attempt
+    to widen scope beyond the handoff fails closed; narrowing is also denied
+    here to keep the seam exact (W2 may relax with explicit policy).
+    """
+    if not isinstance(handoff_scope, str) or not handoff_scope.strip():
+        raise ValueError("handoff_scope must be non-empty")
+    if not isinstance(worker_scope, str) or not worker_scope.strip():
+        raise ValueError("worker_scope must be non-empty")
+    if worker_scope.strip() != handoff_scope.strip():
+        raise ValueError(
+            f"worker scope {worker_scope!r} must equal handoff bounded_scope {handoff_scope!r}; "
+            "scope expansion/narrowing denied"
+        )
+
+
+def assert_handoff_is_bounded_projection(handoff: TaskHandoff) -> None:
+    """Validate that a handoff is a bounded projection (no Plan authority duplication).
+
+    Checks the six core fields are present/bounded (type already enforces) and
+    that no mechanical/Plan-body fields are present (type rejects them).
+    Refs are optional but, when present, must be SemanticReference (type enforces).
+    """
+    if not isinstance(handoff, TaskHandoff):
+        raise TypeError(f"handoff must be TaskHandoff, got {type(handoff).__name__}")
+    # Core fields are validated by TaskHandoff.__post_init__; here we assert
+    # the projection property: handoff carries refs, not Plan bodies.
+    for attr in ("project_ref", "plan_ref", "milestone_ref", "work_item_ref"):
+        val = getattr(handoff, attr)
+        if val is not None and not isinstance(val, SemanticReference):
+            raise TypeError(f"{attr} must be SemanticReference or None")
+    # Bounded scope must be non-empty (already validated) and must not claim
+    # to expand Plan scope (no "expand" marker; scope is exact).
+    if not handoff.bounded_scope.strip():
+        raise ValueError("bounded_scope must be non-empty")

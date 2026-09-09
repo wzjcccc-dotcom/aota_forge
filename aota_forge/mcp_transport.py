@@ -207,6 +207,18 @@ MCP_PUBLIC_TOOL_COUNT = len(MCP_PUBLIC_TOOLS)
 AGENT_FACING_AOTA_TOOL = "aota.invoke"
 HERMES_AGENT_FACING_AOTA_TOOL_COUNT = 1
 
+# M2/W1 runtime authority binding foundation (fail-closed).
+TRUSTED_BINDING_FAIL_CLOSED = True
+WORKER_CAN_MINT_TASK_MAIN_AUTHORITY = False
+TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY = False
+FREEFORM_PROMPT_CAN_MINT_BINDING_AUTHORITY = False
+PROJECT_ID_SPECIAL_CASE_ALLOWED = False
+DOGFOOD_LITERAL_SPECIAL_CASE_ALLOWED = False
+SOUL_IS_AUTHORITY = False
+SKILL_IS_AUTHORITY = False
+TOOL_VISIBILITY_IS_AUTHORITY = False
+SERVER_SIDE_AUTHORITY_REQUIRED = True
+
 # Logical capability surface (existing typed operations, not MCP tool names).
 # M2 convergence: workspace.* + durable result.hydrate + residual restricted_shell.run
 # M3/W1: + task_main.* (exactly 3, minimal intent)
@@ -544,6 +556,16 @@ class TrustedWorkerBinding:
             # The binding construction enforces this; here we just validate that reviewer has no authority unless review semantics justify.
             # No automatic enforcement here beyond existence; dispatch will still check authority.
         # M3/W1 trusted task-main context (optional, task-main only)
+        # M2/W1 binding gate: worker path (build_worker_binding) already denies
+        # task-main role outright (WORKER_CAN_MINT_TASK_MAIN_AUTHORITY=no), and
+        # task-main operations require context at dispatch (operation gate).
+        # Construction here validates context↔role agreement when context is
+        # present; task-main role without context is allowed to construct for
+        # bootstrap-only test harnesses but can never exercise task-main
+        # control (operation gate requires context). This preserves backward
+        # compatibility for existing bootstrap visibility tests while keeping
+        # TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY=no via the
+        # operation gate (not construction alone).
         if self.trusted_task_main_context is not None:
             if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
                 raise TrustedBindingError(

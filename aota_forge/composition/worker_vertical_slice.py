@@ -40,7 +40,7 @@ from aota_forge.core.project.resolver import (
 )
 from aota_forge.composition.project_binding import resolve_trusted_project_evidence
 from aota_forge.core.result_governance import ResultGovernanceProjection
-from aota_forge.mcp_transport import TrustedWorkerBinding
+from aota_forge.mcp_transport import TrustedBindingError, TrustedWorkerBinding
 from aota_forge.runtime.config import RuntimeBinding, RuntimeConfig
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
 from aota_forge.work_plane.compiler import (
@@ -84,6 +84,22 @@ MCP_REPO_ROOT_ENV = "AOTA_FORGE_REPO_ROOT"
 REAL_HERMES_VERSION = "Hermes Agent v0.21.0"
 MCP_PROFILE_NAME = "aota-worker"
 MCP_SERVER_MODULE = "aota_forge.composition.worker_vertical_slice"
+
+# M2/W1 runtime authority binding foundation (fail-closed, no minting).
+# Worker path carries Worker authority only; task-main authority is minted
+# exclusively via task_main_host_bootstrap.try_build_task_main_binding.
+TRUSTED_BINDING_FAIL_CLOSED = True
+WORKER_CAN_MINT_TASK_MAIN_AUTHORITY = False
+TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY = False
+FREEFORM_PROMPT_CAN_MINT_BINDING_AUTHORITY = False
+PROJECT_ID_SPECIAL_CASE_ALLOWED = False
+DOGFOOD_LITERAL_SPECIAL_CASE_ALLOWED = False
+# Per-role least-privilege: only coder/analyst carry workspace mutation via
+# the worker path; reviewer/project-steward/task-main must not gain write
+# through the worker seam (reviewer cannot mutate product source; steward
+# mutates only via server-side trusted finalizer; task-main has no workspace
+# mutation).
+WORKER_MUTATION_ROLES = frozenset({"coder", "analyst"})
 
 
 @dataclass(frozen=True)
@@ -138,7 +154,42 @@ def build_worker_binding(
 
     Reuses existing mapping seam work_plane/mapping.py and runtime/config for profile binding;
     unknown role/profile mapping fails closed (no shell by guess).
+
+    M2/W1 binding gate (fail-closed):
+    - worker path never mints task-main authority: handoff work_role
+      task-main via this path raises TrustedBindingError. Task-main bindings
+      are minted exclusively via task_main_host_bootstrap.
+    - worker path never treats freeform prompt as authority: handoff must be
+      typed TaskHandoff (caller-enforced); no project/worktree/session IDs are
+      hardcoded and no dogfood literal is accepted.
+    - mutation authority is per-role least-privilege: only coder/analyst carry
+      workspace.write via this path; reviewer/project-steward/task-main get
+      None (AUTHORITY_DENIED at dispatch, not binding error for those roles).
     """
+    # Worker-path task-main gate FIRST (M2 construction blocker until fixed):
+    # the worker seam must not accidentally require or mint task-main authority.
+    try:
+        _role_val = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
+    except Exception:
+        raise TrustedBindingError("worker binding requires typed TaskHandoff work_role")
+    if _role_val == "task-main":
+        raise TrustedBindingError(
+            "worker path must not mint task-main binding; "
+            "task-main authority requires host bootstrap"
+        )
+    if not isinstance(handoff, TaskHandoff):
+        raise TrustedBindingError(f"worker binding requires typed TaskHandoff, got {type(handoff).__name__}")
+    # TaskHandoff runtime convergence: worker execution input is bounded
+    # projection only; scope cannot be widened; freeform/startup prompt is
+    # never authority (fail-closed if handoff violates bounded contract).
+    try:
+        from aota_forge.work_plane.handoff import assert_handoff_is_bounded_projection as _assert_bounded
+
+        _assert_bounded(handoff)
+    except TrustedBindingError:
+        raise
+    except Exception as exc:
+        raise TrustedBindingError(f"worker handoff bounded projection failed: {exc}") from exc
     # Generic project evidence via canonical helper (same helper as task-main)
     # If no canonical project is found at root (e.g., legacy test tmp_path without
     # .aota/project.yaml), create a minimal in-memory fixture manifest so that
@@ -215,17 +266,25 @@ def build_worker_binding(
         create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_SEARCH_DESCRIPTOR),
         create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_READ_DESCRIPTOR),
     )
-    mutation_authority = create_workspace_mutation_authority(
-        sandbox,
-        handoff,
-        (policy,),
-        WORKSPACE_WRITE_DESCRIPTOR,
-    )
-    # Determine work_role string (handoff owns role)
+    # Determine work_role string (handoff owns role; already gated above).
     try:
         role_str = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
     except Exception:
-        role_str = "coder"
+        raise TrustedBindingError("worker binding requires typed TaskHandoff work_role")
+    # Per-role least-privilege mutation: only coder/analyst carry
+    # workspace.write via the worker path. Reviewer/project-steward/task-main
+    # must not gain write here (reviewer cannot mutate product source;
+    # steward mutates only via trusted finalizer; task-main has no workspace
+    # mutation). Missing authority yields AUTHORITY_DENIED at dispatch.
+    if role_str in WORKER_MUTATION_ROLES:
+        mutation_authority = create_workspace_mutation_authority(
+            sandbox,
+            handoff,
+            (policy,),
+            WORKSPACE_WRITE_DESCRIPTOR,
+        )
+    else:
+        mutation_authority = None
     # M2 per-role progressive surface (visibility only, not authority)
     # Use handoff's actual role for surface, not hardcoded coder, to preserve role/profile mapping truth
     # W2 extension: test.run visibility per-role least-privilege (coder required, reviewer default deny)
@@ -265,6 +324,7 @@ def build_worker_binding(
     # Reviewer conditional: default deny, only when trusted review TaskHandoff validation semantics justify.
     # For W2, reviewer has no automatic test.run; conditional path requires explicit review handoff which we treat as deny here.
     # Analyst/project-steward/task-main no automatic test.run — remain None.
+    # Worker path never carries task-main context (fail-closed if violated).
     return TrustedWorkerBinding(
         canonical_task_id=canonical_task_id,
         project_id=project_id,
@@ -281,6 +341,7 @@ def build_worker_binding(
         mutation_authority=mutation_authority,
         restricted_shell_authority=shell_authority,
         test_execution_authority=test_execution_authority,
+        trusted_task_main_context=None,
     )
 
 

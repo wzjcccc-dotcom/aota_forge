@@ -86,6 +86,70 @@ WI_SEMANTIC_STATUSES: frozenset[str] = frozenset({WI_SEMANTIC_RECONCILED})
 # canonical_task_id; the cap fails closed rather than truncating.
 MAX_RECONCILED_COMPLETIONS = 256
 
+# M2/W1 durable orchestration foundation (minimum truth, Human Brake,
+# attempt, ProjectState). All new top-level fields are optional with safe
+# defaults so v2 records without them still load (backward compatible).
+# No second coordinator model is created.
+DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH = True
+TASK_MAIN_CHAT_CONTEXT_IS_PROGRESS_TRUTH = False
+NEW_SECOND_COORDINATOR_STATE_MODEL = False
+DURABLE_STATE_REQUIRES_RAW_WORKER_TRANSCRIPT = False
+RAW_FAILED_WORKER_TRANSCRIPTS_RETAINED_IN_TASK_MAIN = False
+HUMAN_BRAKE_STATE_DURABLE = True
+TASK_MAIN_RESTART_CANNOT_FORGET_USER_GATE = True
+TASK_MAIN_RESTART_CANNOT_AUTO_RESOLVE_HUMAN_CHECKPOINT = True
+
+# Human Brake durable vocabulary (state + scope). W1 stores the brake truth;
+# W2 owns progression/decision policy (no policy here).
+HUMAN_BRAKE_STATES: frozenset[str] = frozenset(
+    {
+        "NONE",
+        "NEEDS_INPUT",
+        "HUMAN_CHECKPOINT_REQUIRED",
+        "USER_DECISION_REQUIRED",
+        "USER_GATE_REQUIRED",
+        "BLOCKED",
+    }
+)
+HUMAN_BRAKE_SCOPES: frozenset[str] = frozenset(
+    {
+        "NONE",
+        "AFFECTED_WORK",
+        "DEPENDENT_SUBGRAPH",
+        "WHOLE_MILESTONE",
+    }
+)
+
+# Durable attempt vocabulary (compact, no raw transcript).
+ATTEMPT_FAILURE_CLASSES: frozenset[str] = frozenset(
+    {
+        "NONE",
+        "TIMEOUT",
+        "VALIDATION_FAILURE",
+        "SEMANTIC_STOP",
+        "MECHANICAL_FAILURE",
+        "PLAN_DRIFT",
+        "SESSION_RECOVERY",
+        "UNKNOWN",
+    }
+)
+ATTEMPT_NEXT_DISPOSITIONS: frozenset[str] = frozenset(
+    {
+        "NONE",
+        "RETRY",
+        "ESCALATE",
+        "BLOCKED",
+        "NEEDS_INPUT",
+        "REVIEW_REQUIRED",
+    }
+)
+
+MAX_HUMAN_BRAKE_REASON_LENGTH = 1024
+MAX_NEXT_ACTION_LENGTH = 512
+MAX_BLOCKERS = 16
+MAX_BLOCKER_REF_LENGTH = 512
+MAX_ATTEMPT_STATES = 256
+
 _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
     {
         "status",
@@ -96,6 +160,15 @@ _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
         "reconciled_completions",
         "working_truth",
         "progression_revision",
+        "human_brake",
+        "attempt_states",
+        "project_state",
+        "risk_projection",
+        "review_gates",
+        "integrated_review",
+        "frontier_ref",
+        "open_blockers",
+        "next_action",
     }
 )
 
@@ -121,6 +194,15 @@ _ALLOWED_STATE_FIELDS: frozenset[str] = frozenset(
         "reconciled_completions",
         "working_truth",
         "progression_revision",
+        "human_brake",
+        "attempt_states",
+        "project_state",
+        "risk_projection",
+        "review_gates",
+        "integrated_review",
+        "frontier_ref",
+        "open_blockers",
+        "next_action",
         "created_at",
         "updated_at",
         "coordinator_revision",
@@ -135,6 +217,11 @@ _ALLOWED_BINDING_FIELDS: frozenset[str] = frozenset(
         "idempotency_key",
         "completion_ref",
         "completion_card_digest",
+        "handoff_ref",
+        "handoff_digest",
+        "result_ref",
+        "result_digest",
+        "review_state",
     }
 )
 
@@ -242,6 +329,16 @@ def _normalize_binding(entry: Any, label: str) -> dict[str, Any]:
         )
     else:
         normalized["completion_card_digest"] = None
+    # M2/W1 per-Work durable refs (optional, fail-closed when present):
+    # handoff_ref/handoff_digest bind the TaskHandoff identity used for dispatch;
+    # result_ref/result_digest bind the durable result/card identity;
+    # review_state tracks per-Work review progression (W2 owns policy).
+    for opt_key in ("handoff_ref", "handoff_digest", "result_ref", "result_digest", "review_state"):
+        val = entry.get(opt_key)
+        if val is not None:
+            normalized[opt_key] = _require_non_empty_str(val, f"{label}.{opt_key}", max_length=512)
+        else:
+            normalized[opt_key] = None
     return normalized
 
 
@@ -318,6 +415,151 @@ def _normalize_working_truth(raw: Any) -> dict[str, Any] | None:
     return {"projection": dict(projection), "digest": digest}
 
 
+_ALLOWED_HUMAN_BRAKE_FIELDS: frozenset[str] = frozenset(
+    {"state", "scope", "affected_work", "reason", "reported_at"}
+)
+
+
+def _normalize_human_brake(raw: Any) -> dict[str, Any] | None:
+    """Durable Human Brake / user-gate state (W1 foundation, W2 owns policy).
+
+    Supports NEEDS_INPUT, HUMAN_CHECKPOINT_REQUIRED / USER_DECISION_REQUIRED,
+    USER_GATE_REQUIRED, BLOCKED plus scope affected_work / dependent_subgraph /
+    whole_milestone. Survives restart; restart cannot auto-resolve checkpoints.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"human_brake must be mapping or None, got {type(raw).__name__}")
+    extra = set(raw.keys()) - _ALLOWED_HUMAN_BRAKE_FIELDS
+    if extra:
+        raise ValueError(f"Unknown field(s) in human_brake: {sorted(extra)}")
+    state = raw.get("state", "NONE")
+    if not isinstance(state, str) or state not in HUMAN_BRAKE_STATES:
+        raise ValueError(f"human_brake.state must be one of {sorted(HUMAN_BRAKE_STATES)}, got {state!r}")
+    scope = raw.get("scope", "NONE")
+    if not isinstance(scope, str) or scope not in HUMAN_BRAKE_SCOPES:
+        raise ValueError(f"human_brake.scope must be one of {sorted(HUMAN_BRAKE_SCOPES)}, got {scope!r}")
+    affected = raw.get("affected_work", ())
+    if affected is None:
+        affected = ()
+    if not isinstance(affected, (tuple, list)):
+        raise TypeError("human_brake.affected_work must be tuple/list")
+    norm_affected = tuple(_require_non_empty_str(x, "human_brake.affected_work[]", max_length=128) for x in affected)
+    reason = raw.get("reason")
+    if reason is not None:
+        reason = _require_non_empty_str(reason, "human_brake.reason", max_length=MAX_HUMAN_BRAKE_REASON_LENGTH)
+    reported_at = raw.get("reported_at", "")
+    if not isinstance(reported_at, str):
+        raise TypeError("human_brake.reported_at must be str")
+    # Coherence: NONE state requires NONE scope and empty affected.
+    if state == "NONE":
+        if scope != "NONE" or norm_affected:
+            raise ValueError("human_brake NONE requires NONE scope and empty affected_work")
+    if scope == "NONE" and norm_affected:
+        raise ValueError("human_brake NONE scope cannot carry affected_work")
+    if scope == "AFFECTED_WORK" and not norm_affected:
+        raise ValueError("human_brake AFFECTED_WORK scope requires non-empty affected_work")
+    return {
+        "state": state,
+        "scope": scope,
+        "affected_work": list(norm_affected),
+        "reason": reason,
+        "reported_at": reported_at,
+    }
+
+
+def _normalize_attempt_states(raw: Any, work_items: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Durable compact attempt truth (no raw transcript, no giant logs).
+
+    Per-Work: attempt count/state, failure class, changed hypothesis/ref,
+    risk delta ref, blocking evidence ref, next disposition. Large logs remain
+    referenced evidence/artifacts, never stored here.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"attempt_states must be mapping, got {type(raw).__name__}")
+    if len(raw) > MAX_ATTEMPT_STATES:
+        raise ValueError(f"attempt_states exceeds maximum {MAX_ATTEMPT_STATES}")
+    items = set(work_items)
+    norm: dict[str, dict[str, Any]] = {}
+    for key, val in raw.items():
+        if not isinstance(key, str) or key not in items:
+            raise ValueError(f"attempt_states references unknown Work Item: {key!r}")
+        if not isinstance(val, Mapping):
+            raise TypeError(f"attempt_states[{key!r}] must be mapping")
+        allowed = {"attempt", "failure_class", "hypothesis_ref", "risk_delta_ref", "blocking_evidence_ref", "next_disposition"}
+        extra = set(val.keys()) - allowed
+        if extra:
+            raise ValueError(f"Unknown field(s) in attempt_states[{key!r}]: {sorted(extra)}")
+        attempt = val.get("attempt", 1)
+        if type(attempt) is not int or attempt < 1:
+            raise ValueError(f"attempt_states[{key!r}].attempt must be int >=1")
+        failure_class = val.get("failure_class", "NONE")
+        if failure_class not in ATTEMPT_FAILURE_CLASSES:
+            raise ValueError(f"attempt_states[{key!r}].failure_class must be one of {sorted(ATTEMPT_FAILURE_CLASSES)}")
+        next_disp = val.get("next_disposition", "NONE")
+        if next_disp not in ATTEMPT_NEXT_DISPOSITIONS:
+            raise ValueError(f"attempt_states[{key!r}].next_disposition must be one of {sorted(ATTEMPT_NEXT_DISPOSITIONS)}")
+        entry: dict[str, Any] = {"attempt": attempt, "failure_class": failure_class, "next_disposition": next_disp}
+        for opt in ("hypothesis_ref", "risk_delta_ref", "blocking_evidence_ref"):
+            v = val.get(opt)
+            if v is not None:
+                entry[opt] = _require_non_empty_str(v, f"attempt_states[{key!r}].{opt}", max_length=512)
+            else:
+                entry[opt] = None
+        norm[key] = entry
+    return norm
+
+
+def _normalize_optional_ref_dict(raw: Any, label: str) -> dict[str, Any] | None:
+    """Generic optional ref dict {ref, digest?, freshness?, status?} (bounded)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{label} must be mapping or None, got {type(raw).__name__}")
+    if "ref" not in raw:
+        raise ValueError(f"{label} requires 'ref'")
+    ref = _require_non_empty_str(raw["ref"], f"{label}.ref", max_length=512)
+    out: dict[str, Any] = {"ref": ref}
+    for opt in ("digest", "freshness", "status", "reason"):
+        v = raw.get(opt)
+        if v is not None:
+            out[opt] = _require_non_empty_str(v, f"{label}.{opt}", max_length=512)
+    # Preserve any additional bounded str fields? Fail closed on unknown to keep seam tight.
+    allowed = {"ref", "digest", "freshness", "status", "reason", "required", "integrated_state"}
+    extra = set(raw.keys()) - allowed
+    if extra:
+        raise ValueError(f"Unknown field(s) in {label}: {sorted(extra)}")
+    for k in ("required",):
+        if k in raw:
+            v = raw[k]
+            if type(v) is not bool:
+                raise TypeError(f"{label}.{k} must be bool")
+            out[k] = v
+    for k in ("integrated_state",):
+        if k in raw:
+            out[k] = _require_non_empty_str(raw[k], f"{label}.{k}", max_length=512)
+    return out
+
+
+def _normalize_open_blockers(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (tuple, list)):
+        raise TypeError("open_blockers must be tuple/list")
+    if len(raw) > MAX_BLOCKERS:
+        raise ValueError(f"open_blockers exceeds maximum {MAX_BLOCKERS}")
+    return tuple(_require_non_empty_str(x, "open_blockers[]", max_length=MAX_BLOCKER_REF_LENGTH) for x in raw)
+
+
+def _normalize_next_action(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    return _require_non_empty_str(raw, "next_action", max_length=MAX_NEXT_ACTION_LENGTH)
+
+
 @dataclass(frozen=True)
 class TaskMainCoordinatorState:
     """Durable lifecycle + dispatch-progression state for one Milestone activation.
@@ -352,6 +594,23 @@ class TaskMainCoordinatorState:
     reconciled_completions: dict[str, dict[str, Any]] = field(default_factory=dict)
     working_truth: dict[str, Any] | None = None
     progression_revision: int = 0
+    # M2/W1 minimum durable orchestration truth (all optional, backward compatible):
+    # human_brake (NEEDS_INPUT / CHECKPOINT / GATE / BLOCKED + scope),
+    # attempt_states (compact failure truth, no transcript),
+    # project_state (ref + freshness/status, trusted binding via project_id),
+    # risk_projection, review_gates, integrated_review, frontier_ref,
+    # open_blockers, next_action. Ready_set stays derived from DAG + wi_status
+    # (reconstructible without raw history); stored fields above are the
+    # progress truth, chat context is never truth.
+    human_brake: dict[str, Any] | None = None
+    attempt_states: dict[str, dict[str, Any]] = field(default_factory=dict)
+    project_state: dict[str, Any] | None = None
+    risk_projection: dict[str, Any] | None = None
+    review_gates: dict[str, Any] | None = None
+    integrated_review: dict[str, Any] | None = None
+    frontier_ref: dict[str, Any] | None = None
+    open_blockers: tuple[str, ...] = ()
+    next_action: str | None = None
     created_at: str = ""
     updated_at: str = ""
     coordinator_revision: int = 1
@@ -431,6 +690,26 @@ class TaskMainCoordinatorState:
             self, "reconciled_completions", _normalize_reconciled_completions_map(self.reconciled_completions)
         )
         object.__setattr__(self, "working_truth", _normalize_working_truth(self.working_truth))
+        # M2/W1 minimum durable truth (all optional, backward compatible).
+        object.__setattr__(self, "human_brake", _normalize_human_brake(self.human_brake))
+        # open_blockers may be stored as list (JSON) or tuple (in-memory).
+        _ob = self.open_blockers
+        if isinstance(_ob, list):
+            _ob = tuple(_ob)
+        object.__setattr__(self, "open_blockers", _normalize_open_blockers(_ob))
+        object.__setattr__(
+            self, "attempt_states", _normalize_attempt_states(self.attempt_states, canonical_items)
+        )
+        object.__setattr__(self, "project_state", _normalize_optional_ref_dict(self.project_state, "project_state"))
+        object.__setattr__(
+            self, "risk_projection", _normalize_optional_ref_dict(self.risk_projection, "risk_projection")
+        )
+        object.__setattr__(self, "review_gates", _normalize_optional_ref_dict(self.review_gates, "review_gates"))
+        object.__setattr__(
+            self, "integrated_review", _normalize_optional_ref_dict(self.integrated_review, "integrated_review")
+        )
+        object.__setattr__(self, "frontier_ref", _normalize_optional_ref_dict(self.frontier_ref, "frontier_ref"))
+        object.__setattr__(self, "next_action", _normalize_next_action(self.next_action))
 
         for wi in self.bindings:
             if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
@@ -488,6 +767,29 @@ class TaskMainCoordinatorState:
             if type(revision) is not int or revision < 0:
                 raise ValueError(f"progression_revision must be an int >= 0, got {revision!r}")
             kwargs["progression_revision"] = revision
+        if "human_brake" in updates:
+            kwargs["human_brake"] = _normalize_human_brake(updates["human_brake"])
+        if "attempt_states" in updates:
+            kwargs["attempt_states"] = _normalize_attempt_states(updates["attempt_states"], self.work_items)
+        if "project_state" in updates:
+            kwargs["project_state"] = _normalize_optional_ref_dict(updates["project_state"], "project_state")
+        if "risk_projection" in updates:
+            kwargs["risk_projection"] = _normalize_optional_ref_dict(updates["risk_projection"], "risk_projection")
+        if "review_gates" in updates:
+            kwargs["review_gates"] = _normalize_optional_ref_dict(updates["review_gates"], "review_gates")
+        if "integrated_review" in updates:
+            kwargs["integrated_review"] = _normalize_optional_ref_dict(
+                updates["integrated_review"], "integrated_review"
+            )
+        if "frontier_ref" in updates:
+            kwargs["frontier_ref"] = _normalize_optional_ref_dict(updates["frontier_ref"], "frontier_ref")
+        if "open_blockers" in updates:
+            _ob_u = updates["open_blockers"]
+            if isinstance(_ob_u, list):
+                _ob_u = tuple(_ob_u)
+            kwargs["open_blockers"] = _normalize_open_blockers(_ob_u)
+        if "next_action" in updates:
+            kwargs["next_action"] = _normalize_next_action(updates["next_action"])
         candidate = replace(
             self,
             coordinator_revision=self.coordinator_revision + 1,
@@ -534,6 +836,15 @@ class TaskMainCoordinatorState:
                 else None
             ),
             "progression_revision": self.progression_revision,
+            "human_brake": dict(self.human_brake) if self.human_brake is not None else None,
+            "attempt_states": {k: dict(v) for k, v in self.attempt_states.items()},
+            "project_state": dict(self.project_state) if self.project_state is not None else None,
+            "risk_projection": dict(self.risk_projection) if self.risk_projection is not None else None,
+            "review_gates": dict(self.review_gates) if self.review_gates is not None else None,
+            "integrated_review": dict(self.integrated_review) if self.integrated_review is not None else None,
+            "frontier_ref": dict(self.frontier_ref) if self.frontier_ref is not None else None,
+            "open_blockers": list(self.open_blockers),
+            "next_action": self.next_action,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "coordinator_revision": self.coordinator_revision,
@@ -582,6 +893,15 @@ class TaskMainCoordinatorState:
             reconciled_completions=dict(data.get("reconciled_completions", {})),
             working_truth=data.get("working_truth"),
             progression_revision=data.get("progression_revision", 0),
+            human_brake=data.get("human_brake"),
+            attempt_states=dict(data.get("attempt_states", {})),
+            project_state=data.get("project_state"),
+            risk_projection=data.get("risk_projection"),
+            review_gates=data.get("review_gates"),
+            integrated_review=data.get("integrated_review"),
+            frontier_ref=data.get("frontier_ref"),
+            open_blockers=tuple(data.get("open_blockers", ())),
+            next_action=data.get("next_action"),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             coordinator_revision=data.get("coordinator_revision", 1),
@@ -600,15 +920,27 @@ class TaskMainCoordinatorState:
 
 __all__ = [
     "ACK_AFTER_SEMANTIC_RECONCILIATION_IMPLEMENTED",
+    "ATTEMPT_FAILURE_CLASSES",
+    "ATTEMPT_NEXT_DISPOSITIONS",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "COORDINATOR_STATE_SCHEMA_VERSION",
     "COORDINATOR_STATUSES",
+    "DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH",
+    "DURABLE_STATE_REQUIRES_RAW_WORKER_TRANSCRIPT",
     "EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE",
     "HERMES_SESSION_DB_IS_COORDINATOR_AUTHORITY",
+    "HUMAN_BRAKE_SCOPES",
+    "HUMAN_BRAKE_STATES",
+    "HUMAN_BRAKE_STATE_DURABLE",
     "MAX_RECONCILED_COMPLETIONS",
     "MILESTONE_CLOSURE_AUTOMATION_IMPLEMENTED",
+    "NEW_SECOND_COORDINATOR_STATE_MODEL",
+    "RAW_FAILED_WORKER_TRANSCRIPTS_RETAINED_IN_TASK_MAIN",
     "REPAIR_AUTOMATION_IMPLEMENTED",
     "REVIEW_AUTOMATION_IMPLEMENTED",
+    "TASK_MAIN_CHAT_CONTEXT_IS_PROGRESS_TRUTH",
+    "TASK_MAIN_RESTART_CANNOT_AUTO_RESOLVE_HUMAN_CHECKPOINT",
+    "TASK_MAIN_RESTART_CANNOT_FORGET_USER_GATE",
     "W1_CARD_SEMANTIC_APPLICATION_IMPLEMENTED",
     "WI_SEMANTIC_RECONCILED",
     "WI_SEMANTIC_STATUSES",

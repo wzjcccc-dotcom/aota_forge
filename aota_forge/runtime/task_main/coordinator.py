@@ -89,6 +89,28 @@ PERSISTENCE_REQUIRES_FOREVER_PROCESS = False
 TASK_MAIN_RAW_SHELL_REQUIRED = False
 TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED = False
 
+# M2/W1 durable orchestration foundation markers.
+DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH = True
+TASK_MAIN_CHAT_CONTEXT_IS_PROGRESS_TRUTH = False
+NEW_SECOND_COORDINATOR_STATE_MODEL = False
+DURABLE_MINIMUM_TRUTH_WIRED = True
+DURABLE_ATTEMPT_STATE_WIRED = True
+HUMAN_BRAKE_STATE_DURABLE = True
+TASK_MAIN_RESTART_FROM_DURABLE_STATE_SUPPORTED = True
+TASK_MAIN_RESTART_REQUIRES_RAW_HISTORY = False
+TASK_MAIN_CONTEXT_COMPRESSION_CAN_RECOVER_FROM_DURABLE_STATE = True
+SESSION_ROLLOVER_DOES_NOT_RESET_WORKFLOW_AUTHORITY = True
+RECOVERED_REF_IS_AUTHORITY = False
+EXACT_LOGICAL_REENTRY_SUPPORTED = True
+PROJECT_STATE_RUNTIME_FOUNDATION = True
+PROJECT_STATE_ALWAYS_REFRESHED_EVERY_MILESTONE = False
+CARD_FIRST_RECONCILIATION = True
+RAW_WORKER_RESULT_REQUIRED_BY_TASK_MAIN = False
+FULL_RESULT_HYDRATION_DEFAULT = False
+NEW_WORKFLOW_DATABASE_CREATED = False
+NEW_EVENT_BUS_CREATED = False
+NEW_PUBLIC_MCP_TOOL_CREATED = False
+
 USER_GATE_REASON = "USER_GATE_REQUIRED"
 SESSION_GATE_REASON = "SESSION_RECOVERY_REQUIRED"
 NEXT_MILESTONE_GUARD = "NEXT_MILESTONE_REQUIRES_EXPLICIT_APPROVAL"
@@ -547,6 +569,7 @@ class TaskMainCoordinator:
                 work_item_id,
                 canonical_task_id=canonical_task_id,
                 idempotency_key=idempotency_key,
+                handoff=handoff,
             )
             dispatched.append(
                 DispatchedWork(
@@ -559,17 +582,39 @@ class TaskMainCoordinator:
         return DispatchReport(gate_reason=None, ready=ready, dispatched=tuple(dispatched), deferred=tuple(deferred))
 
     def _persist_binding(
-        self, work_item_id: str, *, canonical_task_id: str, idempotency_key: str
+        self,
+        work_item_id: str,
+        *,
+        canonical_task_id: str,
+        idempotency_key: str,
+        handoff: TaskHandoff | None = None,
     ) -> None:
         wi_status = dict(self._state.wi_status)
         wi_status[work_item_id] = WorkItemCoordinatorStatus.ACTIVE.value
         bindings = {wi: dict(entry) for wi, entry in self._state.bindings.items()}
+        # M2/W1 minimum truth: per-Work handoff_ref/digest is durable at dispatch;
+        # result_ref/digest arrive via observe_terminal_completions; review_state
+        # starts PENDING (W2 owns review policy, W1 only stores the seam).
+        handoff_ref: str | None = None
+        handoff_digest: str | None = None
+        if handoff is not None:
+            try:
+                handoff_digest = handoff.compute_handoff_digest()
+                handoff_ref = handoff.work_item_ref.ref if handoff.work_item_ref is not None else work_item_id
+            except Exception:
+                handoff_ref = work_item_id
+                handoff_digest = None
         bindings[work_item_id] = {
             "canonical_task_id": canonical_task_id,
             "attempt": COORDINATOR_DISPATCH_ATTEMPT,
             "idempotency_key": idempotency_key,
             "completion_ref": None,
             "completion_card_digest": None,
+            "handoff_ref": handoff_ref,
+            "handoff_digest": handoff_digest,
+            "result_ref": None,
+            "result_digest": None,
+            "review_state": "PENDING",
         }
         # Physical dispatch already happened under M2 idempotency; a stale
         # revision fails closed here and a refreshed retry replays instead
@@ -606,6 +651,10 @@ class TaskMainCoordinator:
             wi_status[work_item_id] = WorkItemCoordinatorStatus.COMPLETION_PENDING_RECONCILIATION.value
             entry["completion_ref"] = record.canonical_task_id
             entry["completion_card_digest"] = record.worker_result_card_digest
+            # M2/W1 minimum truth mirrors completion as result_ref/digest so
+            # per-Work result identity is explicit durable truth (card-first).
+            entry["result_ref"] = record.canonical_task_id
+            entry["result_digest"] = record.worker_result_card_digest
             observed.append(work_item_id)
             changed = True
         if changed:
@@ -622,6 +671,133 @@ class TaskMainCoordinator:
         if self._state.status == CoordinatorStatus.CLOSED:
             return self._state
         return self._cas({"status": CoordinatorStatus.CLOSED.value})
+
+    def set_human_brake(
+        self,
+        *,
+        state: str,
+        scope: str,
+        affected_work: tuple[str, ...] = (),
+        reason: str | None = None,
+    ) -> TaskMainCoordinatorState:
+        """Durably record Human Brake / user-gate state (W1 foundation).
+
+        W1 stores the brake truth; W2 owns progression/decision policy.
+        Survives restart; restart never auto-resolves checkpoints.
+        """
+        self.refresh()
+        from datetime import datetime, timezone
+
+        brake = {
+            "state": state,
+            "scope": scope,
+            "affected_work": list(affected_work),
+            "reason": reason,
+            "reported_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return self._cas({"human_brake": brake})
+
+    def clear_human_brake(self) -> TaskMainCoordinatorState:
+        """Clear brake to NONE (explicit operator/user action only, never auto)."""
+        self.refresh()
+        return self._cas(
+            {"human_brake": {"state": "NONE", "scope": "NONE", "affected_work": [], "reason": None, "reported_at": ""}}
+        )
+
+    def record_attempt(
+        self,
+        work_item_id: str,
+        *,
+        failure_class: str,
+        next_disposition: str,
+        hypothesis_ref: str | None = None,
+        risk_delta_ref: str | None = None,
+        blocking_evidence_ref: str | None = None,
+    ) -> TaskMainCoordinatorState:
+        """Durably record compact attempt truth (no raw transcript, no giant log).
+
+        Protects task-main context from retry noise; large logs remain as
+        referenced evidence/artifacts.
+        """
+        self.refresh()
+        if work_item_id not in self._state.work_items:
+            raise CoordinatorBindingError(f"unknown Work Item {work_item_id!r}")
+        current = dict(self._state.attempt_states.get(work_item_id, {}))
+        attempt = int(current.get("attempt", 0)) + 1
+        entry = {
+            "attempt": attempt,
+            "failure_class": failure_class,
+            "hypothesis_ref": hypothesis_ref,
+            "risk_delta_ref": risk_delta_ref,
+            "blocking_evidence_ref": blocking_evidence_ref,
+            "next_disposition": next_disposition,
+        }
+        states = {k: dict(v) for k, v in self._state.attempt_states.items()}
+        states[work_item_id] = entry
+        return self._cas({"attempt_states": states})
+
+    def set_project_state(
+        self,
+        *,
+        ref: str,
+        digest: str | None = None,
+        freshness: str | None = None,
+        status: str | None = None,
+    ) -> TaskMainCoordinatorState:
+        """Durably record ProjectState ref + freshness/status (W1 foundation only).
+
+        W2 owns conditional refresh/reuse lifecycle; W1 only stores the ref
+        with trusted project binding (project_id already in state).
+        """
+        self.refresh()
+        payload: dict[str, Any] = {"ref": ref}
+        if digest is not None:
+            payload["digest"] = digest
+        if freshness is not None:
+            payload["freshness"] = freshness
+        if status is not None:
+            payload["status"] = status
+        return self._cas({"project_state": payload})
+
+    def set_next_action(self, action: str | None, *, open_blockers: tuple[str, ...] = ()) -> TaskMainCoordinatorState:
+        """Durably record next action + open blockers (compact, no raw history)."""
+        self.refresh()
+        updates: dict[str, Any] = {"next_action": action, "open_blockers": list(open_blockers)}
+        return self._cas(updates)
+
+    def durable_snapshot(self) -> dict[str, Any]:
+        """Reconstruct orchestration truth from durable state only (no raw history).
+
+        Returns plan/milestone/DAG, per-Work truth, derived ready_set,
+        risk/review/project/frontier/blockers/brake/next-action. Proves
+        TASK_MAIN_RESTART_REQUIRES_RAW_HISTORY=no and logical re-entry from
+        durable + card refs + trusted Plan.
+        """
+        self.refresh()
+        s = self._state
+        graph = self._graph()
+        ready = evaluate_ready_work_items(graph=graph, wi_status=dict(s.wi_status), gate_blocked=False)
+        return {
+            "plan_ref": s.plan_authority,
+            "plan_digest": s.plan_digest,
+            "milestone_ref": s.milestone_id,
+            "entry_base": s.entry_base,
+            "work_items": list(s.work_items),
+            "dependencies": [list(e) for e in s.dependencies],
+            "wi_status": dict(s.wi_status),
+            "bindings": {k: dict(v) for k, v in s.bindings.items()},
+            "ready_set": list(ready),
+            "risk_projection": dict(s.risk_projection) if s.risk_projection else None,
+            "review_gates": dict(s.review_gates) if s.review_gates else None,
+            "integrated_review": dict(s.integrated_review) if s.integrated_review else None,
+            "project_state": dict(s.project_state) if s.project_state else None,
+            "frontier_ref": dict(s.frontier_ref) if s.frontier_ref else None,
+            "open_blockers": list(s.open_blockers),
+            "human_brake": dict(s.human_brake) if s.human_brake else None,
+            "attempt_states": {k: dict(v) for k, v in s.attempt_states.items()},
+            "next_action": s.next_action,
+            "status": s.status.value,
+        }
 
     def reconcile_completion(
         self,
