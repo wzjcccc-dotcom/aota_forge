@@ -271,14 +271,24 @@ def test_t17_no_hermes_dependency() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T30 objective preserved
+# T30 objective preserved (M1/W1: objective contained, never sole semantic)
 # ---------------------------------------------------------------------------
 def test_objective_preserved() -> None:
+    # M1/W1 bounded Worker scope contract (AF #45, I40-B003/F1):
+    # OBJECTIVE_ONLY_WORKER_INSTRUCTION=no. The model-facing instruction is
+    # the compact deterministic rendering of ALL validated handoff execution
+    # fields, so the objective is contained but never the sole semantic.
     obj = "Implement critical bounded feature for S1 M1-W4"
     h = _handoff(objective=obj)
     pkg = compile_handoff_to_execution_package(h, _binding())
-    assert pkg.instruction == obj
     assert obj in pkg.instruction
+    assert pkg.instruction != obj
+    assert h.bounded_scope in pkg.instruction
+    for val in h.validation_expectations:
+        assert val in pkg.instruction
+    for stop in h.semantic_stop_expectations:
+        assert stop in pkg.instruction
+    assert h.handoff_digest in pkg.instruction
 
 
 # ---------------------------------------------------------------------------

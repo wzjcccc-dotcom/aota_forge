@@ -74,6 +74,7 @@ from aota_forge.runtime.task_main.coordinator_store import (
 from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
     compile_handoff_to_execution_package,
+    verify_execution_package_integrity,
 )
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
@@ -516,6 +517,10 @@ class TaskMainCoordinator:
                 idempotency_key=idempotency_key,
                 correlation_id=correlation_id,
             )
+            # M1/W1: the execution-visible package about to be dispatched must
+            # match its validated handoff (scope tampering fails closed here,
+            # at the last mile before physical dispatch).
+            verify_execution_package_integrity(package, handoff)
             try:
                 if self._completion is not None:
                     outcome = self._completion.admit_dispatch(package, self._executor_id)

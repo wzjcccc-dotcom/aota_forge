@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.plan.normalize import normalize_portable_plan
@@ -42,8 +42,16 @@ from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.control import TaskMainControlService
-from aota_forge.mcp_transport import TrustedTaskMainRuntimeContext, TrustedWorkerBinding
+from aota_forge.mcp_transport import TrustedTaskMainRuntimeContext, TrustedWorkerBinding, TrustedBindingError
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.handoff_runtime import (
+    WorkSemanticProjection,
+    WorkScopeInsufficientError,
+    generic_fallback_scope_template,
+    generic_fallback_task_kind,
+    parse_work_semantics_table,
+    resolve_bounded_work_handoff,
+)
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 from aota_forge.work_plane.tool_surface import create_role_tool_surface
 from aota_forge.work_plane.workspace_tools import (
@@ -178,6 +186,7 @@ def _handoff_for(
     project_id: str | None = None,
     plan_authority: str | None = None,
     plan_digest: str | None = None,
+    work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
 ) -> TaskHandoff:
     """Generic TaskHandoff derivation from trusted Plan runtime.
 
@@ -190,6 +199,16 @@ def _handoff_for(
     project_id and plan_authority (from bootstrap). No model-supplied
     authority.
 
+    M1/W1 bounded scope contract: when a trusted WorkSemanticProjection is
+    supplied for this Work Item (operator channel: task-main has already
+    reasoned about the Work; the runtime faithfully transports that
+    projection), the handoff carries usable bounded semantics via the
+    existing TaskHandoff contract (REUSE, no parallel contract). Without a
+    projection the legacy generic scope-free derivation is preserved for
+    backward-compatible direct callers; the PRODUCTION resolver built by
+    try_build_task_main_binding never uses that fallback silently — it
+    fails closed with WorkScopeInsufficientError instead.
+
     bounded_scope is the Worker's only scope source; policy derivation must
     align to it (see worker_vertical_slice).
     """
@@ -197,6 +216,27 @@ def _handoff_for(
     mid = milestone_ref.strip() if milestone_ref else "M1"
     lower = wid.lower()
     is_review = lower.startswith("rv") or "/rv" in lower or "review" in lower
+
+    if not is_review and work_semantics is not None:
+        # Explicit trusted projection channel: the entry must exist and must
+        # yield a Worker-usable handoff. A missing entry fails closed here
+        # (no silent generic substitution); callers wanting the legacy
+        # generic derivation pass work_semantics=None.
+        if wid not in work_semantics:
+            raise WorkScopeInsufficientError(
+                f"no trusted Work semantics for Work Item {wid!r} "
+                f"(Milestone {mid!r}); refusing scope-free derivation"
+            )
+        raw = work_semantics[wid]
+        projection = raw if isinstance(raw, WorkSemanticProjection) else WorkSemanticProjection.from_dict(raw)
+        return resolve_bounded_work_handoff(
+            work_item_id=wid,
+            milestone_ref=mid,
+            projection=projection,
+            project_id=project_id,
+            plan_authority=plan_authority,
+            plan_digest=plan_digest,
+        )
 
     if is_review:
         work_role = "reviewer"
@@ -216,17 +256,17 @@ def _handoff_for(
         semantic_stop_expectations = ("stop if review scope unclear",)
     else:
         work_role = "coder"
-        safe_mid = "".join(c if c.isalnum() or c in "-_" else "-" for c in mid.lower())[:32] or "m1"
-        safe_wi = "".join(c if c.isalnum() or c in "-_" else "-" for c in wid.lower().replace("/", "-"))[:48] or "w1"
-        task_kind = f"{safe_mid}-{safe_wi}-implementation"
-        if len(task_kind) > 100:
-            task_kind = task_kind[:100]
+        # Generic scope-free fallback shape. The exact template rule lives in
+        # handoff_runtime.generic_fallback_scope_template /
+        # generic_fallback_task_kind (single source of truth shared with the
+        # Worker-usability gate); outputs are unchanged.
+        task_kind = generic_fallback_task_kind(wid, mid)
         objective = (
             f"Execute Work Item {wid} for Milestone {mid}. "
             f"Implement bounded functionality via workspace.* operations only. "
             f"Use only governed operations; stop if scope unclear."
         )
-        bounded_scope = f"{safe_mid}/{safe_wi}/bounded-scope"
+        bounded_scope = generic_fallback_scope_template(wid, mid)
         validation_expectations = (f"validation for {wid}",)
         semantic_stop_expectations = (f"stop if {wid} scope unclear",)
 
@@ -443,15 +483,36 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # Trusted resolvers: generic derivation from Plan runtime + project context
     work_items = list(live_view.graph.work_items)
 
+    # M1/W1: trusted bounded Work semantics from the operator-owned bootstrap
+    # channel. Malformed tables or entries for ungoverned Work Items fail
+    # closed here (no silent fallback, no invented requirements).
+    try:
+        semantics_table = parse_work_semantics_table(data.get("work_semantics"))
+    except WorkScopeInsufficientError as exc:
+        raise TrustedBindingError(f"bootstrap work_semantics invalid: {exc}") from exc
+    for _key in semantics_table:
+        if _key not in work_items:
+            raise TrustedBindingError(
+                f"bootstrap work_semantics entry {_key!r} is not a governed Work Item "
+                f"of Milestone {live_view.milestone_id!r}"
+            )
+
     def handoff_resolver(wi: str) -> TaskHandoff:
-        # Generic: derive from live Plan view + project context, no M3 fixture
+        # Production Work projection (M1/W1): the trusted operator-supplied
+        # projection is faithfully transported into the existing TaskHandoff.
+        # Absent or insufficient semantics fail closed with
+        # WORK_SCOPE_INSUFFICIENT — a scope-free generic Worker is never
+        # dispatched silently (I40-B003/F1: do not recreate the stall where a
+        # scope-free Worker is launched and expected to guess).
         if wi not in work_items:
-            return _handoff_for(
-                wi,
-                milestone_ref=live_view.milestone_id,
-                project_id=project_id,
-                plan_authority=live_view.plan_authority,
-                plan_digest=live_view.plan_digest,
+            raise WorkScopeInsufficientError(
+                f"no trusted Work semantics for ungoverned Work Item {wi!r} "
+                f"(Milestone {live_view.milestone_id!r}); refusing to invent scope"
+            )
+        if wi not in semantics_table:
+            raise WorkScopeInsufficientError(
+                f"no trusted Work semantics for Work Item {wi!r} "
+                f"(Milestone {live_view.milestone_id!r}); refusing scope-free dispatch"
             )
         return _handoff_for(
             wi,
@@ -459,6 +520,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             project_id=project_id,
             plan_authority=live_view.plan_authority,
             plan_digest=live_view.plan_digest,
+            work_semantics=semantics_table,
         )
 
     # Automatic governed evidence derivation via trusted durable stores (W2)
@@ -654,6 +716,7 @@ def write_bootstrap_file(
     next_milestone_view: MilestonePlanView | None,
     executor_id: str = "hermes",
     coordinator_id: str | None = None,
+    work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
 ) -> Path:
     """Operator helper to materialize the bootstrap JSON for the MCP child."""
     worktree_root = worktree_root.resolve()
@@ -689,6 +752,21 @@ def write_bootstrap_file(
         "live_plan_view": view_to_dict(live_plan_view),
         "next_milestone_view": view_to_dict(next_milestone_view) if next_milestone_view else None,
     }
+    # M1/W1: trusted bounded Work semantics ride the existing operator-owned
+    # bootstrap channel (no new store, no new authority). Keys must be
+    # governed Work Items of the live Milestone graph; each projection is
+    # validated here at materialization (fail-closed), so dispatch never
+    # receives an unusable projection silently.
+    if work_semantics is not None:
+        table = parse_work_semantics_table(dict(work_semantics))
+        governed = set(live_plan_view.graph.work_items)
+        for key in table:
+            if key not in governed:
+                raise WorkScopeInsufficientError(
+                    f"work_semantics entry {key!r} is not a governed Work Item of "
+                    f"Milestone {live_plan_view.milestone_id!r}"
+                )
+        payload["work_semantics"] = {key: proj.to_dict() for key, proj in table.items()}
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:

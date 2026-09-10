@@ -98,7 +98,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter, PlanAuthoritySnapshot
 from aota_forge.composition.task_main_host_bootstrap import (
@@ -530,6 +530,7 @@ class DailyTaskMainLauncher:
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         origin_task_main_session_ref: str | None = None,
         coordinator_id: str | None = None,
+        work_semantics: Mapping[str, Any] | None = None,
     ) -> DailyLaunchContext:
         """Trusted bootstrap materialization (create or refresh).
 
@@ -615,6 +616,7 @@ class DailyTaskMainLauncher:
             live_plan_view=live_view,
             next_milestone_view=next_view,
             coordinator_id=coordinator_id,
+            work_semantics=work_semantics,
         )
 
         bootstrap_path = worktree_root / BOOTSTRAP_RELPATH
@@ -648,6 +650,7 @@ class DailyTaskMainLauncher:
         runtime_config_path: Path | str | None = None,
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         origin_task_main_session_ref: str | None = None,
+        work_semantics: Mapping[str, Any] | None = None,
     ) -> DailyLaunchContext:
         """Refresh bootstrap from current live Plan truth (post-user-gate, recovery)."""
         return self.prepare(
@@ -657,6 +660,7 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=origin_task_main_session_ref,
+            work_semantics=work_semantics,
         )
 
     def build_env(self, ctx: DailyLaunchContext, *, trace_path: Path | None = None) -> dict[str, str]:

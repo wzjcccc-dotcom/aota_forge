@@ -3,6 +3,24 @@
 Establishes deterministic semantic compilation from TaskHandoff to
 existing ExecutionPackage without modifying frozen Core contracts.
 
+M1/W1 bounded Worker scope contract (AF repair #45, defect I40-B003/F1):
+
+* OBJECTIVE_ONLY_WORKER_INSTRUCTION=no. The Hermes dispatch envelope
+  carries the package instruction verbatim as the Worker's model-facing
+  initial prompt (``-z <instruction>``); working_context and
+  result_expectations travel as validated metadata the host client does not
+  forward to the model. A Worker that never reaches role.bootstrap (the
+  observed stall: 0 tool calls, stop clause obeyed) therefore sees only the
+  instruction. The instruction is a compact deterministic rendering of ALL
+  validated TaskHandoff execution fields (objective + bounded_scope +
+  validation/stop expectations + stable ref identities + handoff digest),
+  so the model itself can see usable bounded scope without a GitHub Plan
+  fetch and without a full Plan dump.
+* Fingerprint coverage: ANY execution-relevant Handoff semantic change
+  changes existing intent_fingerprint twice: via the handoff_digest bound
+  into fingerprint-covered input_artifacts, and via the instruction itself
+  (intent_fingerprint covers instruction verbatim).
+
 Invariants
 ----------
 * RETAIN: ExecutionPackage schema, CanonicalRole, RoleMapping,
@@ -39,6 +57,71 @@ from aota_forge.core.execution.package import (
 )
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.mapping import resolve_work_role_to_canonical_role
+
+# M1/W1 marker: the model-facing instruction is never the objective alone.
+OBJECTIVE_ONLY_WORKER_INSTRUCTION = False
+
+
+class PackageIntegrityError(ValueError):
+    """Execution-visible package diverges from its validated TaskHandoff."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"PACKAGE_HANDOFF_MISMATCH: {detail}")
+        self.code = "PACKAGE_HANDOFF_MISMATCH"
+
+
+def build_worker_instruction(handoff: TaskHandoff) -> str:
+    """Render the compact model-facing Worker instruction (deterministic).
+
+    The Hermes dispatch envelope forwards the package instruction verbatim
+    as the Worker's initial prompt (``-z``); structured working_context and
+    result_expectations do not reach the model on that path. This rendering
+    therefore carries every execution-relevant handoff field in compact
+    labeled sections — short goal first, then bounded scope, validation and
+    stop expectations, stable ref identities, and the handoff digest — so a
+    Worker can act without fetching the GitHub Plan and without receiving a
+    full Plan dump. No truncation: all handoff fields are already bounded by
+    the TaskHandoff contract, and every one of them is required semantics.
+
+    Deterministic: identical TaskHandoff -> identical instruction, so the
+    existing intent_fingerprint (which covers instruction verbatim) binds
+    scope a second time alongside the handoff_digest input artifact.
+    """
+    if not isinstance(handoff, TaskHandoff):
+        raise TypeError(f"handoff must be a TaskHandoff, got {type(handoff).__name__}")
+    lines: list[str] = [handoff.objective, "", "Bounded scope:", handoff.bounded_scope, ""]
+    lines.append("Validation expectations:")
+    for item in handoff.validation_expectations:
+        lines.append(f"- {item}")
+    lines.append("")
+    lines.append("Stop or escalate when:")
+    for item in handoff.semantic_stop_expectations:
+        lines.append(f"- {item}")
+    lines.append("")
+    lines.append("References:")
+    refs: list[tuple[str, str]] = []
+    for attr in (
+        "project_ref",
+        "plan_ref",
+        "milestone_ref",
+        "work_item_ref",
+        "process_depth_or_risk_projection_ref",
+    ):
+        val = getattr(handoff, attr)
+        if val is not None:
+            digest = f"#{val.digest}" if val.digest else ""
+            refs.append((attr, f"{val.ref}{digest}"))
+    for attr in ("policy_refs", "context_refs", "evidence_refs", "skill_refs"):
+        vals = getattr(handoff, attr) or ()
+        if vals:
+            joined = ", ".join(
+                (f"{v.ref}#{v.digest}" if v.digest else v.ref) for v in vals
+            )
+            refs.append((attr, joined))
+    for key, rendered in refs:
+        lines.append(f"{key}={rendered}")
+    lines.append(f"handoff_digest={handoff.handoff_digest}")
+    return "\n".join(lines).strip() + "\n"
 
 
 @dataclass(frozen=True)
@@ -170,8 +253,10 @@ def compile_handoff_to_execution_package(
     # This fails closed for task-main and invalid roles.
     canonical_role = resolve_work_role_to_canonical_role(handoff.work_role)
 
-    # Semantic projections — deterministic.
-    instruction = handoff.objective
+    # Semantic projections — deterministic. The model-facing instruction is
+    # the compact rendering of ALL validated handoff execution fields, never
+    # the objective alone (M1/W1: OBJECTIVE_ONLY_WORKER_INSTRUCTION=no).
+    instruction = build_worker_instruction(handoff)
     input_artifacts = _build_input_artifacts(handoff)
     working_context = _build_working_context(handoff)
     result_expectations = _build_result_expectations(handoff)
@@ -203,3 +288,48 @@ def compile_handoff_to_execution_package(
 
 # Alias for spec-preferred naming.
 compile_task_handoff = compile_handoff_to_execution_package
+
+
+def verify_execution_package_integrity(package: ExecutionPackage, handoff: TaskHandoff) -> None:
+    """Fail closed when the execution-visible package diverges from its handoff.
+
+    Checks the exact binding a scope-tampering adversary would attack:
+
+    * fingerprint-covered input artifact carries this handoff's digest;
+    * visible working_context.bounded_scope equals the handoff scope;
+    * visible result_expectations equal the handoff expectations;
+    * model-facing instruction equals the deterministic rendering of this
+      handoff (so Worker-visible instructions cannot change independently
+      of the digest-covered handoff).
+
+    A digest that corresponds to scope A with a Worker-visible scope B (or
+    any other field substitution) raises PackageIntegrityError.
+    """
+    if not isinstance(package, ExecutionPackage):
+        raise TypeError(f"package must be an ExecutionPackage, got {type(package).__name__}")
+    if not isinstance(handoff, TaskHandoff):
+        raise TypeError(f"handoff must be a TaskHandoff, got {type(handoff).__name__}")
+    artifact_digest: str | None = None
+    for artifact in package.input_artifacts:
+        if isinstance(artifact, Mapping) and artifact.get("handoff_kind") == "task_handoff":
+            artifact_digest = artifact.get("handoff_digest")
+            break
+    if artifact_digest != handoff.handoff_digest:
+        raise PackageIntegrityError(
+            "input artifact handoff_digest does not match the validated handoff digest"
+        )
+    if not isinstance(package.working_context, Mapping):
+        raise PackageIntegrityError("working_context must be a mapping")
+    if package.working_context.get("bounded_scope") != handoff.bounded_scope:
+        raise PackageIntegrityError("working_context.bounded_scope diverges from handoff bounded_scope")
+    if package.working_context.get("handoff_digest") != handoff.handoff_digest:
+        raise PackageIntegrityError("working_context.handoff_digest diverges from handoff digest")
+    expectations = package.result_expectations
+    if not isinstance(expectations, Mapping):
+        raise PackageIntegrityError("result_expectations must be a mapping")
+    if list(expectations.get("validation_expectations") or []) != list(handoff.validation_expectations):
+        raise PackageIntegrityError("result validation_expectations diverge from handoff")
+    if list(expectations.get("semantic_stop_expectations") or []) != list(handoff.semantic_stop_expectations):
+        raise PackageIntegrityError("result semantic_stop_expectations diverge from handoff")
+    if package.instruction != build_worker_instruction(handoff):
+        raise PackageIntegrityError("model-facing instruction diverges from the validated handoff rendering")

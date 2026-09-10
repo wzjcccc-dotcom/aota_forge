@@ -260,7 +260,12 @@ def test_t05_handoff_compiles_to_existing_execution_package():
     assert pkg.canonical_task_id == CANONICAL_TASK_ID
     assert pkg.project_id == PROJECT_ID
     assert pkg.canonical_role == "coder"
-    assert pkg.instruction == handoff.objective
+    # M1/W1 bounded Worker scope contract (AF #45, I40-B003/F1):
+    # OBJECTIVE_ONLY_WORKER_INSTRUCTION=no — the instruction is the compact
+    # deterministic rendering of all validated handoff execution fields.
+    assert handoff.objective in pkg.instruction
+    assert pkg.instruction != handoff.objective
+    assert handoff.bounded_scope in pkg.instruction
     # ExecutionPackage retains existing fields
     assert hasattr(pkg, "package_id")
     assert hasattr(pkg, "correlation_id")

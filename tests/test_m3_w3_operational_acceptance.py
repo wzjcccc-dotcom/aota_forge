@@ -97,8 +97,14 @@ def _governed_evidence(wi: str) -> GovernedWorkItemEvidence:
     return GovernedWorkItemEvidence(validation_evidence=FocusedValidationEvidence(work_item_ref=wi, verdict=FocusedValidationVerdict.PASS, validation_evidence_ref=SemanticReference(ref=f"val:{wi}")), risk_envelope=_neutral_envelope())
 
 
-def _make_task_main_binding(tmp_path: Path, view: MilestonePlanView, next_view: MilestonePlanView | None = None, session_ref: str = "sess-xyz-12345678") -> tuple[TrustedWorkerBinding, Path]:
-    """Create a disposable worktree, bootstrap, and binding via try_build_task_main_binding (simulates MCP child)."""
+def _make_task_main_binding(tmp_path: Path, view: MilestonePlanView, next_view: MilestonePlanView | None = None, session_ref: str = "sess-xyz-12345678", work_semantics: dict | None = None) -> tuple[TrustedWorkerBinding, Path]:
+    """Create a disposable worktree, bootstrap, and binding via try_build_task_main_binding (simulates MCP child).
+
+    M1/W1: the production handoff resolver fails closed without trusted Work
+    semantics, so this helper supplies usable synthetic semantics for every
+    governed Work Item by default (pass explicit {} to opt out for
+    scope-insufficiency tests).
+    """
     import uuid, shutil, json as _json
     worktree_root = tmp_path / f"wt_{uuid.uuid4().hex[:8]}"
     worktree_root.mkdir(parents=True, exist_ok=True)
@@ -116,8 +122,19 @@ def _make_task_main_binding(tmp_path: Path, view: MilestonePlanView, next_view: 
         coord_path.write_text("{}", encoding="utf-8")
     if not exec_path.exists():
         exec_path.write_text("{}", encoding="utf-8")
+    if work_semantics is None:
+        work_semantics = {
+            wi: {
+                "objective": f"operational acceptance synthetic goal for {wi}",
+                "bounded_scope": f"operational acceptance synthetic bounded scope for {wi}; work/sentinel.txt only",
+                "validation_expectations": (f"synthetic validation for {wi}",),
+                "semantic_stop_expectations": (f"stop if {wi} scope unclear",),
+            }
+            for wi in view.graph.work_items
+            if not (wi.lower().startswith("rv") or "/rv" in wi.lower() or "review" in wi.lower())
+        }
     # write bootstrap
-    write_bootstrap_file(worktree_root=worktree_root, project_id=PROJECT_ID, worktree_id=WORKTREE_ID, coordinator_store_path=coord_path, execution_store_path=exec_path, runtime_config_path=cfg_path, origin_task_main_session_ref=session_ref, live_plan_view=view, next_milestone_view=next_view)
+    write_bootstrap_file(worktree_root=worktree_root, project_id=PROJECT_ID, worktree_id=WORKTREE_ID, coordinator_store_path=coord_path, execution_store_path=exec_path, runtime_config_path=cfg_path, origin_task_main_session_ref=session_ref, live_plan_view=view, next_milestone_view=next_view, work_semantics=work_semantics)
     # set env for loader
     old_root = os.environ.get(BOOTSTRAP_ENV_ROOT)
     old_explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
