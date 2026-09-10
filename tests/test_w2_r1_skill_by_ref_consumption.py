@@ -245,7 +245,8 @@ def test_negative_filesystem_path_denied(tmp_path: Path):
     # Try skill.open with filesystem path should fail closed at skill.open
     s, _ = _call(server, "skill.open", {"ref": "/etc/passwd"})
     assert s["ok"] is False
-    assert s["error"]["code"] in ("UNKNOWN_INPUT", "SKILL_NOT_FOUND", "AUTHORITY_DENIED", "GOVERNED_OPERATION_FAILURE")
+    # AF #46 M1/W2 D3: path refs are typed INVALID_INPUT at the semantic owner (fail-closed).
+    assert s["error"]["code"] in ("UNKNOWN_INPUT", "SKILL_NOT_FOUND", "AUTHORITY_DENIED", "GOVERNED_OPERATION_FAILURE", "INVALID_INPUT")
     # Try hydrate with filesystem path as ref
     s2, _ = _call(server, "result.hydrate", {"ref": "/tmp/evil.bin", "digest": "a"*64, "project_id": "proj-test", "worktree_id": "wt-test", "byte_length": 10, "kind": "evidence"})
     assert s2["ok"] is False

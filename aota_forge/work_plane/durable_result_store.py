@@ -633,6 +633,70 @@ class FileBackedHydrationSource:
         raise UnknownRefError(f"FileBackedHydrationSource cannot resolve ref type {type(ref).__name__}")
 
 
+# ---------------------------------------------------------------------------
+# Core-owned governed persistence seam (AF #46 M1/W2, D5).
+# Result durability decisions live here (AF_RESULT_GOVERNANCE), never in
+# transport adapters. Canonical ingress calls this after provider dispatch;
+# MCP must not call persist_durable_payload directly for semantic results.
+# ---------------------------------------------------------------------------
+
+def persist_governed_tool_result_if_by_ref(
+    sandbox: WorktreeSandboxBoundary,
+    response: Any,
+    capability_name: str,
+) -> None:
+    """Best-effort durable persistence for large by_ref results (Core-owned).
+
+    Mirrors the governed projection's digest/byte_length over the sanitized
+    payload canonical JSON and persists via the file-backed durable store
+    so later result.hydrate in a new process can rehydrate. Fail-open on
+    persistence error (projection already truthful by_ref); hydration fails
+    closed when the file is missing. Never persists failures or inline
+    results. Bounds: durable bound DURABLE_PAYLOAD_MAX_BYTES (64 KiB).
+    """
+    try:
+        ok = getattr(response, "ok", False)
+        if not ok:
+            return
+        payload = getattr(response, "payload", None) or {}
+        # Recreate canonical bytes exactly as project_tool_result does.
+        from aota_forge.core.contracts.canonical import canonical_json, canonicalize
+
+        if payload:
+            full_bytes = canonical_json(canonicalize(payload, path="payload")).encode("utf-8")
+        else:
+            return
+        # Only by_ref payloads need durability (inline bound owned by
+        # tool_result_governance.TOOL_INLINE_OUTPUT_MAX_BYTES).
+        try:
+            from aota_forge.work_plane.tool_result_governance import TOOL_INLINE_OUTPUT_MAX_BYTES
+        except Exception:
+            TOOL_INLINE_OUTPUT_MAX_BYTES = 4096
+        if len(full_bytes) <= TOOL_INLINE_OUTPUT_MAX_BYTES:
+            return
+        if len(full_bytes) > DURABLE_PAYLOAD_MAX_BYTES:
+            return
+        import hashlib
+
+        digest = hashlib.sha256(full_bytes).hexdigest()
+        ref = f"tool_output:{capability_name}:{digest[:16]}" if isinstance(capability_name, str) else f"durable:{digest[:16]}"
+        try:
+            persist_durable_payload(
+                sandbox,
+                full_bytes,
+                ref=ref,
+                digest=digest,
+                byte_length=len(full_bytes),
+                project_id=sandbox.project_id,
+                worktree_id=sandbox.worktree_id,
+                kind="evidence",
+            )
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 # Backwards alias
 DurableHydrationSource = FileBackedHydrationSource
 
@@ -675,6 +739,7 @@ __all__ = [
     "persist_durable_payload",
     "persist_tool_output_payload",
     "persist_governed_payload",
+    "persist_governed_tool_result_if_by_ref",
     "load_durable_payload",
     "clear_durable_payloads",
     "FileBackedHydrationSource",

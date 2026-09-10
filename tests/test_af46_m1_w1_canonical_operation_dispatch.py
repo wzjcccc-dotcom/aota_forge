@@ -408,7 +408,13 @@ class TestCoreDispatch:
         assert resp.ok, resp.error
 
     def test_result_hydrate_authority_gate(self, tmp_path: Path):
-        # Without hydrate in surface, Core denies (visibility, not authority).
+        # AF #46 M1/W2 D2 convergence: ToolRoleSurface visibility never decides
+        # permission. A hidden capability with an otherwise valid trusted
+        # binding (sandbox present) is NOT semantically denied merely by
+        # transport visibility; the outcome is determined by Core authority
+        # (here: hydration reauthorization/digest/scope → UNKNOWN_REF for a
+        # bogus ref, not AUTHORITY_DENIED). Visible without Core authority
+        # (no sandbox) still fails closed via Core.
         binding = _canonical_binding(tmp_path, ops=("workspace.search",))
         resp = dispatch_tool_operation(
             "result.hydrate",
@@ -416,7 +422,16 @@ class TestCoreDispatch:
             binding,
         )
         assert not resp.ok
-        assert resp.error is not None and resp.error.get("code") == "AUTHORITY_DENIED"
+        assert resp.error is not None and resp.error.get("code") != "AUTHORITY_DENIED"
+        # Bogus digest under valid scope → Core hydration identity, not surface denial.
+        assert resp.error.get("code") in (
+            "UNKNOWN_REF",
+            "DIGEST_MISMATCH",
+            "CROSS_SCOPE_DENIED",
+            "TAMPERED_REF",
+            "TAMPERED_PAYLOAD",
+            "HYDRATION_FAILED",
+        )
 
     def test_restricted_shell_authority_gate(self, tmp_path: Path):
         binding = _canonical_binding(tmp_path, ops=("workspace.search",))

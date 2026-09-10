@@ -184,6 +184,13 @@ class CanonicalDispatchBinding:
     allowed_operations: frozenset[str] = frozenset()
 
     def capability_names(self) -> frozenset[str]:
+        """Visibility-only helper (never authority).
+
+        Returns the model-facing discovery surface (eager + progressive).
+        Permission decisions must use trusted authority evidence
+        (read/mutation/shell/test authorities, sandbox, task-main context)
+        owned by Core policy/provider, never this set. See D2 convergence.
+        """
         if self.allowed_operations:
             return frozenset(self.allowed_operations)
         try:
@@ -201,30 +208,123 @@ def _require_sandbox(binding: CanonicalDispatchBinding) -> Any:
     return binding.sandbox
 
 
+def _persist_governed_if_needed(binding: CanonicalDispatchBinding, response: Any, operation: str) -> None:
+    """Core-owned durability seam (D5): persist by_ref tool payloads.
+
+    Delegates to AF result governance (durable_result_store). Best-effort,
+    fail-open on persistence error; hydration fails closed when missing.
+    Adapters never call this directly.
+    """
+    try:
+        sandbox = binding.sandbox
+        if sandbox is None:
+            return
+        from aota_forge.work_plane.durable_result_store import (
+            persist_governed_tool_result_if_by_ref as _persist_governed,
+        )
+
+        _persist_governed(sandbox, response, operation)
+    except Exception:
+        pass
+
+
 def _map_task_main_exception(exc: Exception) -> str:
-    name = type(exc).__name__
-    msg = str(exc)
-    if name == "PlanDriftError" or "PLAN_DRIFT" in msg:
+    """Typed Core error identity (no transport string classification).
+
+    Type-first: isinstance against the semantic owner's exception types,
+    then explicit .code preservation for ForgeError/typed carriers.
+    Never inspects str(exc) contents ("AUTHORITY", "PLAN_DRIFT", ...).
+    """
+    # Import lazily to avoid cycles; fall back to class-name only when
+    # the semantic owner module is unavailable (still no string search).
+    try:
+        from aota_forge.runtime.task_main.control import TaskMainControlAuthorityError
+    except Exception:
+        TaskMainControlAuthorityError = None  # type: ignore
+    try:
+        from aota_forge.runtime.task_main.coordinator import (
+            CoordinatorBindingError,
+            CoordinatorRuntimeError,
+            PlanDriftError,
+            SessionRecoveryRequiredError,
+        )
+    except Exception:
+        CoordinatorBindingError = CoordinatorRuntimeError = None  # type: ignore
+        PlanDriftError = SessionRecoveryRequiredError = None  # type: ignore
+    try:
+        from aota_forge.runtime.task_main.coordinator_store import (
+            CoordinatorNotFoundError,
+            StaleCoordinatorRevisionError,
+        )
+    except Exception:
+        CoordinatorNotFoundError = StaleCoordinatorRevisionError = None  # type: ignore
+    if PlanDriftError is not None and isinstance(exc, PlanDriftError):
         return "PLAN_DRIFT"
-    if name == "SessionRecoveryRequiredError" or "SESSION_RECOVERY_REQUIRED" in msg:
+    if SessionRecoveryRequiredError is not None and isinstance(exc, SessionRecoveryRequiredError):
         return "SESSION_RECOVERY_REQUIRED"
-    if name == "CoordinatorNotFoundError":
+    if CoordinatorNotFoundError is not None and isinstance(exc, CoordinatorNotFoundError):
         return "COORDINATOR_NOT_FOUND"
-    if name == "CoordinatorBindingError":
+    if CoordinatorBindingError is not None and isinstance(exc, CoordinatorBindingError):
         return "COORDINATOR_BINDING_ERROR"
-    if name == "CoordinatorRuntimeError":
+    if CoordinatorRuntimeError is not None and isinstance(exc, CoordinatorRuntimeError):
         return "COORDINATOR_RUNTIME_ERROR"
-    if name == "StaleCoordinatorRevisionError":
+    if StaleCoordinatorRevisionError is not None and isinstance(exc, StaleCoordinatorRevisionError):
         return "STALE_COORDINATOR_REVISION"
-    if name == "TaskMainControlAuthorityError":
+    if TaskMainControlAuthorityError is not None and isinstance(exc, TaskMainControlAuthorityError):
         return "AUTHORITY_DENIED"
-    if "USER_GATE_REQUIRED" in msg:
-        return "USER_GATE_REQUIRED"
-    if "AUTHORITY_DENIED" in msg or "requires profile" in msg:
-        return "AUTHORITY_DENIED"
+    # Typed carriers (ForgeError + semantic-owner typed ValueErrors) preserve code.
     code = getattr(exc, "code", None)
     if isinstance(code, str) and code:
         return code
+    return "GOVERNED_OPERATION_FAILURE"
+
+
+def _map_role_bootstrap_exception(exc: Exception) -> str:
+    """Typed role.bootstrap identity (no string classification)."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    return "GOVERNED_OPERATION_FAILURE"
+
+
+def _map_skill_open_exception(exc: Exception) -> str:
+    """Typed skill.open identity (no string classification).
+
+    The semantic owner (role_bootstrap.handle_skill_open) already sets
+    exc.code type-first from Skill* typed errors. Preserve it; never
+    search str(exc) for "foreign"/"digest"/"not found".
+    """
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    # Fallback for legacy untyped Skill* errors that escaped the owner:
+    # map strictly by type (still no string search).
+    try:
+        from aota_forge.work_plane.skill_content import SkillDigestMismatchError as _CDigest
+        from aota_forge.work_plane.skill_content import SkillNotFoundError as _CNotFound
+    except Exception:
+        _CDigest = _CNotFound = None  # type: ignore
+    try:
+        from aota_forge.work_plane.skill_resolution import (
+            SkillDigestMismatchError as _RDigest,
+        )
+        from aota_forge.work_plane.skill_resolution import SkillForeignNamespaceError as _RForeign
+        from aota_forge.work_plane.skill_resolution import SkillMissingError as _RMissing
+        from aota_forge.work_plane.skill_resolution import SkillNotAuthorizedError as _RNotAuth
+    except Exception:
+        _RDigest = _RForeign = _RMissing = _RNotAuth = None  # type: ignore
+    if _RForeign is not None and isinstance(exc, _RForeign):
+        return "FOREIGN_SKILL_DENIED"
+    if _RNotAuth is not None and isinstance(exc, _RNotAuth):
+        return "AUTHORITY_DENIED"
+    if (_CDigest is not None and isinstance(exc, _CDigest)) or (
+        _RDigest is not None and isinstance(exc, _RDigest)
+    ):
+        return "DIGEST_MISMATCH"
+    if (_CNotFound is not None and isinstance(exc, _CNotFound)) or (
+        _RMissing is not None and isinstance(exc, _RMissing)
+    ):
+        return "SKILL_NOT_FOUND"
     return "GOVERNED_OPERATION_FAILURE"
 
 
@@ -265,22 +365,34 @@ def _dispatch_task_main(
     try:
         if operation == "task_main.activate_milestone":
             live = ctx.live_plan_view
+            # Gate interpretation owned by Core service (D4): delegate,
+            # never read live.user_gate_blocked directly here.
             try:
-                blocked = bool(live.user_gate_blocked)
+                blocked = bool(ctx.control_service.is_user_gate_blocked(live))
             except Exception:
-                blocked = not bool(getattr(live, "milestone_user_approval_satisfied", False))
+                blocked = True
             if blocked:
                 return ToolResponse.failure(
                     {"code": "USER_GATE_REQUIRED", "message": "USER_GATE_REQUIRED: live Plan Milestone approval not satisfied"}
                 )
             try:
+                # Coordinator identity owned by Core service (D4): delegate
+                # None -> default instead of inventing "{project}:{milestone}".
+                try:
+                    resolved_id = ctx.control_service.resolve_coordinator_id(
+                        project_id=binding.project_id,
+                        live_plan_view=live,
+                        coordinator_id=ctx.coordinator_id,
+                    )
+                except Exception:
+                    resolved_id = ctx.coordinator_id
                 handle = ctx.control_service.activate_milestone(
                     profile=TASK_MAIN_PROFILE,
                     plan_view=live,
                     origin_task_main_session_ref=ctx.origin_task_main_session_ref,
                     executor_id=ctx.executor_id,
                     project_id=binding.project_id,
-                    coordinator_id=ctx.coordinator_id,
+                    coordinator_id=resolved_id,
                 )
             except Exception as exc:
                 return ToolResponse.failure(
@@ -288,8 +400,18 @@ def _dispatch_task_main(
                 )
             try:
                 state = handle.state if hasattr(handle, "state") else None
+                # Coordinator id comes from the durable handle; fall back to
+                # the service-resolved id (never invent format here).
+                fallback_id = ctx.coordinator_id
+                try:
+                    if not (isinstance(fallback_id, str) and fallback_id.strip()):
+                        fallback_id = ctx.control_service.default_coordinator_id(
+                            project_id=binding.project_id, live_plan_view=live
+                        )
+                except Exception:
+                    pass
                 payload: dict[str, Any] = {
-                    "coordinator_id": getattr(handle, "coordinator_id", ctx.coordinator_id or f"{binding.project_id}:M"),
+                    "coordinator_id": getattr(handle, "coordinator_id", fallback_id),
                     "status": state.status.value if state is not None and hasattr(state.status, "value") else str(getattr(state, "status", "ACTIVE")) if state else "ACTIVE",
                     "coordinator_revision": getattr(state, "coordinator_revision", 1) if state else 1,
                     "milestone_id": getattr(state, "milestone_id", getattr(live, "milestone_id", "")) if state else getattr(live, "milestone_id", ""),
@@ -302,13 +424,17 @@ def _dispatch_task_main(
             return ToolResponse.success(payload)
         if operation == "task_main.recover_coordinator":
             live = ctx.live_plan_view
-            coord_id = ctx.coordinator_id
-            if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
-                try:
-                    mid = getattr(live, "milestone_id", "M3")
-                    coord_id = f"{binding.project_id}:{mid}"
-                except Exception:
-                    coord_id = f"{binding.project_id}:M3"
+            # Coordinator identity owned by Core service (D4).
+            try:
+                coord_id = ctx.control_service.resolve_coordinator_id(
+                    project_id=binding.project_id,
+                    live_plan_view=live,
+                    coordinator_id=ctx.coordinator_id,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
             try:
                 handle = ctx.control_service.recover_coordinator(
                     profile=TASK_MAIN_PROFILE,
@@ -333,23 +459,20 @@ def _dispatch_task_main(
             return ToolResponse.success(payload)
         if operation == "task_main.advance_once":
             live = ctx.live_plan_view
-            coord_id = ctx.coordinator_id
-            if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
-                try:
-                    mid = getattr(live, "milestone_id", "M3")
-                    coord_id = f"{binding.project_id}:{mid}"
-                except Exception:
-                    coord_id = f"{binding.project_id}:M3"
-            if coord_id is not None:
-                try:
-                    store = getattr(ctx.control_service, "_coord_store", None)
-                    if store is not None and store.get(coord_id) is None:
-                        for cand in store.list_all():
-                            if cand.milestone_id == getattr(live, "milestone_id", None) and cand.plan_authority == getattr(live, "plan_authority", None):
-                                coord_id = cand.coordinator_id
-                                break
-                except Exception:
-                    pass
+            # Coordinator identity + discovery owned by Core service (D4):
+            # resolve None -> default, then discover matching durable id via
+            # the public store boundary. Never touch _coord_store or scan
+            # private fields here; never invent "{project}:{milestone}".
+            try:
+                coord_id = ctx.control_service.discover_matching_coordinator_id(
+                    project_id=binding.project_id,
+                    live_plan_view=live,
+                    coordinator_id=ctx.coordinator_id,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
             try:
                 outcome = ctx.control_service.advance_once(
                     profile=TASK_MAIN_PROFILE,
@@ -445,7 +568,9 @@ def dispatch_tool_operation(
             from aota_forge.work_plane.workspace_mutation import BoundedWorkspaceMutationProvider
 
             provider = BoundedWorkspaceMutationProvider(binding.mutation_authority)
-            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation in ("workspace.search", "workspace.read"):
             authority = _authority_for(binding.read_authorities, operation)
@@ -461,36 +586,54 @@ def dispatch_tool_operation(
             provider = BoundedWorkspaceToolProvider(authority)
             # Use authority's descriptor for request to preserve evidence binding;
             # validated inputs already canonical.
-            return provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "result.hydrate":
-            if operation not in binding.capability_names():
-                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "result.hydrate not authorized for this role/task"})
+            # D2: authority derives from trusted binding + Core policy, never
+            # from ToolRoleSurface visibility. Any binding with a trusted
+            # sandbox may hydrate refs in its own scope; cross-scope,
+            # tamper, and oversize still fail closed inside the provider
+            # (reauthorization + digest + bounds owned by result governance).
+            # A hidden capability with valid binding is NOT denied by surface;
+            # surface controls disclosure only.
             sandbox = _require_sandbox(binding)
             from aota_forge.work_plane.result_hydrate import ResultHydrateProvider
 
             provider = ResultHydrateProvider(sandbox)
-            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            # D5: durable-result decision owned by result governance.
+            # Persist governed by_ref payloads via the Core-owned seam so a
+            # later process can hydrate; adapters never persist directly.
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "restricted_shell.run":
-            if operation not in binding.capability_names():
-                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell not authorized for this role/task"})
+            # D2: surface membership never decides permission. Least privilege
+            # is enforced by the trusted restricted-shell authority evidence
+            # (per-binding, Core-constructed). Visible without authority still
+            # fails closed below; hidden with valid authority succeeds.
             if binding.restricted_shell_authority is None:
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell authority absent for this binding"})
             from aota_forge.work_plane.restricted_shell import BoundedRestrictedShellProvider
 
             provider = BoundedRestrictedShellProvider(binding.restricted_shell_authority)
-            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "test.run":
-            if operation not in binding.capability_names():
-                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run not authorized for this role/task"})
+            # D2: same convergence as restricted_shell — authority evidence,
+            # not surface visibility, decides.
             if binding.test_execution_authority is None:
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted test execution authority absent for this binding"})
             from aota_forge.work_plane.test_execution import BoundedTestExecutionToolProvider
 
             provider = BoundedTestExecutionToolProvider(binding.test_execution_authority)
-            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "role.bootstrap":
             from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
@@ -498,11 +641,11 @@ def dispatch_tool_operation(
             try:
                 payload = handle_role_bootstrap(binding, validated)
             except Exception as exc:
-                msg = str(exc)[:512] or "governed operation failed"
-                code = "AUTHORITY_DENIED" if "AUTHORITY" in str(exc) else "GOVERNED_OPERATION_FAILURE"
-                if isinstance(exc, ValueError) and "authority" in str(exc).lower():
-                    code = "AUTHORITY_DENIED"
-                return ToolResponse.failure({"code": code, "message": msg})
+                # D3: typed identity from the semantic owner (exc.code),
+                # never str(exc) classification.
+                return ToolResponse.failure(
+                    {"code": _map_role_bootstrap_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
             return ToolResponse.success(payload)
 
         if operation == "skill.open":
@@ -511,18 +654,11 @@ def dispatch_tool_operation(
             try:
                 payload = handle_skill_open(binding, validated)
             except Exception as exc:
-                msg = str(exc).lower()
-                if "not in allowed" in msg or "outside allowed" in msg:
-                    code = "AUTHORITY_DENIED"
-                elif "foreign" in msg:
-                    code = "FOREIGN_SKILL_DENIED"
-                elif "digest" in msg:
-                    code = "DIGEST_MISMATCH"
-                elif "not found" in msg or "missing" in msg:
-                    code = "SKILL_NOT_FOUND"
-                else:
-                    code = "GOVERNED_OPERATION_FAILURE"
-                return ToolResponse.failure({"code": code, "message": str(exc)[:512] or "governed operation failed"})
+                # D3: typed identity from the semantic owner (exc.code),
+                # never "foreign"/"digest"/"not found" string search.
+                return ToolResponse.failure(
+                    {"code": _map_skill_open_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
             return ToolResponse.success(payload)
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"):

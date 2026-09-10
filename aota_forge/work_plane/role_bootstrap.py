@@ -74,12 +74,93 @@ RESULT_HYDRATE_FOR_LARGE_RESULT_OR_ARTIFACT = True
 MAINTAINER_CONTENT_IN_NORMAL_LLM_CONTEXT = False
 ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND = True
 
-# Error helpers
+# Error helpers — typed semantic identity originates here (AF #46 M1/W2, D3).
+# No new ontology: codes reuse existing canonical result/error contracts
+# (AUTHORITY_DENIED, SKILL_NOT_FOUND, FOREIGN_SKILL_DENIED,
+# DIGEST_MISMATCH, INVALID_INPUT, GOVERNED_OPERATION_FAILURE).
+# Transports preserve exc.code end-to-end; they never classify str(exc).
 class RoleBootstrapError(ValueError):
-    pass
+    """Typed role.bootstrap failure carrying canonical code."""
+
+    def __init__(self, message: str, *, code: str = "GOVERNED_OPERATION_FAILURE") -> None:
+        self.code = code
+        super().__init__(message)
+
 
 class SkillOpenError(ValueError):
-    pass
+    """Typed skill.open failure carrying canonical code."""
+
+    def __init__(self, message: str, *, code: str = "GOVERNED_OPERATION_FAILURE") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+# Canonical skill.open codes (existing contracts, not new ontology).
+SKILL_OPEN_FOREIGN_CODE = "FOREIGN_SKILL_DENIED"
+SKILL_OPEN_DIGEST_CODE = "DIGEST_MISMATCH"
+SKILL_OPEN_NOT_FOUND_CODE = "SKILL_NOT_FOUND"
+SKILL_OPEN_AUTHORITY_CODE = "AUTHORITY_DENIED"
+
+
+def _skill_open_code_for_typed_error(exc: BaseException) -> str:
+    """Map existing typed Skill/registry/content errors to canonical codes.
+
+    Type-based only (isinstance); never inspects str(exc). Preserves the
+    semantic owner's typed identity without creating a second hierarchy.
+    """
+    # Lazy imports to avoid cycles; fall back to code attr when present.
+    try:
+        from aota_forge.work_plane.skill_content import (
+            SkillContentBoundError,
+            SkillContentRefError,
+            SkillContentShapeError,
+            SkillDigestMismatchError,
+            SkillNotFoundError,
+        )
+    except Exception:
+        SkillContentBoundError = SkillContentRefError = SkillContentShapeError = None  # type: ignore
+        SkillDigestMismatchError = SkillNotFoundError = None  # type: ignore
+    try:
+        from aota_forge.work_plane.skill_resolution import (
+            SkillBoundsError,
+            SkillDigestMismatchError as _ResDigest,
+            SkillForeignNamespaceError,
+            SkillMissingError,
+            SkillNotAuthorizedError,
+            SkillVersionConflictError,
+        )
+    except Exception:
+        SkillBoundsError = SkillVersionConflictError = None  # type: ignore
+        _ResDigest = SkillForeignNamespaceError = SkillMissingError = SkillNotAuthorizedError = None  # type: ignore
+    # Foreign / authorization.
+    for _cls in (SkillForeignNamespaceError, SkillNotAuthorizedError):
+        if _cls is not None and isinstance(exc, _cls):
+            if _cls is SkillForeignNamespaceError:
+                return SKILL_OPEN_FOREIGN_CODE
+            return SKILL_OPEN_AUTHORITY_CODE
+    # Digest mismatch (content or resolution).
+    for _cls in (SkillDigestMismatchError, _ResDigest):
+        if _cls is not None and isinstance(exc, _cls):
+            return SKILL_OPEN_DIGEST_CODE
+    # Not found / missing.
+    for _cls in (SkillNotFoundError, SkillMissingError):
+        if _cls is not None and isinstance(exc, _cls):
+            return SKILL_OPEN_NOT_FOUND_CODE
+    # Bounds / version / shape / ref are input failures.
+    for _cls in (
+        SkillBoundsError,
+        SkillVersionConflictError,
+        SkillContentBoundError,
+        SkillContentRefError,
+        SkillContentShapeError,
+    ):
+        if _cls is not None and isinstance(exc, _cls):
+            return "INVALID_INPUT"
+    # Preserve explicit code when the semantic owner already set one.
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    return "GOVERNED_OPERATION_FAILURE"
 
 # ---------------------------------------------------------------------------
 # role.bootstrap — trusted handler
@@ -87,10 +168,15 @@ class SkillOpenError(ValueError):
 
 def _validate_empty_arguments(arguments: dict[str, Any]) -> None:
     if not isinstance(arguments, dict):
-        raise RoleBootstrapError(f"arguments must be object, got {type(arguments).__name__}")
+        raise RoleBootstrapError(
+            f"arguments must be object, got {type(arguments).__name__}", code="INVALID_INPUT"
+        )
     if len(arguments) != 0:
         # Model attempted to supply authority-bearing fields
-        raise RoleBootstrapError(f"role.bootstrap accepts empty arguments only, got keys {sorted(arguments.keys())!r}")
+        raise RoleBootstrapError(
+            f"role.bootstrap accepts empty arguments only, got keys {sorted(arguments.keys())!r}",
+            code="INVALID_INPUT",
+        )
 
 def _authorized_reader_for_binding(binding: Any) -> Any:
     """Create authorized reader that reads only via trusted sandbox/worktree_root."""
@@ -149,12 +235,15 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     # Derive role from trusted binding (never from arguments)
     handoff = getattr(binding, "handoff", None)
     if handoff is None:
-        raise RoleBootstrapError("trusted binding missing handoff")
+        raise RoleBootstrapError("trusted binding missing handoff", code="AUTHORITY_DENIED")
     work_role = handoff.work_role
     if isinstance(work_role, str):
-        work_role = parse_agent_work_role(work_role)
+        try:
+            work_role = parse_agent_work_role(work_role)
+        except Exception as exc:
+            raise RoleBootstrapError(f"handoff work_role invalid {work_role!r}: {exc}", code="AUTHORITY_DENIED") from exc
     if not isinstance(work_role, AgentWorkRole):
-        raise RoleBootstrapError(f"handoff work_role invalid {work_role!r}")
+        raise RoleBootstrapError(f"handoff work_role invalid {work_role!r}", code="AUTHORITY_DENIED")
     role_str = work_role.value
 
     # SOUL from AF exclusive source
@@ -251,15 +340,17 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     def _base_skill_entry_curated(skill_id: str) -> dict[str, Any]:
         curated = curated_eager_guidance(skill_id)
         if not curated or not curated.strip():
-            raise RoleBootstrapError(f"curated eager guidance empty for {skill_id!r}")
+            raise RoleBootstrapError(f"curated eager guidance empty for {skill_id!r}", code="GOVERNED_OPERATION_FAILURE")
         curated_bytes = len(curated.encode("utf-8"))
         if curated_bytes > BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES:
             raise RoleBootstrapError(
-                f"curated eager guidance exceeds safe bound {BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES}"
+                f"curated eager guidance exceeds safe bound {BOOTSTRAP_EAGER_MATERIALIZED_MAX_BYTES}",
+                code="GOVERNED_OPERATION_FAILURE",
             )
         if len(curated) > BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS:
             raise RoleBootstrapError(
-                f"curated eager guidance exceeds per-skill char bound {BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS} for {skill_id!r}"
+                f"curated eager guidance exceeds per-skill char bound {BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS} for {skill_id!r}",
+                code="GOVERNED_OPERATION_FAILURE",
             )
         curated_digest = compute_skill_digest(curated)
         # Source file digest for provenance (registry entry, if present)
@@ -295,7 +386,8 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     _eager_sum = sum(e["byte_length"] for e in _eager_entries)
     if _eager_sum > 3072:
         raise RoleBootstrapError(
-            f"curated eager guidance total {_eager_sum} exceeds inline-safe 3072"
+            f"curated eager guidance total {_eager_sum} exceeds inline-safe 3072",
+            code="GOVERNED_OPERATION_FAILURE",
         )
 
     # M3/W1 startup contract: compact SOUL / cannot-do (not full markdown dump).
@@ -431,28 +523,33 @@ def handle_skill_open(binding: Any, arguments: dict[str, Any] | None) -> dict[st
         -> opaque content_ref -> authorized reader -> open_skill -> digest verification -> bounded content
     """
     if not isinstance(arguments, dict):
-        raise SkillOpenError(f"arguments must be object, got {type(arguments).__name__}")
+        raise SkillOpenError(
+            f"arguments must be object, got {type(arguments).__name__}", code="INVALID_INPUT"
+        )
     if "ref" not in arguments:
-        raise SkillOpenError("missing required field 'ref'")
+        raise SkillOpenError("missing required field 'ref'", code="INVALID_INPUT")
     extra = set(arguments.keys()) - {"ref"}
     if extra:
-        raise SkillOpenError(f"unknown field(s) {sorted(extra)!r}")
+        raise SkillOpenError(f"unknown field(s) {sorted(extra)!r}", code="INVALID_INPUT")
     ref = arguments["ref"]
     if not isinstance(ref, str) or not ref.strip():
-        raise SkillOpenError(f"ref must be non-empty string, got {ref!r}")
+        raise SkillOpenError(f"ref must be non-empty string, got {ref!r}", code="INVALID_INPUT")
     if ref.startswith("/") or ".." in ref.split("/"):
-        raise SkillOpenError(f"ref must not be path {ref!r}")
+        raise SkillOpenError(f"ref must not be path {ref!r}", code="INVALID_INPUT")
     if len(ref) > 512:
-        raise SkillOpenError(f"ref exceeds bound {ref!r}")
+        raise SkillOpenError(f"ref exceeds bound {ref!r}", code="INVALID_INPUT")
 
     handoff = getattr(binding, "handoff", None)
     if handoff is None:
-        raise SkillOpenError("trusted binding missing handoff")
+        raise SkillOpenError("trusted binding missing handoff", code="AUTHORITY_DENIED")
     work_role = handoff.work_role
     if isinstance(work_role, str):
-        work_role = parse_agent_work_role(work_role)
+        try:
+            work_role = parse_agent_work_role(work_role)
+        except Exception as exc:
+            raise SkillOpenError(f"handoff work_role invalid {work_role!r}: {exc}", code="AUTHORITY_DENIED") from exc
     if not isinstance(work_role, AgentWorkRole):
-        raise SkillOpenError(f"handoff work_role invalid {work_role!r}")
+        raise SkillOpenError(f"handoff work_role invalid {work_role!r}", code="AUTHORITY_DENIED")
     role_str = work_role.value
 
     allowed_universe = get_allowed_universe_for_role(work_role)
@@ -461,31 +558,45 @@ def handle_skill_open(binding: Any, arguments: dict[str, Any] | None) -> dict[st
     # Step 1: resolve via AllowedSkillUniverse (exact ref, not expanded)
     allowed = allowed_universe.get_by_ref(ref)
     if allowed is None:
-        raise SkillOpenError(f"skill ref {ref!r} not in allowed universe for role {role_str!r} (fail closed)")
+        raise SkillOpenError(
+            f"skill ref {ref!r} not in allowed universe for role {role_str!r} (fail closed)",
+            code="AUTHORITY_DENIED",
+        )
 
     # Foreign role check (allowed.namespace must equal target)
     if allowed.namespace.value != role_str:
-        raise SkillOpenError(f"foreign role skill access fail closed: allowed {allowed.namespace.value!r} != target {role_str!r}")
+        raise SkillOpenError(
+            f"foreign role skill access fail closed: allowed {allowed.namespace.value!r} != target {role_str!r}",
+            code=SKILL_OPEN_FOREIGN_CODE,
+        )
 
     # Step 2: exact registry membership (namespace, skill_id, version)
     entry = registry.get(allowed.namespace, allowed.skill_id, allowed.version)
     if entry is None:
-        raise SkillOpenError(f"skill registry entry not found for {allowed.composite_key!r}")
+        raise SkillOpenError(
+            f"skill registry entry not found for {allowed.composite_key!r}",
+            code=SKILL_OPEN_NOT_FOUND_CODE,
+        )
 
     # Step 3: authorized reader via trusted sandbox
     reader = _authorized_reader_for_binding(binding)
 
-    # Step 4: open_skill with digest verification (reuse W1)
+    # Step 4: open_skill with digest verification (reuse W1).
+    # Preserve typed identity: do not collapse into string matching.
+    # Underlying Skill* errors carry their own type; we re-raise with the
+    # canonical code derived type-first (no str(exc) classification).
     try:
         opened = open_skill(registry, allowed.namespace, allowed.skill_id, allowed.version, reader)
+    except (SkillOpenError, RoleBootstrapError):
+        raise
     except Exception as exc:
-        # Map to typed error but preserve fail-closed
-        raise SkillOpenError(f"skill open failed: {exc}") from exc
+        code = _skill_open_code_for_typed_error(exc)
+        raise SkillOpenError(f"skill open failed: {exc}", code=code) from exc
 
     # Verify bounded
     content = opened.content
     if len(content.encode("utf-8")) > 64 * 1024:
-        raise SkillOpenError("skill content exceeds bound")
+        raise SkillOpenError("skill content exceeds bound", code="INVALID_INPUT")
 
     return {
         "skill_id": opened.skill_id,

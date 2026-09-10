@@ -60,17 +60,18 @@ from aota_forge.work_plane.tool_result_governance import (
     project_tool_result,
 )
 
-# M2 activation: durable hydration + restricted shell reuse (thin imports, no new ontology)
+# M2 activation: durable hydration bound reuse (constant only, no persistence).
+# D5 convergence: MCP never persists durable payloads directly
+# (MCP_DIRECT_DURABLE_PAYLOAD_PERSISTENCE=no). Durability decisions live in
+# AF result governance (durable_result_store.persist_governed_tool_result_if_by_ref,
+# called from canonical Core dispatch). This module imports only the bound
+# for protocol shaping fallback; persistence itself is Core-owned.
 try:
     from aota_forge.work_plane.durable_result_store import (
         DURABLE_PAYLOAD_MAX_BYTES,
-        persist_durable_payload,
     )
 except Exception:  # pragma: no cover - fallback for isolated test discovery
     DURABLE_PAYLOAD_MAX_BYTES = 64 * 1024
-
-    def persist_durable_payload(*_a: Any, **_kw: Any) -> dict[str, Any]:  # type: ignore
-        raise RuntimeError("durable store unavailable")
 
 try:
     from aota_forge.work_plane.result_hydrate import ResultHydrateProvider
@@ -693,75 +694,20 @@ def _governed_projection_to_mcp(operation: str, projection) -> McpToolResult:
     return result  # type: ignore[return-value]
 
 
-def _persist_if_by_ref(binding: TrustedWorkerBinding, sanitized: ToolResponse, projection: Any) -> None:
-    """Best-effort durable persistence for large by_ref results (restart durability).
-
-    For success by_ref, the governing projection's digest/byte_length corresponds to
-    canonical_json(sanitized.payload). Persist that JSON bytes under the trusted
-    sandbox so later result.hydrate (in a new process) can rehydrate.
-    Fail-open on persistence error: the governed projection is already truthful
-    (by_ref) and hydration will fail closed if file missing, but we prefer
-    persistence success. Never persisting large results would break §7 mandatory proof.
-    """
-    try:
-        if not projection.is_success:
-            return
-        if projection.output_mode != "by_ref" or projection.output_ref is None:
-            return
-        # Only workspace.* and restricted_shell.run produce bounded governed refs via this path
-        # result.hydrate itself never goes by_ref (bounded inline)
-        payload = sanitized.payload or {}
-        # Recreate canonical bytes exactly as project_tool_result did
-        from aota_forge.core.contracts.canonical import canonical_json, canonicalize
-
-        if payload:
-            full_bytes = canonical_json(canonicalize(payload, path="payload")).encode("utf-8")
-        else:
-            full_bytes = b""
-        # Verify digest matches projection (defense)
-        import hashlib
-
-        computed = hashlib.sha256(full_bytes).hexdigest()
-        if computed != projection.output_digest:
-            # Payload serialization drift – fallback to inline_output derived bytes if available?
-            # For tool governance, digest must equal sanitized payload JSON; mismatch indicates bug, skip persist
-            return
-        if len(full_bytes) != projection.output_byte_length:
-            return
-        # Persist via file-backed durable store (worktree_root/.aota/durable_payloads, non-DB, bounded)
-        # Use the governed ref identity so hydrate can resolve via digest
-        if len(full_bytes) > DURABLE_PAYLOAD_MAX_BYTES:
-            # Exceeds durable bound – do not persist (will remain by_ref but hydration will fail oversized – fail-closed)
-            return
-        try:
-            persist_durable_payload(
-                binding.sandbox,
-                full_bytes,
-                ref=projection.output_ref.ref,
-                digest=projection.output_digest,
-                byte_length=projection.output_byte_length,
-                project_id=binding.project_id,
-                worktree_id=binding.worktree_id,
-                kind="evidence",
-            )
-        except Exception:
-            # Bounded file already exists with same digest → idempotent (same file)
-            # Any error is logged silently; projection already returned by_ref truthfully
-            pass
-    except Exception:
-        pass
-
-
 def _governed_from_response(binding: TrustedWorkerBinding, operation: str, response: ToolResponse) -> McpToolResult:
-    """Safety → governed projection → MCP for a real provider ToolResponse."""
+    """Safety → governed projection → MCP for a real provider ToolResponse.
+
+    D5 convergence: durability decisions live in canonical Core dispatch
+    (durable_result_store.persist_governed_tool_result_if_by_ref). This
+    adapter only projects the already-governed result to protocol shape;
+    it never persists semantic payloads and never decides inline/by_ref.
+    """
     sanitized = _sanitize_tool_response(response)
     # Capability name for projection is the exact operation identity
     # Validate that it is a plausible capability string; fallback to sanitized name if needed.
     cap = operation if isinstance(operation, str) and operation else "unknown"
     try:
         projection = project_tool_result(sanitized, cap, binding.sandbox)
-        # M2 durable: best-effort persist large by_ref payload for restart durability (§7)
-        _persist_if_by_ref(binding, sanitized, projection)
     except Exception as exc:  # pragma: no cover - defensive fallback for capability validation or bound errors
         # If projection fails due to oversized error payload or capability name, return a bounded typed failure
         # without leaking internal paths.
@@ -773,7 +719,6 @@ def _governed_from_response(binding: TrustedWorkerBinding, operation: str, respo
         # Ensure safe_cap is valid; if not, use aota.invoke
         try:
             projection = project_tool_result(fallback_resp, safe_cap, binding.sandbox)
-            _persist_if_by_ref(binding, sanitized, projection)
         except Exception as exc2:
             # Ultimate fallback: return minimal governed shape without projection
             return {
@@ -804,37 +749,55 @@ def _governed_error(binding: TrustedWorkerBinding, operation: str, code: str, me
 
 
 def _map_task_main_exception(exc: Exception) -> str:
-    """Preserve task-main semantic failure identity end-to-end.
+    """Preserve task-main semantic failure identity end-to-end (typed only).
 
-    Maps known coordinator/runner exception types to typed error codes.
-    Falls back to GOVERNED_OPERATION_FAILURE while still preserving
-    the bounded message that contains FAILS_CLOSED markers for Plan drift
-    etc. The code itself is the machinable identity.
+    D3 convergence: type-first isinstance against the semantic owner's
+    exception types, then explicit .code preservation. Never inspects
+    str(exc) contents. Deprecated seam delegates to the canonical Core
+    mapper; new code uses Core dispatch directly.
     """
-    # Check by class name to avoid hard import dependency
-    name = type(exc).__name__
-    msg = str(exc)
-    if name == "PlanDriftError" or "PLAN_DRIFT" in msg:
+    try:
+        from aota_forge.core_ingress import _map_task_main_exception as _core_map  # type: ignore
+
+        return _core_map(exc)
+    except Exception:
+        pass
+    # Fallback type-first mapping when Core is unavailable (still no strings).
+    try:
+        from aota_forge.runtime.task_main.control import TaskMainControlAuthorityError
+    except Exception:
+        TaskMainControlAuthorityError = None  # type: ignore
+    try:
+        from aota_forge.runtime.task_main.coordinator import (
+            CoordinatorBindingError,
+            CoordinatorRuntimeError,
+            PlanDriftError,
+            SessionRecoveryRequiredError,
+        )
+    except Exception:
+        CoordinatorBindingError = CoordinatorRuntimeError = None  # type: ignore
+        PlanDriftError = SessionRecoveryRequiredError = None  # type: ignore
+    try:
+        from aota_forge.runtime.task_main.coordinator_store import (
+            CoordinatorNotFoundError,
+            StaleCoordinatorRevisionError,
+        )
+    except Exception:
+        CoordinatorNotFoundError = StaleCoordinatorRevisionError = None  # type: ignore
+    if PlanDriftError is not None and isinstance(exc, PlanDriftError):
         return "PLAN_DRIFT"
-    if name == "SessionRecoveryRequiredError" or "SESSION_RECOVERY_REQUIRED" in msg:
+    if SessionRecoveryRequiredError is not None and isinstance(exc, SessionRecoveryRequiredError):
         return "SESSION_RECOVERY_REQUIRED"
-    if name == "CoordinatorNotFoundError":
+    if CoordinatorNotFoundError is not None and isinstance(exc, CoordinatorNotFoundError):
         return "COORDINATOR_NOT_FOUND"
-    if name == "CoordinatorBindingError":
+    if CoordinatorBindingError is not None and isinstance(exc, CoordinatorBindingError):
         return "COORDINATOR_BINDING_ERROR"
-    if name == "CoordinatorRuntimeError":
+    if CoordinatorRuntimeError is not None and isinstance(exc, CoordinatorRuntimeError):
         return "COORDINATOR_RUNTIME_ERROR"
-    if name == "StaleCoordinatorRevisionError":
+    if StaleCoordinatorRevisionError is not None and isinstance(exc, StaleCoordinatorRevisionError):
         return "STALE_COORDINATOR_REVISION"
-    if name == "TaskMainControlAuthorityError":
+    if TaskMainControlAuthorityError is not None and isinstance(exc, TaskMainControlAuthorityError):
         return "AUTHORITY_DENIED"
-    if "USER_GATE_REQUIRED" in msg:
-        return "USER_GATE_REQUIRED"
-    if "AUTHORITY_DENIED" in msg or "requires profile" in msg:
-        return "AUTHORITY_DENIED"
-    if name in ("ValueError", "TypeError") and "unknown" in msg.lower():
-        return "UNKNOWN_INPUT"
-    # Preserve original code if exc carries .code
     code = getattr(exc, "code", None)
     if isinstance(code, str) and code:
         return code
@@ -1014,36 +977,22 @@ class _SharedAotaMcpAdapter:
             return _governed_error(self.binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
         except Exception as exc:  # noqa: BLE001
             return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
-        # Preserve hydrate whole-object inline projection (bounded 64 KiB, single copy).
+        # Hydrate whole-object projection owned by Core result governance (D5):
+        # delegate to the canonical helper; this adapter performs only protocol
+        # projection and never decides durability/kind/digest/bounds/mode.
         if operation == "result.hydrate" and getattr(tool_response, "ok", False):
             try:
-                payload = dict(tool_response.payload or {})
-                content = payload.get("content", "")
-                if not isinstance(content, str):
-                    content = str(content)
-                content_bytes = content.encode("utf-8")
-                if len(content_bytes) > DURABLE_PAYLOAD_MAX_BYTES:
+                from aota_forge.work_plane.result_hydrate import (
+                    project_hydrate_result_for_transport as _core_hydrate_project,
+                )
+
+                projected = _core_hydrate_project(tool_response)
+                if isinstance(projected, dict) and "__governed_failure__" in projected:
                     return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "OVERSIZED_HYDRATION", "message": f"hydrated content {len(content_bytes)} exceeds durable bound {DURABLE_PAYLOAD_MAX_BYTES}"}),
+                        self.binding, operation, projected["__governed_failure__"]
                     )
-                return {
-                    "ok": True,
-                    "operation": operation,
-                    "payload": payload,
-                    "error": None,
-                    "output_mode": "inline",
-                    "is_truncated": False,
-                    "complete": True,
-                    "outcome": "success",
-                    "is_success": True,
-                    "capability_name": "result.hydrate",
-                    "output_digest": payload.get("digest", "0" * 64),
-                    "output_byte_length": len(content_bytes),
-                    "inline_output": None,
-                    "output_ref": None,
-                }
+                if isinstance(projected, dict):
+                    return projected  # type: ignore[return-value]
             except Exception:
                 pass
         return _governed_from_response(self.binding, operation, tool_response)

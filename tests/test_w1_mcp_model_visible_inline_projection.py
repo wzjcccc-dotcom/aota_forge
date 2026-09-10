@@ -472,7 +472,9 @@ def test_12_authority_foreign_skill_fail_closed(tmp_path: Path):
     # Also test arbitrary path
     structured2, _ = _call(server, "skill.open", {"ref": "/etc/passwd"})
     assert structured2["ok"] is False
-    assert structured2["error"]["code"] in ("GOVERNED_OPERATION_FAILURE", "UNKNOWN_INPUT", "SKILL_NOT_FOUND", "AUTHORITY_DENIED")
+    # AF #46 M1/W2 D3: path refs are typed INVALID_INPUT at the semantic owner
+    # (still fail-closed, more precise than generic GOVERNED_OPERATION_FAILURE).
+    assert structured2["error"]["code"] in ("GOVERNED_OPERATION_FAILURE", "UNKNOWN_INPUT", "SKILL_NOT_FOUND", "AUTHORITY_DENIED", "INVALID_INPUT")
     # Test role.bootstrap with non-empty arguments should fail
     structured3, _ = _call(server, "role.bootstrap", {"role": "coder"})
     assert structured3["ok"] is False

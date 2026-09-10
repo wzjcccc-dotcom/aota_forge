@@ -132,9 +132,19 @@ TOOL_OUTPUT_IS_ARTIFACT: bool = False
 
 # ---------------------------------------------------------------------------
 # Bounds — empirical M2 constants (not Child Plan global authority)
+# AF #46 M1/W2, D5 + §11: distinct bounds reflect distinct typed Core
+# result classes owned here (AF_RESULT_GOVERNANCE), not adapter drift.
+# - Tool outputs (workspace/shell/test/role/skill): 4096 inline, else by_ref.
+# - Hydration whole-object (result.hydrate): 64 KiB inline (durable bound),
+#   else by_ref/failure. A hydrate returns content, not another ref, so it
+#   needs the larger whole-object bound; selective evidence/artifact slices
+#   remain 4096 via selective_hydration.MAX_HYDRATED_BYTES.
+# DO_MULTIPLE_BOUNDS_REFLECT_TYPED_CORE_SEMANTICS_OR_ADAPTER_LOCAL_DRIFT?
+# -> TYPED_CORE_SEMANTICS (owned here; transports project, never decide).
 # ---------------------------------------------------------------------------
 
 TOOL_INLINE_OUTPUT_MAX_BYTES: int = 4096
+TOOL_HYDRATE_INLINE_MAX_BYTES: int = 64 * 1024
 TOOL_ERROR_INLINE_MAX_BYTES: int = 2048
 TOOL_INLINE_OUTPUT_MAX_CHARS: int = 4096  # same bound for char len
 MAX_REF_LENGTH: int = 512
@@ -625,7 +635,11 @@ def project_tool_result(
     byte_len = len(full_bytes)
     digest = _sha256_hex(full_bytes)
 
-    # Determine mode truthfully — never silently truncate
+    # Determine mode truthfully — never silently truncate.
+    # Inline bound owned here (D5): 4096 for tool outputs.
+    # result.hydrate whole-object inline (up to 64 KiB) is a distinct typed
+    # result class owned by result_hydrate.project_hydrate_result_for_transport,
+    # not by this function. Transports never choose bounds.
     if byte_len <= TOOL_INLINE_OUTPUT_MAX_BYTES:
         # inline complete
         inline_str = full_bytes.decode("utf-8", errors="replace") if full_bytes else ""
@@ -642,7 +656,7 @@ def project_tool_result(
             output_digest=digest,
             output_byte_length=byte_len,
             is_truncated=False,
-        )
+            )
     else:
         # by_ref — inline not returned, ref carries digest + scope
         ref_str = _expected_ref_str(capability_name, digest)
@@ -838,6 +852,7 @@ __all__ = [
     "ToolResultHydrationError",
     "ToolRefTamperError",
     "TOOL_INLINE_OUTPUT_MAX_BYTES",
+    "TOOL_HYDRATE_INLINE_MAX_BYTES",
     "TOOL_ERROR_INLINE_MAX_BYTES",
     "MAX_REF_LENGTH",
     "MAX_DIGEST_LENGTH",

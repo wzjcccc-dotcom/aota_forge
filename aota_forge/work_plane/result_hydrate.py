@@ -513,6 +513,67 @@ def assert_governed_reference_compatibility() -> bool:
 
 WATCHPOINT_RESOLVED: bool = True  # set True after compatibility proven; tests verify
 
+# ---------------------------------------------------------------------------
+# Core-owned hydrate protocol projection (AF #46 M1/W2, D5).
+# Whole-object hydration results (result.hydrate success) render inline up
+# to the durable bound (64 KiB, single copy) — a distinct typed result class
+# from tool-output inline (4096). Bounds/mode/digest semantics live here
+# (AF_RESULT_GOVERNANCE); transports call this mechanically and never decide
+# durability, kind, digest, or hydration bounds themselves.
+# ---------------------------------------------------------------------------
+
+HYDRATE_WHOLE_OBJECT_MAX_BYTES: int = 64 * 1024
+HYDRATE_SEMANTIC_OWNER: str = "AF_RESULT_GOVERNANCE"
+
+
+def project_hydrate_result_for_transport(tool_response: Any) -> dict[str, Any] | None:
+    """Core-owned whole-object projection for a result.hydrate ToolResponse.
+
+    Returns the MCP-protocol-shaped dict for success payloads (inline,
+    bounded HYDRATE_WHOLE_OBJECT_MAX_BYTES), a typed OVERSIZED_HYDRATION
+    failure dict when content exceeds the bound, or None when the response
+    is not a hydrate success (caller falls back to governed projection).
+    Never returns raw unbounded content; never silently truncates.
+    """
+    try:
+        ok = getattr(tool_response, "ok", False)
+        if not ok:
+            return None
+        payload = dict(getattr(tool_response, "payload", None) or {})
+        content = payload.get("content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        content_bytes = content.encode("utf-8")
+        if len(content_bytes) > HYDRATE_WHOLE_OBJECT_MAX_BYTES:
+            from aota_forge.core.providers.tool import ToolResponse as _TR
+
+            oversized = _TR.failure(
+                {
+                    "code": "OVERSIZED_HYDRATION",
+                    "message": f"hydrated content {len(content_bytes)} exceeds durable bound {HYDRATE_WHOLE_OBJECT_MAX_BYTES}",
+                }
+            )
+            return {"__governed_failure__": oversized}
+        return {
+            "ok": True,
+            "operation": "result.hydrate",
+            "payload": payload,
+            "error": None,
+            "output_mode": "inline",
+            "is_truncated": False,
+            "complete": True,
+            "outcome": "success",
+            "is_success": True,
+            "capability_name": "result.hydrate",
+            "output_digest": payload.get("digest", "0" * 64),
+            "output_byte_length": len(content_bytes),
+            "inline_output": None,
+            "output_ref": None,
+        }
+    except Exception:
+        return None
+
+
 __all__ = [
     "RESULT_HYDRATE_DESCRIPTOR",
     "RESULT_HYDRATE_DESCRIPTOR_AVAILABLE",
@@ -536,6 +597,9 @@ __all__ = [
     "NEW_RESULT_DB_CREATED",
     "NEW_RESULT_STATE_MACHINE_CREATED",
     "SKILL_IS_AUTHORITY",
+    "HYDRATE_WHOLE_OBJECT_MAX_BYTES",
+    "HYDRATE_SEMANTIC_OWNER",
+    "project_hydrate_result_for_transport",
     "assert_governed_reference_compatibility",
     "WATCHPOINT_RESOLVED",
 ]

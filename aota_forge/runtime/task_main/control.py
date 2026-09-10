@@ -25,6 +25,7 @@ from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.task_main.coordinator import (
+    CoordinatorBindingError,
     MilestonePlanView,
     activate_milestone,
     recover_coordinator,
@@ -103,6 +104,95 @@ class TaskMainControlService:
         self._exec_store = execution_store
         self._dispatcher = execution_dispatcher
         self._completion = completion_coordinator
+
+    # ---- canonical ownership seam (AF #46 M1/W2, D4) ----
+    # Core/runtime owns Plan gate interpretation, coordinator identity
+    # format, and coordinator discovery. Canonical ingress delegates here
+    # instead of reading live_plan_view.user_gate_blocked directly,
+    # inventing "{project}:{milestone}" strings, or reaching into the
+    # private coordinator store. Adapter layers never call these with
+    # model-supplied authority; inputs are trusted binding + live view.
+
+    def is_user_gate_blocked(self, live_plan_view: MilestonePlanView) -> bool:
+        """Core-owned live Plan gate interpretation (fail-closed).
+
+        Returns True when progression must stop before the user gate.
+        Delegates to MilestonePlanView.user_gate_blocked; any malformed
+        view fails closed as blocked (never open).
+        """
+        try:
+            return bool(live_plan_view.user_gate_blocked)
+        except Exception:
+            return True
+
+    def default_coordinator_id(
+        self, *, project_id: str, live_plan_view: MilestonePlanView
+    ) -> str:
+        """Core-owned coordinator identity format (no adapter knowledge).
+
+        Single format authority: "{project_id}:{milestone_id}".
+        """
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise CoordinatorBindingError("project_id must be non-empty for coordinator identity")
+        try:
+            milestone_id = live_plan_view.milestone_id
+        except Exception as exc:
+            raise CoordinatorBindingError(f"live plan view missing milestone identity: {exc}") from exc
+        if not isinstance(milestone_id, str) or not milestone_id.strip():
+            raise CoordinatorBindingError("live plan view milestone_id must be non-empty")
+        return f"{project_id.strip()}:{milestone_id.strip()}"
+
+    def resolve_coordinator_id(
+        self,
+        *,
+        project_id: str,
+        live_plan_view: MilestonePlanView,
+        coordinator_id: str | None,
+    ) -> str:
+        """Core-owned coordinator identity resolution (None -> default)."""
+        if coordinator_id is not None and isinstance(coordinator_id, str) and coordinator_id.strip():
+            if len(coordinator_id.strip()) > 512:
+                raise CoordinatorBindingError("coordinator_id exceeds bound")
+            return coordinator_id.strip()
+        return self.default_coordinator_id(project_id=project_id, live_plan_view=live_plan_view)
+
+    def discover_matching_coordinator_id(
+        self,
+        *,
+        project_id: str,
+        live_plan_view: MilestonePlanView,
+        coordinator_id: str | None,
+    ) -> str:
+        """Core-owned coordinator discovery via public store boundary.
+
+        Resolves the requested id; when absent durably, scans the public
+        list_all() surface for a coordinator matching the live
+        milestone_id + plan_authority (deterministic first match).
+        Never exposes store layout; callers learn only the resolved id.
+        """
+        resolved = self.resolve_coordinator_id(
+            project_id=project_id, live_plan_view=live_plan_view, coordinator_id=coordinator_id
+        )
+        try:
+            if self._coord_store.get(resolved) is not None:
+                return resolved
+        except Exception:
+            return resolved
+        try:
+            want_milestone = live_plan_view.milestone_id
+            want_authority = live_plan_view.plan_authority
+        except Exception:
+            return resolved
+        try:
+            for cand in self._coord_store.list_all():
+                if (
+                    getattr(cand, "milestone_id", None) == want_milestone
+                    and getattr(cand, "plan_authority", None) == want_authority
+                ):
+                    return cand.coordinator_id
+        except Exception:
+            pass
+        return resolved
 
     # ---- typed operations ----
 
