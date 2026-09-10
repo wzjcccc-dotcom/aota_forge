@@ -796,10 +796,24 @@ def select_runtime_context() -> TrustedWorkerBinding:
             raise TrustedBindingError(f"envelope path contains placeholder literal: {envelope_path!r}")
         try:
             binding = load_binding_from_envelope(envelope_path)
+            try:
+                _ekind, _ = verify_envelope(envelope_path)
+            except Exception:
+                _ekind = None
         except (TrustedBindingError, MissingRuntimeContextError, AmbiguousRuntimeContextError):
             raise
         except Exception as exc:
             raise TrustedBindingError(f"pre-resolved binding load failed: {type(exc).__name__}: {exc}") from exc
+        if _ekind == "task-main":
+            for _k in WORKER_AUTHORITY_ENV_KEYS:
+                _v = os.environ.get(_k, "")
+                if _v and _v.strip() and "${" not in _v:
+                    raise AmbiguousRuntimeContextError("task-main envelope with valid worker channel present: conflicting bindings")
+        elif _ekind == "worker":
+            for _k in ("AOTA_TASK_MAIN_BOOTSTRAP", "AOTA_TASK_MAIN_TRACE"):
+                _v = os.environ.get(_k, "")
+                if _v and _v.strip() and "${" not in _v:
+                    raise AmbiguousRuntimeContextError("worker envelope with valid task-main channel present: conflicting bindings")
         _verify_session_metadata(binding)
         return binding
     # No envelope: strict fail closed for production. Legacy compat only if
