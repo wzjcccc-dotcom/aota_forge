@@ -147,59 +147,31 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
 
 
 def _load_bootstrap_dict() -> dict[str, Any] | None:
-    # Explicit path takes precedence (harness-controlled)
+    # Explicit path takes precedence (harness-controlled). No ad-hoc /tmp
+    # diagnostics: failures are fail-closed via None/raises and bounded
+    # trace/observation mechanisms.
     explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
     if explicit and explicit.strip() and "${" not in explicit:
         p = Path(explicit)
         if p.is_file():
             try:
                 return json.loads(p.read_text(encoding="utf-8"))
-            except Exception as e:
-                try:
-                    with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                        dbg.write(f"_load explicit failed {e}\n")
-                except Exception:
-                    pass
+            except Exception:
                 return None
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"_load explicit not found {explicit}\n")
-        except Exception:
-            pass
         return None
     elif explicit and "${" in explicit:
         # Literal from hermes mcp_servers expansion when var not set in hermes env; ignore and fall back
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"_load explicit is literal {explicit}, ignoring\n")
-        except Exception:
-            pass
         pass  # fall through to root_env
     root_env = os.environ.get(BOOTSTRAP_ENV_ROOT)
     if not root_env:
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"_load no root_env\n")
-        except Exception:
-            pass
         return None
     root = Path(root_env).resolve()
     bootstrap_path = root / BOOTSTRAP_RELPATH
     if not bootstrap_path.is_file():
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"_load bootstrap not found {bootstrap_path} root_env={root_env}\n")
-        except Exception:
-            pass
         return None
     try:
         return json.loads(bootstrap_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"_load bootstrap json failed {e} {bootstrap_path}\n")
-        except Exception:
-            pass
+    except Exception:
         return None
 
 
@@ -507,6 +479,101 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         execution_dispatcher=dispatcher,
         completion_coordinator=completion,
     )
+    # M1/W2 production Worker explicit env wiring (F2 repair).
+    # The dispatcher/host_client created above inherits the task-main process
+    # env by default; without this seam every Worker supervisor would inherit
+    # task-main bootstrap authority. The resolver below derives the explicit
+    # per-dispatch Worker child mapping from the existing trusted AF binding
+    # (handoff resolvers + worktree base captured here), never from model
+    # text. Host_client validates/filters it before Popen(env=...).
+    _w2_repo_root = Path(__file__).resolve().parents[2]
+    _w2_worktree_root = worktree_root
+    _w2_worktree_id = worktree_id
+    _w2_project_id = project_id
+    _w2_runtime_config_path = runtime_config_path
+
+    def _w2_extract_work_item(payload: Any) -> str | None:
+        try:
+            if not isinstance(payload, Mapping):
+                return None
+            context = payload.get("context")
+            if not isinstance(context, Mapping):
+                return None
+            working = context.get("working_context")
+            if not isinstance(working, Mapping):
+                return None
+            refs = working.get("refs")
+            if not isinstance(refs, Mapping):
+                return None
+            wi_ref = refs.get("work_item_ref")
+            if isinstance(wi_ref, Mapping):
+                candidate = wi_ref.get("ref")
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+        except Exception:
+            return None
+        return None
+
+    # Placeholder installed now; rebound after handoff resolvers are defined
+    # (closures capture the names, resolved at call time).
+    _w2_holder: dict[str, Any] = {}
+
+    def _w2_worker_env_resolver(payload: Any) -> Any:
+        handoff_resolver_fn = _w2_holder.get("handoff_resolver")
+        reviewer_resolver_fn = _w2_holder.get("reviewer_handoff_resolver")
+        if handoff_resolver_fn is None:
+            return None
+        wi = _w2_extract_work_item(payload)
+        if wi is None:
+            return None
+        try:
+            lowered = wi.lower()
+            if lowered.startswith("rv") or "/rv" in lowered or "review" in lowered:
+                if reviewer_resolver_fn is None:
+                    return None
+                handoff = reviewer_resolver_fn()
+            else:
+                handoff = handoff_resolver_fn(wi)
+        except Exception:
+            # Scope-insufficient or ungoverned: no Worker env is supplied;
+            # the MCP child fails closed as missing context. Never synthesize.
+            return None
+        try:
+            context = payload.get("context") if isinstance(payload, Mapping) else {}
+            canonical_task_id = ""
+            if isinstance(context, Mapping):
+                candidate = context.get("canonical_task_id")
+                if isinstance(candidate, str) and candidate.strip():
+                    canonical_task_id = candidate.strip()
+            if not canonical_task_id:
+                return None
+            from aota_forge.composition.worker_vertical_slice import build_worker_child_environment
+
+            return build_worker_child_environment(
+                root=_w2_worktree_root,
+                project_id=_w2_project_id,
+                worktree_id=_w2_worktree_id,
+                canonical_task_id=canonical_task_id,
+                handoff=handoff,
+                trace_path=None,
+                repo_root=_w2_repo_root,
+                runtime_config_path=_w2_runtime_config_path,
+            )
+        except Exception:
+            return None
+
+    try:
+        _registry = getattr(dispatcher, "registry", None)
+        _adapters = getattr(_registry, "_adapters", {}) if _registry is not None else {}
+        for _adapter in list(_adapters.values()):
+            _host = getattr(_adapter, "_host_client", None)
+            if _host is not None and hasattr(_host, "_worker_env_resolver"):
+                try:
+                    _host._worker_env_resolver = _w2_worker_env_resolver
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     # Trusted resolvers: generic derivation from Plan runtime + project context
     work_items = list(live_view.graph.work_items)
@@ -601,6 +668,10 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             plan_authority=live_view.plan_authority,
             plan_digest=live_view.plan_digest,
         )
+
+    # Bind resolvers for the W2 Worker explicit-env seam (closures resolve at call time).
+    _w2_holder["handoff_resolver"] = handoff_resolver
+    _w2_holder["reviewer_handoff_resolver"] = reviewer_handoff_resolver
 
     def governed_review_resolver(cid: str, digest: str):
         # For this slice we synthesize a PASS review evidence deterministically

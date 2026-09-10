@@ -662,11 +662,13 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     ), "shell metacharacters must never be split/merged into other argv elements"
     assert not sentinel.exists(), "SHELL_INJECTION: shell metacharacters must never be evaluated"
 
-    # production construction mechanics: list argv, no shell, inherited environment only
+    # production construction mechanics: list argv, no shell, explicit
+    # sanitized Worker env (M1/W2 F2 repair: Popen env=... with allowlist,
+    # no ambient task-main inheritance, still no shell evaluation).
     dispatch_source = inspect.getsource(HermesHostClient.dispatch)
     assert "shell=True" not in PRODUCTION_HOST_CLIENT_SOURCE
     assert "shell=" not in dispatch_source, "no shell execution at the host seam"
-    assert "env=" not in dispatch_source, "no explicit environment rewriting at the host seam"
+    assert "env=supervisor_env" in dispatch_source, "W2 requires explicit Worker child env"
     client.close()
 
 

@@ -45,6 +45,58 @@ _TRUNCATION_MARKER = "\n...[output truncated]"
 _USAGE_FILE_MAX_BYTES = 64 * 1024
 _WORKING_DIRECTORY_KEYS = ("cwd", "working_directory", "working_dir", "repo_path", "repo_root", "dir")
 _SEMANTIC_CONTEXT_KEYS = frozenset({"bounded_scope", "handoff_digest", "task_kind", "work_role", "refs"})
+# M1/W2 Worker/task-main runtime binding discrimination (AF #45, I40-B003/F2).
+#
+# Authority-bearing environment classification (AUTHORITY_ENV_ALLOWLIST_EXPLICIT=yes).
+# No AOTA_* key is blindly copied: the production supervisor child environment
+# is built explicitly (PRODUCTION_WORKER_ENV_EXPLICIT=yes) and never relies on
+# process-global mutation (PRODUCTION_WORKER_ENV_USES_PARENT_GLOBAL_MUTATION=no).
+#
+# - mechanical safe-to-inherit: PATH-level runtime facts required for process
+#   execution, plus bounded trace paths (never authority).
+# - Worker authority-bearing: trusted Worker binding inputs consumed by the
+#   aota-worker MCP child via its Hermes profile allowlist.
+# - task-main authority-bearing: trusted task-main bootstrap signals consumed
+#   by the aota-task-main MCP child only. They must never reach a Worker child
+#   (WORKER_PROCESS_INHERITS_TASK_MAIN_AUTHORITY_ENV=no).
+# - conflicting / must-clear: any task-main authority present in a Worker child
+#   environment is a deterministic misbinding vector and is stripped.
+WORKER_AUTHORITY_ENV_KEYS = frozenset({
+    "AOTA_W3_MCP_ROOT",
+    "AOTA_W3_PROJECT_ID",
+    "AOTA_W3_WORKTREE_ID",
+    "AOTA_W3_TASK_ID",
+    "AOTA_W3_HANDOFF_JSON",
+    "AOTA_W3_TOOL_TRACE",
+})
+TASK_MAIN_AUTHORITY_ENV_KEYS = frozenset({
+    "AOTA_TASK_MAIN_BOOTSTRAP",
+    "AOTA_TASK_MAIN_TRACE",
+})
+# Mechanical keys explicitly allowed in a Worker child mapping when supplied
+# by the trusted resolver (never from model text). AOTA_W3_TOOL_TRACE is
+# already in the Worker set; the remainder are runtime mechanics.
+WORKER_MECHANICAL_ENV_KEYS = frozenset({
+    "AOTA_FORGE_REPO_ROOT",
+    "AOTA_FORGE_RUNTIME_CONFIG",
+    "PYTHONPATH",
+    "PATH",
+})
+# Explicit allowlist for any resolver-supplied Worker child mapping. Nothing
+# outside this set may reach the supervisor child via the trusted channel.
+WORKER_CHILD_ENV_ALLOWLIST = frozenset(
+    set(WORKER_AUTHORITY_ENV_KEYS)
+    | set(WORKER_MECHANICAL_ENV_KEYS)
+    | {"AOTA_W3_CONTEXT_KIND"}
+)
+# Optional routing assertion only (ROLE_HINT_IS_AUTHORITY=no). When present it
+# must be exactly "worker" or "task-main" and is verified against actual
+# bindings; a forged hint never creates authority.
+WORKER_CONTEXT_KIND_ENV = "AOTA_W3_CONTEXT_KIND"
+# Top-level payload keys that would constitute arbitrary untrusted child-env
+# authority if honored (ARBITRARY_UNTRUSTED_CHILD_ENV_AUTHORITY=no). Model text
+# must not control authority-bearing env names.
+_FORBIDDEN_PAYLOAD_ENV_KEYS = frozenset({"env", "environment", "worker_env", "child_env", "trusted_worker_launch_context", "worker_environment"})
 _SUPPORTED_CONSTRAINTS = frozenset({"timeout_seconds", "execution_mode", "isolation", "isolation_mode"})
 _SUPPORTED_REQUIREMENTS = frozenset(
     {
@@ -104,6 +156,7 @@ class HermesHostClient:
         runtime_root: str | os.PathLike[str] | None = None,
         popen_factory: Callable[..., Any] | None = None,
         validate_launcher: bool = True,
+        worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
     ) -> None:
         if not isinstance(launcher_path, (str, os.PathLike)) or not str(launcher_path).strip():
             raise ValueError("launcher_path must be a non-empty path")
@@ -129,6 +182,14 @@ class HermesHostClient:
         self.retention_seconds = float(retention_seconds)
         self.runtime_root = Path(runtime_root) if runtime_root is not None else locator.default_runtime_root()
         self._popen_factory = popen_factory or subprocess.Popen
+        # M1/W2 typed/bounded Worker launch channel (not model-controlled).
+        # When present this resolver derives the explicit Worker child
+        # environment from the existing trusted AF binding held by the
+        # task-main composition seam. It is never populated from model text
+        # or payload env keys.
+        if worker_env_resolver is not None and not callable(worker_env_resolver):
+            raise TypeError("worker_env_resolver must be callable or None")
+        self._worker_env_resolver = worker_env_resolver
         if validate_launcher:
             self._validate_launcher()
         # Non-authoritative accelerator: supervisor Popen objects observed by
@@ -206,6 +267,16 @@ class HermesHostClient:
         missing = sorted(required - set(payload))
         if missing:
             raise HermesHostClientError(f"PACKAGE_INVALID: host payload missing fields: {missing}", "PACKAGE_INVALID")
+        # M1/W2: model text must not control authority-bearing child env.
+        # Any payload-carried env mapping is untrusted and rejected here; the
+        # only trusted Worker env channel is the constructor-injected
+        # worker_env_resolver derived from the existing AF binding.
+        for _forbidden in _FORBIDDEN_PAYLOAD_ENV_KEYS:
+            if _forbidden in payload:
+                raise HermesHostClientError(
+                    "CAPABILITY_MISMATCH: payload must not carry child environment authority",
+                    "CAPABILITY_MISMATCH",
+                )
         profile = payload["profile"]
         instruction = payload["instruction"]
         if not isinstance(profile, str) or not profile.strip() or any(ch.isspace() for ch in profile):
@@ -399,10 +470,150 @@ class HermesHostClient:
             now_wall=now_wall,
         )
 
+    def _validated_worker_env_overlay(self, payload: Mapping[str, Any]) -> dict[str, str]:
+        """Narrowly validate/filter a resolver-supplied Worker child mapping.
+
+        The resolver is trusted AF composition (existing binding), but its
+        output is still filtered here before use: only the explicit allowlist,
+        string values, bounded sizes, no task-main authority keys, and — when
+        a handoff is present — digest consistency with the dispatch payload.
+        """
+        if self._worker_env_resolver is None:
+            return {}
+        try:
+            overlay = self._worker_env_resolver(payload)
+        except HermesHostClientError:
+            raise
+        except Exception as exc:
+            raise HermesHostClientError(
+                f"PACKAGE_INVALID: trusted worker env resolver failed: {type(exc).__name__}",
+                "PACKAGE_INVALID",
+            ) from exc
+        if overlay is None:
+            return {}
+        if not isinstance(overlay, Mapping):
+            raise HermesHostClientError(
+                "PACKAGE_INVALID: trusted worker env must be a mapping or None",
+                "PACKAGE_INVALID",
+            )
+        cleaned: dict[str, str] = {}
+        for key, value in overlay.items():
+            if not isinstance(key, str):
+                raise HermesHostClientError(
+                    "PACKAGE_INVALID: trusted worker env keys must be strings",
+                    "PACKAGE_INVALID",
+                )
+            if key in TASK_MAIN_AUTHORITY_ENV_KEYS:
+                raise HermesHostClientError(
+                    f"PACKAGE_INVALID: trusted worker env must not carry task-main authority {key!r}",
+                    "PACKAGE_INVALID",
+                )
+            if key not in WORKER_CHILD_ENV_ALLOWLIST:
+                raise HermesHostClientError(
+                    f"CAPABILITY_MISMATCH: trusted worker env key {key!r} outside explicit allowlist",
+                    "CAPABILITY_MISMATCH",
+                )
+            if not isinstance(value, str) or not value:
+                # Empty trace is represented by absence, not empty string;
+                # all other Worker authority keys must be non-empty strings.
+                if key == "AOTA_W3_TOOL_TRACE" and value == "":
+                    continue
+                raise HermesHostClientError(
+                    f"PACKAGE_INVALID: trusted worker env value for {key!r} must be a non-empty string",
+                    "PACKAGE_INVALID",
+                )
+            if len(value) > 64 * 1024:
+                raise HermesHostClientError(
+                    f"PACKAGE_INVALID: trusted worker env value for {key!r} exceeds bound",
+                    "PACKAGE_INVALID",
+                )
+            if key == WORKER_CONTEXT_KIND_ENV and value not in ("worker", "task-main"):
+                raise HermesHostClientError(
+                    "PACKAGE_INVALID: worker context kind must be worker|task-main",
+                    "PACKAGE_INVALID",
+                )
+            cleaned[key] = value
+        # When the overlay carries a handoff, its digest must match the
+        # fingerprint-covered payload digest (tamper fails closed here, at the
+        # last mile before physical dispatch).
+        handoff_json = cleaned.get("AOTA_W3_HANDOFF_JSON")
+        if handoff_json:
+            try:
+                import json as _json
+
+                handoff_dict = _json.loads(handoff_json)
+            except Exception as exc:
+                raise HermesHostClientError(
+                    "PACKAGE_INVALID: trusted worker handoff JSON is malformed",
+                    "PACKAGE_INVALID",
+                ) from exc
+            if not isinstance(handoff_dict, dict):
+                raise HermesHostClientError(
+                    "PACKAGE_INVALID: trusted worker handoff must be an object",
+                    "PACKAGE_INVALID",
+                )
+            try:
+                payload_digest: str | None = None
+                for artifact in payload.get("artifacts", ()):
+                    if isinstance(artifact, Mapping) and artifact.get("handoff_kind") == "task_handoff":
+                        candidate = artifact.get("handoff_digest")
+                        if isinstance(candidate, str) and candidate:
+                            payload_digest = candidate
+                            break
+                context = payload.get("context")
+                context_digest: str | None = None
+                if isinstance(context, Mapping):
+                    working = context.get("working_context")
+                    if isinstance(working, Mapping):
+                        candidate = working.get("handoff_digest")
+                        if isinstance(candidate, str) and candidate:
+                            context_digest = candidate
+                if payload_digest is not None and context_digest is not None and payload_digest != context_digest:
+                    raise HermesHostClientError(
+                        "PACKAGE_INVALID: payload handoff digest channels disagree",
+                        "PACKAGE_INVALID",
+                    )
+                # The overlay handoff JSON shape is validated by the MCP child
+                # via the existing bounded handoff contract (digest-bound
+                # there); this mechanical layer stays free of canonical-store
+                # imports.
+            except HermesHostClientError:
+                raise
+            except Exception as exc:
+                raise HermesHostClientError(
+                    f"PACKAGE_INVALID: trusted worker handoff validation failed: {type(exc).__name__}",
+                    "PACKAGE_INVALID",
+                ) from exc
+        return cleaned
+
+    def _build_explicit_supervisor_env(self, payload: Mapping[str, Any]) -> dict[str, str]:
+        """Build the explicit detached supervisor child environment.
+
+        Starts from a sanitized copy of the current process environment for
+        PATH-level mechanics, then explicitly strips every authority-bearing
+        AF key (Worker binding inputs and task-main bootstrap signals are
+        never blindly inherited), then overlays the narrowly validated
+        trusted Worker binding (when the AF composition seam supplies one).
+        The result is passed as Popen(env=...) so a Worker never inherits
+        task-main authority via ambient process state.
+        """
+        overlay = self._validated_worker_env_overlay(payload)
+        explicit: dict[str, str] = dict(os.environ)
+        for _key in TASK_MAIN_AUTHORITY_ENV_KEYS:
+            explicit.pop(_key, None)
+        for _key in WORKER_AUTHORITY_ENV_KEYS:
+            explicit.pop(_key, None)
+        explicit.pop(WORKER_CONTEXT_KIND_ENV, None)
+        for _key, _value in overlay.items():
+            explicit[_key] = _value
+        # Guarantee string-only mapping for Popen.
+        return {str(k): str(v) for k, v in explicit.items() if isinstance(v, str)}
+
     def dispatch(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
             raise HermesHostClientError("PACKAGE_INVALID: host payload must be a mapping", "PACKAGE_INVALID")
         profile, instruction, cwd, timeout, provider, model, toolsets = self._validate_payload(payload)
+        supervisor_env = self._build_explicit_supervisor_env(payload)
         # M2/W4 RV1 F01: no implicit retention pruning happens here.  New
         # dispatch may only ADD mechanical evidence; terminal receipts are
         # reclaimed exclusively through prune_canonicalized_receipts() with an
@@ -463,6 +674,7 @@ class HermesHostClient:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
+                    env=supervisor_env,
                 )
             except (OSError, ValueError) as exc:
                 _cleanup_run(paths)

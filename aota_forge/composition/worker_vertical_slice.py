@@ -18,13 +18,6 @@ import os
 import sys
 import time
 
-# Early startup log for hermes MCP diagnosis (writes to /tmp regardless of env)
-try:
-    with open("/tmp/aota_mcp_startup.log", "a", encoding="utf-8") as _log:
-        _log.write(f"STARTUP pid={os.getpid()} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')} AOTA_FORGE_REPO_ROOT={os.environ.get('AOTA_FORGE_REPO_ROOT')} PYTHONPATH={os.environ.get('PYTHONPATH','')[:500]}\n")
-        _log.flush()
-except Exception:
-    pass
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -94,6 +87,42 @@ TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY = False
 FREEFORM_PROMPT_CAN_MINT_BINDING_AUTHORITY = False
 PROJECT_ID_SPECIAL_CASE_ALLOWED = False
 DOGFOOD_LITERAL_SPECIAL_CASE_ALLOWED = False
+# M1/W2 runtime binding discrimination (AF #45, I40-B003/F2).
+# Context selection is exclusive validation, never priority
+# (BOOTSTRAP_CONTEXT_PRIORITY_AMBIGUOUS=no,
+# TASK_MAIN_FIRST_BOOTSTRAP_PRIORITY_REMOVED=yes).
+ROLE_CONTEXT_SELECTION_EXPLICIT = True
+SESSION_ROLE_DISCRIMINATION_FAIL_CLOSED = True
+BOOTSTRAP_CONTEXT_PRIORITY_AMBIGUOUS = False
+TASK_MAIN_FIRST_BOOTSTRAP_PRIORITY_REMOVED = True
+# Production Worker env is explicit (Popen env=...), never parent-global
+# mutation (PRODUCTION_WORKER_ENV_EXPLICIT=yes,
+# PRODUCTION_WORKER_ENV_USES_PARENT_GLOBAL_MUTATION=no).
+PRODUCTION_WORKER_ENV_EXPLICIT = True
+PRODUCTION_WORKER_ENV_USES_PARENT_GLOBAL_MUTATION = False
+# Authority env allowlist is explicit (AUTHORITY_ENV_ALLOWLIST_EXPLICIT=yes).
+# See host_client WORKER_CHILD_ENV_ALLOWLIST for the enforced set; the
+# classification below is the single documented source of truth.
+AUTHORITY_ENV_ALLOWLIST_EXPLICIT = True
+# Mechanical safe-to-inherit: PATH-level runtime facts + bounded traces.
+# Never authority-bearing.
+MECHANICAL_SAFE_ENV_KEYS = frozenset({"PATH", "PYTHONPATH", "AOTA_FORGE_REPO_ROOT", "AOTA_HERMES_RUNTIME_ROOT", MCP_TRACE_ENV, "AOTA_TASK_MAIN_TRACE"})
+# Worker authority-bearing: trusted Worker binding inputs only.
+WORKER_AUTHORITY_ENV_KEYS = frozenset({MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV})
+# task-main authority-bearing: trusted bootstrap signals only.
+TASK_MAIN_AUTHORITY_ENV_KEYS = frozenset({"AOTA_TASK_MAIN_BOOTSTRAP", "AOTA_TASK_MAIN_TRACE"})
+# Conflicting / must-clear in any Worker child: task-main bootstrap authority.
+WORKER_CHILD_MUST_CLEAR_ENV_KEYS = frozenset({"AOTA_TASK_MAIN_BOOTSTRAP"})
+# Optional routing assertion only (ROLE_HINT_IS_AUTHORITY=no). Verified, never
+# authority alone; forged hints fail closed.
+ROLE_HINT_IS_AUTHORITY = False
+CONTEXT_KIND_ENV = "AOTA_W3_CONTEXT_KIND"
+# Ad-hoc /tmp bootstrap debug logging removed as part of this path repair
+# (AD_HOC_TMP_BOOTSTRAP_DEBUG_LOGGING_REMOVED=yes).
+AD_HOC_TMP_BOOTSTRAP_DEBUG_LOGGING_REMOVED = True
+# Worker never inherits task-main authority via process env
+# (WORKER_PROCESS_INHERITS_TASK_MAIN_AUTHORITY_ENV=no).
+WORKER_PROCESS_INHERITS_TASK_MAIN_AUTHORITY_ENV = False
 # Per-role least-privilege (M3/W1 production convergence, fail-closed):
 # only coder carries workspace mutation via the worker path. Analyst product
 # source write is denied (ANALYST_PRODUCT_SOURCE_WRITE=no); bounded analysis
@@ -395,6 +424,22 @@ def build_worker_binding(
     )
 
 
+class AmbiguousRuntimeContextError(TrustedBindingError):
+    """Both trusted Worker and task-main contexts are valid (fail closed)."""
+
+    def __init__(self, detail: str = "AMBIGUOUS_RUNTIME_CONTEXT") -> None:
+        super().__init__(f"AMBIGUOUS_RUNTIME_CONTEXT: {detail}")
+        self.code = "AMBIGUOUS_RUNTIME_CONTEXT"
+
+
+class MissingRuntimeContextError(TrustedBindingError):
+    """Neither trusted Worker nor task-main context can be established."""
+
+    def __init__(self, detail: str = "MISSING_RUNTIME_CONTEXT") -> None:
+        super().__init__(f"MISSING_RUNTIME_CONTEXT: {detail}")
+        self.code = "MISSING_RUNTIME_CONTEXT"
+
+
 def _read_worker_binding_from_environment() -> TrustedWorkerBinding:
     root = Path(os.environ[MCP_ROOT_ENV]).resolve()
     handoff = TaskHandoff.from_dict(json.loads(os.environ[MCP_HANDOFF_ENV]))
@@ -407,57 +452,341 @@ def _read_worker_binding_from_environment() -> TrustedWorkerBinding:
     )
 
 
+def try_read_worker_binding() -> TrustedWorkerBinding | None:
+    """Explicit Worker candidate read (no priority, no fallback).
+
+    Returns the validated Worker binding when all Worker env inputs are
+    present and valid, None when the Worker channel is absent (any required
+    key missing). Raises TrustedBindingError when Worker material is present
+    but invalid (fail closed, never silently treated as absent).
+    """
+    required = (MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV)
+    if any(key not in os.environ for key in required):
+        return None
+    return _read_worker_binding_from_environment()
+
+
 def _try_read_task_main_binding() -> TrustedWorkerBinding | None:
-    """Host-controlled task-main bootstrap (generic).
+    """Host-controlled task-main bootstrap (generic, no ad-hoc logging).
 
     Consumes only the trusted filesystem reference AOTA_W3_MCP_ROOT and the
-    operator-written .aota/task-main-bootstrap.json it points to.  No
-    model-facing argument is consulted.  Returns None if no bootstrap file
-    exists (caller is a normal worker).
+    operator-written .aota/task-main-bootstrap.json it points to (or the
+    explicit AOTA_TASK_MAIN_BOOTSTRAP path). No model-facing argument is
+    consulted. Returns None if no bootstrap can be built (caller is a normal
+    worker). Malformed bootstrap raises (fail closed).
     """
-    try:
-        from aota_forge.composition.task_main_host_bootstrap import try_build_task_main_binding
+    from aota_forge.composition.task_main_host_bootstrap import try_build_task_main_binding
 
-        result = try_build_task_main_binding()
-        # Debug log for task-main bootstrap
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"try_build result={result is not None} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')} bootstrap_exists={Path(os.environ.get('AOTA_W3_MCP_ROOT','') + '/.aota/task-main-bootstrap.json').exists() if os.environ.get('AOTA_W3_MCP_ROOT') else False}\n")
-        except Exception:
-            pass
-        return result
-    except Exception as e:
-        try:
-            with open("/tmp/aota_task_main_bootstrap_debug.log", "a", encoding="utf-8") as dbg:
-                dbg.write(f"try_build exception {type(e).__name__}: {e} AOTA_W3_MCP_ROOT={os.environ.get('AOTA_W3_MCP_ROOT')}\n")
-        except Exception:
-            pass
+    return try_build_task_main_binding()
+
+
+def try_read_task_main_binding() -> TrustedWorkerBinding | None:
+    """Explicit task-main candidate read (no priority)."""
+    try:
+        return _try_read_task_main_binding()
+    except MissingRuntimeContextError:
+        raise
+    except AmbiguousRuntimeContextError:
+        raise
+    except TrustedBindingError:
+        raise
+    except Exception as exc:
+        raise TrustedBindingError(f"task-main binding failed: {type(exc).__name__}: {exc}") from exc
+
+
+def _explicit_task_main_signal_present() -> bool:
+    """Trusted routing assertion: explicit task-main bootstrap path.
+
+    The aota-task-main Hermes profile passes AOTA_TASK_MAIN_BOOTSTRAP while
+    the aota-worker profile does not, so presence of a non-placeholder value
+    is the Hermes-controlled routing assertion (ROLE_HINT_IS_AUTHORITY=no:
+    it never creates authority alone, it only selects which exclusive
+    validation must succeed).
+    """
+    raw = os.environ.get("AOTA_TASK_MAIN_BOOTSTRAP", "")
+    if not raw or not raw.strip():
+        return False
+    if "${" in raw:
+        return False
+    return True
+
+
+def _context_kind_hint() -> str | None:
+    raw = os.environ.get(CONTEXT_KIND_ENV, "")
+    if not raw or not raw.strip():
         return None
+    value = raw.strip()
+    if value not in ("worker", "task-main"):
+        raise TrustedBindingError(f"FORGED_ROLE_HINT: invalid {CONTEXT_KIND_ENV}={value!r}")
+    return value
+
+
+def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
+    """Fail closed when launch/session metadata contradicts trusted context."""
+    try:
+        role = binding.handoff.work_role.value if hasattr(binding.handoff.work_role, "value") else str(binding.handoff.work_role)
+    except Exception:
+        raise TrustedBindingError("SESSION_METADATA_MISMATCH: unreadable binding role")
+    is_task_main = role == "task-main"
+    if is_task_main:
+        ctx = binding.trusted_task_main_context
+        if ctx is None:
+            raise TrustedBindingError("SESSION_METADATA_MISMATCH: task-main binding without context")
+        # live_plan_view is trusted; env metadata must agree when present.
+        try:
+            live = ctx.live_plan_view
+            _ = (live.milestone_id, live.plan_authority)
+        except Exception as exc:
+            raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: unreadable task-main live view: {exc}") from exc
+        for key, expected in (
+            (MCP_PROJECT_ENV, binding.project_id),
+            (MCP_WORKTREE_ENV, binding.worktree_id),
+        ):
+            claimed = os.environ.get(key)
+            if claimed is not None and claimed != expected:
+                raise TrustedBindingError(
+                    f"SESSION_METADATA_MISMATCH: {key}={claimed!r} contradicts trusted task-main {expected!r}"
+                )
+        origin = getattr(ctx, "origin_task_main_session_ref", "")
+        if not isinstance(origin, str) or not origin.strip():
+            raise TrustedBindingError("SESSION_METADATA_MISMATCH: task-main origin session missing")
+        return
+    # Worker: env metadata must exactly match the validated binding.
+    for key, expected in (
+        (MCP_PROJECT_ENV, binding.project_id),
+        (MCP_WORKTREE_ENV, binding.worktree_id),
+        (MCP_TASK_ENV, binding.canonical_task_id),
+    ):
+        claimed = os.environ.get(key)
+        if claimed is None:
+            raise MissingRuntimeContextError(f"worker {key} absent")
+        if claimed != expected:
+            raise TrustedBindingError(
+                f"SESSION_METADATA_MISMATCH: {key}={claimed!r} contradicts trusted worker {expected!r}"
+            )
+    # MCP root must resolve to the sandbox worktree root.
+    claimed_root = os.environ.get(MCP_ROOT_ENV)
+    if claimed_root is None:
+        raise MissingRuntimeContextError("worker MCP root absent")
+    try:
+        if Path(claimed_root).resolve() != Path(binding.sandbox.worktree_root).resolve():
+            raise TrustedBindingError("SESSION_METADATA_MISMATCH: MCP root contradicts worker sandbox")
+    except TrustedBindingError:
+        raise
+    except Exception as exc:
+        raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: MCP root unreadable: {exc}") from exc
+    # Handoff project ref, when present, must agree with binding project.
+    try:
+        proj_ref = binding.handoff.project_ref
+        if proj_ref is not None and proj_ref.ref != binding.project_id:
+            raise TrustedBindingError("SESSION_METADATA_MISMATCH: handoff project_ref contradicts binding project")
+        # Canonical task identity must agree with handoff milestone/work refs:
+        # trusted context expects (project A, worktree X, task T) but launch
+        # metadata claims (B, Y, U) must fail closed.
+        try:
+            parts = binding.canonical_task_id.rsplit(":", 3)
+            if len(parts) == 4:
+                _cid_milestone, _cid_work = parts[1], parts[2]
+                _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
+                _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
+                if _h_mid is not None and _h_mid != _cid_milestone:
+                    raise TrustedBindingError(
+                        f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} milestone {_cid_milestone!r} contradicts handoff milestone {_h_mid!r}"
+                    )
+                if _h_wi is not None and _h_wi != _cid_work:
+                    raise TrustedBindingError(
+                        f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} work {_cid_work!r} contradicts handoff work {_h_wi!r}"
+                    )
+        except TrustedBindingError:
+            raise
+        except Exception:
+            pass
+    except TrustedBindingError:
+        raise
+    except Exception as exc:
+        raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: handoff refs unreadable: {exc}") from exc
+
+
+def select_runtime_context() -> TrustedWorkerBinding:
+    """Exclusive role/context discrimination (no priority).
+
+    - worker valid + task-main absent -> Worker
+    - task-main valid + worker absent -> task-main
+    - both valid -> AMBIGUOUS_RUNTIME_CONTEXT (fail closed)
+    - neither valid -> MISSING_RUNTIME_CONTEXT (fail closed)
+
+    The explicit AOTA_TASK_MAIN_BOOTSTRAP presence is the Hermes-controlled
+    routing assertion: a Worker child (aota-worker profile) never receives
+    it, so a fallback bootstrap file visible via a shared MCP root is never
+    mistaken for task-main authority in a Worker session. An explicit
+    AOTA_W3_CONTEXT_KIND hint, when present, is verified the same way and a
+    forged hint never creates authority.
+    """
+    hint = _context_kind_hint()
+    explicit_signal = _explicit_task_main_signal_present()
+    # Worker candidate: absent (None) vs valid vs present-but-invalid (raises).
+    # A task-main-role handoff on the Worker channel is the task-main
+    # placeholder (launcher) or a misdirected task-main handoff: it is never
+    # a valid Worker binding. For task-main sessions it counts as absent
+    # (placeholder); for Worker sessions without explicit signal it still
+    # fails closed downstream as missing (never becomes task-main).
+    worker_binding: TrustedWorkerBinding | None = None
+    worker_error: Exception | None = None
+    try:
+        worker_binding = try_read_worker_binding()
+    except MissingRuntimeContextError as exc:
+        worker_error = exc
+    except TrustedBindingError as exc:
+        if "must not mint task-main" in str(exc) or "task-main binding" in str(exc).lower():
+            worker_binding = None
+            worker_error = None
+        else:
+            worker_error = exc
+    except Exception as exc:
+        worker_error = TrustedBindingError(f"worker binding failed: {exc}")
+    # task-main candidate: only consulted when the Hermes-controlled routing
+    # assertion indicates a task-main session (explicit path present) or when
+    # no Worker channel exists at all (legacy task-main without explicit var
+    # in tests). A Worker session (worker vars present, no explicit signal,
+    # hint worker/absent) never consults the fallback file, so a shared-root
+    # bootstrap file cannot shadow the Worker binding.
+    worker_vars_present = all(
+        key in os.environ for key in (MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV)
+    )
+    consult_task_main = explicit_signal or not worker_vars_present or (hint == "task-main")
+    if hint == "worker" and explicit_signal:
+        # Routing asserts worker yet task-main authority signal present:
+        # conflicting contexts fail closed without consulting priority.
+        raise AmbiguousRuntimeContextError("worker hint with task-main bootstrap signal")
+    task_main_binding: TrustedWorkerBinding | None = None
+    task_main_error: Exception | None = None
+    if consult_task_main:
+        try:
+            task_main_binding = try_read_task_main_binding()
+        except (AmbiguousRuntimeContextError, MissingRuntimeContextError):
+            raise
+        except TrustedBindingError as exc:
+            task_main_error = exc
+        except Exception as exc:
+            task_main_error = TrustedBindingError(f"task-main binding failed: {exc}")
+    else:
+        task_main_binding = None
+    # Explicit hint verification (hint never creates authority).
+    if hint == "worker":
+        if worker_binding is None:
+            if worker_error is not None:
+                raise worker_error
+            raise MissingRuntimeContextError("worker hint without valid worker binding")
+        if task_main_binding is not None:
+            raise AmbiguousRuntimeContextError("worker hint with valid task-main context")
+        _verify_session_metadata(worker_binding)
+        return worker_binding
+    if hint == "task-main":
+        if task_main_binding is None:
+            if task_main_error is not None:
+                raise task_main_error
+            raise MissingRuntimeContextError("task-main hint without valid task-main context")
+        if worker_binding is not None:
+            raise AmbiguousRuntimeContextError("task-main hint with valid worker binding")
+        _verify_session_metadata(task_main_binding)
+        return task_main_binding
+    # No hint: exclusive validation driven by the Hermes routing assertion.
+    if worker_binding is not None and task_main_binding is not None:
+        raise AmbiguousRuntimeContextError("both worker and task-main contexts valid")
+    if worker_binding is not None:
+        _verify_session_metadata(worker_binding)
+        return worker_binding
+    if task_main_binding is not None:
+        # A Worker session must never become task-main: when Worker channel
+        # material was expected (worker vars present) but invalid, do not
+        # silently substitute the task-main context.
+        if worker_vars_present and worker_error is not None:
+            raise worker_error
+        _verify_session_metadata(task_main_binding)
+        return task_main_binding
+    if worker_error is not None and task_main_error is not None:
+        # Prefer the more specific invalid-channel error, but remain typed.
+        raise worker_error
+    if worker_error is not None:
+        raise worker_error
+    if task_main_error is not None:
+        raise task_main_error
+    raise MissingRuntimeContextError("no trusted worker or task-main context")
+
+
+def build_worker_child_environment(
+    *,
+    root: Path,
+    project_id: str,
+    worktree_id: str,
+    canonical_task_id: str,
+    handoff: TaskHandoff,
+    trace_path: Path | None = None,
+    repo_root: Path | None = None,
+    runtime_config_path: Path | None = None,
+    context_kind: str = "worker",
+) -> dict[str, str]:
+    """Build the explicit detached Worker child environment (immutable copy).
+
+    Contains sufficient trusted Worker binding inputs (MCP root, project,
+    worktree, canonical task, serialized TaskHandoff, repo/runtime mechanics,
+    bounded trace) and explicitly excludes task-main bootstrap authority.
+    Never mutates os.environ; the caller passes the result as Popen(env=...).
+    """
+    if not isinstance(handoff, TaskHandoff):
+        raise TrustedBindingError(f"worker child env requires typed TaskHandoff, got {type(handoff).__name__}")
+    try:
+        role_val = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
+    except Exception as exc:
+        raise TrustedBindingError(f"worker child env unreadable work_role: {exc}") from exc
+    if role_val == "task-main":
+        raise TrustedBindingError("worker child env must not carry task-main handoff")
+    if not project_id or not project_id.strip():
+        raise TrustedBindingError("worker child env requires project_id")
+    if not worktree_id or not worktree_id.strip():
+        raise TrustedBindingError("worker child env requires worktree_id")
+    if not canonical_task_id or not canonical_task_id.strip():
+        raise TrustedBindingError("worker child env requires canonical_task_id")
+    resolved_root = Path(root).resolve()
+    if not resolved_root.is_dir():
+        raise TrustedBindingError(f"worker child env root missing: {resolved_root}")
+    effective_repo = Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[2]
+    child: dict[str, str] = {
+        MCP_ROOT_ENV: str(resolved_root),
+        MCP_PROJECT_ENV: project_id,
+        MCP_WORKTREE_ENV: worktree_id,
+        MCP_TASK_ENV: canonical_task_id,
+        MCP_HANDOFF_ENV: json.dumps(handoff.to_dict(), sort_keys=True),
+        MCP_REPO_ROOT_ENV: str(effective_repo),
+        CONTEXT_KIND_ENV: context_kind,
+    }
+    if context_kind not in ("worker", "task-main"):
+        raise TrustedBindingError("worker child env context_kind must be worker|task-main")
+    if trace_path is not None:
+        child[MCP_TRACE_ENV] = str(Path(trace_path))
+    if runtime_config_path is not None:
+        child["AOTA_FORGE_RUNTIME_CONFIG"] = str(Path(runtime_config_path).resolve())
+    # Mechanical PATH/PYTHONPATH: sanitized copy, repo root prepended.
+    parent_pythonpath = os.environ.get("PYTHONPATH", "")
+    child["PYTHONPATH"] = str(effective_repo) + (os.pathsep + parent_pythonpath if parent_pythonpath else "")
+    if "PATH" in os.environ and os.environ["PATH"]:
+        child["PATH"] = os.environ["PATH"]
+    return dict(child)
 
 
 async def _serve_mcp_child() -> None:
     """Run the actual W2 server used by Hermes, with server-side binding."""
     from aota_forge import mcp_transport
 
-    # Debug: log env to /tmp for hermes diagnosis
+    # Exclusive discrimination: exactly one valid context is used; both or
+    # neither fail closed. No task-main-first priority remains.
+    selected = select_runtime_context()
     try:
-        with open("/tmp/aota_mcp_debug.log", "a", encoding="utf-8") as dbg:
-            dbg.write(f"ENV AOTA_W3_MCP_ROOT={os.environ.get(MCP_ROOT_ENV)}\n")
-            dbg.write(f"ENV AOTA_FORGE_REPO_ROOT={os.environ.get(MCP_REPO_ROOT_ENV)}\n")
-            dbg.write(f"ENV AOTA_FORGE_RUNTIME_CONFIG={os.environ.get('AOTA_FORGE_RUNTIME_CONFIG')}\n")
-            dbg.write(f"BOOTSTRAP_PATH={Path(os.environ.get(MCP_ROOT_ENV, '')) / '.aota/task-main-bootstrap.json' if os.environ.get(MCP_ROOT_ENV) else 'none'}\n")
-            if os.environ.get(MCP_ROOT_ENV):
-                p = Path(os.environ[MCP_ROOT_ENV]) / ".aota/task-main-bootstrap.json"
-                dbg.write(f"BOOTSTRAP_EXISTS={p.exists()} {p}\n")
+        _role = selected.handoff.work_role.value if hasattr(selected.handoff.work_role, "value") else str(selected.handoff.work_role)
     except Exception:
-        pass
-    # Task-main bootstrap has priority: if a task-main bootstrap file exists
-    # under the trusted root, this Hermes session is the exact task-main
-    # session and must receive the trusted task-main context, not a worker
-    # binding.  The file is operator-owned; the model never supplies it.
-    task_main_binding = _try_read_task_main_binding()
-    if task_main_binding is not None:
-        server = mcp_transport.create_shared_mcp_server(task_main_binding)
+        _role = ""
+    if _role == "task-main":
+        server = mcp_transport.create_shared_mcp_server(selected)
         trace_path = None
         # Optional invocation trace for W2 evidence (bounded)
         t = os.environ.get(MCP_TRACE_ENV) or os.environ.get("AOTA_TASK_MAIN_TRACE")
@@ -467,7 +796,7 @@ async def _serve_mcp_child() -> None:
             except Exception:
                 trace_path = None
     else:
-        server = mcp_transport.create_shared_mcp_server(_read_worker_binding_from_environment())
+        server = mcp_transport.create_shared_mcp_server(selected)
         trace_path = Path(os.environ[MCP_TRACE_ENV]) if MCP_TRACE_ENV in os.environ else None
     if trace_path is not None:
         for tool in server._tool_manager.list_tools():

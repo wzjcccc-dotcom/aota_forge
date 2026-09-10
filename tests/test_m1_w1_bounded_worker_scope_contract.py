@@ -666,20 +666,26 @@ def test_q_no_new_public_mcp_tool() -> None:
 # ---------------------------------------------------------------------------
 
 def test_r_w2_binding_untouched() -> None:
+    # M1/W2 repaired: explicit Worker child env + exclusive discrimination.
+    # W1 scope transport must remain intact alongside the W2 binding fix.
     from aota_forge.adapters.hermes import host_client
 
     dispatch_src = inspect.getsource(host_client.HermesHostClient.dispatch)
-    # F2 inheritance vector intact: supervisor Popen still inherits env
-    # (explicit worker env is W2's repair, not this Work Item).
-    assert "env=" not in dispatch_src
+    # F2 repair: supervisor Popen uses explicit env (no ambient inheritance).
+    assert "env=supervisor_env" in dispatch_src
+    assert "PRODUCTION_WORKER_ENV_EXPLICIT" in open("aota_forge/composition/worker_vertical_slice.py").read()
     serve_src = inspect.getsource(tmb.try_build_task_main_binding)
     assert "work_semantics" in serve_src  # W1 resolver change present
     import aota_forge.composition.worker_vertical_slice as wvs
 
+    assert wvs.TASK_MAIN_FIRST_BOOTSTRAP_PRIORITY_REMOVED is True
+    assert wvs.ROLE_CONTEXT_SELECTION_EXPLICIT is True
+    assert wvs.PRODUCTION_WORKER_ENV_EXPLICIT is True
+    assert wvs.PRODUCTION_WORKER_ENV_USES_PARENT_GLOBAL_MUTATION is False
     serve_child_src = inspect.getsource(wvs._serve_mcp_child)
-    # task-main bootstrap priority preserved (W2 scope, not repaired here).
-    assert serve_child_src.index("_try_read_task_main_binding()") < serve_child_src.index(
-        "_read_worker_binding_from_environment()")
+    # No task-main-first priority semantics remain in the repaired path.
+    assert "has priority" not in serve_child_src
+    assert "select_runtime_context" in serve_child_src
 
 
 # ---------------------------------------------------------------------------

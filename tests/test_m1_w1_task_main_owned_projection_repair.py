@@ -567,17 +567,20 @@ def test_o_no_special_case() -> None:
 # ---------------------------------------------------------------------------
 
 def test_p_w2_binding_untouched() -> None:
+    # M1/W2 repaired: explicit Worker env + exclusive discrimination replace
+    # the pre-W2 inheritance/priority seam. W1 ownership markers below still hold.
     from aota_forge.adapters.hermes import host_client
     from aota_forge.composition import task_main_host_bootstrap as tmb
 
     dispatch_src = inspect.getsource(host_client.HermesHostClient.dispatch)
-    assert "env=" not in dispatch_src
+    assert "env=supervisor_env" in dispatch_src
     import aota_forge.composition.worker_vertical_slice as wvs
 
+    assert wvs.TASK_MAIN_FIRST_BOOTSTRAP_PRIORITY_REMOVED is True
+    assert wvs.ROLE_CONTEXT_SELECTION_EXPLICIT is True
     serve_child_src = inspect.getsource(wvs._serve_mcp_child)
-    assert serve_child_src.index("_try_read_task_main_binding()") < serve_child_src.index(
-        "_read_worker_binding_from_environment()"
-    )
+    assert "has priority" not in serve_child_src
+    assert "select_runtime_context" in serve_child_src
     serve_src = inspect.getsource(tmb.try_build_task_main_binding)
     assert "work_semantics" in serve_src
 
