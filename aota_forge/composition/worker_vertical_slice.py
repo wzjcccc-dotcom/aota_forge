@@ -33,7 +33,14 @@ from aota_forge.core.project.resolver import (
 )
 from aota_forge.composition.project_binding import resolve_trusted_project_evidence
 from aota_forge.core.result_governance import ResultGovernanceProjection
-from aota_forge.mcp_transport import TrustedBindingError, TrustedWorkerBinding
+from aota_forge.runtime.trusted_runtime_binding import (
+    PRE_RESOLVED_BINDING_ENV,
+    TrustedBindingError,
+    TrustedWorkerBinding,
+    create_worker_envelope,
+    load_binding_from_envelope,
+    verify_envelope,
+)
 from aota_forge.runtime.config import RuntimeBinding, RuntimeConfig
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
 from aota_forge.work_plane.compiler import (
@@ -539,7 +546,65 @@ def _context_kind_hint() -> str | None:
 
 
 def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
-    """Fail closed when launch/session metadata contradicts trusted context."""
+    """Fail closed when launch/session metadata contradicts trusted context.
+
+    M2/W1 pre-resolved: when PRE_RESOLVED_BINDING_ENV is present, the envelope
+    is the sole authority; old AOTA_W3_* host env vars are not authority and
+    are ignored for poisoning proof (they may be bogus, placeholder, or empty).
+    Only the envelope digest and binding internal consistency are checked.
+    Legacy env-based checks remain only for the deprecated legacy path
+    (when envelope absent and legacy flag is set).
+    """
+    # If pre-resolved envelope is present, ignore old host env vars
+    if os.environ.get(PRE_RESOLVED_BINDING_ENV, "").strip():
+        try:
+            role = binding.handoff.work_role.value if hasattr(binding.handoff.work_role, "value") else str(binding.handoff.work_role)
+        except Exception:
+            raise TrustedBindingError("SESSION_METADATA_MISMATCH: unreadable binding role")
+        is_task_main = role == "task-main"
+        if is_task_main:
+            ctx = binding.trusted_task_main_context
+            if ctx is None:
+                raise TrustedBindingError("SESSION_METADATA_MISMATCH: task-main binding without context")
+            try:
+                live = ctx.live_plan_view
+                _ = (live.milestone_id, live.plan_authority)
+            except Exception as exc:
+                raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: unreadable task-main live view: {exc}") from exc
+            origin = getattr(ctx, "origin_task_main_session_ref", "")
+            if not isinstance(origin, str) or not origin.strip():
+                raise TrustedBindingError("SESSION_METADATA_MISMATCH: task-main origin session missing")
+            return
+        # Worker: no env checks, just internal handoff refs consistency
+        # Handoff project ref, when present, must agree with binding project.
+        try:
+            proj_ref = binding.handoff.project_ref
+            if proj_ref is not None and proj_ref.ref != binding.project_id:
+                raise TrustedBindingError("SESSION_METADATA_MISMATCH: handoff project_ref contradicts binding project")
+            try:
+                parts = binding.canonical_task_id.rsplit(":", 3)
+                if len(parts) == 4:
+                    _cid_milestone, _cid_work = parts[1], parts[2]
+                    _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
+                    _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
+                    if _h_mid is not None and _h_mid != _cid_milestone:
+                        raise TrustedBindingError(
+                            f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} milestone {_cid_milestone!r} contradicts handoff milestone {_h_mid!r}"
+                        )
+                    if _h_wi is not None and _h_wi != _cid_work:
+                        raise TrustedBindingError(
+                            f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} work {_cid_work!r} contradicts handoff work {_h_wi!r}"
+                        )
+            except TrustedBindingError:
+                raise
+            except Exception:
+                pass
+        except TrustedBindingError:
+            raise
+        except Exception as exc:
+            raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: handoff refs unreadable: {exc}") from exc
+        return
+    # Legacy path (no envelope): old env-based checks for deprecated compat
     try:
         role = binding.handoff.work_role.value if hasattr(binding.handoff.work_role, "value") else str(binding.handoff.work_role)
     except Exception:
@@ -624,41 +689,16 @@ def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
         raise TrustedBindingError(f"SESSION_METADATA_MISMATCH: handoff refs unreadable: {exc}") from exc
 
 
-def select_runtime_context() -> TrustedWorkerBinding:
-    """Exclusive role/context discrimination (no priority).
+def _legacy_select_runtime_context() -> TrustedWorkerBinding:
+    """Deprecated: old env-discovery path (kept for bounded test compat).
 
-    - worker valid + task-main absent -> Worker
-    - task-main valid + worker absent -> task-main
-    - both valid -> AMBIGUOUS_RUNTIME_CONTEXT (fail closed)
-    - neither valid -> MISSING_RUNTIME_CONTEXT (fail closed)
-    - valid task-main + malformed Worker authority material -> fail closed
-    - valid Worker + malformed/conflicting task-main authority -> fail closed
-
-    M1/W2-R1 (I45-B001): production task-main launch env carries task-main
-    authority only (no Worker vars, no AOTA_W3_HANDOFF_JSON placeholder), so
-    the normal task-main path is worker-absent + task-main valid. A manually
-    injected malformed Worker handoff alongside a valid task-main context
-    still fails closed (never silently ignored).
-
-    The explicit AOTA_TASK_MAIN_BOOTSTRAP presence is the Hermes-controlled
-    routing assertion: a Worker child (aota-worker profile) never receives
-    it, so a fallback bootstrap file visible via a shared MCP root is never
-    mistaken for task-main authority in a Worker session. An explicit
-    AOTA_W3_CONTEXT_KIND hint, when present, is verified the same way and a
-    forged hint never creates authority.
+    Production path after M2/W1 is select_runtime_context() via pre-resolved
+    envelope (PRE_RESOLVED_BINDING_ENV). This legacy path is NOT used in
+    production (production_path_uses_it=no) and carries no semantic authority
+    (semantic_authority=no). Marked deprecated/bounded.
     """
     hint = _context_kind_hint()
     explicit_signal = _explicit_task_main_signal_present()
-    # Worker candidate: absent (None) vs valid vs present-but-invalid (raises).
-    # A well-formed task-main-role TaskHandoff on the Worker channel is a
-    # legacy compatibility placeholder or a misdirected task-main handoff: it
-    # is never a valid Worker binding and counts as absent here (production
-    # task-main no longer emits any Worker-channel material, so this path is
-    # unreachable in production). A MALFORMED Worker handoff (missing
-    # required TaskHandoff fields, e.g. the historical I45-B001 placeholder
-    # {"work_role":"task-main","task_kind":"task-main-control"}) is
-    # present-but-invalid and fails closed downstream, never treated as
-    # absent. No role-name special casing is added for malformed data.
     worker_binding: TrustedWorkerBinding | None = None
     worker_error: Exception | None = None
     try:
@@ -673,19 +713,11 @@ def select_runtime_context() -> TrustedWorkerBinding:
             worker_error = exc
     except Exception as exc:
         worker_error = TrustedBindingError(f"worker binding failed: {exc}")
-    # task-main candidate: only consulted when the Hermes-controlled routing
-    # assertion indicates a task-main session (explicit path present) or when
-    # no Worker channel exists at all (legacy task-main without explicit var
-    # in tests). A Worker session (worker vars present, no explicit signal,
-    # hint worker/absent) never consults the fallback file, so a shared-root
-    # bootstrap file cannot shadow the Worker binding.
     worker_vars_present = all(
         key in os.environ for key in (MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV)
     )
     consult_task_main = explicit_signal or not worker_vars_present or (hint == "task-main")
     if hint == "worker" and explicit_signal:
-        # Routing asserts worker yet task-main authority signal present:
-        # conflicting contexts fail closed without consulting priority.
         raise AmbiguousRuntimeContextError("worker hint with task-main bootstrap signal")
     task_main_binding: TrustedWorkerBinding | None = None
     task_main_error: Exception | None = None
@@ -700,7 +732,6 @@ def select_runtime_context() -> TrustedWorkerBinding:
             task_main_error = TrustedBindingError(f"task-main binding failed: {exc}")
     else:
         task_main_binding = None
-    # Explicit hint verification (hint never creates authority).
     if hint == "worker":
         if worker_binding is None:
             if worker_error is not None:
@@ -719,28 +750,66 @@ def select_runtime_context() -> TrustedWorkerBinding:
             raise AmbiguousRuntimeContextError("task-main hint with valid worker binding")
         _verify_session_metadata(task_main_binding)
         return task_main_binding
-    # No hint: exclusive validation driven by the Hermes routing assertion.
     if worker_binding is not None and task_main_binding is not None:
         raise AmbiguousRuntimeContextError("both worker and task-main contexts valid")
     if worker_binding is not None:
         _verify_session_metadata(worker_binding)
         return worker_binding
     if task_main_binding is not None:
-        # A Worker session must never become task-main: when Worker channel
-        # material was expected (worker vars present) but invalid, do not
-        # silently substitute the task-main context.
         if worker_vars_present and worker_error is not None:
             raise worker_error
         _verify_session_metadata(task_main_binding)
         return task_main_binding
     if worker_error is not None and task_main_error is not None:
-        # Prefer the more specific invalid-channel error, but remain typed.
         raise worker_error
     if worker_error is not None:
         raise worker_error
     if task_main_error is not None:
         raise task_main_error
     raise MissingRuntimeContextError("no trusted worker or task-main context")
+
+
+def select_runtime_context() -> TrustedWorkerBinding:
+    """M2/W1 pre-resolved trusted binding (production).
+
+    AF runtime composition constructs the trusted binding BEFORE MCP
+    semantic dispatch and hands the verified envelope to the MCP child via
+    the opaque locator PRE_RESOLVED_BINDING_ENV (mechanical, not authority).
+    MCP never discovers role/project/worktree/handoff from ambient host env
+    or Hermes profile literals. Serialized envelope is not authority source;
+    verified digest-bound envelope is.
+
+    Host env / profile literals / placeholder ${VAR} cannot affect authority.
+    Missing, conflicting, tampered, or role-mismatched envelopes fail closed.
+
+    Legacy discovery (AOTA_W3_* / bootstrap) is retained ONLY as a
+    deprecated bounded compat path for existing tests that have not yet
+    migrated (production_path_uses_it=no, marked deprecated). It is gated
+    behind AOTA_ALLOW_LEGACY_ENV_DISCOVERY=1 and never used in production
+    dispatch (host_client never sets the flag). Poisoning tests prove the
+    legacy channel cannot re-activate without the envelope.
+    """
+    # Pre-resolved envelope is the canonical authority channel after W1
+    envelope_path = os.environ.get(PRE_RESOLVED_BINDING_ENV, "")
+    if envelope_path and envelope_path.strip():
+        if "${" in envelope_path:
+            raise TrustedBindingError(f"envelope path contains placeholder literal: {envelope_path!r}")
+        try:
+            binding = load_binding_from_envelope(envelope_path)
+        except (TrustedBindingError, MissingRuntimeContextError, AmbiguousRuntimeContextError):
+            raise
+        except Exception as exc:
+            raise TrustedBindingError(f"pre-resolved binding load failed: {type(exc).__name__}: {exc}") from exc
+        _verify_session_metadata(binding)
+        return binding
+    # No envelope: strict fail closed for production. Legacy compat only if
+    # explicitly allowed via test flag (not set in production).
+    if os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1":
+        return _legacy_select_runtime_context()
+    raise MissingRuntimeContextError(
+        "no pre-resolved trusted binding: AF runtime must provide "
+        f"{PRE_RESOLVED_BINDING_ENV} before MCP semantic dispatch"
+    )
 
 
 def build_worker_child_environment(
@@ -757,9 +826,14 @@ def build_worker_child_environment(
 ) -> dict[str, str]:
     """Build the explicit detached Worker child environment (immutable copy).
 
-    Contains sufficient trusted Worker binding inputs (MCP root, project,
-    worktree, canonical task, serialized TaskHandoff, repo/runtime mechanics,
-    bounded trace) and explicitly excludes task-main bootstrap authority.
+    M2/W1 pre-resolved: AF runtime composition constructs the trusted Worker
+    binding BEFORE MCP and hands a verified envelope to the MCP child via the
+    opaque locator PRE_RESOLVED_BINDING_ENV (mechanical, digest-bound, not
+    authority source). Host env / Hermes profile literals are not authority.
+    Old AOTA_W3_* keys are retained only as deprecated compat (not authority)
+    and are ignored by the new MCP path; poisoning tests prove they cannot
+    re-activate.
+
     Never mutates os.environ; the caller passes the result as Popen(env=...).
     """
     if not isinstance(handoff, TaskHandoff):
@@ -780,15 +854,27 @@ def build_worker_child_environment(
     if not resolved_root.is_dir():
         raise TrustedBindingError(f"worker child env root missing: {resolved_root}")
     effective_repo = Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[2]
+    # Pre-resolved envelope: AF runtime constructs trusted binding before MCP
+    envelope_path = create_worker_envelope(
+        worktree_root=resolved_root,
+        project_id=project_id,
+        worktree_id=worktree_id,
+        canonical_task_id=canonical_task_id,
+        handoff=handoff,
+    )
     child: dict[str, str] = {
-        MCP_ROOT_ENV: str(resolved_root),
-        MCP_PROJECT_ENV: project_id,
-        MCP_WORKTREE_ENV: worktree_id,
-        MCP_TASK_ENV: canonical_task_id,
-        MCP_HANDOFF_ENV: json.dumps(handoff.to_dict(), sort_keys=True),
+        PRE_RESOLVED_BINDING_ENV: str(envelope_path),
         MCP_REPO_ROOT_ENV: str(effective_repo),
         CONTEXT_KIND_ENV: context_kind,
     }
+    # Deprecated compat: old AOTA_W3_* authority channel kept only for
+    # bounded legacy test compat (production_path_uses_it=no, not authority).
+    # Poisoning tests prove host representation cannot re-activate.
+    child[MCP_ROOT_ENV] = str(resolved_root)
+    child[MCP_PROJECT_ENV] = project_id
+    child[MCP_WORKTREE_ENV] = worktree_id
+    child[MCP_TASK_ENV] = canonical_task_id
+    child[MCP_HANDOFF_ENV] = json.dumps(handoff.to_dict(), sort_keys=True)
     if context_kind not in ("worker", "task-main"):
         raise TrustedBindingError("worker child env context_kind must be worker|task-main")
     if trace_path is not None:

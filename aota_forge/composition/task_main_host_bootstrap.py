@@ -42,7 +42,14 @@ from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.control import TaskMainControlService
-from aota_forge.mcp_transport import TrustedTaskMainRuntimeContext, TrustedWorkerBinding, TrustedBindingError
+from aota_forge.runtime.trusted_runtime_binding import (
+    PRE_RESOLVED_BINDING_ENV,
+    TrustedBindingError,
+    TrustedTaskMainRuntimeContext,
+    TrustedWorkerBinding,
+    create_task_main_envelope,
+    verify_envelope,
+)
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.handoff_runtime import (
     WorkSemanticProjection,
@@ -309,7 +316,7 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
     (env root, worktree scope, store locations). Prevents tamper that could
     cross project/worktree/session scope or inject foreign store paths.
     """
-    from aota_forge.mcp_transport import TrustedBindingError
+    from aota_forge.runtime.trusted_runtime_binding import TrustedBindingError
 
     # Basic identifier shape
     import re

@@ -140,6 +140,8 @@ class _EnvGuard:
             if k.startswith("AOTA_"):
                 del os.environ[k]
         os.environ.pop("AOTA_W3_CONTEXT_KIND", None)
+        os.environ.pop("AOTA_ALLOW_LEGACY_ENV_DISCOVERY", None)
+        os.environ.pop("AOTA_PRE_RESOLVED_BINDING", None)
 
 
 def _make_project(tmp: Path, project_id: str = PROJECT_ID):
@@ -239,6 +241,7 @@ def test_r1_b_actual_launcher_env_selects_task_main(tmp_path: Path) -> None:
     _, _, env, _ = _make_launcher_ctx(tmp_path)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         selected = wvs.select_runtime_context()
         assert selected.handoff.work_role.value == "task-main"
@@ -254,6 +257,7 @@ def test_r1_c_actual_launcher_env_builds_shared_mcp(tmp_path: Path) -> None:
     _, _, env, _ = _make_launcher_ctx(tmp_path)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         selected = wvs.select_runtime_context()
         server = create_shared_mcp_server(selected)
@@ -280,6 +284,7 @@ def test_r1_d_worker_child_env_selects_worker(tmp_path: Path) -> None:
     assert "AOTA_TASK_MAIN_BOOTSTRAP" not in child
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(child)
         os.environ.pop("AOTA_TASK_MAIN_BOOTSTRAP", None)
         selected = wvs.select_runtime_context()
@@ -337,6 +342,7 @@ def test_r1_d2_dispatch_worker_env_selects_worker(tmp_path: Path) -> None:
     assert "AOTA_TASK_MAIN_BOOTSTRAP" not in child
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(child)
         os.environ.pop("AOTA_TASK_MAIN_BOOTSTRAP", None)
         selected = wvs.select_runtime_context()
@@ -351,6 +357,7 @@ def test_r1_f_historical_bad_shape_fails_closed(tmp_path: Path) -> None:
     _, _, env, root = _make_launcher_ctx(tmp_path)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         # Manually inject the exact historical bad shape on top of a valid
         # task-main context: full Worker channel present but malformed.
@@ -384,6 +391,7 @@ def test_r1_g_valid_task_main_plus_valid_worker_ambiguous(tmp_path: Path) -> Non
     h = _handoff()
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         os.environ[wvs.MCP_ROOT_ENV] = str(root)
         os.environ[wvs.MCP_PROJECT_ENV] = PROJECT_ID
@@ -398,6 +406,7 @@ def test_r1_g_valid_task_main_plus_valid_worker_ambiguous(tmp_path: Path) -> Non
 def test_r1_h_neither_fails_closed() -> None:
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         with pytest.raises(Exception) as exc:
             wvs.select_runtime_context()
         assert "MISSING" in str(exc.value)
@@ -410,12 +419,14 @@ def test_r1_h_neither_fails_closed() -> None:
 def test_r1_i_forged_hint_rejected(tmp_path: Path) -> None:
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ[wvs.CONTEXT_KIND_ENV] = "coder"
         with pytest.raises(TrustedBindingError) as exc:
             wvs.select_runtime_context()
         assert "FORGED_ROLE_HINT" in str(exc.value)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         root = _make_project(tmp_path)
         h = _handoff()
         _set_worker_env(root, h, hint="task-main")
@@ -426,6 +437,7 @@ def test_r1_i_forged_hint_rejected(tmp_path: Path) -> None:
 def test_r1_j_metadata_mismatch_rejected(tmp_path: Path) -> None:
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         root = _make_project(tmp_path)
         h = _handoff()
         _set_worker_env(root, h, project_id="proj_OTHER")
@@ -434,6 +446,7 @@ def test_r1_j_metadata_mismatch_rejected(tmp_path: Path) -> None:
         assert "MISMATCH" in str(exc.value)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         root = _make_project(tmp_path)
         h = _handoff()
         _set_worker_env(root, h, task_id="proj_w2r1:M1:W2:attempt-1")
@@ -464,6 +477,7 @@ def test_r1_k_handoff_required_fields_intact() -> None:
 def test_r1_l_worker_popen_env_isolated(tmp_path: Path) -> None:
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ["AOTA_TASK_MAIN_BOOTSTRAP"] = "/tmp/should-be-stripped.json"
         calls: list[dict] = []
 
@@ -534,6 +548,7 @@ def test_r1_n_task_main_worker_simultaneous_isolation(tmp_path: Path) -> None:
     _, _, env, root = _make_launcher_ctx(tmp_path)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         from aota_forge.composition.task_main_host_bootstrap import try_build_task_main_binding
         tm_before = try_build_task_main_binding()
@@ -603,6 +618,7 @@ def test_r1_r_launcher_env_not_conflicting(tmp_path: Path) -> None:
     _, _, env, _ = _make_launcher_ctx(tmp_path)
     with _EnvGuard() as g:
         g.clear_aota()
+        os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         os.environ.update(env)
         try:
             selected = wvs.select_runtime_context()

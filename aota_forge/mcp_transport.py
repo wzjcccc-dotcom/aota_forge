@@ -59,6 +59,14 @@ from aota_forge.work_plane.tool_result_governance import (
     TOOL_INLINE_OUTPUT_MAX_BYTES,
     project_tool_result,
 )
+# M2/W1 pre-resolved trusted binding: canonical type owner is runtime_composition, not MCP
+# MCP imports the trusted types; never defines them (TRUSTED_BINDING_TYPE_OWNER_IS_MCP=no).
+from aota_forge.runtime.trusted_runtime_binding import (  # type: ignore
+    PRE_RESOLVED_BINDING_ENV,
+    TrustedBindingError,
+    TrustedTaskMainRuntimeContext,
+    TrustedWorkerBinding,
+)
 
 # M2 activation: durable hydration bound reuse (constant only, no persistence).
 # D5 convergence: MCP never persists durable payloads directly
@@ -311,10 +319,9 @@ class McpTransportUnavailable(RuntimeError):
     """The optional standard MCP SDK is not installed."""
 
 
-class TrustedBindingError(ValueError):
-    """Malformed or incomplete server-side worker binding."""
-
-
+# Trusted binding types are canonical in runtime.trusted_runtime_binding
+# (TRUSTED_BINDING_TYPE_OWNER_IS_MCP=no). Re-exported via import above for
+# backward compatibility; MCP adapter imports, never defines.
 class McpToolResult(TypedDict, total=False):
     """Structured transport projection of the existing ``ToolResponse`` via governed contract.
 
@@ -351,240 +358,7 @@ class McpToolResult(TypedDict, total=False):
     output_ref: dict[str, Any] | None
 
 
-@dataclass(frozen=True)
-class TrustedTaskMainRuntimeContext:
-    """Narrow trusted carrier for task-main control (M3/W1).
-
-    Carries **already-authoritative** runtime objects only. It does not
-    calculate policy, mint user approval, resolve Plan authority, invent
-    capabilities, become role registry, or become permission engine.
-    It merely binds the live governed Plan truth and the existing
-    ``TaskMainControlService`` with its stores/resolvers so the single-entry
-    ``aota.invoke`` adapter can dispatch the three normal-path controls
-    without trusting model-supplied authority-bearing fields.
-
-    All fields are trusted host/runtime supplied; none may be supplied by
-    the model via ``aota.invoke`` arguments.
-    """
-
-    control_service: Any
-    live_plan_view: Any
-    origin_task_main_session_ref: str
-    executor_id: str
-    handoff_resolver: Any  # Callable[[str], TaskHandoff]
-    governed_evidence_resolver: Any | None = None  # Callable[[str], GovernedWorkItemEvidence] | None
-    reviewer_handoff_resolver: Any | None = None  # Callable[[], TaskHandoff] | None
-    governed_review_resolver: Any | None = None  # Callable[[str, str], GovernedReviewEvidence] | None
-    reviewer_canonical_task_id_resolver: Any | None = None
-    next_milestone_view: Any | None = None
-    session_available: bool = True
-    coordinator_id: str | None = None
-
-    def __post_init__(self) -> None:
-        # Import here to avoid circular import at module import time
-        try:
-            from aota_forge.runtime.task_main.control import TaskMainControlService  # type: ignore
-            from aota_forge.runtime.task_main.coordinator import MilestonePlanView  # type: ignore
-        except Exception:
-            TaskMainControlService = object  # type: ignore
-            MilestonePlanView = object  # type: ignore
-        if TaskMainControlService is not object and not isinstance(self.control_service, TaskMainControlService):  # type: ignore
-            # Fallback check by attribute if class not available (isolated import)
-            if not hasattr(self.control_service, "activate_milestone"):
-                raise TrustedBindingError(f"control_service must be TaskMainControlService, got {type(self.control_service).__name__}")
-        if MilestonePlanView is not object and not isinstance(self.live_plan_view, MilestonePlanView):  # type: ignore
-            raise TrustedBindingError(f"live_plan_view must be MilestonePlanView, got {type(self.live_plan_view).__name__}")
-        if self.next_milestone_view is not None and MilestonePlanView is not object and not isinstance(self.next_milestone_view, MilestonePlanView):  # type: ignore
-            raise TrustedBindingError(f"next_milestone_view must be MilestonePlanView or None, got {type(self.next_milestone_view).__name__}")
-        if not isinstance(self.origin_task_main_session_ref, str) or not self.origin_task_main_session_ref.strip():
-            raise TrustedBindingError("origin_task_main_session_ref must be non-empty string")
-        if len(self.origin_task_main_session_ref) > 512:
-            raise TrustedBindingError("origin_task_main_session_ref exceeds bound")
-        if not isinstance(self.executor_id, str) or not self.executor_id.strip():
-            raise TrustedBindingError("executor_id must be non-empty string")
-        if not callable(self.handoff_resolver):
-            raise TrustedBindingError("handoff_resolver must be callable")
-        if self.governed_evidence_resolver is not None and not callable(self.governed_evidence_resolver):
-            raise TrustedBindingError("governed_evidence_resolver must be callable or None")
-        if self.reviewer_handoff_resolver is not None and not callable(self.reviewer_handoff_resolver):
-            raise TrustedBindingError("reviewer_handoff_resolver must be callable or None")
-        if self.governed_review_resolver is not None and not callable(self.governed_review_resolver):
-            raise TrustedBindingError("governed_review_resolver must be callable or None")
-        if self.reviewer_canonical_task_id_resolver is not None and not callable(self.reviewer_canonical_task_id_resolver):
-            raise TrustedBindingError("reviewer_canonical_task_id_resolver must be callable or None")
-        if type(self.session_available) is not bool:
-            raise TrustedBindingError("session_available must be bool")
-        if self.coordinator_id is not None:
-            if not isinstance(self.coordinator_id, str) or not self.coordinator_id.strip():
-                raise TrustedBindingError("coordinator_id must be non-empty string when supplied")
-            if len(self.coordinator_id) > 512:
-                raise TrustedBindingError("coordinator_id exceeds bound")
-
-
-@dataclass(frozen=True)
-class TrustedWorkerBinding:
-    """Operator/runtime-owned context for one restricted MCP server.
-
-    This is a thin carrier of already-authoritative objects.  It does not
-    decide permissions, resolve projects, or mint capabilities.  In
-    particular, a model-facing MCP argument can never construct this object.
-    ``mutation_authority`` is optional deliberately: the write operation
-    remains callable via aota.invoke while rejecting calls when mutation
-    authority is absent (AUTHORITY_DENIED).
-
-    Transport vs capability separation (M2 convergence):
-    * MCP transport surface is ``aota.invoke`` (exactly one).
-    * Logical capability surface is ``workspace.search/read/write`` + ``result.hydrate`` + ``restricted_shell.run``
-      carried by ``ToolRoleSurface``.  Visibility (eager/progressive) never grants
-      authority; authority lives in Workspace*AuthorityEvidence / RestrictedShellAuthorityEvidence.
-    * Per-binding logical capability subset is derived from accepted role/task/policy context.
-      Not every binding carries all five logical operations.  TRANSPORT_OPERATION_IDENTITY_SEPARATED=yes.
-    * TOOL_VISIBILITY_IS_AUTHORITY=no, ROLE_SURFACE_CONTROLS_VISIBILITY_ONLY=yes.
-    """
-
-    canonical_task_id: str
-    project_id: str
-    worktree_id: str
-    trusted_context: TrustedContext
-    handoff: TaskHandoff
-    sandbox: WorktreeSandboxBoundary
-    tool_surface: ToolRoleSurface
-    read_authorities: tuple[WorkspaceAuthorityEvidence, ...]
-    mutation_authority: WorkspaceMutationAuthority | None = None
-    # M2: residual shell authority (optional, not per-binding required)
-    restricted_shell_authority: Any | None = None
-    # W2: test execution authority (optional, per-role least-privilege)
-    test_execution_authority: Any | None = None
-    # M3/W1: trusted task-main runtime context (optional, task-main only)
-    trusted_task_main_context: Any | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.canonical_task_id, str) or not _SAFE_ID.fullmatch(self.canonical_task_id):
-            raise TrustedBindingError("canonical_task_id must be a bounded trusted identifier")
-        if not isinstance(self.project_id, str) or not _SAFE_ID.fullmatch(self.project_id):
-            raise TrustedBindingError("project_id must be a bounded trusted identifier")
-        if not isinstance(self.worktree_id, str) or not _SAFE_ID.fullmatch(self.worktree_id):
-            raise TrustedBindingError("worktree_id must be a bounded trusted identifier")
-        if not isinstance(self.trusted_context, TrustedContext) or not self.trusted_context.is_bound:
-            raise TrustedBindingError("trusted runtime context is required")
-        if self.trusted_context.principal is None:
-            raise TrustedBindingError("trusted principal is required")
-        if not isinstance(self.handoff, TaskHandoff):
-            raise TrustedBindingError("typed TaskHandoff is required")
-        if not isinstance(self.sandbox, WorktreeSandboxBoundary):
-            raise TrustedBindingError("trusted WorktreeSandboxBoundary is required")
-        if self.sandbox.project_id != self.project_id or self.sandbox.worktree_id != self.worktree_id:
-            raise TrustedBindingError("binding project/worktree does not match sandbox")
-        if not isinstance(self.tool_surface, ToolRoleSurface):
-            raise TrustedBindingError("typed ToolRoleSurface is required")
-        if self.tool_surface.work_role != self.handoff.work_role:
-            raise TrustedBindingError("tool surface role does not match TaskHandoff role")
-        # M2 separation: tool_surface carries logical capabilities subset, not MCP transport names.
-        # Visibility != authority: surface controls visibility only, not operation authority.
-        # Per-binding subset: any subset of SUPPORTED_OPERATIONS is valid (do not require all five).
-        surface_names = set(self.tool_surface.all_capability_names())
-        allowed = set(SUPPORTED_OPERATIONS)
-        if not surface_names.issubset(allowed):
-            unknown = sorted(surface_names - allowed)
-            raise TrustedBindingError(
-                f"tool surface contains unknown logical operation(s) not in supported catalog "
-                f"(allowed {sorted(allowed)}, unknown {unknown}, got {sorted(surface_names)})"
-            )
-        if "aota.invoke" in surface_names:
-            raise TrustedBindingError("tool surface must not contain transport name aota.invoke (transport != capability)")
-        # Backward compatibility: M1 bindings had exactly 2 read authorities (search+read). M2 generalizes to 0..2
-        # to allow per-role subsets (e.g., reviewer without shell, task-main without write, etc.).
-        # Visibility does not grant authority: missing authority => AUTHORITY_DENIED at dispatch, not binding error.
-        if not isinstance(self.read_authorities, tuple):
-            raise TrustedBindingError("read_authorities must be tuple")
-        if len(self.read_authorities) > 2:
-            raise TrustedBindingError("read authorities at most 2 (workspace.search/read)")
-        # Each read authority must be typed, match sandbox/handoff, and be for workspace.search/read
-        read_names = set()
-        for authority in self.read_authorities:
-            if not isinstance(authority, WorkspaceAuthorityEvidence):
-                raise TrustedBindingError(f"read authority must be WorkspaceAuthorityEvidence, got {type(authority).__name__}")
-            if authority.sandbox != self.sandbox or authority.handoff != self.handoff:
-                raise TrustedBindingError("read authority does not match trusted binding")
-            if authority.operation.name not in ("workspace.search", "workspace.read"):
-                raise TrustedBindingError(f"read authority operation must be workspace.search/read, got {authority.operation.name!r}")
-            if authority.operation.name in read_names:
-                raise TrustedBindingError(f"duplicate read authority for {authority.operation.name!r}")
-            read_names.add(authority.operation.name)
-        if self.mutation_authority is not None:
-            if not isinstance(self.mutation_authority, WorkspaceMutationAuthority):
-                raise TrustedBindingError("mutation authority must be typed")
-            if self.mutation_authority.sandbox != self.sandbox or self.mutation_authority.handoff != self.handoff:
-                raise TrustedBindingError("mutation authority does not match trusted binding")
-            if self.mutation_authority.operation.name != "workspace.write":
-                raise TrustedBindingError(f"mutation authority operation must be workspace.write, got {self.mutation_authority.operation.name!r}")
-        # M2 residual shell authority (optional, progressive fallback)
-        if self.restricted_shell_authority is not None:
-            # Delayed type check to avoid circular import; verify required attributes
-            if RestrictedShellAuthorityEvidence is not None:
-                if not isinstance(self.restricted_shell_authority, RestrictedShellAuthorityEvidence):
-                    raise TrustedBindingError(
-                        f"restricted_shell_authority must be RestrictedShellAuthorityEvidence, got {type(self.restricted_shell_authority).__name__}"
-                    )
-                if self.restricted_shell_authority.sandbox != self.sandbox or self.restricted_shell_authority.handoff != self.handoff:
-                    raise TrustedBindingError("restricted shell authority does not match trusted binding")
-                if self.restricted_shell_authority.operation.name != "restricted_shell.run":
-                    raise TrustedBindingError(
-                        f"restricted shell authority operation must be restricted_shell.run, got {self.restricted_shell_authority.operation.name!r}"
-                    )
-            else:
-                # If descriptor missing, allow None only
-                raise TrustedBindingError("restricted_shell authority unavailable (descriptor missing)")
-        # W2 test execution authority (optional, per-role least-privilege)
-        if self.test_execution_authority is not None:
-            # Lazy import to avoid circularity; duck check if import not available
-            try:
-                from aota_forge.work_plane.test_execution import TestExecutionAuthorityEvidence as _TestEvidence  # type: ignore
-            except Exception:
-                _TestEvidence = None  # type: ignore
-            if _TestEvidence is not None:
-                if not isinstance(self.test_execution_authority, _TestEvidence):
-                    raise TrustedBindingError(
-                        f"test_execution_authority must be TestExecutionAuthorityEvidence, got {type(self.test_execution_authority).__name__}"
-                    )
-            # Generic checks via duck typing if class not available or for safety
-            ev = self.test_execution_authority
-            if not hasattr(ev, "sandbox") or not hasattr(ev, "handoff") or not hasattr(ev, "operation"):
-                raise TrustedBindingError("test_execution_authority missing required fields")
-            if ev.sandbox != self.sandbox or ev.handoff != self.handoff:
-                raise TrustedBindingError("test execution authority does not match trusted binding")
-            if ev.operation.name != "test.run":  # type: ignore[union-attr]
-                raise TrustedBindingError(f"test execution authority operation must be test.run, got {ev.operation.name!r}")  # type: ignore[union-attr]
-            # Enforce per-role policy: coder has required, reviewer default deny, analyst/project-steward/task-main no automatic
-            # The binding construction enforces this; here we just validate that reviewer has no authority unless review semantics justify.
-            # No automatic enforcement here beyond existence; dispatch will still check authority.
-        # M3/W1 trusted task-main context (optional, task-main only)
-        # M2/W1 binding gate: worker path (build_worker_binding) already denies
-        # task-main role outright (WORKER_CAN_MINT_TASK_MAIN_AUTHORITY=no), and
-        # task-main operations require context at dispatch (operation gate).
-        # Construction here validates context↔role agreement when context is
-        # present; task-main role without context is allowed to construct for
-        # bootstrap-only test harnesses but can never exercise task-main
-        # control (operation gate requires context). This preserves backward
-        # compatibility for existing bootstrap visibility tests while keeping
-        # TASK_MAIN_CAN_TREAT_WORKER_BINDING_AS_TASK_MAIN_AUTHORITY=no via the
-        # operation gate (not construction alone).
-        if self.trusted_task_main_context is not None:
-            if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
-                raise TrustedBindingError(
-                    f"trusted_task_main_context must be TrustedTaskMainRuntimeContext, got {type(self.trusted_task_main_context).__name__}"
-                )
-            # Task-main context must match binding sandbox/project identity
-            ctx = self.trusted_task_main_context
-            # Project identity consistency (binding project_id must equal control service project via context's live view if available)
-            # No extra policy calculation here — just ensure carrier is authoritative and matches sandbox
-            if self.handoff.work_role.value != "task-main":
-                raise TrustedBindingError("task-main context requires handoff work_role task-main")
-            if self.tool_surface.work_role.value != "task-main":
-                raise TrustedBindingError("task-main context requires tool_surface work_role task-main")
-            # Ensure control_service is present and matches expected type (duck check)
-            if not hasattr(ctx.control_service, "activate_milestone"):
-                raise TrustedBindingError("task-main context control_service missing activate_milestone")
+# Trusted binding types canonical in runtime.trusted_runtime_binding (removed from MCP: TRUSTED_BINDING_TYPE_OWNER_IS_MCP=no)
 
 
 def _authority_for(binding: TrustedWorkerBinding, operation: str) -> WorkspaceAuthorityEvidence | None:

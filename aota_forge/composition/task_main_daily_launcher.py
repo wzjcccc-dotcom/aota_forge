@@ -726,17 +726,33 @@ class DailyTaskMainLauncher:
     def build_env(self, ctx: DailyLaunchContext, *, trace_path: Path | None = None) -> dict[str, str]:
         """Construct required task-main MCP child environment (production path).
 
-        M1/W2-R1 (I45-B001): task-main authority channels only. The launcher
-        must NOT emit Worker-channel material (AOTA_W3_HANDOFF_JSON or any
-        equivalent Worker-binding data) merely as a placeholder. Task-main
-        identity comes from the trusted task-main bootstrap path
-        (TrustedTaskMainRuntimeContext via AOTA_TASK_MAIN_BOOTSTRAP +
-        trusted project/worktree/Plan/runtime binding), not from a
-        pseudo-Worker handoff. TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF=no.
+        M2/W1 pre-resolved: AF runtime composition constructs the trusted
+        task-main binding BEFORE MCP and hands a verified envelope via the
+        opaque locator AOTA_PRE_RESOLVED_BINDING (mechanical, digest-bound).
+        Host env / profile literals are not authority. The envelope digest
+        binds bootstrap + provenance; tamper fails closed. Old Worker-channel
+        material is never emitted.
+
+        M1/W2-R1 (I45-B001): task-main authority channels only.
         """
+        from aota_forge.runtime.trusted_runtime_binding import create_task_main_envelope, PRE_RESOLVED_BINDING_ENV
+
         repo_root = str(Path(__file__).resolve().parents[2])
         bootstrap_path = ctx.worktree_root / BOOTSTRAP_RELPATH
         trace_str = str(trace_path.resolve()) if trace_path is not None else ""
+
+        # Pre-resolved envelope: AF composition builds envelope before MCP
+        try:
+            envelope_path = create_task_main_envelope(
+                worktree_root=ctx.worktree_root,
+                bootstrap_path=bootstrap_path,
+            )
+            envelope_locator = str(envelope_path)
+        except Exception:
+            # If envelope creation fails, fall back to bootstrap path alone
+            # (fail-closed at MCP will still require envelope, so this path
+            # will be rejected there; we preserve bootstrap for 0600 audit)
+            envelope_locator = str(bootstrap_path.resolve())
 
         env = {
             "PYTHONPATH": repo_root + (os.pathsep + os.environ.get("PYTHONPATH", "") if os.environ.get("PYTHONPATH") else ""),
@@ -744,6 +760,7 @@ class DailyTaskMainLauncher:
             "AOTA_FORGE_RUNTIME_CONFIG": str(ctx.runtime_config_path.resolve()),
             "AOTA_TASK_MAIN_BOOTSTRAP": str(bootstrap_path.resolve()),
             "AOTA_TASK_MAIN_TRACE": trace_str,
+            PRE_RESOLVED_BINDING_ENV: envelope_locator,
         }
         return env
 

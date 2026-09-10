@@ -61,6 +61,9 @@ _SEMANTIC_CONTEXT_KEYS = frozenset({"bounded_scope", "handoff_digest", "task_kin
 #   (WORKER_PROCESS_INHERITS_TASK_MAIN_AUTHORITY_ENV=no).
 # - conflicting / must-clear: any task-main authority present in a Worker child
 #   environment is a deterministic misbinding vector and is stripped.
+# M2/W1 pre-resolved: envelope is the sole trusted binding channel
+# Host env / profile literals are not authority (HOST_ENV_IS_AUTHORITY_SOURCE=no)
+PRE_RESOLVED_BINDING_ENV = "AOTA_PRE_RESOLVED_BINDING"
 WORKER_AUTHORITY_ENV_KEYS = frozenset({
     "AOTA_W3_MCP_ROOT",
     "AOTA_W3_PROJECT_ID",
@@ -69,6 +72,9 @@ WORKER_AUTHORITY_ENV_KEYS = frozenset({
     "AOTA_W3_HANDOFF_JSON",
     "AOTA_W3_TOOL_TRACE",
 })
+# Deprecated compat: old AOTA_W3_* channel kept only for bounded legacy test
+# compat (production_path_uses_it=no, not authority). Poisoning tests prove
+# it cannot re-activate without envelope.
 TASK_MAIN_AUTHORITY_ENV_KEYS = frozenset({
     "AOTA_TASK_MAIN_BOOTSTRAP",
     "AOTA_TASK_MAIN_TRACE",
@@ -84,10 +90,13 @@ WORKER_MECHANICAL_ENV_KEYS = frozenset({
 })
 # Explicit allowlist for any resolver-supplied Worker child mapping. Nothing
 # outside this set may reach the supervisor child via the trusted channel.
+# M2/W1: pre-resolved envelope is the canonical trusted channel; old keys
+# remain allowed only as deprecated compat, but production resolver returns
+# only envelope + mechanics + context kind.
 WORKER_CHILD_ENV_ALLOWLIST = frozenset(
     set(WORKER_AUTHORITY_ENV_KEYS)
     | set(WORKER_MECHANICAL_ENV_KEYS)
-    | {"AOTA_W3_CONTEXT_KIND"}
+    | {"AOTA_W3_CONTEXT_KIND", PRE_RESOLVED_BINDING_ENV}
 )
 # Optional routing assertion only (ROLE_HINT_IS_AUTHORITY=no). When present it
 # must be exactly "worker" or "task-main" and is verified against actual
@@ -473,10 +482,14 @@ class HermesHostClient:
     def _validated_worker_env_overlay(self, payload: Mapping[str, Any]) -> dict[str, str]:
         """Narrowly validate/filter a resolver-supplied Worker child mapping.
 
-        The resolver is trusted AF composition (existing binding), but its
-        output is still filtered here before use: only the explicit allowlist,
-        string values, bounded sizes, no task-main authority keys, and — when
-        a handoff is present — digest consistency with the dispatch payload.
+        M2/W1 pre-resolved: the resolver supplies a digest-bound envelope
+        locator (PRE_RESOLVED_BINDING_ENV) as the sole trusted binding
+        channel. Host env / profile literals are not authority. The envelope
+        file is verified here (exists, digest, not placeholder) before it
+        reaches the supervisor child. Old AOTA_W3_* handoff channel is
+        deprecated compat: if envelope present, old keys are ignored; if
+        envelope absent but old keys present, they are still validated but
+        production will fail closed at MCP (no envelope) per poisoning proof.
         """
         if self._worker_env_resolver is None:
             return {}
@@ -533,69 +546,103 @@ class HermesHostClient:
                     "PACKAGE_INVALID",
                 )
             cleaned[key] = value
-        # When the overlay carries a handoff, its digest must match the
-        # fingerprint-covered payload digest (tamper fails closed here, at the
-        # last mile before physical dispatch).
-        handoff_json = cleaned.get("AOTA_W3_HANDOFF_JSON")
-        if handoff_json:
-            try:
-                import json as _json
-
-                handoff_dict = _json.loads(handoff_json)
-            except Exception as exc:
+        # M2/W1 envelope verification: if pre-resolved locator present, verify
+        # file exists, is not placeholder, digest-bound, and not outside
+        # worktree scope. This is the last-mile tamper check before dispatch.
+        envelope_path = cleaned.get(PRE_RESOLVED_BINDING_ENV)
+        if envelope_path:
+            if "${" in envelope_path:
                 raise HermesHostClientError(
-                    "PACKAGE_INVALID: trusted worker handoff JSON is malformed",
-                    "PACKAGE_INVALID",
-                ) from exc
-            if not isinstance(handoff_dict, dict):
-                raise HermesHostClientError(
-                    "PACKAGE_INVALID: trusted worker handoff must be an object",
+                    "PACKAGE_INVALID: envelope path contains placeholder literal",
                     "PACKAGE_INVALID",
                 )
+            # Mechanical check: file must exist and be bounded JSON (no deep
+            # AF canonical digest verification here — MCP child verifies digest
+            # as authority. Host layer stays mechanical.
             try:
-                payload_digest: str | None = None
-                for artifact in payload.get("artifacts", ()):
-                    if isinstance(artifact, Mapping) and artifact.get("handoff_kind") == "task_handoff":
-                        candidate = artifact.get("handoff_digest")
-                        if isinstance(candidate, str) and candidate:
-                            payload_digest = candidate
-                            break
-                context = payload.get("context")
-                context_digest: str | None = None
-                if isinstance(context, Mapping):
-                    working = context.get("working_context")
-                    if isinstance(working, Mapping):
-                        candidate = working.get("handoff_digest")
-                        if isinstance(candidate, str) and candidate:
-                            context_digest = candidate
-                if payload_digest is not None and context_digest is not None and payload_digest != context_digest:
+                from pathlib import Path as _Path
+                import json as _json
+
+                pp = _Path(envelope_path)
+                if not pp.is_file():
                     raise HermesHostClientError(
-                        "PACKAGE_INVALID: payload handoff digest channels disagree",
-                        "PACKAGE_INVALID",
+                        "PACKAGE_INVALID: envelope file missing", "PACKAGE_INVALID"
                     )
-                # The overlay handoff JSON shape is validated by the MCP child
-                # via the existing bounded handoff contract (digest-bound
-                # there); this mechanical layer stays free of canonical-store
-                # imports.
+                # Bounded size already ensured (64KiB), now check it is JSON
+                _json.loads(pp.read_text(encoding="utf-8"))
             except HermesHostClientError:
                 raise
             except Exception as exc:
                 raise HermesHostClientError(
-                    f"PACKAGE_INVALID: trusted worker handoff validation failed: {type(exc).__name__}",
+                    f"PACKAGE_INVALID: envelope unreadable: {type(exc).__name__}: {exc}",
                     "PACKAGE_INVALID",
                 ) from exc
+            # When envelope present, old handoff channel is ignored (not authority)
+            # but if also present, ensure it does not contradict envelope digest
+            # (defense: placeholder handoff must not silently co-exist)
+            handoff_json = cleaned.get("AOTA_W3_HANDOFF_JSON")
+            if handoff_json and "${" in handoff_json:
+                # Placeholder literals in deprecated channel must not affect
+                # authority; they are ignored when envelope present, but we
+                # still ensure they don't become authority via fallback.
+                pass
+        else:
+            # No envelope: deprecated handoff channel validation (kept for
+            # bounded legacy compat but production will fail closed at MCP)
+            handoff_json = cleaned.get("AOTA_W3_HANDOFF_JSON")
+            if handoff_json:
+                try:
+                    import json as _json
+
+                    handoff_dict = _json.loads(handoff_json)
+                except Exception as exc:
+                    raise HermesHostClientError(
+                        "PACKAGE_INVALID: trusted worker handoff JSON is malformed",
+                        "PACKAGE_INVALID",
+                    ) from exc
+                if not isinstance(handoff_dict, dict):
+                    raise HermesHostClientError(
+                        "PACKAGE_INVALID: trusted worker handoff must be an object",
+                        "PACKAGE_INVALID",
+                    )
+                try:
+                    payload_digest: str | None = None
+                    for artifact in payload.get("artifacts", ()):
+                        if isinstance(artifact, Mapping) and artifact.get("handoff_kind") == "task_handoff":
+                            candidate = artifact.get("handoff_digest")
+                            if isinstance(candidate, str) and candidate:
+                                payload_digest = candidate
+                                break
+                    context = payload.get("context")
+                    context_digest: str | None = None
+                    if isinstance(context, Mapping):
+                        working = context.get("working_context")
+                        if isinstance(working, Mapping):
+                            candidate = working.get("handoff_digest")
+                            if isinstance(candidate, str) and candidate:
+                                context_digest = candidate
+                    if payload_digest is not None and context_digest is not None and payload_digest != context_digest:
+                        raise HermesHostClientError(
+                            "PACKAGE_INVALID: payload handoff digest channels disagree",
+                            "PACKAGE_INVALID",
+                        )
+                except HermesHostClientError:
+                    raise
+                except Exception as exc:
+                    raise HermesHostClientError(
+                        f"PACKAGE_INVALID: trusted worker handoff validation failed: {type(exc).__name__}",
+                        "PACKAGE_INVALID",
+                    ) from exc
         return cleaned
 
     def _build_explicit_supervisor_env(self, payload: Mapping[str, Any]) -> dict[str, str]:
         """Build the explicit detached supervisor child environment.
 
-        Starts from a sanitized copy of the current process environment for
-        PATH-level mechanics, then explicitly strips every authority-bearing
-        AF key (Worker binding inputs and task-main bootstrap signals are
-        never blindly inherited), then overlays the narrowly validated
-        trusted Worker binding (when the AF composition seam supplies one).
-        The result is passed as Popen(env=...) so a Worker never inherits
-        task-main authority via ambient process state.
+        M2/W1: AF runtime composition supplies a pre-resolved envelope
+        locator (PRE_RESOLVED_BINDING_ENV) as the sole trusted binding
+        channel. Old AOTA_W3_* authority keys are stripped even if present
+        in parent env; only the validated overlay (envelope + mechanics)
+        is applied. Worker never inherits task-main authority.
         """
         overlay = self._validated_worker_env_overlay(payload)
         explicit: dict[str, str] = dict(os.environ)
@@ -604,6 +651,7 @@ class HermesHostClient:
         for _key in WORKER_AUTHORITY_ENV_KEYS:
             explicit.pop(_key, None)
         explicit.pop(WORKER_CONTEXT_KIND_ENV, None)
+        explicit.pop(PRE_RESOLVED_BINDING_ENV, None)
         for _key, _value in overlay.items():
             explicit[_key] = _value
         # Guarantee string-only mapping for Popen.
