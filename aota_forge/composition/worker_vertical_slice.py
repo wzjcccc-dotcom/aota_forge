@@ -805,15 +805,36 @@ def select_runtime_context() -> TrustedWorkerBinding:
         except Exception as exc:
             raise TrustedBindingError(f"pre-resolved binding load failed: {type(exc).__name__}: {exc}") from exc
         if _ekind == "task-main":
-            for _k in WORKER_AUTHORITY_ENV_KEYS:
-                _v = os.environ.get(_k, "")
-                if _v and _v.strip() and "${" not in _v:
-                    raise AmbiguousRuntimeContextError("task-main envelope with valid worker channel present: conflicting bindings")
+            # Check if a competing worker channel is fully present and not placeholder.
+            # Only a valid competing channel (all required keys present, handoff is valid JSON)
+            # should be considered conflicting; placeholder/bogus/incomplete channels are
+            # ignored for poisoning proof (host representation cannot affect authority).
+            _worker_keys = (MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV)
+            if all(k in os.environ and os.environ[k].strip() and "${" not in os.environ[k] for k in _worker_keys):
+                try:
+                    import json as _json
+                    _h = _json.loads(os.environ[MCP_HANDOFF_ENV])
+                    if isinstance(_h, dict):
+                        raise AmbiguousRuntimeContextError("task-main envelope with valid worker channel present: conflicting bindings")
+                except AmbiguousRuntimeContextError:
+                    raise
+                except Exception:
+                    pass
         elif _ekind == "worker":
-            for _k in ("AOTA_TASK_MAIN_BOOTSTRAP", "AOTA_TASK_MAIN_TRACE"):
+            # Check for competing task-main bootstrap that is a real file (not placeholder/bogus)
+            for _k in ("AOTA_TASK_MAIN_BOOTSTRAP",):
                 _v = os.environ.get(_k, "")
                 if _v and _v.strip() and "${" not in _v:
-                    raise AmbiguousRuntimeContextError("worker envelope with valid task-main channel present: conflicting bindings")
+                    try:
+                        _pp = Path(_v)
+                        if _pp.is_file():
+                            import json as _json2
+                            _json2.loads(_pp.read_text(encoding="utf-8"))
+                            raise AmbiguousRuntimeContextError("worker envelope with valid task-main channel present: conflicting bindings")
+                    except AmbiguousRuntimeContextError:
+                        raise
+                    except Exception:
+                        pass
         _verify_session_metadata(binding)
         return binding
     # No envelope: strict fail closed for production. Legacy compat only if
