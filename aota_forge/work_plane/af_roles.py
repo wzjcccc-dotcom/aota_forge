@@ -95,7 +95,7 @@ WORKSPACE_WRITE = "workspace.write"
 RESULT_HYDRATE = "result.hydrate"
 RESTRICTED_SHELL = "restricted_shell.run"
 TEST_RUN_OP = "test.run"
-TASK_MAIN_OPS = ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once")
+TASK_MAIN_OPS = ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection")
 ROLE_BOOTSTRAP_OP = "role.bootstrap"
 SKILL_OPEN_OP = "skill.open"
 

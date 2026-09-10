@@ -84,6 +84,7 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "task_main.activate_milestone",
     "task_main.recover_coordinator",
     "task_main.advance_once",
+    "task_main.submit_work_projection",
     "git.status",
     "git.diff",
 )
@@ -329,7 +330,9 @@ def _map_skill_open_exception(exc: Exception) -> str:
 
 
 def _dispatch_task_main(
-    operation: str, binding: CanonicalDispatchBinding
+    operation: str,
+    binding: CanonicalDispatchBinding,
+    validated: dict[str, Any] | None = None,
 ) -> ToolResponse:
     # Authority: task-main role only, context required (same as MCP gate,
     # now owned by Core). Worker can never reach service.
@@ -513,6 +516,83 @@ def _dispatch_task_main(
             except Exception:
                 payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN")}
             return ToolResponse.success(payload)
+        if operation == "task_main.submit_work_projection":
+            # M3/W1 canonical writer: model proposes bounded semantics for one
+            # governed Work Item; Core validates against trusted binding and
+            # persists durably. Trusted identities (project/Plan/Milestone/
+            # coordinator) come from the pre-resolved runtime context, never
+            # from model arguments. Model supplies only work_item_id
+            # (correlation, validated against governed Work Items) plus the
+            # four bounded semantic fields (already typed-validated via the
+            # canonical descriptor above; re-validated depth-first here).
+            live = ctx.live_plan_view
+            args = dict(validated) if isinstance(validated, dict) else {}
+            try:
+                coord_id = ctx.control_service.discover_matching_coordinator_id(
+                    project_id=binding.project_id,
+                    live_plan_view=live,
+                    coordinator_id=ctx.coordinator_id,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
+            try:
+                from aota_forge.work_plane.handoff_runtime import parse_model_work_proposal
+
+                proposal_raw = {
+                    "work_item_id": args.get("work_item_id"),
+                    "objective": args.get("objective"),
+                    "bounded_scope": args.get("bounded_scope"),
+                    "validation_expectations": args.get("validation_expectations"),
+                    "semantic_stop_expectations": args.get("semantic_stop_expectations"),
+                }
+                wid, typed_projection = parse_model_work_proposal(proposal_raw)
+                updated = ctx.control_service.submit_work_projection(
+                    profile=AF_TASK_MAIN_ROLE,
+                    coordinator_id=coord_id,
+                    live_plan_view=live,
+                    work_item_id=wid,
+                    projection=typed_projection,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
+            try:
+                table = dict(getattr(updated, "work_projections", {}) or {})
+                record = dict(table.get(wid, {}))
+                proj_dict = dict(record.get("projection", {}))
+                payload = {
+                    "coordinator_id": getattr(updated, "coordinator_id", coord_id),
+                    "coordinator_revision": getattr(updated, "coordinator_revision", 1),
+                    "work_item_id": wid,
+                    "milestone_id": record.get("milestone_id", getattr(live, "milestone_id", "")),
+                    "plan_authority": record.get("plan_authority", ""),
+                    "project_id": record.get("project_id", ""),
+                    "projection": proj_dict,
+                }
+                try:
+                    from aota_forge.work_plane.handoff_runtime import (
+                        WorkSemanticProjection,
+                        resolve_bounded_work_handoff,
+                    )
+
+                    _typed = WorkSemanticProjection.from_dict(proj_dict)
+                    _handoff = resolve_bounded_work_handoff(
+                        work_item_id=wid,
+                        milestone_ref=record.get("milestone_id", getattr(live, "milestone_id", "")),
+                        projection=_typed,
+                        project_id=record.get("project_id"),
+                        plan_authority=record.get("plan_authority"),
+                        plan_digest=record.get("plan_digest"),
+                    )
+                    payload["handoff_digest"] = _handoff.compute_handoff_digest()
+                except Exception:
+                    pass
+            except Exception:
+                payload = {"coordinator_id": coord_id, "work_item_id": args.get("work_item_id", "")}
+            return ToolResponse.success(payload)
     except ForgeError as exc:
         return ToolResponse.failure({"code": exc.code, "message": exc.message})
     except Exception as exc:
@@ -662,8 +742,8 @@ def dispatch_tool_operation(
                 )
             return ToolResponse.success(payload)
 
-        if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"):
-            return _dispatch_task_main(operation, binding)
+        if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
+            return _dispatch_task_main(operation, binding, validated)
 
         if operation in ("git.status", "git.diff"):
             authority = _authority_for(binding.git_authorities, operation)

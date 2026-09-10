@@ -22,13 +22,16 @@ def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
 TASK_MAIN_ACTIVATE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.activate_milestone")
 TASK_MAIN_RECOVER_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.recover_coordinator")
 TASK_MAIN_ADVANCE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.advance_once")
+TASK_MAIN_SUBMIT_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.submit_work_projection")
 
 TASK_MAIN_ACTIVATE_DESCRIPTOR.validate()
 TASK_MAIN_RECOVER_DESCRIPTOR.validate()
 TASK_MAIN_ADVANCE_DESCRIPTOR.validate()
+TASK_MAIN_SUBMIT_DESCRIPTOR.validate()
 
 TASK_MAIN_DESCRIPTORS: tuple[OperationContractDescriptor, ...] = (
     TASK_MAIN_ACTIVATE_DESCRIPTOR,
     TASK_MAIN_RECOVER_DESCRIPTOR,
     TASK_MAIN_ADVANCE_DESCRIPTOR,
+    TASK_MAIN_SUBMIT_DESCRIPTOR,
 )

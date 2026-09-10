@@ -62,6 +62,7 @@ TASK_MAIN_CONTROL_OPERATIONS: tuple[str, ...] = (
     "task_main.activate_milestone",
     "task_main.recover_coordinator",
     "task_main.advance_once",
+    "task_main.submit_work_projection",
     "task_main.reconcile_worker_completion",
     "task_main.reconcile_review_completion",
     "task_main.observe_terminal_completions",
@@ -282,6 +283,39 @@ class TaskMainControlService:
             completion_coordinator=self._completion,
             session_available=session_available,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+        )
+
+    def submit_work_projection(
+        self,
+        *,
+        profile: str,
+        coordinator_id: str,
+        live_plan_view: MilestonePlanView,
+        work_item_id: str,
+        projection: object,
+    ):
+        """Canonical task-main Work semantic submission (M3/W1).
+
+        Thin typed wrapper over the coordinator's commit_task_main_work_projection.
+        The caller is the task-main model via the canonical operation
+        task_main.submit_work_projection; trusted binding (coordinator_id,
+        live_plan_view) arrives server-side from the pre-resolved runtime
+        context, never from model authority. The model supplies only
+        work_item_id (correlation, validated against governed Work Items) plus
+        the four bounded semantic fields; Core validates, binds trusted
+        Plan/Milestone/Project/Work identities, and persists durably.
+        """
+        from aota_forge.runtime.task_main.coordinator import commit_task_main_work_projection
+
+        _require_task_main_profile(profile)
+        if not isinstance(live_plan_view, MilestonePlanView):
+            raise TypeError("live_plan_view must be MilestonePlanView")
+        return commit_task_main_work_projection(
+            store=self._coord_store,
+            coordinator_id=coordinator_id,
+            live_plan_view=live_plan_view,
+            work_item_id=work_item_id,
+            projection=projection,
         )
 
     def reconcile_worker_completion(

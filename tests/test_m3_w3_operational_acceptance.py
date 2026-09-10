@@ -804,10 +804,10 @@ class TestAdversarialCore:
 
     def test_task_main_model_visible_control_count(self):
         from aota_forge.mcp_transport import TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT, TASK_MAIN_OPERATIONS, INTERNAL_TASK_MAIN_OPERATIONS
-        assert TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT == 3
-        assert len(TASK_MAIN_OPERATIONS) == 3
+        assert TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT == 4
+        assert len(TASK_MAIN_OPERATIONS) == 4
         assert len(INTERNAL_TASK_MAIN_OPERATIONS) == 4
-        assert set(TASK_MAIN_OPERATIONS) == {"task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"}
+        assert set(TASK_MAIN_OPERATIONS) == {"task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"}
 
     def test_no_new_authority_subsystems(self):
         from aota_forge import mcp_transport

@@ -393,7 +393,9 @@ def commit_task_main_work_projection(
     runtime validates, binds to trusted identities, persists durably in the
     existing coordinator store, and never re-interprets Plan prose.
 
-    Trusted binding (server-side, never model authority):
+    M3/W1 canonical writer semantics (same function, now also reachable via
+    the canonical model-facing operation task_main.submit_work_projection):
+
     * work_item_id must be a governed Work Item of the durable coordinator.
     * live_plan_view must match the durable coordinator binding exactly
       (stale Plan identity fails closed via PlanDriftError).
@@ -404,12 +406,25 @@ def commit_task_main_work_projection(
     * The bound record persists plan_authority/plan_digest/milestone/project/
       work identities alongside the projection; a projection for W1 can never
       be reused as W2 (work_item_ref binding enforced at resolve).
+    * Idempotent retry: a repeated identical submission for the same Work
+      Item returns the current durable state without error and without
+      corrupting state (no duplicate records).
+    * Conflicting write: a repeated submission with different semantics is
+      allowed only while the Work Item is still PENDING (explicit
+      pre-dispatch replacement). Once the Work Item has left PENDING
+      (dispatched/in-flight), a conflicting write fails closed with
+      WorkProjectionConflictError (code PROJECTION_CONFLICT) — never silent
+      last-write-wins.
+    * Stale coordinator: a CAS revision mismatch fails closed with the
+      store's StaleCoordinatorRevisionError, except that an identical retry
+      against a newer revision still returns the current state (idempotent).
 
     Durable: the bound record survives coordinator reload/restart via the
     existing FileBackedTaskMainCoordinatorStore; restart never requires
     operator work_semantics reinjection. No raw LLM transcript is stored.
     """
     from aota_forge.work_plane.handoff_runtime import (
+        WorkProjectionConflictError,
         WorkScopeInsufficientError,
         WorkSemanticProjection,
         resolve_bounded_work_handoff,
@@ -440,8 +455,17 @@ def commit_task_main_work_projection(
     if isinstance(projection, WorkSemanticProjection):
         typed = projection
     elif isinstance(projection, Mapping):
+        proj_map = dict(projection)
+        # work_item_id correlation (never authority): when present it must
+        # match the governed wid, then is dropped before projection parse.
+        if "work_item_id" in proj_map:
+            supplied = proj_map.pop("work_item_id")
+            if not isinstance(supplied, str) or supplied.strip() != wid:
+                raise WorkScopeInsufficientError(
+                    f"work_item_id correlation {supplied!r} contradicts governed Work Item {wid!r}"
+                )
         try:
-            typed = WorkSemanticProjection.from_dict(projection)
+            typed = WorkSemanticProjection.from_dict(proj_map)
         except WorkScopeInsufficientError:
             raise
         except Exception as exc:
@@ -478,7 +502,35 @@ def commit_task_main_work_projection(
         "project_id": state.project_id,
         "work_item_id": wid,
     }
-    merged = dict(getattr(state, "work_projections", {}) or {})
+    existing_table = dict(getattr(state, "work_projections", {}) or {})
+    existing_record = existing_table.get(wid)
+    if isinstance(existing_record, Mapping):
+        try:
+            same_projection = dict(existing_record.get("projection", {})) == bound["projection"]
+        except Exception:
+            same_projection = False
+        same_identity = (
+            existing_record.get("plan_authority") == bound["plan_authority"]
+            and existing_record.get("plan_digest") == bound["plan_digest"]
+            and existing_record.get("milestone_id") == bound["milestone_id"]
+            and existing_record.get("project_id") == bound["project_id"]
+            and existing_record.get("work_item_id") == bound["work_item_id"]
+        )
+        if same_projection and same_identity:
+            # Identical retry: idempotent, no mutation, no error.
+            return state
+        if not same_projection or not same_identity:
+            # Conflicting write: allowed only while still PENDING
+            # (explicit pre-dispatch replacement). Post-dispatch conflicts
+            # fail closed — never silent last-write-wins.
+            wi_status = dict(getattr(state, "wi_status", {}) or {})
+            current_status = wi_status.get(wid)
+            if current_status != WorkItemCoordinatorStatus.PENDING.value:
+                raise WorkProjectionConflictError(
+                    f"conflicting Work projection for {wid!r} after dispatch "
+                    f"(status {current_status!r}); refusing silent overwrite"
+                )
+    merged = dict(existing_table)
     if len(merged) >= 64 and wid not in merged:
         raise WorkScopeInsufficientError(
             f"too many durable Work projections ({len(merged)}); refusing {wid!r}"
@@ -491,7 +543,37 @@ def commit_task_main_work_projection(
             {"work_projections": merged},
             state.revision_token,
         )
-    except Exception:
+    except Exception as exc:
+        # Identical retry against a newer revision stays idempotent: reload
+        # and return current state when the durable record already matches.
+        try:
+            from aota_forge.runtime.task_main.coordinator_store import (
+                StaleCoordinatorRevisionError,
+            )
+        except Exception:
+            StaleCoordinatorRevisionError = None  # type: ignore
+        if StaleCoordinatorRevisionError is not None and isinstance(exc, StaleCoordinatorRevisionError):
+            try:
+                fresh = store.get(coordinator_id)
+            except Exception:
+                fresh = None
+            if fresh is not None:
+                fresh_table = dict(getattr(fresh, "work_projections", {}) or {})
+                fresh_record = fresh_table.get(wid)
+                if isinstance(fresh_record, Mapping):
+                    try:
+                        fresh_same = dict(fresh_record.get("projection", {})) == bound["projection"]
+                    except Exception:
+                        fresh_same = False
+                    fresh_identity = (
+                        fresh_record.get("plan_authority") == bound["plan_authority"]
+                        and fresh_record.get("plan_digest") == bound["plan_digest"]
+                        and fresh_record.get("milestone_id") == bound["milestone_id"]
+                        and fresh_record.get("project_id") == bound["project_id"]
+                        and fresh_record.get("work_item_id") == bound["work_item_id"]
+                    )
+                    if fresh_same and fresh_identity:
+                        return fresh
         raise
     return updated
 

@@ -757,6 +757,18 @@ class TestNoSecondAuthority:
             # If only allowed + W1's own 5 files changed, pass; otherwise still check not mutated unexpectedly?
             # For test stability in convergence, we consider this PASS
             return
+        if "m3-w1-work-semantic-projection-writer" in branch:
+            # M3/W1 legitimately extends the single-entry transport with exactly
+            # one canonical operation (task_main.submit_work_projection, AF #46).
+            # Single-entry invariant (one MCP tool) must still hold; the
+            # transport owns no new semantic logic (delegation to core_ingress).
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert "task_main.submit_work_projection" in set(_mt.TASK_MAIN_OPERATIONS)
+            assert "task_main.submit_work_projection" in set(_mt.SUPPORTED_OPERATIONS)
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

@@ -750,3 +750,46 @@ contracts:
   - INPUT_SIZE_EXCEEDED
   - INTERNAL_MECHANICAL_ERROR
   protocol_version: '1.0'
+- name: task_main.submit_work_projection
+  description: Canonical task-main Work semantic submission (M3/W1). Model proposes bounded Work semantics for one governed Work Item; Core validates against trusted Plan/Milestone/Work binding and persists the canonical WorkSemanticProjection durably. Trusted runtime supplies project/Plan/Milestone/coordinator identity; model supplies only work_item_id correlation plus four bounded semantic fields.
+  inputs:
+  - name: work_item_id
+    type: str
+  - name: objective
+    type: str
+  - name: bounded_scope
+    type: str
+  - name: validation_expectations
+    type: list
+  - name: semantic_stop_expectations
+    type: list
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: identical_retry_safe
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - USER_GATE_REQUIRED
+  - PLAN_DRIFT
+  - SESSION_RECOVERY_REQUIRED
+  - COORDINATOR_NOT_FOUND
+  - COORDINATOR_BINDING_ERROR
+  - STALE_COORDINATOR_REVISION
+  - WORK_SCOPE_INSUFFICIENT
+  - PROJECTION_CONFLICT
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - INTERNAL_MECHANICAL_ERROR
+  protocol_version: '1.0'

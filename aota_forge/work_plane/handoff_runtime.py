@@ -74,6 +74,14 @@ DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE = False
 # importing this module (see mcp_transport._map_task_main_exception).
 WORK_SCOPE_INSUFFICIENT = "WORK_SCOPE_INSUFFICIENT"
 
+# Typed conflict code for a conflicting Work projection write. Carried on
+# WorkProjectionConflictError.code so canonical Core/MCP mappers preserve it
+# type-first via .code (no string classification). Used when a repeated
+# submission for the same Work Item carries different semantics after the
+# Work Item has left PENDING (post-dispatch replacement would orphan
+# in-flight Worker truth). Identical retries remain safe (no error).
+PROJECTION_CONFLICT = "PROJECTION_CONFLICT"
+
 
 class WorkScopeInsufficientError(ValueError):
     """task-main cannot derive enough Work semantics: do not dispatch Worker."""
@@ -81,6 +89,20 @@ class WorkScopeInsufficientError(ValueError):
     def __init__(self, detail: str) -> None:
         super().__init__(f"{WORK_SCOPE_INSUFFICIENT}: {detail}")
         self.code = WORK_SCOPE_INSUFFICIENT
+
+
+class WorkProjectionConflictError(ValueError):
+    """Conflicting Work projection write: fail closed, no silent overwrite.
+
+    Raised when a repeated submission for the same governed Work Item carries
+    different semantics after the Work Item has left PENDING. Identical
+    retries are idempotent (no error); conflicting retries after dispatch
+    fail closed with this typed error (code PROJECTION_CONFLICT).
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"{PROJECTION_CONFLICT}: {detail}")
+        self.code = PROJECTION_CONFLICT
 
 
 # M2/W1 runtime convergence markers (bounded execution projection only).
@@ -364,6 +386,107 @@ def parse_work_semantics_table(raw: Any) -> dict[str, WorkSemanticProjection]:
     return table
 
 
+# ---------------------------------------------------------------------------
+# M3/W1 canonical model-facing proposal contract
+# ---------------------------------------------------------------------------
+#
+# Scope validation contract (resolves the M2 WORK_SCOPE_NORMALIZATION_FINDING):
+#
+# * BOUNDED_SCOPE_VALIDATION_OWNER=AF_CORE. The bounded_scope text is
+#   validated only by WorkSemanticProjection (this module, AF Core owned):
+#   non-empty bounded plain semantic text, exact preservation, no charset
+#   restriction beyond bounded length (MAX_SCOPE_LENGTH). Ordinary
+#   engineering punctuation (paths, hyphens, underscores, parentheses,
+#   colon/comma, sentences) round-trips exactly.
+# * The narrow AgentsPolicyCandidate scope grammar (alnum plus ``._-/``,
+#   MAX_SCOPE_LENGTH=256) is an intentional logical-scope grammar for AGENTS
+#   policy context only. It is never applied to WorkSemanticProjection
+#   bounded_scope as validation. The worker policy derivation in
+#   worker_vertical_slice is an explicit non-authoritative label projection
+#   (handoff digest remains the authority binding); it must never silently
+#   mutate authoritative scope.
+# * BOUNDED_SCOPE_SILENT_MUTATION_ALLOWED=no. Core never normalizes scope
+#   text beyond strip() + length bound; invalid scope fails closed with a
+#   typed error (WorkScopeInsufficientError, code WORK_SCOPE_INSUFFICIENT).
+# * MODEL_MUST_LEARN_HIDDEN_SCOPE_PUNCTUATION_RULES=no: the model submits
+#   ordinary bounded text; no JSON-in-text, no escaped pseudo-DSL, no
+#   delimiter-heavy string protocol is required.
+#
+# Model proposal vs trusted projection boundary:
+#
+# * The model proposes semantics (ModelWorkSemanticProposal shape: exactly
+#   work_item_id for correlation plus the four bounded semantic fields).
+# * Core validates the proposal, binds trusted Plan/Milestone/Project/Work
+#   identities from the runtime binding (never from the payload), constructs
+#   the canonical WorkSemanticProjection, and persists it durably.
+# * MODEL_SUPPLIED_PROJECT_ID_IS_AUTHORITY=no (and likewise plan, milestone,
+#   work): identifiers in the payload are correlation only; Core compares
+#   work_item_id against governed Work Items and derives all other identities
+#   from trusted context, rejecting mismatch fail-closed.
+
+MODEL_WORK_PROPOSAL_FIELDS: tuple[str, ...] = (
+    "work_item_id",
+    "objective",
+    "bounded_scope",
+    "validation_expectations",
+    "semantic_stop_expectations",
+)
+
+MODEL_WORK_SEMANTIC_FIELDS: tuple[str, ...] = (
+    "objective",
+    "bounded_scope",
+    "validation_expectations",
+    "semantic_stop_expectations",
+)
+
+
+def parse_model_work_proposal(raw: Any) -> tuple[str, WorkSemanticProjection]:
+    """Validate a model-facing Work semantic proposal (fail-closed).
+
+    Accepts exactly the five proposal fields (work_item_id for correlation
+    plus the four bounded semantic fields). Rejects unknown fields,
+    missing fields, wrong types, empty strings, and oversized values with
+    WorkScopeInsufficientError (typed, code WORK_SCOPE_INSUFFICIENT).
+
+    Returns ``(work_item_id, WorkSemanticProjection)``. The returned
+    projection is still a proposal until Core binds trusted identities and
+    persists it via the coordinator commit path.
+    """
+    if not isinstance(raw, Mapping):
+        raise WorkScopeInsufficientError(
+            f"work semantic proposal must be a mapping, got {type(raw).__name__}"
+        )
+    extra = set(raw.keys()) - set(MODEL_WORK_PROPOSAL_FIELDS)
+    if extra:
+        raise WorkScopeInsufficientError(
+            f"unknown field(s) in work semantic proposal: {sorted(extra)}"
+        )
+    for req in MODEL_WORK_PROPOSAL_FIELDS:
+        if req not in raw:
+            raise WorkScopeInsufficientError(
+                f"missing required field in work semantic proposal: {req!r}"
+            )
+    wid = raw["work_item_id"]
+    if not isinstance(wid, str) or type(wid) is not str:
+        raise WorkScopeInsufficientError(
+            f"work_item_id must be a string, got {type(wid).__name__}"
+        )
+    wid = wid.strip()
+    if not wid:
+        raise WorkScopeInsufficientError("work_item_id must be a non-empty string")
+    if len(wid) > 128:
+        raise WorkScopeInsufficientError(f"work_item_id too long: {wid!r}")
+    projection = WorkSemanticProjection.from_dict(
+        {
+            "objective": raw["objective"],
+            "bounded_scope": raw["bounded_scope"],
+            "validation_expectations": raw["validation_expectations"],
+            "semantic_stop_expectations": raw["semantic_stop_expectations"],
+        }
+    )
+    return wid, projection
+
+
 def is_worker_usable_handoff(handoff: TaskHandoff, *, work_item_id: str, milestone_ref: str) -> bool:
     """Bounded deterministic Worker-usability criterion (structural only).
 
@@ -501,9 +624,14 @@ __all__ = [
     "WORK_SCOPE_INSUFFICIENT",
     "WORK_SEMANTIC_PROJECTION_IS_PLAN_AUTHORITY",
     "MAX_WORK_SEMANTICS_ENTRIES",
+    "PROJECTION_CONFLICT",
+    "MODEL_WORK_PROPOSAL_FIELDS",
+    "MODEL_WORK_SEMANTIC_FIELDS",
     "WorkScopeInsufficientError",
+    "WorkProjectionConflictError",
     "WorkSemanticProjection",
     "parse_work_semantics_table",
+    "parse_model_work_proposal",
     "generic_fallback_scope_template",
     "generic_fallback_task_kind",
     "is_worker_usable_handoff",

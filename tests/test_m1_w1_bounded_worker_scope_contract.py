@@ -740,6 +740,7 @@ def test_q_no_new_public_mcp_tool() -> None:
         "task_main.activate_milestone",
         "task_main.recover_coordinator",
         "task_main.advance_once",
+        "task_main.submit_work_projection",
         "task_main.reconcile_worker_completion",
         "task_main.reconcile_review_completion",
         "task_main.observe_terminal_completions",

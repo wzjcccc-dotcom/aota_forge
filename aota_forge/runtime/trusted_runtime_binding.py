@@ -202,6 +202,7 @@ class TrustedWorkerBinding:
                 "task_main.activate_milestone",
                 "task_main.recover_coordinator",
                 "task_main.advance_once",
+                "task_main.submit_work_projection",
                 "git.status",
                 "git.diff",
             }

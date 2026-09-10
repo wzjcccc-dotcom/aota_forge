@@ -335,12 +335,13 @@ class TestW2ArchitectureOwnership:
             "workspace.search", "workspace.read", "workspace.write", "result.hydrate",
             "restricted_shell.run", "role.bootstrap", "skill.open", "test.run",
             "task_main.activate_milestone", "task_main.recover_coordinator",
-            "task_main.advance_once", "git.status", "git.diff",
+            "task_main.advance_once", "task_main.submit_work_projection",
+            "git.status", "git.diff",
         }
         import aota_forge.mcp_transport as mt
 
         assert mt.MCP_PUBLIC_TOOL_COUNT == 1
-        assert mt.TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT == 3
+        assert mt.TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT == 4
         assert mt.TASK_MAIN_CAN_SET_USER_APPROVAL is False
         assert mt.TASK_MAIN_CAN_CROSS_USER_GATE is False
 

@@ -295,8 +295,15 @@ def build_worker_binding(
             sandbox = bind_worktree_sandbox(synth_ev, worktree_id, root)
         else:
             raise TrustedBindingError(f"missing canonical project evidence: {exc}") from exc
-    # Generic: policy scope must be derived from TaskHandoff bounded_scope
-    # so that effective worker scope equals handoff scope
+    # Generic: policy scope is a non-authoritative label derived from the
+    # TaskHandoff bounded_scope (M3/W1 scope contract: the handoff digest is
+    # the authority binding; the policy scope string is context only and must
+    # never silently mutate authoritative scope). The authoritative scope
+    # (handoff.bounded_scope) is preserved exactly in the handoff object and
+    # in the policy content below; only the scope *label* is sanitized to the
+    # intentional AgentsPolicyCandidate logical-scope grammar, and the label
+    # is disambiguated with a handoff-digest prefix so distinct scopes never
+    # collide to the same label.
     # No hard-coded fixture scope.
     raw_scope = str(handoff.bounded_scope) if hasattr(handoff, "bounded_scope") and handoff.bounded_scope else "bounded-scope"
     # Sanitize to valid AgentsPolicyCandidate scope charset (alnum, ., _, -, /)
@@ -310,7 +317,12 @@ def build_worker_binding(
         handoff_scope = "/".join(parts[:8])
         if len(handoff_scope) > 200:
             handoff_scope = handoff_scope[:200]
-    # Derive policy_id deterministically from handoff scope and work item
+    try:
+        _digest_prefix = handoff.compute_handoff_digest()[:12]
+    except Exception:
+        _digest_prefix = "nodigest"
+    # Derive policy_id deterministically from handoff digest + work item
+    # (digest prefix prevents lossy-label collisions between distinct scopes).
     try:
         wi_ref = str(handoff.work_item_ref.ref) if hasattr(handoff, "work_item_ref") and getattr(handoff.work_item_ref, "ref", None) else "work-item"
     except Exception:
@@ -320,10 +332,10 @@ def build_worker_binding(
     except Exception:
         milestone_ref = "milestone"
     policy = AgentsPolicyCandidate(
-        policy_id=f"policy-{milestone_ref.lower()}-{wi_ref.lower()}",
+        policy_id=f"policy-{milestone_ref.lower()}-{wi_ref.lower()}-{_digest_prefix}",
         project_id=project_id,
         scope=handoff_scope,
-        content=f"Bounded scope derived from TaskHandoff: {handoff_scope}",
+        content=f"Bounded scope derived from TaskHandoff: {raw_scope}",
         provenance_ref=f"{milestone_ref}/{wi_ref}",
     )
     read_authorities = (

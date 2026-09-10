@@ -105,11 +105,13 @@ try:
         TASK_MAIN_ACTIVATE_DESCRIPTOR,
         TASK_MAIN_ADVANCE_DESCRIPTOR,
         TASK_MAIN_RECOVER_DESCRIPTOR,
+        TASK_MAIN_SUBMIT_DESCRIPTOR,
     )
 except Exception:  # pragma: no cover - fallback for isolated test discovery without yaml
     TASK_MAIN_ACTIVATE_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_ADVANCE_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_RECOVER_DESCRIPTOR = None  # type: ignore
+    TASK_MAIN_SUBMIT_DESCRIPTOR = None  # type: ignore
 
 # M1/W2 AF Role Bootstrap — role.bootstrap, skill.open, test.run reuse
 try:
@@ -183,7 +185,7 @@ RESULT_HYDRATE_OPERATION_IMPLEMENTED_IN_W3 = True  # canonical result.hydrate vi
 RESTRICTED_SHELL_ACTIVATED_IN_W3 = True  # residual fallback via aota.invoke, BoundedRestrictedShellProvider reused
 TASK_MAIN_CONTROL_IMPLEMENTED_IN_W3 = True  # M3/W1: trusted task-main control via same single-entry transport
 # M3/W1 invariants
-TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT = 3
+TASK_MAIN_MODEL_VISIBLE_CONTROL_COUNT = 4
 INTERNAL_RECONCILE_EXPOSED_TO_MODEL = False
 INTERNAL_OBSERVE_EXPOSED_TO_MODEL = False
 INTERNAL_DISPATCH_EXPOSED_TO_MODEL = False
@@ -231,6 +233,7 @@ SERVER_SIDE_AUTHORITY_REQUIRED = True
 # Logical capability surface (existing typed operations, not MCP tool names).
 # M2 convergence: workspace.* + durable result.hydrate + residual restricted_shell.run
 # M3/W1: + task_main.* (exactly 3, minimal intent)
+# M3/W1 writer (AF #46): + task_main.submit_work_projection (exactly 4, canonical writer)
 WORKSPACE_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
@@ -244,6 +247,7 @@ TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.activate_milestone",
     "task_main.recover_coordinator",
     "task_main.advance_once",
+    "task_main.submit_work_projection",
 )
 # W2 AF Role Bootstrap / Skill / Test — newly canonical for #41, plus existing test.run
 W2_OPERATIONS: tuple[str, ...] = (
@@ -303,13 +307,15 @@ if SKILL_OPEN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[SKILL_OPEN_DESCRIPTOR.name] = SKILL_OPEN_DESCRIPTOR
 if TEST_RUN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TEST_RUN_DESCRIPTOR.name] = TEST_RUN_DESCRIPTOR
-# M3/W1 task-main descriptors (canonical, exactly 3)
+# M3/W1 task-main descriptors (canonical, exactly 4)
 if TASK_MAIN_ACTIVATE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ACTIVATE_DESCRIPTOR.name] = TASK_MAIN_ACTIVATE_DESCRIPTOR
 if TASK_MAIN_RECOVER_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_RECOVER_DESCRIPTOR.name] = TASK_MAIN_RECOVER_DESCRIPTOR
 if TASK_MAIN_ADVANCE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ADVANCE_DESCRIPTOR.name] = TASK_MAIN_ADVANCE_DESCRIPTOR
+if TASK_MAIN_SUBMIT_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_MAIN_SUBMIT_DESCRIPTOR.name] = TASK_MAIN_SUBMIT_DESCRIPTOR
 SUPPORTED_OPERATIONS: frozenset[str] = frozenset(LOGICAL_OPERATIONS)
 # For backward compatibility, retain WORKSPACE_OPERATIONS alias but expanded set is canonical
 CANONICAL_SUPPORTED_OPERATIONS = SUPPORTED_OPERATIONS

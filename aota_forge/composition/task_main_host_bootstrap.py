@@ -746,14 +746,15 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         work_item_ref=SemanticReference(ref=f"{live_view.milestone_id}/task-main"),
         milestone_ref=SemanticReference(ref=live_view.milestone_id),
     )
-    # Task-main eager is exactly the 3 controls; no workspace ops, no shell
+    # Task-main eager is exactly the 4 controls; no workspace ops, no shell
     # W2-R1 bounded repair: task-main requires progressive result.hydrate to consume
     # production by_ref Skill content (7053-14911 bytes > 4096). Progressive only,
     # scoped to valid ToolOutputRef via existing result.hydrate canonical operation.
     # HYDRATE_AUTHORITY_SCOPED=yes, no new operation, no new MCP tool.
+    # M3/W1 writer: task_main.submit_work_projection joins eager (canonical writer).
     tool_surface = create_role_tool_surface(
         "task-main",
-        eager=("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"),
+        eager=("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"),
         progressive=("result.hydrate",),
     )
     # For task-main we still need read authorities? The binding validation
