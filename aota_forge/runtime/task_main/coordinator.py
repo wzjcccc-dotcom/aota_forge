@@ -112,6 +112,29 @@ NEW_WORKFLOW_DATABASE_CREATED = False
 NEW_EVENT_BUS_CREATED = False
 NEW_PUBLIC_MCP_TOOL_CREATED = False
 
+# M1/W1-R1 task-main-owned bounded Work projection (AF #45 repair, I40-B003/F1).
+# Authority: task-main planning layer produces the bounded WorkSemanticProjection;
+# the deterministic AF runtime validates, binds to trusted Plan/Milestone/Work,
+# persists durably in the existing coordinator store, and transports via the
+# existing TaskHandoff. No operator work_semantics required on the normal path,
+# no Codex per-Work injection, no operator refresh between Work Items, no
+# restart reinjection. The projection is bounded execution projection only,
+# never Plan authority; the handoff cannot expand Plan authority.
+TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION = True
+TASK_MAIN_SEMANTIC_LAYER_PRODUCES_WORK_PROJECTION = True
+WORK_PROJECTION_DURABLE = True
+WORK_PROJECTION_BOUND_TO_TRUSTED_PLAN_IDENTITY = True
+WORK_PROJECTION_BOUND_TO_WORK_ITEM = True
+WORK_SEMANTIC_PROJECTION_IS_PLAN_AUTHORITY = False
+PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED = False
+OPERATOR_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+MANUAL_PER_WORK_SCOPE_INJECTION_REQUIRED = False
+OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS = False
+TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION = False
+DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE = False
+TASK_HANDOFF_CAN_EXPAND_PLAN_AUTHORITY = False
+
 USER_GATE_REASON = "USER_GATE_REQUIRED"
 SESSION_GATE_REASON = "SESSION_RECOVERY_REQUIRED"
 NEXT_MILESTONE_GUARD = "NEXT_MILESTONE_REQUIRES_EXPLICIT_APPROVAL"
@@ -352,6 +375,193 @@ def _require_durable_dispatcher(dispatcher: ExecutionDispatcher) -> ExecutionSta
             "ExecutionStateStore; process-local dispatch cannot recover"
         )
     return store
+
+
+def commit_task_main_work_projection(
+    *,
+    store: TaskMainCoordinatorStore,
+    coordinator_id: str,
+    live_plan_view: MilestonePlanView,
+    work_item_id: str,
+    projection: Any,
+) -> Any:
+    """Task-main-owned bounded Work projection commit (M1/W1-R1, AF #45).
+
+    Smallest internal/runtime operation for task-main to commit a bounded Work
+    projection. Called by the task-main semantic/planning layer (which has
+    already reasoned about the current Plan/Milestone/Work); the deterministic
+    runtime validates, binds to trusted identities, persists durably in the
+    existing coordinator store, and never re-interprets Plan prose.
+
+    Trusted binding (server-side, never model authority):
+    * work_item_id must be a governed Work Item of the durable coordinator.
+    * live_plan_view must match the durable coordinator binding exactly
+      (stale Plan identity fails closed via PlanDriftError).
+    * projection must be a bounded WorkSemanticProjection (malformed/oversized
+      fails closed via WorkScopeInsufficientError) and must yield a
+      Worker-usable handoff (generic boilerplate or objective-only scope fails
+      closed; no generic fallback is restored).
+    * The bound record persists plan_authority/plan_digest/milestone/project/
+      work identities alongside the projection; a projection for W1 can never
+      be reused as W2 (work_item_ref binding enforced at resolve).
+
+    Durable: the bound record survives coordinator reload/restart via the
+    existing FileBackedTaskMainCoordinatorStore; restart never requires
+    operator work_semantics reinjection. No raw LLM transcript is stored.
+    """
+    from aota_forge.work_plane.handoff_runtime import (
+        WorkScopeInsufficientError,
+        WorkSemanticProjection,
+        resolve_bounded_work_handoff,
+    )
+
+    if not isinstance(store, TaskMainCoordinatorStore):
+        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
+    if not isinstance(work_item_id, str) or type(work_item_id) is not str:
+        raise TypeError(f"work_item_id must be a string, got {type(work_item_id).__name__}")
+    wid = work_item_id.strip()
+    if not wid:
+        raise ValueError("work_item_id must be a non-empty string")
+
+    state = store.get(coordinator_id)
+    if state is None:
+        from aota_forge.runtime.task_main.coordinator_store import CoordinatorNotFoundError
+
+        raise CoordinatorNotFoundError(coordinator_id)
+    # Stale Plan identity fails closed (no silent expansion, no cross-Plan reuse).
+    _check_live_binding(state, live_plan_view)
+    if wid not in set(state.work_items):
+        raise CoordinatorBindingError(f"unknown Work Item {wid!r} for coordinator {coordinator_id!r}")
+
+    # Typed bounded projection (malformed/oversized fails closed).
+    if isinstance(projection, WorkSemanticProjection):
+        typed = projection
+    elif isinstance(projection, Mapping):
+        try:
+            typed = WorkSemanticProjection.from_dict(projection)
+        except WorkScopeInsufficientError:
+            raise
+        except Exception as exc:
+            raise WorkScopeInsufficientError(f"invalid Work projection for {wid!r}: {exc}") from exc
+    else:
+        raise WorkScopeInsufficientError(
+            f"projection must be WorkSemanticProjection or mapping, got {type(projection).__name__}"
+        )
+
+    # Usability gate: must yield a Worker-usable handoff with trusted refs.
+    # This rejects generic boilerplate, objective-carries-everything, empty
+    # expectations, and missing refs without restoring a generic fallback.
+    try:
+        resolve_bounded_work_handoff(
+            work_item_id=wid,
+            milestone_ref=live_plan_view.milestone_id,
+            projection=typed,
+            project_id=state.project_id,
+            plan_authority=live_plan_view.plan_authority,
+            plan_digest=live_plan_view.plan_digest,
+        )
+    except WorkScopeInsufficientError:
+        raise
+    except Exception as exc:
+        raise WorkScopeInsufficientError(
+            f"Work projection for {wid!r} is not Worker-usable: {exc}"
+        ) from exc
+
+    bound: dict[str, Any] = {
+        "projection": typed.to_dict(),
+        "plan_authority": live_plan_view.plan_authority,
+        "plan_digest": live_plan_view.plan_digest,
+        "milestone_id": live_plan_view.milestone_id,
+        "project_id": state.project_id,
+        "work_item_id": wid,
+    }
+    merged = dict(getattr(state, "work_projections", {}) or {})
+    if len(merged) >= 64 and wid not in merged:
+        raise WorkScopeInsufficientError(
+            f"too many durable Work projections ({len(merged)}); refusing {wid!r}"
+        )
+    merged[wid] = bound
+    try:
+        updated = store.compare_and_swap(
+            coordinator_id,
+            state.coordinator_revision,
+            {"work_projections": merged},
+            state.revision_token,
+        )
+    except Exception:
+        raise
+    return updated
+
+
+def resolve_task_main_work_handoff(
+    *,
+    state: Any,
+    work_item_id: str,
+    live_plan_view: MilestonePlanView,
+) -> TaskHandoff:
+    """Resolve the existing TaskHandoff from a durable task-main projection.
+
+    Reads the durable bound record for work_item_id, verifies it is still bound
+    to the current trusted Plan/Milestone/Project/Work identities (wrong or
+    stale identity fails closed), and builds the existing TaskHandoff via the
+    reused bounded resolver. Missing projection fails closed with
+    WORK_SCOPE_INSUFFICIENT (never a generic scope fallback).
+    """
+    from aota_forge.work_plane.handoff_runtime import (
+        WORK_SCOPE_INSUFFICIENT,
+        WorkScopeInsufficientError,
+        WorkSemanticProjection,
+        resolve_bounded_work_handoff,
+    )
+
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    if not isinstance(work_item_id, str) or not work_item_id.strip():
+        raise ValueError("work_item_id must be a non-empty string")
+    wid = work_item_id.strip()
+    table = getattr(state, "work_projections", None) or {}
+    if not isinstance(table, Mapping) or wid not in table:
+        raise WorkScopeInsufficientError(
+            f"{WORK_SCOPE_INSUFFICIENT}: no task-main-owned Work projection for "
+            f"Work Item {wid!r} (Milestone {live_plan_view.milestone_id!r}); "
+            "refusing scope-free dispatch"
+        )
+    record = table[wid]
+    if not isinstance(record, Mapping):
+        raise WorkScopeInsufficientError(
+            f"corrupt durable Work projection for {wid!r}; refusing dispatch"
+        )
+    try:
+        proj = WorkSemanticProjection.from_dict(record["projection"])
+    except Exception as exc:
+        raise WorkScopeInsufficientError(
+            f"durable Work projection for {wid!r} is malformed: {exc}"
+        ) from exc
+    # Bound-identity checks (wrong/stale fails closed; no cross-Work reuse).
+    for field, live_value in (
+        ("plan_authority", live_plan_view.plan_authority),
+        ("plan_digest", live_plan_view.plan_digest),
+        ("milestone_id", live_plan_view.milestone_id),
+        ("project_id", getattr(state, "project_id", None)),
+        ("work_item_id", wid),
+    ):
+        stored = record.get(field)
+        if not isinstance(stored, str) or stored.strip() != str(live_value).strip():
+            raise WorkScopeInsufficientError(
+                f"durable Work projection for {wid!r} is not bound to current "
+                f"trusted {field} (stored {stored!r}); refusing stale/cross-Work dispatch"
+            )
+    return resolve_bounded_work_handoff(
+        work_item_id=wid,
+        milestone_ref=live_plan_view.milestone_id,
+        projection=proj,
+        project_id=getattr(state, "project_id", None),
+        plan_authority=live_plan_view.plan_authority,
+        plan_digest=live_plan_view.plan_digest,
+    )
 
 
 class TaskMainCoordinator:
@@ -770,6 +980,47 @@ class TaskMainCoordinator:
         updates: dict[str, Any] = {"next_action": action, "open_blockers": list(open_blockers)}
         return self._cas(updates)
 
+    def commit_work_projection(
+        self,
+        *,
+        work_item_id: str,
+        projection: Any,
+        live_plan_view: MilestonePlanView,
+    ) -> Any:
+        """Task-main-owned bounded Work projection commit (M1/W1-R1).
+
+        Thin handle wrapper over commit_task_main_work_projection using this
+        handle's durable store + coordinator id. The caller is the task-main
+        semantic/planning layer; the runtime validates/binds/persists.
+        Refreshes durable truth first so restart + concurrent CAS fail closed.
+        """
+        self.refresh()
+        updated = commit_task_main_work_projection(
+            store=self._store,
+            coordinator_id=self._coordinator_id,
+            live_plan_view=live_plan_view,
+            work_item_id=work_item_id,
+            projection=projection,
+        )
+        self._state = updated
+        return updated
+
+    def get_work_projection(self, work_item_id: str) -> dict[str, Any] | None:
+        """Return the durable bound Work projection record, or None when absent."""
+        self.refresh()
+        table = getattr(self._state, "work_projections", {}) or {}
+        entry = table.get(work_item_id.strip() if isinstance(work_item_id, str) else work_item_id)
+        return dict(entry) if isinstance(entry, Mapping) else None
+
+    def resolve_work_handoff(
+        self, work_item_id: str, *, live_plan_view: MilestonePlanView
+    ) -> TaskHandoff:
+        """Resolve the existing TaskHandoff from the durable task-main projection."""
+        self.refresh()
+        return resolve_task_main_work_handoff(
+            state=self._state, work_item_id=work_item_id, live_plan_view=live_plan_view
+        )
+
     def durable_snapshot(self) -> dict[str, Any]:
         """Reconstruct orchestration truth from durable state only (no raw history).
 
@@ -1040,17 +1291,31 @@ def build_work_item_handoff_ref(work_item_id: str) -> SemanticReference:
 
 
 __all__ = [
+    "CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH",
     "COORDINATOR_DISPATCH_ATTEMPT",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "DAG_PROGRESSION_DETERMINISTIC",
+    "DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE",
+    "MANUAL_PER_WORK_SCOPE_INJECTION_REQUIRED",
     "NEXT_MILESTONE_GUARD",
+    "OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS",
+    "OPERATOR_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH",
     "PERSISTENCE_REQUIRES_FOREVER_PROCESS",
+    "PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED",
     "SESSION_GATE_REASON",
+    "TASK_HANDOFF_CAN_EXPAND_PLAN_AUTHORITY",
     "TASK_MAIN_CAN_CROSS_USER_GATE",
     "TASK_MAIN_CAN_SET_USER_APPROVAL",
+    "TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION",
     "TASK_MAIN_RAW_SHELL_REQUIRED",
+    "TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION",
+    "TASK_MAIN_SEMANTIC_LAYER_PRODUCES_WORK_PROJECTION",
     "TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED",
     "USER_GATE_REASON",
+    "WORK_PROJECTION_BOUND_TO_TRUSTED_PLAN_IDENTITY",
+    "WORK_PROJECTION_BOUND_TO_WORK_ITEM",
+    "WORK_PROJECTION_DURABLE",
+    "WORK_SEMANTIC_PROJECTION_IS_PLAN_AUTHORITY",
     "CoordinatorBindingError",
     "CoordinatorRuntimeError",
     "DispatchReport",
@@ -1062,7 +1327,9 @@ __all__ = [
     "TaskMainCoordinatorError",
     "activate_milestone",
     "build_work_item_handoff_ref",
+    "commit_task_main_work_projection",
     "dispatch_identity_for",
     "evaluate_ready_work_items",
     "recover_coordinator",
+    "resolve_task_main_work_handoff",
 ]

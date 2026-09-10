@@ -150,6 +150,17 @@ MAX_BLOCKERS = 16
 MAX_BLOCKER_REF_LENGTH = 512
 MAX_ATTEMPT_STATES = 256
 
+# M1/W1-R1 task-main-owned bounded Work projection durability (AF #45 repair).
+# The coordinator durably owns task-main-produced WorkSemanticProjection bound
+# records (existing durable task-main/coordinator state reused; no new workflow
+# DB, no Plan database, no queue, no event bus, no second task-main store).
+# Each record binds one governed Work Item to trusted Plan/Milestone/Project
+# identities at commit time; the handoff resolver binds refs from the same
+# trusted identities at dispatch time. Raw LLM transcript is never stored.
+MAX_WORK_PROJECTIONS: int = 64
+WORK_PROJECTION_DURABLE: bool = True
+TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION: bool = True
+
 _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
     {
         "status",
@@ -169,6 +180,7 @@ _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
         "frontier_ref",
         "open_blockers",
         "next_action",
+        "work_projections",
     }
 )
 
@@ -203,6 +215,7 @@ _ALLOWED_STATE_FIELDS: frozenset[str] = frozenset(
         "frontier_ref",
         "open_blockers",
         "next_action",
+        "work_projections",
         "created_at",
         "updated_at",
         "coordinator_revision",
@@ -560,6 +573,122 @@ def _normalize_next_action(raw: Any) -> str | None:
     return _require_non_empty_str(raw, "next_action", max_length=MAX_NEXT_ACTION_LENGTH)
 
 
+_ALLOWED_WORK_PROJECTION_FIELDS: frozenset[str] = frozenset(
+    {
+        "projection",
+        "plan_authority",
+        "plan_digest",
+        "milestone_id",
+        "project_id",
+        "work_item_id",
+    }
+)
+
+
+def _normalize_work_projections(raw: Any, work_items: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Durable task-main-owned bounded Work projections (M1/W1-R1, AF #45).
+
+    Each entry binds one governed Work Item to trusted Plan/Milestone/Project
+    identities at commit time plus the typed bounded semantic projection.
+    No raw LLM transcript is stored; only the bounded typed projection dict
+    plus identity strings. Fail-closed on unknown Work, oversized table,
+    malformed projection, or identity mismatch.
+
+    The projection payload itself is validated through the single bounded
+    WorkSemanticProjection contract (lazy import to keep this low-level
+    module free of work_plane import cycles at module load).
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"work_projections must be a mapping, got {type(raw).__name__}")
+    if len(raw) > MAX_WORK_PROJECTIONS:
+        raise ValueError(
+            f"work_projections count ({len(raw)}) exceeds maximum {MAX_WORK_PROJECTIONS}"
+        )
+    items = set(work_items)
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, val in raw.items():
+        if not isinstance(key, str) or type(key) is not str or not key.strip():
+            raise TypeError("work_projections key must be a non-empty string")
+        wid = key.strip()
+        if len(wid) > 128:
+            raise ValueError(f"work_projections key too long: {wid!r}")
+        if wid not in items:
+            raise ValueError(f"work_projections references unknown Work Item: {wid!r}")
+        if not isinstance(val, Mapping):
+            raise TypeError(f"work_projections[{wid!r}] must be a mapping")
+        extra = set(val.keys()) - _ALLOWED_WORK_PROJECTION_FIELDS
+        if extra:
+            raise ValueError(
+                f"Unknown field(s) in work_projections[{wid!r}]: {sorted(extra)}"
+            )
+        for req in (
+            "projection",
+            "plan_authority",
+            "plan_digest",
+            "milestone_id",
+            "project_id",
+            "work_item_id",
+        ):
+            if req not in val:
+                raise ValueError(
+                    f"Missing required field in work_projections[{wid!r}]: {req!r}"
+                )
+        stored_wid = _require_non_empty_str(
+            val["work_item_id"], f"work_projections[{wid!r}].work_item_id", max_length=128
+        )
+        if stored_wid != wid:
+            raise ValueError(
+                f"work_projections[{wid!r}].work_item_id {stored_wid!r} contradicts key"
+            )
+        _require_non_empty_str(
+            val["plan_authority"],
+            f"work_projections[{wid!r}].plan_authority",
+            max_length=512,
+        )
+        _require_non_empty_str(
+            val["plan_digest"],
+            f"work_projections[{wid!r}].plan_digest",
+            max_length=512,
+        )
+        _require_non_empty_str(
+            val["milestone_id"],
+            f"work_projections[{wid!r}].milestone_id",
+            max_length=128,
+        )
+        _require_non_empty_str(
+            val["project_id"],
+            f"work_projections[{wid!r}].project_id",
+            max_length=512,
+        )
+        proj_raw = val["projection"]
+        if not isinstance(proj_raw, Mapping):
+            raise TypeError(f"work_projections[{wid!r}].projection must be a mapping")
+        # Single bounded contract validation (no duplicated bounds here).
+        try:
+            from aota_forge.work_plane.handoff_runtime import WorkSemanticProjection
+        except Exception as exc:
+            raise ValueError(
+                f"work_projections[{wid!r}].projection cannot be validated: {exc}"
+            ) from exc
+        try:
+            validated = WorkSemanticProjection.from_dict(proj_raw)
+        except Exception as exc:
+            raise ValueError(
+                f"work_projections[{wid!r}].projection invalid: {exc}"
+            ) from exc
+        normalized[wid] = {
+            "projection": validated.to_dict(),
+            "plan_authority": str(val["plan_authority"]).strip(),
+            "plan_digest": str(val["plan_digest"]).strip(),
+            "milestone_id": str(val["milestone_id"]).strip(),
+            "project_id": str(val["project_id"]).strip(),
+            "work_item_id": stored_wid,
+        }
+    return normalized
+
+
 @dataclass(frozen=True)
 class TaskMainCoordinatorState:
     """Durable lifecycle + dispatch-progression state for one Milestone activation.
@@ -611,6 +740,9 @@ class TaskMainCoordinatorState:
     frontier_ref: dict[str, Any] | None = None
     open_blockers: tuple[str, ...] = ()
     next_action: str | None = None
+    # M1/W1-R1 task-main-owned bounded Work projections (durable, bound to
+    # trusted Plan/Milestone/Project/Work identities; no raw transcript).
+    work_projections: dict[str, dict[str, Any]] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
     coordinator_revision: int = 1
@@ -710,6 +842,11 @@ class TaskMainCoordinatorState:
         )
         object.__setattr__(self, "frontier_ref", _normalize_optional_ref_dict(self.frontier_ref, "frontier_ref"))
         object.__setattr__(self, "next_action", _normalize_next_action(self.next_action))
+        object.__setattr__(
+            self,
+            "work_projections",
+            _normalize_work_projections(self.work_projections, canonical_items),
+        )
 
         for wi in self.bindings:
             if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
@@ -790,6 +927,10 @@ class TaskMainCoordinatorState:
             kwargs["open_blockers"] = _normalize_open_blockers(_ob_u)
         if "next_action" in updates:
             kwargs["next_action"] = _normalize_next_action(updates["next_action"])
+        if "work_projections" in updates:
+            kwargs["work_projections"] = _normalize_work_projections(
+                updates["work_projections"], self.work_items
+            )
         candidate = replace(
             self,
             coordinator_revision=self.coordinator_revision + 1,
@@ -845,6 +986,7 @@ class TaskMainCoordinatorState:
             "frontier_ref": dict(self.frontier_ref) if self.frontier_ref is not None else None,
             "open_blockers": list(self.open_blockers),
             "next_action": self.next_action,
+            "work_projections": {k: dict(v) for k, v in self.work_projections.items()},
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "coordinator_revision": self.coordinator_revision,
@@ -902,6 +1044,7 @@ class TaskMainCoordinatorState:
             frontier_ref=data.get("frontier_ref"),
             open_blockers=tuple(data.get("open_blockers", ())),
             next_action=data.get("next_action"),
+            work_projections=dict(data.get("work_projections", {})),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             coordinator_revision=data.get("coordinator_revision", 1),
@@ -933,6 +1076,9 @@ __all__ = [
     "HUMAN_BRAKE_STATES",
     "HUMAN_BRAKE_STATE_DURABLE",
     "MAX_RECONCILED_COMPLETIONS",
+    "MAX_WORK_PROJECTIONS",
+    "TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION",
+    "WORK_PROJECTION_DURABLE",
     "MILESTONE_CLOSURE_AUTOMATION_IMPLEMENTED",
     "NEW_SECOND_COORDINATOR_STATE_MODEL",
     "RAW_FAILED_WORKER_TRANSCRIPTS_RETAINED_IN_TASK_MAIN",

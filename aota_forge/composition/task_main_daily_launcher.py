@@ -186,6 +186,24 @@ BOOTSTRAP_CREATION_DEPENDS_ON_TEST_HARNESS = "no"
 EXISTING_PLAN_AUTHORITY_BOUNDARY_REUSED = "yes"
 NEW_PLAN_AUTHORITY_SYSTEM_CREATED = "no"
 
+# M1/W1-R1 task-main-owned Work projection authority (AF #45 repair).
+# The launcher/control plane supplies only trusted mechanical inputs
+# (project binding, plan identity/source, user-gate, runtime config, trusted
+# source locator / Plan snapshot reference). It must NOT normally supply the
+# already-interpreted WorkSemanticProjection on task-main's behalf.
+# prepare(work_semantics=...) is retained ONLY as test/bootstrap compatibility;
+# production normal operation succeeds without it because task-main commits its
+# bounded projection to the existing durable coordinator store.
+PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED = False
+OPERATOR_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+MANUAL_PER_WORK_SCOPE_INJECTION_REQUIRED = False
+OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS = False
+TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION = True
+TASK_MAIN_SEMANTIC_LAYER_PRODUCES_WORK_PROJECTION = True
+WORK_PROJECTION_DURABLE = True
+TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION = False
+
 # No Python semantic control calls — the launcher never calls these:
 #   activate_milestone(), advance_milestone_once(), runner.advance_once(),
 #   reconcile_worker_completion(), etc.
@@ -543,6 +561,16 @@ class DailyTaskMainLauncher:
         override current approval:
 
           STALE_BOOTSTRAP_CANNOT_OVERRIDE_CURRENT_APPROVAL=yes
+
+        M1/W1-R1: work_semantics is test/bootstrap compatibility ONLY, never
+        production authority and never the normal path
+        (PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED=no). Production task-main
+        commits its bounded WorkSemanticProjection to the existing durable
+        coordinator store (see runtime.task_main.coordinator
+        .commit_task_main_work_projection); the production handoff_resolver
+        transports that durable projection. Normal startup therefore needs
+        only project binding + plan identity/source + user gate / runtime
+        config, without work_semantics.
         """
         worktree_root = Path(worktree_root).resolve()
         if not worktree_root.is_dir():

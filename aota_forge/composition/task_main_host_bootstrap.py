@@ -79,6 +79,30 @@ BOOTSTRAP_RELPATH = ".aota/task-main-bootstrap.json"
 # Also accept explicit path for testing harness
 BOOTSTRAP_EXPLICIT_ENV = "AOTA_TASK_MAIN_BOOTSTRAP"
 
+# M1/W1-R1 task-main-owned Work projection authority (AF #45 repair).
+# Production normal path: task-main planning layer commits a bounded
+# WorkSemanticProjection to the existing durable coordinator store; the
+# production handoff_resolver below transports that durable projection into
+# the existing TaskHandoff. The operator-owned bootstrap work_semantics table
+# is retained ONLY as test/bootstrap compatibility (never production
+# authority, never the normal path). Launcher prepare(work_semantics=...)
+# is therefore not required for normal production operation, no operator
+# refresh is required between Work Items, and restart never requires
+# operator semantic reinjection.
+TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION = True
+TASK_MAIN_SEMANTIC_LAYER_PRODUCES_WORK_PROJECTION = True
+WORK_PROJECTION_DURABLE = True
+WORK_PROJECTION_BOUND_TO_TRUSTED_PLAN_IDENTITY = True
+WORK_PROJECTION_BOUND_TO_WORK_ITEM = True
+WORK_SEMANTIC_PROJECTION_IS_PLAN_AUTHORITY = False
+PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED = False
+OPERATOR_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH = False
+MANUAL_PER_WORK_SCOPE_INJECTION_REQUIRED = False
+OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS = False
+TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION = False
+WORK_PROJECTION_SOURCE_AFTER = "task-main-owned-durable-coordinator"
+
 
 def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
     """Generic trusted project evidence via canonical resolver.
@@ -200,11 +224,15 @@ def _handoff_for(
     authority.
 
     M1/W1 bounded scope contract: when a trusted WorkSemanticProjection is
-    supplied for this Work Item (operator channel: task-main has already
-    reasoned about the Work; the runtime faithfully transports that
-    projection), the handoff carries usable bounded semantics via the
-    existing TaskHandoff contract (REUSE, no parallel contract). Without a
-    projection the legacy generic scope-free derivation is preserved for
+    supplied for this Work Item (legacy operator/test channel: the runtime
+    faithfully transports that projection), the handoff carries usable
+    bounded semantics via the existing TaskHandoff contract (REUSE, no
+    parallel contract). M1/W1-R1 production authority is the task-main-owned
+    durable coordinator projection (see try_build_task_main_binding durable
+    path + runtime.task_main.coordinator.commit_task_main_work_projection);
+    this operator-supplied mapping is retained ONLY as test/bootstrap
+    compatibility, never production authority. Without a projection the
+    legacy generic scope-free derivation is preserved for
     backward-compatible direct callers; the PRODUCTION resolver built by
     try_build_task_main_binding never uses that fallback silently — it
     fails closed with WorkScopeInsufficientError instead.
@@ -498,9 +526,9 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             )
 
     def handoff_resolver(wi: str) -> TaskHandoff:
-        # Production Work projection (M1/W1): the trusted operator-supplied
-        # projection is faithfully transported into the existing TaskHandoff.
-        # Absent or insufficient semantics fail closed with
+        # Production Work projection (M1/W1-R1): task-main-owned durable
+        # projection first, operator bootstrap table only as test/bootstrap
+        # compatibility. Absent or insufficient semantics fail closed with
         # WORK_SCOPE_INSUFFICIENT — a scope-free generic Worker is never
         # dispatched silently (I40-B003/F1: do not recreate the stall where a
         # scope-free Worker is launched and expected to guess).
@@ -509,6 +537,31 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 f"no trusted Work semantics for ungoverned Work Item {wi!r} "
                 f"(Milestone {live_view.milestone_id!r}); refusing to invent scope"
             )
+        # 1. Task-main-owned durable path (production normal path, no operator
+        #    refresh, survives restart via the existing coordinator store).
+        #    Fresh read each call so commit + restart are observed without
+        #    rebuilding the binding.
+        _durable_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        try:
+            _durable_state = coord_store.get(_durable_coordinator_id)
+        except Exception:
+            _durable_state = None
+        if _durable_state is not None:
+            _durable_table = getattr(_durable_state, "work_projections", None) or {}
+            if wi in _durable_table:
+                from aota_forge.runtime.task_main.coordinator import (
+                    resolve_task_main_work_handoff,
+                )
+
+                # Wrong/stale identity fails closed inside (no cross-Work reuse,
+                # no stale Plan reuse, no generic fallback).
+                return resolve_task_main_work_handoff(
+                    state=_durable_state,
+                    work_item_id=wi,
+                    live_plan_view=live_view,
+                )
+        # 2. Operator bootstrap table (test/bootstrap compatibility only;
+        #    never production authority, never the normal path).
         if wi not in semantics_table:
             raise WorkScopeInsufficientError(
                 f"no trusted Work semantics for Work Item {wi!r} "
@@ -718,7 +771,13 @@ def write_bootstrap_file(
     coordinator_id: str | None = None,
     work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
 ) -> Path:
-    """Operator helper to materialize the bootstrap JSON for the MCP child."""
+    """Operator helper to materialize the bootstrap JSON for the MCP child.
+
+    M1/W1-R1: work_semantics is test/bootstrap compatibility ONLY, never
+    production authority (PRODUCTION_PREPARE_WORK_SEMANTICS_REQUIRED=no).
+    Production task-main commits its bounded projection to the existing
+    durable coordinator store; the resolver prefers that durable path.
+    """
     worktree_root = worktree_root.resolve()
     dest = worktree_root / BOOTSTRAP_RELPATH
     dest.parent.mkdir(parents=True, exist_ok=True)
