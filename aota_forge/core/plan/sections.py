@@ -66,6 +66,7 @@ class BodySection:
     duplicates: tuple[tuple[str, tuple[str, ...]], ...]
     start_line: int
     end_line: int
+    raw_text: str = ""
 
 
 def normalize_title(title: str) -> str:
@@ -181,6 +182,12 @@ def parse_body_sections(body: str) -> list[BodySection]:
         # Bounded root-current promotion: H1 with canonical signature becomes current.
         if title is not None and level == 1 and kind == KIND_UNCLASSIFIED and _has_root_current_signature(key_values):
             kind = KIND_CURRENT
+        # Bounded raw text for generic Work semantic derivation (M3/W1-R1 F2).
+        # Kept as full block text up to 16KiB; prose filtering happens in
+        # normalize (KV/fence lines removed there). No authority change.
+        raw_joined = "\n".join(block_lines)
+        if len(raw_joined.encode("utf-8")) > 16 * 1024:
+            raw_joined = raw_joined[:16 * 1024]
         sections.append(
             BodySection(
                 title=section_title,
@@ -189,6 +196,7 @@ def parse_body_sections(body: str) -> list[BodySection]:
                 duplicates=duplicates,
                 start_line=start_line,
                 end_line=start_line + len(block_lines),
+                raw_text=raw_joined,
             )
         )
     return sections

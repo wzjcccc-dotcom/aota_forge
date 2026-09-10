@@ -48,6 +48,9 @@ MILESTONE_STATUS_KEY_RE = re.compile(r"^(M[0-9]+)_STATUS$")
 MILESTONE_DAG_KEY_RE = re.compile(r"^(M[0-9]+)_DAG$")
 MILESTONE_WORK_ITEMS_KEY_RE = re.compile(r"^(M[0-9]+)_WORK_ITEMS$")
 MILESTONE_APPROVAL_KEY_RE = re.compile(r"^(M[0-9]+)_USER_APPROVAL_SATISFIED$")
+_KV_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*\s*=\s*.*$")
+
+MAX_MILESTONE_PROSE_CHARS = 4096
 ENTRY_BASE_KEY = "ENTRY_BASE"
 
 PROJECT_CONTEXT_KEYS = frozenset(
@@ -551,6 +554,89 @@ def _extract_entry_base(current_fields: dict[str, str], diagnostics: list[dict[s
     return v
 
 
+def _extract_milestone_section_prose(
+    sections: list[BodySection],
+    milestone_work_items: dict[str, tuple[str, ...]],
+    milestone_specs: dict[str, dict[str, Any]],
+    current_fields: dict[str, str],
+) -> dict[str, str]:
+    """Generic bounded milestone prose per milestone (M3/W1-R1 F2).
+
+    No dogfood/product literals. For each milestone with DAG truth, collect:
+    - milestone title (spec heading or {MID}_TITLE)
+    - per-Work KV fragments ({MID}_{WID}_* from any section)
+    - free prose lines from sections whose title mentions the milestone
+      (fences and KEY=VALUE lines removed)
+    Bounded to MAX_MILESTONE_PROSE_CHARS each; deterministic.
+    """
+    out: dict[str, str] = {}
+    all_mids = set(milestone_work_items.keys()) | set(milestone_specs.keys())
+    for mid in sorted(all_mids):
+        parts: list[str] = []
+        spec_title = ""
+        try:
+            spec_title = str(milestone_specs.get(mid, {}).get("title", "") or "").strip()
+        except Exception:
+            spec_title = ""
+        cur_title = (current_fields.get(f"{mid}_TITLE", "") or "").strip()
+        title = spec_title or cur_title or mid
+        if title:
+            parts.append(title[:500])
+        work_items = tuple(milestone_work_items.get(mid, ()))
+        # Per-Work KV fragments (generic {MID}_{WID}_* pattern, any section).
+        for wid in work_items:
+            prefix = f"{mid}_{wid}_"
+            for sec in sections:
+                for k, v in sec.key_values.items():
+                    if k.startswith(prefix) and isinstance(v, str) and v.strip():
+                        frag = f"{wid}: {v.strip()}"[:500]
+                        if frag not in parts:
+                            parts.append(frag)
+                # Also exact {MID}_{WID} without suffix? Rare, but include.
+                exact = f"{mid}_{wid}"
+                if exact in sec.key_values:
+                    v = sec.key_values[exact]
+                    if isinstance(v, str) and v.strip():
+                        frag = f"{wid}: {v.strip()}"[:500]
+                        if frag not in parts:
+                            parts.append(frag)
+        # Free prose from sections mentioning this milestone.
+        try:
+            mid_pat = re.compile(r"\b" + re.escape(mid) + r"\b")
+        except Exception:
+            mid_pat = None
+        for sec in sections:
+            try:
+                title_hit = bool(mid_pat and mid_pat.search(sec.title or ""))
+            except Exception:
+                title_hit = False
+            if not title_hit:
+                continue
+            raw = getattr(sec, "raw_text", "") or ""
+            for line in raw.splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                if s.startswith("```"):
+                    continue
+                if _KV_LINE_RE.match(line.strip()):
+                    continue
+                if len(s) > 500:
+                    s = s[:500]
+                if s not in parts:
+                    parts.append(s)
+                if sum(len(p) + 1 for p in parts) > MAX_MILESTONE_PROSE_CHARS:
+                    break
+            if sum(len(p) + 1 for p in parts) > MAX_MILESTONE_PROSE_CHARS:
+                break
+        joined = "\n".join(parts).strip()
+        if len(joined) > MAX_MILESTONE_PROSE_CHARS:
+            joined = joined[:MAX_MILESTONE_PROSE_CHARS]
+        if joined:
+            out[mid] = joined
+    return out
+
+
 def normalize_portable_plan(body: str, *, source_revision: str | None = None) -> PortablePlanDocument:
     """Normalize the authoritative issue body into a PortablePlanDocument.
 
@@ -660,6 +746,9 @@ def normalize_portable_plan(body: str, *, source_revision: str | None = None) ->
         milestone_approvals=milestone_approvals,
         milestone_dag_raw=milestone_dag_raw,
         entry_base=entry_base,
+        milestone_section_prose=_extract_milestone_section_prose(
+            sections, milestone_work_items, milestone_specs, current_fields
+        ),
     )
     digest = portable_plan_digest(document)
     return replace(document, source_digest=digest)

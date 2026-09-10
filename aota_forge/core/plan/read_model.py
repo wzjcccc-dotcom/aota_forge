@@ -108,6 +108,10 @@ class PortablePlanDocument:
         Missing/ambiguous remains absent (unknown) instead of default True/False.
       * ``entry_base`` — canonical entry base from Plan authority (ENTRY_BASE)
       * ``milestone_dag_raw`` — raw DAG source for diagnostics
+    M3/W1-R1 extensions (executor-neutral, typed):
+      * ``milestone_section_prose`` — bounded milestone prose per milestone
+        (free text minus KEY=VALUE/fences, <=4096 chars each). Source for
+        generic per-Work semantic derivation; covered by plan digest.
     """
 
     plan_status: str | None = None
@@ -134,6 +138,8 @@ class PortablePlanDocument:
     milestone_approvals: dict[str, bool] = field(default_factory=dict)
     milestone_dag_raw: dict[str, str] = field(default_factory=dict)
     entry_base: str | None = None
+    # M3/W1-R1 bounded milestone prose (executor-neutral, digest-covered)
+    milestone_section_prose: dict[str, str] = field(default_factory=dict)
 
     def canonical_dict(self) -> dict[str, Any]:
         """Digest payload: everything except the derived digest itself."""
@@ -159,6 +165,7 @@ class PortablePlanDocument:
             "milestone_approvals": dict(self.milestone_approvals),
             "milestone_dag_raw": dict(self.milestone_dag_raw),
             "entry_base": self.entry_base,
+            "milestone_section_prose": dict(self.milestone_section_prose),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -171,6 +178,75 @@ class PortablePlanDocument:
 def portable_plan_digest(document: PortablePlanDocument) -> str:
     """Deterministic digest over the canonical Portable Plan payload."""
     return snapshot_sha256(document.canonical_dict())
+
+
+# ---------------------------------------------------------------------------
+# M3/W1-R1 bounded governed Work semantic view (F2).
+#
+# Projection of existing Plan authority (never new authority, never second
+# Plan model, never coordinator truth). Carries only bounded Work-level
+# semantics needed for task-main reasoning: Work identity + product
+# objective + bounded semantic context. Full Plan body never enters model
+# context. Missing usable semantics fails closed (no heuristic scope).
+# ---------------------------------------------------------------------------
+
+MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH: int = 1024
+MAX_WORK_SEMANTIC_CONTEXT_LENGTH: int = 2048
+
+
+@dataclass(frozen=True)
+class GovernedWorkSemanticView:
+    """Bounded governed Work semantic view (Plan authority projection)."""
+
+    work_item_id: str
+    milestone_id: str
+    objective: str
+    semantic_context: str
+
+    def __post_init__(self) -> None:
+        for label, val, bound in (
+            ("work_item_id", self.work_item_id, 128),
+            ("milestone_id", self.milestone_id, 128),
+            ("objective", self.objective, MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH),
+            ("semantic_context", self.semantic_context, MAX_WORK_SEMANTIC_CONTEXT_LENGTH),
+        ):
+            if not isinstance(val, str) or type(val) is not str:
+                raise TypeError(f"{label} must be a string")
+            if not val.strip():
+                raise ValueError(f"{label} must be non-empty")
+            if len(val.strip()) > bound:
+                raise ValueError(f"{label} exceeds maximum {bound}")
+            if "\x00" in val:
+                raise ValueError(f"{label} must not contain NUL")
+        object.__setattr__(self, "work_item_id", self.work_item_id.strip())
+        object.__setattr__(self, "milestone_id", self.milestone_id.strip())
+        object.__setattr__(self, "objective", self.objective.strip())
+        object.__setattr__(self, "semantic_context", self.semantic_context.strip())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "work_item_id": self.work_item_id,
+            "milestone_id": self.milestone_id,
+            "objective": self.objective,
+            "semantic_context": self.semantic_context,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "GovernedWorkSemanticView":
+        if not isinstance(data, dict):
+            raise TypeError("GovernedWorkSemanticView data must be a dict")
+        for req in ("work_item_id", "milestone_id", "objective", "semantic_context"):
+            if req not in data:
+                raise ValueError(f"missing required field: {req!r}")
+        extra = set(data.keys()) - {"work_item_id", "milestone_id", "objective", "semantic_context"}
+        if extra:
+            raise ValueError(f"unknown field(s): {sorted(extra)}")
+        return cls(
+            work_item_id=data["work_item_id"],
+            milestone_id=data["milestone_id"],
+            objective=data["objective"],
+            semantic_context=data["semantic_context"],
+        )
 
 
 class PlanSource:

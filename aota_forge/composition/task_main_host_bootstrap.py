@@ -141,6 +141,21 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
         work_items=list(g["work_items"]),
         dependencies=[list(e) for e in g.get("dependencies", [])],
     )
+    # M3/W1-R1 F2: restore bounded governed Work semantics (if present).
+    # Legacy files without the key stay permissive (empty) for backward compat.
+    ws_raw = d.get("work_semantics", ())
+    ws_views: list[Any] = []
+    if isinstance(ws_raw, (list, tuple)):
+        try:
+            from aota_forge.core.plan.read_model import GovernedWorkSemanticView
+        except Exception:
+            GovernedWorkSemanticView = None  # type: ignore
+        for entry in ws_raw:
+            try:
+                if GovernedWorkSemanticView is not None and isinstance(entry, dict):
+                    ws_views.append(GovernedWorkSemanticView.from_dict(entry))
+            except Exception:
+                raise TrustedBindingError(f"bootstrap work_semantics entry invalid: {entry!r}")
     return MilestonePlanView(
         plan_authority=d["plan_authority"],
         plan_digest=d["plan_digest"],
@@ -150,6 +165,7 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
         graph=graph,
         milestone_user_approval_satisfied=bool(d["milestone_user_approval_satisfied"]),
         plan_amendment_required=bool(d.get("plan_amendment_required", False)),
+        work_semantics=tuple(ws_views),
     )
 
 
@@ -809,7 +825,7 @@ def write_bootstrap_file(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     def view_to_dict(v: MilestonePlanView) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "plan_authority": v.plan_authority,
             "plan_digest": v.plan_digest,
             "plan_source_revision": v.plan_source_revision,
@@ -823,6 +839,21 @@ def write_bootstrap_file(
             "milestone_user_approval_satisfied": v.milestone_user_approval_satisfied,
             "plan_amendment_required": v.plan_amendment_required,
         }
+        # M3/W1-R1 F2: carry bounded governed Work semantics (Plan authority
+        # projection, not full Plan body). Empty stays empty (legacy compat).
+        try:
+            ws = tuple(getattr(v, "work_semantics", ()) or ())
+        except Exception:
+            ws = ()
+        if ws:
+            items: list[dict[str, Any]] = []
+            for w in ws:
+                try:
+                    items.append(w.to_dict() if hasattr(w, "to_dict") else dict(w))
+                except Exception:
+                    continue
+            d["work_semantics"] = items
+        return d
 
     payload = {
         "project_id": project_id,

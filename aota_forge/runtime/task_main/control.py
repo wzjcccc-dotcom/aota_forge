@@ -20,6 +20,7 @@ exposing an MCP/host boundary, and it contains zero planning semantic.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore
@@ -316,6 +317,43 @@ class TaskMainControlService:
             live_plan_view=live_plan_view,
             work_item_id=work_item_id,
             projection=projection,
+        )
+
+    def get_projection_required_context(
+        self,
+        *,
+        profile: str,
+        coordinator_id: str,
+        live_plan_view: MilestonePlanView,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """One shared projector accessor (M3/W1-R1 F2, no new operation).
+
+        Returns (projection_required, missing_semantics) for ready Works
+        lacking durable projections, via the single Core projector. Used by
+        canonical ingress to surface governed context in activate/recover/
+        advance results without creating a new agent-facing read operation.
+        """
+        from typing import Any as _Any
+
+        from aota_forge.runtime.task_main.coordinator import build_projection_required_context
+
+        _require_task_main_profile(profile)
+        if not isinstance(live_plan_view, MilestonePlanView):
+            raise TypeError("live_plan_view must be MilestonePlanView")
+        try:
+            state = self._coord_store.get(coordinator_id)
+        except Exception:
+            state = None
+        if state is None:
+            return build_projection_required_context(live_plan_view)
+        try:
+            wi_status = dict(getattr(state, "wi_status", {}) or {})
+            work_projs = dict(getattr(state, "work_projections", {}) or {})
+        except Exception:
+            wi_status = {}
+            work_projs = {}
+        return build_projection_required_context(
+            live_plan_view, wi_status=wi_status, work_projections=work_projs
         )
 
     def reconcile_worker_completion(

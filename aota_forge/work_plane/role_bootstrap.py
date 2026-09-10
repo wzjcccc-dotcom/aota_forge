@@ -504,6 +504,16 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
         "SKILL_IS_AUTHORITY": False,
         "TOOL_VISIBILITY_IS_AUTHORITY": False,
     }
+    # M3/W1-R1 F1: eager model-visible writer contract, derived from the
+    # single canonical descriptor authority (no second schema). Task-main
+    # only; other roles keep the existing compatible shape.
+    if role_str == "task-main":
+        try:
+            from aota_forge.work_plane.task_main_descriptors import build_task_main_operation_guidance
+
+            result["OPERATION_GUIDANCE"] = build_task_main_operation_guidance()
+        except Exception:
+            pass
     # Attach degraded only if non-empty to keep bounded
     if degraded:
         result["DEGRADED_RECOMMENDED"] = degraded

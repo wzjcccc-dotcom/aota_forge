@@ -33,7 +33,12 @@ import re
 from typing import Any
 
 from aota_forge.core.plan.normalize import PlanNormalizationError
-from aota_forge.core.plan.read_model import PortablePlanDocument
+from aota_forge.core.plan.read_model import (
+    MAX_WORK_SEMANTIC_CONTEXT_LENGTH,
+    MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH,
+    GovernedWorkSemanticView,
+    PortablePlanDocument,
+)
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 
 
@@ -147,6 +152,123 @@ def get_next_milestone_id(document: PortablePlanDocument) -> str | None:
     return None
 
 
+def _work_line_matches(line: str, milestone_id: str, work_item_id: str) -> bool:
+    """Generic Work-mention test (no product literals).
+
+    Matches when the line contains the governed Work identity as:
+    - {MID}/{WID} (e.g. M3/W1), {MID}_{WID}, {MID}-{WID}, or
+    - WID as an exact token (split on non [A-Za-z0-9._-]).
+    W1 does not match W10 (exact token, not substring).
+    """
+    if not isinstance(line, str) or not line:
+        return False
+    if not isinstance(work_item_id, str) or not work_item_id.strip():
+        return False
+    wid = work_item_id.strip()
+    mid = (milestone_id or "").strip()
+    if mid and (f"{mid}/{wid}" in line or f"{mid}_{wid}" in line or f"{mid}-{wid}" in line):
+        return True
+    try:
+        tokens = re.split(r"[^A-Za-z0-9._-]+", line)
+    except Exception:
+        return wid in line
+    return wid in tokens
+
+
+def get_governed_work_semantic_view(
+    document: PortablePlanDocument, milestone_id: str, work_item_id: str
+) -> GovernedWorkSemanticView:
+    """Bounded governed Work view from canonical Plan authority (F2).
+
+    Sources (generic, no dogfood literals):
+    - milestone_section_prose[mid] (title + per-Work KV fragments + free prose)
+    Work-specific lines are those mentioning the governed Work ID (see
+    _work_line_matches). Objective is the first such line; context is title
+    plus Work lines, bounded. Missing usable semantics fails closed with
+    MISSING_WORK_SEMANTICS (no heuristic "Implement W1").
+    """
+    if not isinstance(milestone_id, str) or not milestone_id.strip():
+        raise PlanNormalizationError("MALFORMED_MILESTONE_ID", "milestone_id invalid")
+    if not isinstance(work_item_id, str) or not work_item_id.strip():
+        raise PlanNormalizationError("MALFORMED_WORK_ITEM_ID", "work_item_id invalid")
+    mid = milestone_id.strip()
+    wid = work_item_id.strip()
+    work_items = document.milestone_work_items.get(mid)
+    if work_items is None or wid not in set(work_items):
+        raise PlanNormalizationError(
+            "UNKNOWN_WORK_ITEM",
+            f"Work Item {wid!r} is not a governed Work Item of Milestone {mid!r}",
+        )
+    prose = ""
+    try:
+        prose = (document.milestone_section_prose or {}).get(mid, "") or ""
+    except Exception:
+        prose = ""
+    if not isinstance(prose, str) or not prose.strip():
+        raise PlanNormalizationError(
+            "MISSING_WORK_SEMANTICS",
+            f"No governed Work semantics for {mid}/{wid}: milestone prose absent; refusing heuristic scope",
+        )
+    lines = [ln.strip() for ln in prose.splitlines() if ln.strip()]
+    if not lines:
+        raise PlanNormalizationError(
+            "MISSING_WORK_SEMANTICS",
+            f"No governed Work semantics for {mid}/{wid}: empty prose; refusing heuristic scope",
+        )
+    title = lines[0] if lines else mid
+    work_lines = [ln for ln in lines if _work_line_matches(ln, mid, wid)]
+    if not work_lines:
+        raise PlanNormalizationError(
+            "MISSING_WORK_SEMANTICS",
+            f"No governed Work semantics for {mid}/{wid}: no Work-specific authority; refusing heuristic scope",
+        )
+    objective = work_lines[0].strip()[:MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH].strip()
+    if not objective:
+        raise PlanNormalizationError(
+            "MISSING_WORK_SEMANTICS", f"Empty objective for {mid}/{wid}; refusing heuristic scope"
+        )
+    ctx_parts = [title] + work_lines
+    context = "\n".join(ctx_parts).strip()
+    if len(context) > MAX_WORK_SEMANTIC_CONTEXT_LENGTH:
+        context = context[:MAX_WORK_SEMANTIC_CONTEXT_LENGTH].strip()
+    if not context:
+        raise PlanNormalizationError(
+            "MISSING_WORK_SEMANTICS", f"Empty context for {mid}/{wid}; refusing heuristic scope"
+        )
+    try:
+        return GovernedWorkSemanticView(
+            work_item_id=wid, milestone_id=mid, objective=objective, semantic_context=context
+        )
+    except Exception as exc:
+        raise PlanNormalizationError("MISSING_WORK_SEMANTICS", f"Invalid view for {mid}/{wid}: {exc}") from exc
+
+
+def get_milestone_work_semantic_views(
+    document: PortablePlanDocument, milestone_id: str
+) -> tuple[GovernedWorkSemanticView, ...]:
+    """Best-effort views for all governed Works (skip missing, no fail).
+
+    Used by project_milestone_views to populate MilestonePlanView. Missing
+    per-Work semantics are skipped here; the control projector reports
+    per-ready-Work missing as typed fail-closed (no heuristic).
+    """
+    try:
+        work_items = document.milestone_work_items.get(milestone_id.strip(), ())
+    except Exception:
+        return ()
+    if not work_items:
+        return ()
+    out: list[GovernedWorkSemanticView] = []
+    for wid in work_items:
+        try:
+            out.append(get_governed_work_semantic_view(document, milestone_id, wid))
+        except PlanNormalizationError:
+            continue
+        except Exception:
+            continue
+    return tuple(out)
+
+
 def project_milestone_views(
     document: PortablePlanDocument,
     *,
@@ -192,6 +314,7 @@ def project_milestone_views(
         graph=graph,
         milestone_user_approval_satisfied=approved,
         plan_amendment_required=False,
+        work_semantics=get_milestone_work_semantic_views(document, current_id),
     )
 
     next_id = get_next_milestone_id(document)
@@ -219,5 +342,6 @@ def project_milestone_views(
             graph=next_graph,
             milestone_user_approval_satisfied=bool(next_approved),
             plan_amendment_required=False,
+            work_semantics=get_milestone_work_semantic_views(document, next_id),
         )
     return live_view, next_view

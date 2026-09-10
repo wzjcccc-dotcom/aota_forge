@@ -223,6 +223,11 @@ class MilestonePlanView:
     Carries already-observed Plan authority binding, Milestone identity, DAG,
     and approval state. The coordinator records and checks these values; it
     never invents them and never mutates Plan authority.
+
+    M3/W1-R1 F2: also carries bounded Work semantic authority
+    (work_semantics, projection of canonical Plan normalization). The Plan
+    remains authority; views are bounded (no full Plan body) and bound to
+    plan_digest via the parent view + digest-covered document source.
     """
 
     plan_authority: str
@@ -233,6 +238,7 @@ class MilestonePlanView:
     milestone_user_approval_satisfied: bool
     plan_source_revision: str | None = None
     plan_amendment_required: bool = False
+    work_semantics: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "plan_authority", _require_non_empty_str(self.plan_authority, "plan_authority"))
@@ -262,11 +268,61 @@ class MilestonePlanView:
             "plan_amendment_required",
             _require_strict_bool(self.plan_amendment_required, "plan_amendment_required"),
         )
+        # work_semantics: tuple of GovernedWorkSemanticView (or empty for
+        # legacy direct construction). Validated lightly to avoid importing
+        # Plan layer at module load (cycle-safe duck typing).
+        ws = self.work_semantics
+        if not isinstance(ws, (tuple, list)):
+            raise TypeError("work_semantics must be tuple/list")
+        cleaned: list[Any] = []
+        for idx, v in enumerate(ws):
+            try:
+                wid = getattr(v, "work_item_id", None)
+                mid = getattr(v, "milestone_id", None)
+                obj = getattr(v, "objective", None)
+                ctx = getattr(v, "semantic_context", None)
+            except Exception:
+                raise TypeError(f"work_semantics[{idx}] must be GovernedWorkSemanticView")
+            if not isinstance(wid, str) or not wid.strip():
+                raise ValueError(f"work_semantics[{idx}].work_item_id must be non-empty")
+            if not isinstance(mid, str) or mid.strip() != self.milestone_id:
+                raise ValueError(
+                    f"work_semantics[{idx}].milestone_id {mid!r} contradicts view {self.milestone_id!r}"
+                )
+            if not isinstance(obj, str) or not obj.strip():
+                raise ValueError(f"work_semantics[{idx}].objective must be non-empty")
+            if not isinstance(ctx, str) or not ctx.strip():
+                raise ValueError(f"work_semantics[{idx}].semantic_context must be non-empty")
+            if wid.strip() not in set(self.graph.work_items):
+                raise ValueError(f"work_semantics[{idx}] unknown Work Item {wid!r}")
+            cleaned.append(v)
+        # Deduplicate by work_item_id, keep first, deterministic order by graph.
+        seen: set[str] = set()
+        ordered: list[Any] = []
+        for wid_ordered in self.graph.work_items:
+            for v in cleaned:
+                if getattr(v, "work_item_id").strip() == wid_ordered and wid_ordered not in seen:
+                    seen.add(wid_ordered)
+                    ordered.append(v)
+        object.__setattr__(self, "work_semantics", tuple(ordered))
 
     @property
     def user_gate_blocked(self) -> bool:
         """True when progression must stop before the user gate."""
         return (not self.milestone_user_approval_satisfied) or self.plan_amendment_required
+
+    def get_work_semantic_view(self, work_item_id: str) -> Any | None:
+        """Return the bounded governed view for one Work Item, or None."""
+        if not isinstance(work_item_id, str):
+            return None
+        wid = work_item_id.strip()
+        for v in self.work_semantics:
+            try:
+                if getattr(v, "work_item_id", "").strip() == wid:
+                    return v
+            except Exception:
+                continue
+        return None
 
 
 def evaluate_ready_work_items(
@@ -302,6 +358,84 @@ def evaluate_ready_work_items(
         ):
             ready.append(work_item_id)
     return tuple(ready)
+
+
+def build_projection_required_context(
+    live_plan_view: MilestonePlanView,
+    *,
+    wi_status: Mapping[str, str] | None = None,
+    work_projections: Mapping[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """One shared Core projector for governed Work context (M3/W1-R1 F2).
+
+    Returns (projection_required, missing_semantics):
+    - projection_required: [{work_item_id, governed_work_semantics(dict)}]
+      for ready Works lacking durable projections but having governed views.
+    - missing_semantics: [work_item_id] for ready Works lacking projections
+      AND lacking governed views (fail-closed, no heuristic).
+
+    Empty when gate blocked, when no ready Works, or when all ready Works
+    already have projections. Never invents scope; never requires extra read.
+    """
+    try:
+        gate = bool(live_plan_view.user_gate_blocked)
+    except Exception:
+        gate = True
+    if gate:
+        return [], []
+    try:
+        graph = live_plan_view.graph
+        work_items = tuple(graph.work_items)
+    except Exception:
+        return [], []
+    if wi_status is None:
+        try:
+            from aota_forge.runtime.task_main.coordinator_state import WorkItemCoordinatorStatus as _WICS
+
+            wi_status = {wid: _WICS.PENDING.value for wid in work_items}
+        except Exception:
+            return [], []
+    try:
+        ready = evaluate_ready_work_items(graph=graph, wi_status=wi_status, gate_blocked=False)
+    except Exception:
+        return [], []
+    try:
+        proj_table = dict(work_projections or {})
+    except Exception:
+        proj_table = {}
+    required: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for wid in ready:
+        if wid in proj_table:
+            continue
+        view = None
+        try:
+            view = live_plan_view.get_work_semantic_view(wid)
+        except Exception:
+            view = None
+        if view is None:
+            # Only report missing when the view carries new authority
+            # (non-empty work_semantics). Legacy empty views stay silent for
+            # backward compat (old tests construct views without semantics).
+            try:
+                carries = len(tuple(live_plan_view.work_semantics or ())) > 0
+            except Exception:
+                carries = False
+            if carries:
+                missing.append(wid)
+            continue
+        try:
+            gov = view.to_dict() if hasattr(view, "to_dict") else {
+                "work_item_id": getattr(view, "work_item_id"),
+                "milestone_id": getattr(view, "milestone_id"),
+                "objective": getattr(view, "objective"),
+                "semantic_context": getattr(view, "semantic_context"),
+            }
+        except Exception:
+            missing.append(wid)
+            continue
+        required.append({"work_item_id": wid, "governed_work_semantics": gov})
+    return required, missing
 
 
 @dataclass(frozen=True)
@@ -450,6 +584,26 @@ def commit_task_main_work_projection(
     _check_live_binding(state, live_plan_view)
     if wid not in set(state.work_items):
         raise CoordinatorBindingError(f"unknown Work Item {wid!r} for coordinator {coordinator_id!r}")
+    # M3/W1-R1 F2: missing governed Work semantics fails closed (no heuristic
+    # invention). Only enforced when the trusted view carries new authority
+    # (non-empty work_semantics); legacy empty views stay permissive for
+    # backward compat (existing writer tests construct views directly).
+    try:
+        carries_new = len(tuple(getattr(live_plan_view, "work_semantics", ()) or ())) > 0
+    except Exception:
+        carries_new = False
+    if carries_new:
+        try:
+            has_view = live_plan_view.get_work_semantic_view(wid) is not None
+        except Exception:
+            has_view = False
+        if not has_view:
+            from aota_forge.work_plane.handoff_runtime import WorkScopeInsufficientError as _WSSIE
+
+            raise _WSSIE(
+                f"missing governed Work semantics for Work Item {wid!r} "
+                f"(Milestone {live_plan_view.milestone_id!r}); refusing heuristic scope"
+            )
 
     # Typed bounded projection (malformed/oversized fails closed).
     if isinstance(projection, WorkSemanticProjection):

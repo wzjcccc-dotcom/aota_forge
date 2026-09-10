@@ -423,6 +423,22 @@ def _dispatch_task_main(
                     "work_items": list(getattr(state, "work_items", [])) if state else [],
                     "user_gate_required": False,
                 }
+                # M3/W1-R1 F2: surface governed Work context for ready Works
+                # lacking projections (one shared projector, no extra read).
+                try:
+                    from aota_forge.runtime.task_main.coordinator import build_projection_required_context
+
+                    wi_s = dict(getattr(state, "wi_status", {}) or {}) if state else {}
+                    wp = dict(getattr(state, "work_projections", {}) or {}) if state else {}
+                    req, miss = build_projection_required_context(
+                        live, wi_status=wi_s or None, work_projections=wp
+                    )
+                    if req:
+                        payload["projection_required"] = req
+                    if miss:
+                        payload["missing_governed_work_semantics"] = miss
+                except Exception:
+                    pass
             except Exception:
                 payload = {"coordinator_id": getattr(handle, "coordinator_id", ""), "status": "ACTIVE"}
             return ToolResponse.success(payload)
@@ -458,6 +474,21 @@ def _dispatch_task_main(
                     "coordinator_revision": state.coordinator_revision,
                     "milestone_id": state.milestone_id,
                 }
+                # M3/W1-R1 F2: same shared projector for recovery path.
+                try:
+                    from aota_forge.runtime.task_main.coordinator import build_projection_required_context
+
+                    req, miss = build_projection_required_context(
+                        live,
+                        wi_status=dict(getattr(state, "wi_status", {}) or {}),
+                        work_projections=dict(getattr(state, "work_projections", {}) or {}),
+                    )
+                    if req:
+                        payload["projection_required"] = req
+                    if miss:
+                        payload["missing_governed_work_semantics"] = miss
+                except Exception:
+                    pass
             except Exception:
                 payload = {"coordinator_id": coord_id, "status": "ACTIVE"}
             return ToolResponse.success(payload)
@@ -491,9 +522,25 @@ def _dispatch_task_main(
                     reviewer_canonical_task_id_resolver=ctx.reviewer_canonical_task_id_resolver,
                 )
             except Exception as exc:
-                return ToolResponse.failure(
-                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
-                )
+                # M3/W1-R1 F2: fail-closed preserved, but expose governed Work
+                # context required to repair (no heuristic scope generation).
+                err: dict[str, Any] = {
+                    "code": _map_task_main_exception(exc),
+                    "message": str(exc)[:512] or "governed operation failed",
+                }
+                try:
+                    req, miss = ctx.control_service.get_projection_required_context(
+                        profile=AF_TASK_MAIN_ROLE,
+                        coordinator_id=coord_id,
+                        live_plan_view=live,
+                    )
+                    if req:
+                        err["projection_required"] = req
+                    if miss:
+                        err["missing_governed_work_semantics"] = miss
+                except Exception:
+                    pass
+                return ToolResponse.failure(err)
             try:
                 payload = {
                     "coordinator_id": outcome.coordinator_id,
@@ -513,6 +560,21 @@ def _dispatch_task_main(
                     "integrated_review_required": bool(getattr(outcome, "integrated_review_required", False)),
                     "reasons": list(getattr(outcome, "reasons", [])),
                 }
+                # M3/W1-R1 F2: same shared projector for advance success
+                # (normally empty when dispatched; non-empty when BLOCKED and
+                # projection still required).
+                try:
+                    req, miss = ctx.control_service.get_projection_required_context(
+                        profile=AF_TASK_MAIN_ROLE,
+                        coordinator_id=coord_id,
+                        live_plan_view=live,
+                    )
+                    if req:
+                        payload["projection_required"] = req
+                    if miss:
+                        payload["missing_governed_work_semantics"] = miss
+                except Exception:
+                    pass
             except Exception:
                 payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN")}
             return ToolResponse.success(payload)

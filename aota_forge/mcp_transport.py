@@ -415,7 +415,37 @@ def _sanitize_tool_response(response: ToolResponse) -> ToolResponse:
     }
     if isinstance(error.get("retryable"), bool):
         projected_error["retryable"] = error["retryable"]
+    # M3/W1-R1 F2: preserve bounded governed Work context for task-main
+    # repair (fail-closed missing-projection errors must carry the
+    # already-authorized semantics). Only these two explicit keys, both
+    # bounded by construction (1-2 Works, each view <=2048); oversize still
+    # fails closed downstream via TOOL_ERROR_INLINE_MAX_BYTES (no truncation).
     # Preserve bounded details if present and serializable within bound? Omit for safety.
+    for _ctx_key in ("projection_required", "missing_governed_work_semantics"):
+        try:
+            _v = error.get(_ctx_key)
+        except Exception:
+            continue
+        if _v is None:
+            continue
+        if _ctx_key == "missing_governed_work_semantics":
+            if isinstance(_v, (list, tuple)) and all(isinstance(x, str) for x in _v) and len(_v) <= 64:
+                projected_error[_ctx_key] = list(_v)
+        else:
+            if isinstance(_v, (list, tuple)) and len(_v) <= 64:
+                # Shallow-validate list of {work_item_id, governed_work_semantics}.
+                ok_items: list[Any] = []
+                valid = True
+                for _it in _v:
+                    if not isinstance(_it, dict):
+                        valid = False
+                        break
+                    if "work_item_id" not in _it or "governed_work_semantics" not in _it:
+                        valid = False
+                        break
+                    ok_items.append(dict(_it))
+                if valid:
+                    projected_error[_ctx_key] = ok_items
     return ToolResponse.failure(projected_error)
 
 

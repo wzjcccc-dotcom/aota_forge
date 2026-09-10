@@ -769,6 +769,20 @@ class TestNoSecondAuthority:
             assert "task_main.submit_work_projection" in set(_mt.TASK_MAIN_OPERATIONS)
             assert "task_main.submit_work_projection" in set(_mt.SUPPORTED_OPERATIONS)
             return
+        if "m3-w1-r1-model-visible-writer-contract" in branch:
+            # M3/W1-R1 legitimately preserves bounded governed Work context in
+            # transport error projection (F2 repair, AF #46 I46-B002). No new
+            # MCP tool, no new operation, no semantic authority; delegation
+            # stays in core_ingress. Single-entry invariants must still hold.
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert "task_main.submit_work_projection" in set(_mt.TASK_MAIN_OPERATIONS)
+            assert "task_main.submit_work_projection" in set(_mt.SUPPORTED_OPERATIONS)
+            assert _mt.ONE_SHARED_AOTA_MCP is True
+            assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

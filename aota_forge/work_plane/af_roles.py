@@ -253,10 +253,11 @@ ORPHAN_SKILL_DISPOSITION: dict[str, tuple[str, str]] = {
 
 _CURATED_EAGER_GUIDANCE: dict[str, str] = {
     "aota-task-main-control": (
-        "Task-main normal: activate (empty args, needs trusted approval=yes; stop on USER_GATE_REQUIRED), "
-        "recover after restart (re-bind live Plan/session; fail-closed on drift), "
-        "advance_once (one iteration; observe next_action DISPATCHED/WAITING/RECONCILED/REVIEW/REPAIR/BLOCKED/CLOSURE_READY/USER_GATE/SESSION_RECOVERY; never call internal reconcile/dispatch). "
-        "Owns objective/DAG/risk/blocker/next-action; DAG durably projected; risk 9 dims control depth/escalation only; one integrated review; Human Brake NEEDS_INPUT/CHECKPOINT/USER_GATE/BLOCKED with scope; card-first no transcript; retry needs progress else escalate; user gates mandatory stop. "
+        "Task-main normal: activate (empty args, needs approval=yes; stop on USER_GATE_REQUIRED), "
+        "recover after restart (re-bind live Plan/session), "
+        "advance_once (one iteration; observe next_action DISPATCHED/WAITING/BLOCKED; never call internal reconcile/dispatch). "
+        "If ready Work lacks projection, read governed context from activate/recover/advance, submit_work_projection once (see OPERATION_GUIDANCE) then advance. "
+        "Owns DAG/risk/blocker/next-action; risk control only; one review; Human Brake with scope; card-first no transcript; retry needs progress else escalate; user gates mandatory stop. "
         "Dispatch workers via AF (Handoff scope sole source); workers start with role.bootstrap."
     ),
     "aota-workspace-operations": (
