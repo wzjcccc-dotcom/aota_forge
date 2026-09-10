@@ -214,7 +214,21 @@ def _main(argv: list[str] | None = None) -> int:
             bind_production_execution_dispatcher()
         payload = forge_execute(operation, params, trusted_context=trusted_context)
     else:
-        descriptor = DEFAULT_REGISTRY.get(operation)
+        # W1 One-Core single plane: same canonical resolution as MCP/future adapters.
+        # Single descriptor authority via core_ingress (operations.yaml); verify
+        # consistency with default_registry projection when present.
+        from aota_forge.core_ingress import resolve_descriptor as _canonical_resolve
+
+        try:
+            _canonical_descriptor = _canonical_resolve(operation)
+        except Exception:
+            _canonical_descriptor = None
+        _registry_descriptor = DEFAULT_REGISTRY.get(operation)
+        if _canonical_descriptor is not None and _registry_descriptor is not None:
+            # Same authority: contract hash must match; fail closed on drift.
+            if _canonical_descriptor.contract_hash() != _registry_descriptor.contract_hash():
+                raise ForgeError("CONTRACT_DRIFT", f"CLI descriptor drift for {operation}")
+        descriptor = _canonical_descriptor if _canonical_descriptor is not None else _registry_descriptor
         if descriptor and descriptor.read_write != READ_ONLY:
             if isinstance(params, MutationIngressRequest):
                 payload = execute_mutation(params)

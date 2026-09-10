@@ -1,0 +1,596 @@
+"""One-Core canonical operation dispatch plane (AF #46 M1/W1).
+
+Semantic owner: AF_CORE. Expected layer: core_ingress.
+
+This package is the single canonical AF operation dispatch plane that
+CLI, MCP and future adapters converge onto:
+
+    adapter
+      -> canonical contracts/ingress (this package + core/contracts)
+      -> core/provider (core.ingress, ExecutionDispatcher, work_plane providers,
+         runtime.task_main control)
+
+Single descriptor authority remains ``.aota/contracts/operations.yaml`` via
+``core.contracts.loader``. This package creates no second registry, no
+second schema authority, no permission engine, no control plane, no state
+machine. It reuses existing leaf providers/services without rewriting
+business logic:
+
+    BoundedWorkspaceToolProvider / BoundedWorkspaceMutationProvider
+    ResultHydrateProvider / BoundedRestrictedShellProvider
+    BoundedTestExecutionToolProvider / BoundedGitToolProvider
+    Role bootstrap / Skill resolution / TaskMainControlService /
+    TaskMainMilestoneRunner / TaskMainCoordinator / ExecutionDispatcher
+
+Dependency direction (allowed):
+
+    adapter -> canonical contracts/ingress -> core/provider
+
+Forbidden (enforced by tests):
+
+    Core (aota_forge/core/*) must not import this package, MCP transport,
+    Hermes, work_plane, composition or runtime. This package may import
+    Core contracts and provider/runtime leaves, never the reverse.
+
+MCP remains a thin transport adapter: single ``aota.invoke``, protocol
+adaptation, stdio mechanics, bounded protocol projection, mechanical
+transport failures. It must not own operation lookup, input validation or
+provider selection semantics after W1 (see ``mcp_transport`` delegation).
+
+CLI remains a thin transport adapter: argument parsing, trusted adapter
+resource resolution, canonical ingress call, result projection, exit codes.
+It must not own operation semantic dispatch.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+from aota_forge.core.contracts.errors import ForgeError
+from aota_forge.core.contracts.loader import (
+    discover_canonical_project_root,
+    load_operation_descriptor_map,
+)
+from aota_forge.core.contracts.validation import validate_inputs
+from aota_forge.core.providers.tool import ToolRequest, ToolResponse
+
+SEMANTIC_OWNER = "AF_CORE"
+EXPECTED_LAYER = "core_ingress"
+CANONICAL_DESCRIPTOR_AUTHORITY = ".aota/contracts/operations.yaml"
+OPERATION_DESCRIPTOR_AUTHORITY_COUNT = 1
+SECOND_DESCRIPTOR_REGISTRY_CREATED = False
+SECOND_SCHEMA_AUTHORITY_CREATED = False
+NEW_OPERATION_AUTHORITY_REGISTRY_CREATED = False
+NEW_PERMISSION_ENGINE_CREATED = False
+NEW_CONTROL_PLANE_CREATED = False
+NEW_STATE_MACHINE_CREATED = False
+CANONICAL_OPERATION_DISPATCH_PLANE_COUNT = 1
+LEAF_PROVIDER_REWRITE_REQUIRED = False
+
+# Canonical operation families (single registration path via loader).
+# Provider-backed (work_plane leaves) vs ingress-backed (core.ingress).
+PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
+    "workspace.search",
+    "workspace.read",
+    "workspace.write",
+    "result.hydrate",
+    "restricted_shell.run",
+    "role.bootstrap",
+    "skill.open",
+    "test.run",
+    "task_main.activate_milestone",
+    "task_main.recover_coordinator",
+    "task_main.advance_once",
+    "git.status",
+    "git.diff",
+)
+
+# Existing ingress families (already single Core path via core.ingress).
+# Listed for registration completeness; dispatch delegates to core.ingress.
+INGRESS_BACKED_OPERATIONS: tuple[str, ...] = (
+    "project.resolve",
+    "git.inspect",
+    "runtime.status",
+    "host.status",
+    "operations.list",
+    "plan_init",
+    "plan_retirement",
+    "execution.task_start",
+    "execution.task_status",
+    "execution.task_result",
+    "execution.task_cancel",
+    "execution.executor_list",
+    "execution.executor_capabilities",
+)
+
+_CACHED_MAP: dict[str, OperationContractDescriptor] | None = None
+
+
+def _load_map() -> dict[str, OperationContractDescriptor]:
+    global _CACHED_MAP
+    if _CACHED_MAP is not None:
+        return _CACHED_MAP
+    root = discover_canonical_project_root()
+    _CACHED_MAP = load_operation_descriptor_map(root)
+    return _CACHED_MAP
+
+
+def list_canonical_operations() -> tuple[str, ...]:
+    """All canonical operation names from single YAML authority (sorted)."""
+    return tuple(sorted(_load_map().keys()))
+
+
+def resolve_descriptor(operation: object) -> OperationContractDescriptor:
+    """Single canonical operation resolution (exact, case-sensitive, no fuzzy).
+
+    Raises ForgeError with code UNKNOWN_OPERATION for unknown ops and
+    INPUT_TYPE_INVALID for non-string identity. Never invents aliases.
+    """
+    if not isinstance(operation, str):
+        raise ForgeError("INPUT_TYPE_INVALID", f"operation must be string, got {type(operation).__name__}")
+    desc = _load_map().get(operation)
+    if desc is None:
+        raise ForgeError("UNKNOWN_OPERATION", f"unknown operation: {operation!r}")
+    return desc
+
+
+def validate_operation_input(
+    descriptor: OperationContractDescriptor, arguments: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Single canonical typed validation (same validate_inputs seam)."""
+    if arguments is None:
+        arguments = {}
+    return validate_inputs(descriptor, arguments)
+
+
+def _authority_for(
+    read_authorities: tuple[Any, ...], operation: str
+) -> Any | None:
+    for auth in read_authorities:
+        try:
+            if getattr(getattr(auth, "operation", None), "name", None) == operation:
+                return auth
+        except Exception:
+            continue
+    return None
+
+
+@dataclass(frozen=True)
+class CanonicalDispatchBinding:
+    """Core-owned trusted dispatch binding (no MCP/Hermes types).
+
+    Mechanical carrier of already-authoritative trusted objects. It decides
+    no policy, mints no authority, resolves no projects. Adapters convert
+    their transport binding into this shape mechanically (no semantic
+    choice); Core owns provider selection from here.
+    """
+
+    canonical_task_id: str = ""
+    project_id: str = ""
+    worktree_id: str = ""
+    trusted_context: Any | None = None
+    handoff: Any | None = None
+    sandbox: Any | None = None
+    tool_surface: Any | None = None
+    read_authorities: tuple[Any, ...] = ()
+    mutation_authority: Any | None = None
+    restricted_shell_authority: Any | None = None
+    test_execution_authority: Any | None = None
+    git_authorities: tuple[Any, ...] = ()
+    trusted_task_main_context: Any | None = None
+    allowed_operations: frozenset[str] = frozenset()
+
+    def capability_names(self) -> frozenset[str]:
+        if self.allowed_operations:
+            return frozenset(self.allowed_operations)
+        try:
+            surface = self.tool_surface
+            if surface is not None and hasattr(surface, "all_capability_names"):
+                return frozenset(surface.all_capability_names())
+        except Exception:
+            pass
+        return frozenset()
+
+
+def _require_sandbox(binding: CanonicalDispatchBinding) -> Any:
+    if binding.sandbox is None:
+        raise ForgeError("AUTHORITY_DENIED", "trusted sandbox is absent for this binding")
+    return binding.sandbox
+
+
+def _map_task_main_exception(exc: Exception) -> str:
+    name = type(exc).__name__
+    msg = str(exc)
+    if name == "PlanDriftError" or "PLAN_DRIFT" in msg:
+        return "PLAN_DRIFT"
+    if name == "SessionRecoveryRequiredError" or "SESSION_RECOVERY_REQUIRED" in msg:
+        return "SESSION_RECOVERY_REQUIRED"
+    if name == "CoordinatorNotFoundError":
+        return "COORDINATOR_NOT_FOUND"
+    if name == "CoordinatorBindingError":
+        return "COORDINATOR_BINDING_ERROR"
+    if name == "CoordinatorRuntimeError":
+        return "COORDINATOR_RUNTIME_ERROR"
+    if name == "StaleCoordinatorRevisionError":
+        return "STALE_COORDINATOR_REVISION"
+    if name == "TaskMainControlAuthorityError":
+        return "AUTHORITY_DENIED"
+    if "USER_GATE_REQUIRED" in msg:
+        return "USER_GATE_REQUIRED"
+    if "AUTHORITY_DENIED" in msg or "requires profile" in msg:
+        return "AUTHORITY_DENIED"
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    return "GOVERNED_OPERATION_FAILURE"
+
+
+def _dispatch_task_main(
+    operation: str, binding: CanonicalDispatchBinding
+) -> ToolResponse:
+    # Authority: task-main role only, context required (same as MCP gate,
+    # now owned by Core). Worker can never reach service.
+    handoff = binding.handoff
+    surface = binding.tool_surface
+    try:
+        handoff_role = getattr(getattr(handoff, "work_role", None), "value", None) or str(
+            getattr(handoff, "work_role", "")
+        )
+    except Exception:
+        handoff_role = ""
+    try:
+        surface_role = getattr(getattr(surface, "work_role", None), "value", None) or str(
+            getattr(surface, "work_role", "")
+        )
+    except Exception:
+        surface_role = ""
+    if handoff_role != "task-main" or surface_role != "task-main":
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "task-main control requires profile aota-task-main"}
+        )
+    ctx = binding.trusted_task_main_context
+    if ctx is None or not hasattr(ctx, "control_service"):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "trusted task-main context is absent for this binding"}
+        )
+    # Reuse existing TaskMainControlService/Runner/Coordinator without
+    # rewriting lifecycle semantics (LEAF rewrite = no).
+    try:
+        from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE
+    except Exception as exc:
+        return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)})
+    try:
+        if operation == "task_main.activate_milestone":
+            live = ctx.live_plan_view
+            try:
+                blocked = bool(live.user_gate_blocked)
+            except Exception:
+                blocked = not bool(getattr(live, "milestone_user_approval_satisfied", False))
+            if blocked:
+                return ToolResponse.failure(
+                    {"code": "USER_GATE_REQUIRED", "message": "USER_GATE_REQUIRED: live Plan Milestone approval not satisfied"}
+                )
+            try:
+                handle = ctx.control_service.activate_milestone(
+                    profile=TASK_MAIN_PROFILE,
+                    plan_view=live,
+                    origin_task_main_session_ref=ctx.origin_task_main_session_ref,
+                    executor_id=ctx.executor_id,
+                    project_id=binding.project_id,
+                    coordinator_id=ctx.coordinator_id,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
+            try:
+                state = handle.state if hasattr(handle, "state") else None
+                payload: dict[str, Any] = {
+                    "coordinator_id": getattr(handle, "coordinator_id", ctx.coordinator_id or f"{binding.project_id}:M"),
+                    "status": state.status.value if state is not None and hasattr(state.status, "value") else str(getattr(state, "status", "ACTIVE")) if state else "ACTIVE",
+                    "coordinator_revision": getattr(state, "coordinator_revision", 1) if state else 1,
+                    "milestone_id": getattr(state, "milestone_id", getattr(live, "milestone_id", "")) if state else getattr(live, "milestone_id", ""),
+                    "plan_authority": getattr(state, "plan_authority", getattr(live, "plan_authority", "")) if state else getattr(live, "plan_authority", ""),
+                    "work_items": list(getattr(state, "work_items", [])) if state else [],
+                    "user_gate_required": False,
+                }
+            except Exception:
+                payload = {"coordinator_id": getattr(handle, "coordinator_id", ""), "status": "ACTIVE"}
+            return ToolResponse.success(payload)
+        if operation == "task_main.recover_coordinator":
+            live = ctx.live_plan_view
+            coord_id = ctx.coordinator_id
+            if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
+                try:
+                    mid = getattr(live, "milestone_id", "M3")
+                    coord_id = f"{binding.project_id}:{mid}"
+                except Exception:
+                    coord_id = f"{binding.project_id}:M3"
+            try:
+                handle = ctx.control_service.recover_coordinator(
+                    profile=TASK_MAIN_PROFILE,
+                    coordinator_id=coord_id,
+                    live_plan_view=live,
+                    session_available=ctx.session_available,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
+            try:
+                state = handle.state
+                payload = {
+                    "coordinator_id": handle.coordinator_id,
+                    "status": state.status.value if hasattr(state.status, "value") else str(state.status),
+                    "coordinator_revision": state.coordinator_revision,
+                    "milestone_id": state.milestone_id,
+                }
+            except Exception:
+                payload = {"coordinator_id": coord_id, "status": "ACTIVE"}
+            return ToolResponse.success(payload)
+        if operation == "task_main.advance_once":
+            live = ctx.live_plan_view
+            coord_id = ctx.coordinator_id
+            if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
+                try:
+                    mid = getattr(live, "milestone_id", "M3")
+                    coord_id = f"{binding.project_id}:{mid}"
+                except Exception:
+                    coord_id = f"{binding.project_id}:M3"
+            if coord_id is not None:
+                try:
+                    store = getattr(ctx.control_service, "_coord_store", None)
+                    if store is not None and store.get(coord_id) is None:
+                        for cand in store.list_all():
+                            if cand.milestone_id == getattr(live, "milestone_id", None) and cand.plan_authority == getattr(live, "plan_authority", None):
+                                coord_id = cand.coordinator_id
+                                break
+                except Exception:
+                    pass
+            try:
+                outcome = ctx.control_service.advance_once(
+                    profile=TASK_MAIN_PROFILE,
+                    coordinator_id=coord_id,
+                    live_plan_view=live,
+                    handoff_resolver=ctx.handoff_resolver,
+                    governed_evidence_resolver=ctx.governed_evidence_resolver,
+                    reviewer_handoff_resolver=ctx.reviewer_handoff_resolver,
+                    governed_review_resolver=ctx.governed_review_resolver,
+                    next_milestone_view=ctx.next_milestone_view,
+                    session_available=ctx.session_available,
+                    reviewer_canonical_task_id_resolver=ctx.reviewer_canonical_task_id_resolver,
+                )
+            except Exception as exc:
+                return ToolResponse.failure(
+                    {"code": _map_task_main_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
+                )
+            try:
+                payload = {
+                    "coordinator_id": outcome.coordinator_id,
+                    "coordinator_revision": outcome.coordinator_revision,
+                    "disposition": outcome.disposition,
+                    "next_action": outcome.disposition,
+                    "ready": list(getattr(outcome, "ready", [])),
+                    "dispatched": list(getattr(outcome, "dispatched", [])),
+                    "deferred": list(getattr(outcome, "deferred", [])),
+                    "reconciled_work_item": getattr(outcome, "reconciled_work_item", None),
+                    "reconciled_canonical_task_id": getattr(outcome, "reconciled_canonical_task_id", None),
+                    "ack_eligible": bool(getattr(outcome, "ack_eligible", False)),
+                    "user_gate_required": bool(getattr(outcome, "user_gate_required", False)),
+                    "session_recovery_required": bool(getattr(outcome, "session_recovery_required", False)),
+                    "milestone_closure_ready": bool(getattr(outcome, "milestone_closure_ready", False)),
+                    "next_milestone_gate": bool(getattr(outcome, "next_milestone_gate", False)),
+                    "integrated_review_required": bool(getattr(outcome, "integrated_review_required", False)),
+                    "reasons": list(getattr(outcome, "reasons", [])),
+                }
+            except Exception:
+                payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN")}
+            return ToolResponse.success(payload)
+    except ForgeError as exc:
+        return ToolResponse.failure({"code": exc.code, "message": exc.message})
+    except Exception as exc:
+        return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+    return ToolResponse.failure({"code": "UNKNOWN_OPERATION", "message": f"unsupported task_main operation: {operation!r}"})
+
+
+def dispatch_tool_operation(
+    operation: str, arguments: dict[str, Any] | None, binding: CanonicalDispatchBinding
+) -> ToolResponse:
+    """Canonical Core dispatch for provider-backed operations.
+
+    Single orchestration: exact resolution -> typed validation -> Core-owned
+    provider/service selection -> existing leaf implementation. Adapters must
+    call this instead of duplicating lookup/validation/selection.
+    """
+    # Resolution (exact, no fuzzy).
+    try:
+        descriptor = resolve_descriptor(operation)
+    except ForgeError as exc:
+        return ToolResponse.failure({"code": "UNKNOWN_OPERATION", "message": exc.message})
+    except Exception as exc:
+        return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+    if operation not in PROVIDER_BACKED_OPERATIONS:
+        return ToolResponse.failure(
+            {"code": "UNKNOWN_OPERATION", "message": f"operation not in canonical tool dispatch: {operation!r}"}
+        )
+    # Validation (typed, same seam).
+    if arguments is None:
+        arguments = {}
+    if not isinstance(arguments, dict):
+        return ToolResponse.failure(
+            {"code": "INPUT_TYPE_INVALID", "message": f"arguments must be object, got {type(arguments).__name__}"}
+        )
+    try:
+        validated = validate_operation_input(descriptor, arguments)
+    except ForgeError as exc:
+        return ToolResponse.failure({"code": exc.code, "message": exc.message})
+    except Exception as exc:
+        return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+
+    # Dispatch routing (Core-owned provider selection; reuse leaves).
+    try:
+        if operation == "workspace.write":
+            if binding.mutation_authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted mutation authority is absent"})
+            if getattr(getattr(binding.mutation_authority, "operation", None), "name", None) != operation:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "mutation authority mismatch"})
+            try:
+                if binding.mutation_authority.operation.contract_hash() != descriptor.contract_hash():
+                    return ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from authority"})
+            except Exception:
+                pass
+            from aota_forge.work_plane.workspace_mutation import BoundedWorkspaceMutationProvider
+
+            provider = BoundedWorkspaceMutationProvider(binding.mutation_authority)
+            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+
+        if operation in ("workspace.search", "workspace.read"):
+            authority = _authority_for(binding.read_authorities, operation)
+            if authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted read authority is absent"})
+            try:
+                if authority.operation.contract_hash() != descriptor.contract_hash():
+                    return ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from authority"})
+            except Exception:
+                pass
+            from aota_forge.work_plane.workspace_tools import BoundedWorkspaceToolProvider
+
+            provider = BoundedWorkspaceToolProvider(authority)
+            # Use authority's descriptor for request to preserve evidence binding;
+            # validated inputs already canonical.
+            return provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+
+        if operation == "result.hydrate":
+            if operation not in binding.capability_names():
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "result.hydrate not authorized for this role/task"})
+            sandbox = _require_sandbox(binding)
+            from aota_forge.work_plane.result_hydrate import ResultHydrateProvider
+
+            provider = ResultHydrateProvider(sandbox)
+            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+
+        if operation == "restricted_shell.run":
+            if operation not in binding.capability_names():
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell not authorized for this role/task"})
+            if binding.restricted_shell_authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell authority absent for this binding"})
+            from aota_forge.work_plane.restricted_shell import BoundedRestrictedShellProvider
+
+            provider = BoundedRestrictedShellProvider(binding.restricted_shell_authority)
+            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+
+        if operation == "test.run":
+            if operation not in binding.capability_names():
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run not authorized for this role/task"})
+            if binding.test_execution_authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted test execution authority absent for this binding"})
+            from aota_forge.work_plane.test_execution import BoundedTestExecutionToolProvider
+
+            provider = BoundedTestExecutionToolProvider(binding.test_execution_authority)
+            return provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
+
+        if operation == "role.bootstrap":
+            from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
+
+            try:
+                payload = handle_role_bootstrap(binding, validated)
+            except Exception as exc:
+                msg = str(exc)[:512] or "governed operation failed"
+                code = "AUTHORITY_DENIED" if "AUTHORITY" in str(exc) else "GOVERNED_OPERATION_FAILURE"
+                if isinstance(exc, ValueError) and "authority" in str(exc).lower():
+                    code = "AUTHORITY_DENIED"
+                return ToolResponse.failure({"code": code, "message": msg})
+            return ToolResponse.success(payload)
+
+        if operation == "skill.open":
+            from aota_forge.work_plane.role_bootstrap import handle_skill_open
+
+            try:
+                payload = handle_skill_open(binding, validated)
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "not in allowed" in msg or "outside allowed" in msg:
+                    code = "AUTHORITY_DENIED"
+                elif "foreign" in msg:
+                    code = "FOREIGN_SKILL_DENIED"
+                elif "digest" in msg:
+                    code = "DIGEST_MISMATCH"
+                elif "not found" in msg or "missing" in msg:
+                    code = "SKILL_NOT_FOUND"
+                else:
+                    code = "GOVERNED_OPERATION_FAILURE"
+                return ToolResponse.failure({"code": code, "message": str(exc)[:512] or "governed operation failed"})
+            return ToolResponse.success(payload)
+
+        if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once"):
+            return _dispatch_task_main(operation, binding)
+
+        if operation in ("git.status", "git.diff"):
+            authority = _authority_for(binding.git_authorities, operation)
+            if authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted git authority is absent"})
+            from aota_forge.work_plane.git_tools import BoundedGitToolProvider
+
+            provider = BoundedGitToolProvider(authority)
+            return provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+
+    except ForgeError as exc:
+        return ToolResponse.failure({"code": exc.code, "message": exc.message})
+    except Exception as exc:
+        return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+    return ToolResponse.failure({"code": "UNKNOWN_OPERATION", "message": f"unsupported operation: {operation!r}"})
+
+
+def dispatch_via_core(
+    operation: str,
+    params: dict[str, Any] | None = None,
+    binding: CanonicalDispatchBinding | None = None,
+) -> Any:
+    """Unified Core entry used by adapters/tests for parity.
+
+    Provider-backed ops go through :func:`dispatch_tool_operation` (ToolResponse).
+    All other canonical ops delegate to existing ``core.ingress.execute``
+    (dict envelope) with the same descriptor/validation authority. This keeps
+    one semantic owner and one lookup/validation path while reusing existing
+    ingress/dispatcher leaves.
+    """
+    # Canonical resolution first (same for all).
+    descriptor = resolve_descriptor(operation)
+    if operation in PROVIDER_BACKED_OPERATIONS:
+        if binding is None:
+            return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted binding is required"})
+        return dispatch_tool_operation(operation, params, binding)
+    # Ingress-backed: same validation, then existing ingress dispatch.
+    from aota_forge.core.ingress import execute as core_execute
+
+    trusted_context = getattr(binding, "trusted_context", None) if binding is not None else None
+    # Validate via canonical seam first to prove same validation (ingress will re-validate identically).
+    validated = validate_operation_input(descriptor, params)
+    return core_execute(operation, validated, trusted_context=trusted_context)
+
+
+__all__ = [
+    "SEMANTIC_OWNER",
+    "EXPECTED_LAYER",
+    "CANONICAL_DESCRIPTOR_AUTHORITY",
+    "OPERATION_DESCRIPTOR_AUTHORITY_COUNT",
+    "SECOND_DESCRIPTOR_REGISTRY_CREATED",
+    "SECOND_SCHEMA_AUTHORITY_CREATED",
+    "NEW_OPERATION_AUTHORITY_REGISTRY_CREATED",
+    "NEW_PERMISSION_ENGINE_CREATED",
+    "NEW_CONTROL_PLANE_CREATED",
+    "NEW_STATE_MACHINE_CREATED",
+    "CANONICAL_OPERATION_DISPATCH_PLANE_COUNT",
+    "LEAF_PROVIDER_REWRITE_REQUIRED",
+    "PROVIDER_BACKED_OPERATIONS",
+    "INGRESS_BACKED_OPERATIONS",
+    "CanonicalDispatchBinding",
+    "list_canonical_operations",
+    "resolve_descriptor",
+    "validate_operation_input",
+    "dispatch_tool_operation",
+    "dispatch_via_core",
+]

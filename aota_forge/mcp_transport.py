@@ -272,9 +272,11 @@ DEFAULT_REGISTRY_MIGRATION_REQUIRED = False
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _MAX_FAILURE_MESSAGE = 512
 
-# Exact deterministic operation -> descriptor map (no fuzzy, no alias).
-# Workspace descriptors are static imports; M2 descriptors are loaded canonically (single authority: .aota/contracts/operations.yaml)
-# M3/W1 task-main descriptors are canonical via same loader (task_main_descriptors)
+# Compatibility projection of canonical descriptors (NOT semantic authority).
+# W1 convergence: single descriptor authority is core_ingress via
+# .aota/contracts/operations.yaml. This map is a deterministic projection
+# for backward compatibility only; invoke() resolves via core_ingress.
+# MCP_OPERATION_SPECIFIC_DISPATCH_TABLE_IS_SEMANTIC_AUTHORITY=no.
 _DESCRIPTOR_MAP: dict[str, Any] = {
     WORKSPACE_SEARCH_DESCRIPTOR.name: WORKSPACE_SEARCH_DESCRIPTOR,
     WORKSPACE_READ_DESCRIPTOR.name: WORKSPACE_READ_DESCRIPTOR,
@@ -907,12 +909,48 @@ def _project_response(operation: str, response: ToolResponse) -> McpToolResult:
     }
 
 
-class _SharedAotaMcpAdapter:
-    """Transport-local dispatch using only existing provider seams.
+def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-untyped-def]
+    """Mechanical transport-to-Core binding conversion (no semantic choice).
 
-    Single-entry: ``aota.invoke(operation, arguments)`` -> exact operation
-    resolution -> existing OperationContractDescriptor -> validate_inputs ->
-    existing authority -> existing ToolProvider -> bounded transport response.
+    Copies already-authoritative trusted objects into Core-owned
+    CanonicalDispatchBinding. Chooses no provider, validates no policy,
+    invents no authority. Provider selection stays in core_ingress.
+    """
+    from aota_forge.core_ingress import CanonicalDispatchBinding
+
+    try:
+        allowed: frozenset[str] = frozenset(binding.tool_surface.all_capability_names())
+    except Exception:
+        allowed = frozenset()
+    return CanonicalDispatchBinding(
+        canonical_task_id=getattr(binding, "canonical_task_id", ""),
+        project_id=getattr(binding, "project_id", ""),
+        worktree_id=getattr(binding, "worktree_id", ""),
+        trusted_context=getattr(binding, "trusted_context", None),
+        handoff=getattr(binding, "handoff", None),
+        sandbox=getattr(binding, "sandbox", None),
+        tool_surface=getattr(binding, "tool_surface", None),
+        read_authorities=tuple(getattr(binding, "read_authorities", ()) or ()),
+        mutation_authority=getattr(binding, "mutation_authority", None),
+        restricted_shell_authority=getattr(binding, "restricted_shell_authority", None),
+        test_execution_authority=getattr(binding, "test_execution_authority", None),
+        git_authorities=tuple(getattr(binding, "git_authorities", ()) or ()),
+        trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
+        allowed_operations=allowed,
+    )
+
+
+class _SharedAotaMcpAdapter:
+    """Thin MCP transport adapter over canonical Core dispatch (W1 convergence).
+
+    Single-entry: ``aota.invoke(operation, arguments)`` -> core_ingress
+    (exact resolution -> typed validation -> Core-owned provider selection)
+    -> bounded transport projection.
+
+    Owns only: protocol adaptation, single aota.invoke exposure,
+    stdio/process mechanics, bounded protocol result projection, mechanical
+    transport failure handling. Owns no operation lookup, validation or
+    provider selection semantics (all in core_ingress).
 
     No new registry, permission engine, or generic gateway is created.
     M2 expands logical operation catalog to include result.hydrate (durable selective hydration)
@@ -921,38 +959,22 @@ class _SharedAotaMcpAdapter:
 
     def __init__(self, binding: TrustedWorkerBinding) -> None:
         self.binding = binding
-        self._read_providers = {
-            operation: BoundedWorkspaceToolProvider(authority)
-            for operation in ("workspace.search", "workspace.read")
-            if (authority := _authority_for(binding, operation)) is not None
-        }
-        self._write_provider = (
-            BoundedWorkspaceMutationProvider(binding.mutation_authority)
-            if binding.mutation_authority is not None
-            else None
-        )
-        # M2: durable result.hydrate provider (thin HydrationSource adapter, non-authority)
-        self._hydrate_provider = None
-        if ResultHydrateProvider is not None and RESULT_HYDRATE_DESCRIPTOR is not None:
-            try:
-                self._hydrate_provider = ResultHydrateProvider(binding.sandbox)
-            except Exception:
-                self._hydrate_provider = None
-        # M2: residual restricted shell provider (reused, requires trusted authority)
-        self._shell_provider = None
-        if (
-            BoundedRestrictedShellProvider is not None
-            and binding.restricted_shell_authority is not None
-        ):
-            try:
-                self._shell_provider = BoundedRestrictedShellProvider(binding.restricted_shell_authority)
-            except Exception:
-                self._shell_provider = None
+        # W1: transport keeps no semantic provider cache. Provider selection
+        # lives in core_ingress per-call. Attributes retained as None for
+        # backward-compatible introspection only; they choose no behavior.
+        self._read_providers: dict[str, Any] = {}
+        self._write_provider: Any = None
+        self._hydrate_provider: Any = None
+        self._shell_provider: Any = None
 
-    def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:  # noqa: C901
-        # ---- outer envelope validation (operation, arguments) ----
-        # All paths must go through governed projection to ensure bounded inline / ref,
-        # outcome/completeness explicit, typed errors, no path leakage.
+    def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
+        """Thin transport over canonical Core dispatch (W1 One-Core convergence).
+
+        Owns only envelope checks, exposure gating and protocol projection.
+        Resolution, typed validation and provider selection live in
+        :mod:`aota_forge.core_ingress` (AF_CORE, core_ingress layer).
+        """
+        # Transport envelope (mechanical, not semantic).
         if not isinstance(operation, str):
             return _governed_error(
                 self.binding,
@@ -960,475 +982,89 @@ class _SharedAotaMcpAdapter:
                 "UNKNOWN_OPERATION",
                 f"operation must be string, got {type(operation).__name__}",
             )
-        # Exact, deterministic, case-sensitive resolution — no fuzzy, no alias.
+        # Canonical resolution via Core single authority (fails via Core path).
+        try:
+            from aota_forge.core_ingress import resolve_descriptor as _core_resolve
+            _core_resolve(operation)
+        except ForgeError as exc:
+            return _governed_error(
+                self.binding,
+                operation,
+                getattr(exc, "code", "UNKNOWN_OPERATION"),
+                str(exc),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", str(exc))
+        # Exposure gate (not authority): MCP exposes only LOGICAL_OPERATIONS.
+        # Unknown-to-Core already failed above; this denies known-but-unexposed
+        # with the same UNKNOWN_OPERATION shape to preserve transport contract.
+        # Exposure absence never implies operation absence in Core.
         if operation not in SUPPORTED_OPERATIONS:
             return _governed_error(self.binding, operation, "UNKNOWN_OPERATION", f"unknown operation: {operation!r}")
         if arguments is None:
             arguments = {}
         if not isinstance(arguments, dict):
             return _governed_error(self.binding, operation, "INPUT_TYPE_INVALID", f"arguments must be object, got {type(arguments).__name__}")
-        # ---- nested argument validation via existing descriptor seam ----
-        descriptor = _DESCRIPTOR_MAP.get(operation)
-        if descriptor is None:
-            return _governed_error(self.binding, operation, "UNKNOWN_OPERATION", f"unknown operation: {operation!r}")
+        # Canonical dispatch via Core (owns validation + provider selection).
         try:
-            validated = validate_inputs(descriptor, arguments)
-        except ForgeError as exc:
-            return _governed_error(self.binding, operation, getattr(exc, "code", "INVALID_INPUT"), str(exc))
-        except Exception as exc:  # pragma: no cover - defensive
-            return _governed_error(self.binding, operation, "INVALID_INPUT", str(exc))
-
-        # ---- authority-preserved provider dispatch (reuse existing providers) ----
-        try:
-            if operation == "workspace.write":
-                if self._write_provider is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure(
-                            {"code": "AUTHORITY_DENIED", "message": "trusted mutation authority is absent"}
-                        ),
-                    )
-                request = ToolRequest(
-                    operation=WORKSPACE_WRITE_DESCRIPTOR,
-                    inputs=validated,
-                )
-                return _governed_from_response(self.binding, operation, self._write_provider.invoke(request))
-
-            if operation in ("workspace.search", "workspace.read"):
-                provider = self._read_providers.get(operation)
-                authority = _authority_for(self.binding, operation)
-                if provider is None or authority is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted read authority is absent"}),
-                    )
-                if authority.operation.contract_hash() != descriptor.contract_hash():
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from authority"}),
-                    )
-                request = ToolRequest(operation=authority.operation, inputs=validated)
-                return _governed_from_response(self.binding, operation, provider.invoke(request))
-
-            if operation == "result.hydrate":
-                # Hydration is authorized via current scope (sandbox) + digest verification, not ref possession.
-                # Per-binding visibility: operation must be in tool_surface progressive/eager set to be callable.
-                # ROLE_SURFACE_CONTROLS_VISIBILITY_ONLY=yes, but we still fail closed if not granted to this role/task.
-                if operation not in set(self.binding.tool_surface.all_capability_names()):
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "result.hydrate not authorized for this role/task"}),
-                    )
-                if self._hydrate_provider is None or RESULT_HYDRATE_DESCRIPTOR is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "result hydration not enabled for this binding"}),
-                    )
-                if descriptor.contract_hash() != RESULT_HYDRATE_DESCRIPTOR.contract_hash():
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "result.hydrate contract hash mismatch"}),
-                    )
-                request = ToolRequest(operation=RESULT_HYDRATE_DESCRIPTOR, inputs=validated)
-                hyd_response = self._hydrate_provider.invoke(request)
-                # For hydrate, bypass the generic 4096 inline bound: hydrate is whole-object up to 64 KiB durable bound.
-                # Return usable hydrated evidence directly inline (bounded 64 KiB), not another by_ref layer.
-                # This satisfies §7 mandatory 5KB+ proof: usable hydrated evidence returned, bounded, no silent truncation.
-                if hyd_response.ok:
-                    payload = dict(hyd_response.payload or {})
-                    content = payload.get("content", "")
-                    if not isinstance(content, str):
-                        content = str(content)
-                    content_bytes = content.encode("utf-8")
-                    # Ensure digest verified and within durable bound
-                    if len(content_bytes) > DURABLE_PAYLOAD_MAX_BYTES:
-                        return _governed_from_response(
-                            self.binding,
-                            operation,
-                            ToolResponse.failure({"code": "OVERSIZED_HYDRATION", "message": f"hydrated content {len(content_bytes)} exceeds durable bound {DURABLE_PAYLOAD_MAX_BYTES}"}),
-                        )
-                    # Return inline hydration result (whole_object, no silent truncation)
-                    # Bounded repair I37-B001: deduplicate hydrated payload to single model-visible copy.
-                    # Previous shape duplicated content in payload.content AND inline_output.
-                    # Keep one canonical copy in payload, set inline_output=None (MCP_TOOL_RESULT_INTERNAL_DUPLICATE_COUNT=1).
-                    return {
-                        "ok": True,
-                        "operation": operation,
-                        "payload": payload,
-                        "error": None,
-                        "output_mode": "inline",
-                        "is_truncated": False,
-                        "complete": True,
-                        "outcome": "success",
-                        "is_success": True,
-                        "capability_name": "result.hydrate",
-                        "output_digest": payload.get("digest", "0" * 64),
-                        "output_byte_length": len(content_bytes),
-                        "inline_output": None,
-                        "output_ref": None,
-                    }
-                else:
-                    # Failure path: use governed projection to preserve typed errors and safety
-                    return _governed_from_response(self.binding, operation, hyd_response)
-
-            if operation == "restricted_shell.run":
-                # Residual fallback – must have trusted shell authority and be in capability surface.
-                if operation not in set(self.binding.tool_surface.all_capability_names()):
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell not authorized for this role/task"}),
-                    )
-                if self._shell_provider is None or RESTRICTED_SHELL_DESCRIPTOR is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "restricted shell authority absent for this binding"}),
-                    )
-                if descriptor.contract_hash() != RESTRICTED_SHELL_DESCRIPTOR.contract_hash():
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "restricted shell contract hash mismatch"}),
-                    )
-                request = ToolRequest(operation=RESTRICTED_SHELL_DESCRIPTOR, inputs=validated)
-                return _governed_from_response(self.binding, operation, self._shell_provider.invoke(request))
-
-            # W2 AF Role Bootstrap / Skill / Test — share single MCP aota.invoke
-            if operation == "role.bootstrap":
-                # Trusted bootstrap: no model authority fields, all derived from binding
-                if descriptor.contract_hash() != ROLE_BOOTSTRAP_DESCRIPTOR.contract_hash():  # type: ignore[union-attr]
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "role.bootstrap contract hash mismatch"}),
-                    )
-                try:
-                    from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap  # type: ignore
-                except Exception as exc:
-                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"role.bootstrap handler unavailable: {exc}")
-                try:
-                    payload = handle_role_bootstrap(self.binding, validated)
-                except Exception as exc:
-                    code = "AUTHORITY_DENIED" if "AUTHORITY" in str(exc) else "INVALID_INPUT" if "empty" in str(exc).lower() else "GOVERNED_OPERATION_FAILURE"
-                    # Preserve fail-closed identity: unknown role, digest mismatch, etc. all map to GOVERNED_OPERATION_FAILURE unless typed
-                    if isinstance(exc, ValueError) and "authority" in str(exc).lower():
-                        code = "AUTHORITY_DENIED"
-                    elif isinstance(exc, ValueError):
-                        code = "GOVERNED_OPERATION_FAILURE"
-                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}))
-                return _governed_from_response(self.binding, operation, ToolResponse.success(payload))
-
-            if operation == "skill.open":
-                if descriptor.contract_hash() != SKILL_OPEN_DESCRIPTOR.contract_hash():  # type: ignore[union-attr]
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "skill.open contract hash mismatch"}),
-                    )
-                try:
-                    from aota_forge.work_plane.role_bootstrap import handle_skill_open  # type: ignore
-                except Exception as exc:
-                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"skill.open handler unavailable: {exc}")
-                try:
-                    payload = handle_skill_open(self.binding, validated)
-                except Exception as exc:
-                    msg = str(exc).lower()
-                    if "not in allowed" in msg or "outside allowed" in msg:
-                        code = "AUTHORITY_DENIED"
-                    elif "foreign" in msg:
-                        code = "FOREIGN_SKILL_DENIED"
-                    elif "digest" in msg:
-                        code = "DIGEST_MISMATCH"
-                    elif "not found" in msg:
-                        code = "SKILL_NOT_FOUND"
-                    elif "missing" in msg:
-                        code = "SKILL_NOT_FOUND"
-                    else:
-                        code = "GOVERNED_OPERATION_FAILURE"
-                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}))
-                return _governed_from_response(self.binding, operation, ToolResponse.success(payload))
-
-            if operation == "test.run":
-                # Per-role least-privilege: only bindings with test_execution_authority may invoke
-                if operation not in set(self.binding.tool_surface.all_capability_names()):
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run not authorized for this role/task (tool surface deny)"}),
-                    )
-                if TEST_RUN_DESCRIPTOR is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "test.run descriptor unavailable"}),
-                    )
-                if descriptor.contract_hash() != TEST_RUN_DESCRIPTOR.contract_hash():
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "test.run contract hash mismatch"}),
-                    )
-                # Check trusted authority exists
-                t_auth = getattr(self.binding, "test_execution_authority", None)
-                if t_auth is None:
-                    return _governed_from_response(
-                        self.binding,
-                        operation,
-                        ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted test execution authority absent for this binding (per-role deny)"}),
-                    )
-                # Validate authority matches binding
-                try:
-                    from aota_forge.work_plane.test_execution import BoundedTestExecutionToolProvider  # type: ignore
-                except Exception as exc:
-                    return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", f"test provider unavailable: {exc}")
-                try:
-                    provider = BoundedTestExecutionToolProvider(t_auth)
-                except Exception as exc:
-                    return _governed_from_response(self.binding, operation, ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": _bounded_failure_message(str(exc))}))
-                request = ToolRequest(operation=TEST_RUN_DESCRIPTOR, inputs=validated)
-                return _governed_from_response(self.binding, operation, provider.invoke(request))
-
-            if operation in TASK_MAIN_OPERATIONS:
-                return self._invoke_task_main(operation, validated, descriptor)
-
-            # Fallback (should be unreachable due to SUPPORTED_OPERATIONS check)
-            return _governed_error(self.binding, operation, "UNKNOWN_OPERATION", f"unsupported operation: {operation!r}")
+            from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
+            canonical = _to_canonical_binding(self.binding)
+            tool_response = _core_dispatch(operation, arguments, canonical)
         except ForgeError as exc:
             return _governed_error(self.binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
-        except Exception as exc:  # adapter boundary: never turn failures into success  # noqa: BLE001
-            msg = _bounded_failure_message(str(exc))
-            return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", msg)
-
-    def _invoke_task_main(self, operation: str, validated: dict[str, Any], descriptor: Any) -> McpToolResult:  # noqa: C901
-        """Thin trusted adapter from aota.invoke to existing TaskMainControlService.
-
-        This is the sole seam between the single-entry transport and the
-        existing typed control service. It never trusts model-supplied
-        authority-bearing fields; all truth comes from
-        ``self.binding.trusted_task_main_context``.
-        """
-        binding = self.binding
-        # Authority: worker must never be able to call task-main controls.
-        # Profile comes from trusted host binding, never from model arguments.
-        if binding.handoff.work_role.value != "task-main" or binding.tool_surface.work_role.value != "task-main":
-            return _governed_from_response(
-                binding,
-                operation,
-                ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "task-main control requires profile aota-task-main: aota-worker cannot access task-main control"}),
-            )
-        ctx = binding.trusted_task_main_context
-        if ctx is None or not isinstance(ctx, TrustedTaskMainRuntimeContext):
-            return _governed_from_response(
-                binding,
-                operation,
-                ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted task-main context is absent for this binding"}),
-            )
-        # Contract hash check for task-main descriptors (parity, not authority)
-        # validated is already {} (empty) – unknown inputs already rejected as UNKNOWN_INPUT
-        # Ensure descriptor identity matches canonical (fail-closed on drift)
-        expected_desc = None
-        if operation == "task_main.activate_milestone":
-            expected_desc = TASK_MAIN_ACTIVATE_DESCRIPTOR
-        elif operation == "task_main.recover_coordinator":
-            expected_desc = TASK_MAIN_RECOVER_DESCRIPTOR
-        elif operation == "task_main.advance_once":
-            expected_desc = TASK_MAIN_ADVANCE_DESCRIPTOR
-        if expected_desc is not None and descriptor.contract_hash() != expected_desc.contract_hash():
-            return _governed_from_response(
-                binding,
-                operation,
-                ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": f"{operation} contract hash differs from authority"}),
-            )
-        # Optional visibility check: task-main surface should contain these ops, but visibility != authority.
-        # If not visible, still deny? For progressive we allow call even if not eager, but if absent entirely, deny as authority.
-        # To keep TRANSPORT_OPERATION_IDENTITY_SEPARATED but still check visibility as secondary, we allow any task-main binding that has context.
-        # No additional visibility gate required beyond profile check above.
-
-        # Dispatch to existing TaskMainControlService (reuse, no V2)
-        try:
-            if operation == "task_main.activate_milestone":
-                live = ctx.live_plan_view
-                # Approval gate: trusted runtime must say approval satisfied
-                # live.user_gate_blocked captures (not approved) or amendment required
-                try:
-                    blocked = bool(live.user_gate_blocked)  # type: ignore[union-attr]
-                except Exception:
-                    blocked = not bool(getattr(live, "milestone_user_approval_satisfied", False))
-                if blocked:
-                    return _governed_from_response(
-                        binding,
-                        operation,
-                        ToolResponse.failure({"code": "USER_GATE_REQUIRED", "message": "USER_GATE_REQUIRED: live Plan Milestone approval not satisfied; task-main cannot set approval"}),
-                    )
-                # Call existing service
-                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
-
-                try:
-                    handle = ctx.control_service.activate_milestone(
-                        profile=TASK_MAIN_PROFILE,
-                        plan_view=live,  # MilestonePlanView
-                        origin_task_main_session_ref=ctx.origin_task_main_session_ref,
-                        executor_id=ctx.executor_id,
-                        project_id=binding.project_id,
-                        coordinator_id=ctx.coordinator_id,
-                    )
-                except Exception as exc:
-                    code = _map_task_main_exception(exc)
-                    return _governed_from_response(
-                        binding,
-                        operation,
-                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
-                    )
-                # Bounded success payload (no path/secret leakage)
-                try:
-                    state = handle.state if hasattr(handle, "state") else None
-                    payload: dict[str, Any] = {
-                        "coordinator_id": getattr(handle, "coordinator_id", ctx.coordinator_id or f"{binding.project_id}:{getattr(live, 'milestone_id', 'M3')}"),
-                        "status": state.status.value if state is not None and hasattr(state.status, "value") else str(getattr(state, "status", "ACTIVE")) if state else "ACTIVE",
-                        "coordinator_revision": getattr(state, "coordinator_revision", 1) if state else 1,
-                        "milestone_id": getattr(state, "milestone_id", getattr(live, "milestone_id", "")) if state else getattr(live, "milestone_id", ""),
-                        "plan_authority": getattr(state, "plan_authority", getattr(live, "plan_authority", "")) if state else getattr(live, "plan_authority", ""),
-                        "work_items": list(getattr(state, "work_items", [])) if state else [],
-                    }
-                    # Add bounded status flag
-                    payload["user_gate_required"] = False
-                except Exception:
-                    payload = {"coordinator_id": getattr(handle, "coordinator_id", ""), "status": "ACTIVE"}
-                return _governed_from_response(binding, operation, ToolResponse.success(payload))
-
-            elif operation == "task_main.recover_coordinator":
-                live = ctx.live_plan_view
-                coord_id = ctx.coordinator_id
-                if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
-                    # Derive default coordinator id from trusted project + milestone (same as coordinator's _default)
-                    try:
-                        mid = getattr(live, "milestone_id", "M3")
-                        coord_id = f"{binding.project_id}:{mid}"
-                    except Exception:
-                        coord_id = f"{binding.project_id}:M3"
-                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
-
-                try:
-                    handle = ctx.control_service.recover_coordinator(
-                        profile=TASK_MAIN_PROFILE,
-                        coordinator_id=coord_id,
-                        live_plan_view=live,
-                        session_available=ctx.session_available,
-                    )
-                except Exception as exc:
-                    code = _map_task_main_exception(exc)
-                    return _governed_from_response(
-                        binding,
-                        operation,
-                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
-                    )
-                try:
-                    state = handle.state
-                    payload = {
-                        "coordinator_id": handle.coordinator_id,
-                        "status": state.status.value if hasattr(state.status, "value") else str(state.status),
-                        "coordinator_revision": state.coordinator_revision,
-                        "milestone_id": state.milestone_id,
-                    }
-                except Exception:
-                    payload = {"coordinator_id": coord_id, "status": "ACTIVE"}
-                return _governed_from_response(binding, operation, ToolResponse.success(payload))
-
-            elif operation == "task_main.advance_once":
-                live = ctx.live_plan_view
-                coord_id = ctx.coordinator_id
-                if coord_id is None or not isinstance(coord_id, str) or not coord_id.strip():
-                    try:
-                        mid = getattr(live, "milestone_id", "M3")
-                        coord_id = f"{binding.project_id}:{mid}"
-                    except Exception:
-                        coord_id = f"{binding.project_id}:M3"
-                # If default id missing but store contains matching coordinator (e.g., after activation with different project), attempt discovery
-                if coord_id is not None:
-                    try:
-                        store = getattr(ctx.control_service, "_coord_store", None)
-                        if store is not None:
-                            # Try direct get; if missing, scan for milestone match
-                            if store.get(coord_id) is None:
-                                for cand in store.list_all():  # type: ignore[union-attr]
-                                    if cand.milestone_id == getattr(live, "milestone_id", None) and cand.plan_authority == getattr(live, "plan_authority", None):
-                                        coord_id = cand.coordinator_id
-                                        break
-                    except Exception:
-                        pass
-                from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE  # type: ignore
-
-                try:
-                    outcome = ctx.control_service.advance_once(
-                        profile=TASK_MAIN_PROFILE,
-                        coordinator_id=coord_id,
-                        live_plan_view=live,
-                        handoff_resolver=ctx.handoff_resolver,
-                        governed_evidence_resolver=ctx.governed_evidence_resolver,
-                        reviewer_handoff_resolver=ctx.reviewer_handoff_resolver,
-                        governed_review_resolver=ctx.governed_review_resolver,
-                        next_milestone_view=ctx.next_milestone_view,
-                        session_available=ctx.session_available,
-                        reviewer_canonical_task_id_resolver=ctx.reviewer_canonical_task_id_resolver,
-                    )
-                except Exception as exc:
-                    code = _map_task_main_exception(exc)
-                    return _governed_from_response(
-                        binding,
-                        operation,
-                        ToolResponse.failure({"code": code, "message": _bounded_failure_message(str(exc))}),
-                    )
-                # Project RunnerOutcome bounded (no path/secret leakage)
-                try:
-                    payload = {
-                        "coordinator_id": outcome.coordinator_id,
-                        "coordinator_revision": outcome.coordinator_revision,
-                        "disposition": outcome.disposition,
-                        "next_action": outcome.disposition,
-                        "ready": list(getattr(outcome, "ready", [])),
-                        "dispatched": list(getattr(outcome, "dispatched", [])),
-                        "deferred": list(getattr(outcome, "deferred", [])),
-                        "reconciled_work_item": getattr(outcome, "reconciled_work_item", None),
-                        "reconciled_canonical_task_id": getattr(outcome, "reconciled_canonical_task_id", None),
-                        "ack_eligible": bool(getattr(outcome, "ack_eligible", False)),
-                        "user_gate_required": bool(getattr(outcome, "user_gate_required", False)),
-                        "session_recovery_required": bool(getattr(outcome, "session_recovery_required", False)),
-                        "milestone_closure_ready": bool(getattr(outcome, "milestone_closure_ready", False)),
-                        "next_milestone_gate": bool(getattr(outcome, "next_milestone_gate", False)),
-                        "integrated_review_required": bool(getattr(outcome, "integrated_review_required", False)),
-                        "reasons": list(getattr(outcome, "reasons", [])),
-                    }
-                    # Add receipt digest if present (governed ref)
-                    receipt = getattr(outcome, "receipt", None)
-                    if receipt is not None:
-                        try:
-                            if hasattr(receipt, "receipt_digest"):
-                                payload["receipt_digest"] = receipt.receipt_digest  # type: ignore
-                            elif isinstance(receipt, dict) and "receipt_digest" in receipt:
-                                payload["receipt_digest"] = receipt["receipt_digest"]
-                        except Exception:
-                            pass
-                    # Bound payload sanity: ensure no absolute path leakage (callers may have stored paths)
-                    # Already sanitized via _sanitize before projection, but do shallow check
-                except Exception as exc:
-                    payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN"), "next_action": getattr(outcome, "disposition", "UNKNOWN")}
-                return _governed_from_response(binding, operation, ToolResponse.success(payload))
-
-            else:
-                return _governed_error(binding, operation, "UNKNOWN_OPERATION", f"unsupported task_main operation: {operation!r}")
-        except ForgeError as exc:
-            return _governed_error(binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
         except Exception as exc:  # noqa: BLE001
-            msg = _bounded_failure_message(str(exc))
-            return _governed_error(binding, operation, "GOVERNED_OPERATION_FAILURE", msg)
+            return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        # Preserve hydrate whole-object inline projection (bounded 64 KiB, single copy).
+        if operation == "result.hydrate" and getattr(tool_response, "ok", False):
+            try:
+                payload = dict(tool_response.payload or {})
+                content = payload.get("content", "")
+                if not isinstance(content, str):
+                    content = str(content)
+                content_bytes = content.encode("utf-8")
+                if len(content_bytes) > DURABLE_PAYLOAD_MAX_BYTES:
+                    return _governed_from_response(
+                        self.binding,
+                        operation,
+                        ToolResponse.failure({"code": "OVERSIZED_HYDRATION", "message": f"hydrated content {len(content_bytes)} exceeds durable bound {DURABLE_PAYLOAD_MAX_BYTES}"}),
+                    )
+                return {
+                    "ok": True,
+                    "operation": operation,
+                    "payload": payload,
+                    "error": None,
+                    "output_mode": "inline",
+                    "is_truncated": False,
+                    "complete": True,
+                    "outcome": "success",
+                    "is_success": True,
+                    "capability_name": "result.hydrate",
+                    "output_digest": payload.get("digest", "0" * 64),
+                    "output_byte_length": len(content_bytes),
+                    "inline_output": None,
+                    "output_ref": None,
+                }
+            except Exception:
+                pass
+        return _governed_from_response(self.binding, operation, tool_response)
 
+    def _invoke_task_main(self, operation: str, validated: dict[str, Any], descriptor: Any) -> McpToolResult:
+        """Deprecated transport seam (W1 convergence).
+
+        Preserved for backward compatibility; delegates to canonical Core
+        task-main dispatch. New code must call invoke() -> core_ingress.
+        """
+        try:
+            from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
+            canonical = _to_canonical_binding(self.binding)
+            # validated already canonical; re-dispatch via Core single path.
+            args = dict(validated) if isinstance(validated, dict) else {}
+            tool_response = _core_dispatch(operation, args, canonical)
+        except ForgeError as exc:
+            return _governed_error(self.binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        return _governed_from_response(self.binding, operation, tool_response)
 
 def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
     """Create one shared standard MCP server with exactly one Agent-facing tool.
