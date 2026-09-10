@@ -146,36 +146,53 @@ SOURCE_SEED_SILENT_RUNTIME_FALLBACK = "no"
 TASK_MAIN_STARTUP_PROMPT_BOUNDED = "yes"
 
 # ---------------------------------------------------------------------------
-# Env classification — exact current required set (M3/W2 proven + W3 hardship)
+# Env classification — task-main authority only (M1/W2-R1 I45-B001 repair)
 # ---------------------------------------------------------------------------
 
 # Each required env is classified here. The launcher itself is the PRODUCER
 # for TASK_MAIN_REQUIRED vars, so the operator never pre-exports them.
 #
+# Authority channel separation (TASK_MAIN_WORKER_AUTHORITY_CHANNEL_SEPARATION=yes):
+#   task-main process env = task-main authority channels only
+#   Worker process env    = Worker authority channels only
+#
+# task-main authority channels (trusted task-main path only):
+#   task-main bootstrap (AOTA_TASK_MAIN_BOOTSTRAP)
+#   trusted runtime config (AOTA_FORGE_RUNTIME_CONFIG)
+#   repo/python mechanics (PYTHONPATH, AOTA_FORGE_REPO_ROOT)
+#   task-main trace (AOTA_TASK_MAIN_TRACE, optional, never authority)
+#
+# Worker authority channels (NEVER present in task-main launch env):
+#   serialized TaskHandoff (AOTA_W3_HANDOFF_JSON)
+#   canonical Worker task id (AOTA_W3_TASK_ID)
+#   Worker worktree/project binding (AOTA_W3_MCP_ROOT/PROJECT_ID/WORKTREE_ID)
+#   Worker context-kind assertion (AOTA_W3_CONTEXT_KIND)
+#
 # ENV_NAME | PRODUCER | SOURCE_OF_TRUTH | TASK_MAIN_REQUIRED | WORKER_REQUIRED
 # ---------------------------------------------------------------------------
-# PYTHONPATH                       | launcher | repo root (aota_forge parent)             | yes | yes
-# AOTA_FORGE_REPO_ROOT             | launcher | repo root                                | yes | yes
-# AOTA_FORGE_RUNTIME_CONFIG        | operator/launcher | runtime_config_path (operator)  | yes | yes
-# AOTA_W3_MCP_ROOT                 | launcher | worktree_root                            | yes | yes
-# AOTA_W3_PROJECT_ID               | launcher | project_id (operator)                     | yes | yes
-# AOTA_W3_WORKTREE_ID              | launcher | worktree_id (operator)                    | yes | yes
-# AOTA_W3_TASK_ID                  | launcher | canonical_task_id (derived)              | yes (placeholder) | yes
-# AOTA_W3_HANDOFF_JSON             | launcher | handoff (code, not model)                | no (task-main uses bootstrap) | yes
-# AOTA_W3_TOOL_TRACE               | launcher | trace path (optional)                     | no | no
-# AOTA_TASK_MAIN_BOOTSTRAP         | launcher | worktree_root/.aota/task-main-bootstrap.json | yes | yes (fallback)
-# AOTA_TASK_MAIN_TRACE             | launcher | trace path                               | no | no
+# PYTHONPATH                       | launcher | repo root (aota_forge parent)             | yes | yes (mechanical copy)
+# AOTA_FORGE_REPO_ROOT             | launcher | repo root                                | yes | yes (mechanical copy)
+# AOTA_FORGE_RUNTIME_CONFIG        | operator/launcher | runtime_config_path (operator)  | yes | yes (mechanical copy)
+# AOTA_TASK_MAIN_BOOTSTRAP         | launcher | worktree_root/.aota/task-main-bootstrap.json | yes | no (must-clear)
+# AOTA_TASK_MAIN_TRACE             | launcher | trace path (optional)                     | no | no
+# AOTA_W3_MCP_ROOT                 | NEVER in task-main env | Worker binding only         | no | yes
+# AOTA_W3_PROJECT_ID               | NEVER in task-main env | Worker binding only         | no | yes
+# AOTA_W3_WORKTREE_ID              | NEVER in task-main env | Worker binding only         | no | yes
+# AOTA_W3_TASK_ID                  | NEVER in task-main env | Worker binding only         | no | yes
+# AOTA_W3_HANDOFF_JSON             | NEVER in task-main env | Worker binding only         | no | yes
+# AOTA_W3_TOOL_TRACE               | NEVER in task-main env | Worker trace only           | no | no
+# AOTA_W3_CONTEXT_KIND             | NEVER in task-main env | Worker assertion only       | no | yes
 #
 # TASK_MAIN_REQUIRED_ENV_SUPPLIED_BY_PRODUCTION_PATH=yes
 # NORMAL_DAILY_LAUNCH_DOES_NOT_REQUIRE_PREEXPORTED_TEST_ENV=yes
+# TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_HANDOFF=no
+# TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_AUTHORITY_KEYS=no
+# TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF=no
 
 TASK_MAIN_REQUIRED_ENV: tuple[str, ...] = (
     "PYTHONPATH",
     "AOTA_FORGE_REPO_ROOT",
     "AOTA_FORGE_RUNTIME_CONFIG",
-    "AOTA_W3_MCP_ROOT",
-    "AOTA_W3_PROJECT_ID",
-    "AOTA_W3_WORKTREE_ID",
     "AOTA_TASK_MAIN_BOOTSTRAP",
 )
 
@@ -185,6 +202,21 @@ PRODUCTION_TASK_MAIN_BOOTSTRAP_MATERIALIZER = "aota_forge/composition/task_main_
 BOOTSTRAP_CREATION_DEPENDS_ON_TEST_HARNESS = "no"
 EXISTING_PLAN_AUTHORITY_BOUNDARY_REUSED = "yes"
 NEW_PLAN_AUTHORITY_SYSTEM_CREATED = "no"
+
+# M1/W2-R1 task-main launcher context separation (I45-B001 repair).
+# The task-main launcher must stop emitting Worker-binding data merely as a
+# placeholder. Task-main identity comes from the already-established trusted
+# task-main path (TrustedTaskMainRuntimeContext via task-main bootstrap +
+# trusted project/worktree/Plan/runtime binding), not from a pseudo-Worker
+# handoff. Production normal path must not emit it.
+TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_HANDOFF = False
+TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_AUTHORITY_KEYS = False
+TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF = False
+TASK_MAIN_WORKER_AUTHORITY_CHANNEL_SEPARATION = True
+# No variable masquerades as both unless explicitly proven
+# mechanical/non-authoritative (PYTHONPATH/AOTA_FORGE_REPO_ROOT/
+# AOTA_FORGE_RUNTIME_CONFIG/PATH are mechanics, never role authority).
+TASK_MAIN_PLACEHOLDER_SPECIAL_CASE_ADDED = False
 
 # M1/W1-R1 task-main-owned Work projection authority (AF #45 repair).
 # The launcher/control plane supplies only trusted mechanical inputs
@@ -692,23 +724,24 @@ class DailyTaskMainLauncher:
         )
 
     def build_env(self, ctx: DailyLaunchContext, *, trace_path: Path | None = None) -> dict[str, str]:
-        """Construct required task-main MCP child environment (production path)."""
+        """Construct required task-main MCP child environment (production path).
+
+        M1/W2-R1 (I45-B001): task-main authority channels only. The launcher
+        must NOT emit Worker-channel material (AOTA_W3_HANDOFF_JSON or any
+        equivalent Worker-binding data) merely as a placeholder. Task-main
+        identity comes from the trusted task-main bootstrap path
+        (TrustedTaskMainRuntimeContext via AOTA_TASK_MAIN_BOOTSTRAP +
+        trusted project/worktree/Plan/runtime binding), not from a
+        pseudo-Worker handoff. TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF=no.
+        """
         repo_root = str(Path(__file__).resolve().parents[2])
-        canonical_task_id = f"{ctx.project_id}:{ctx.live_plan_view.milestone_id}:task-main:{ctx.live_plan_view.milestone_id.lower()}"
         bootstrap_path = ctx.worktree_root / BOOTSTRAP_RELPATH
         trace_str = str(trace_path.resolve()) if trace_path is not None else ""
-        handoff_json = json.dumps({"work_role": "task-main", "task_kind": "task-main-control"}, separators=(",", ":"))
 
         env = {
             "PYTHONPATH": repo_root + (os.pathsep + os.environ.get("PYTHONPATH", "") if os.environ.get("PYTHONPATH") else ""),
             "AOTA_FORGE_REPO_ROOT": repo_root,
             "AOTA_FORGE_RUNTIME_CONFIG": str(ctx.runtime_config_path.resolve()),
-            "AOTA_W3_MCP_ROOT": str(ctx.worktree_root.resolve()),
-            "AOTA_W3_PROJECT_ID": ctx.project_id,
-            "AOTA_W3_WORKTREE_ID": ctx.worktree_id,
-            "AOTA_W3_TASK_ID": canonical_task_id,
-            "AOTA_W3_HANDOFF_JSON": handoff_json,
-            "AOTA_W3_TOOL_TRACE": trace_str,
             "AOTA_TASK_MAIN_BOOTSTRAP": str(bootstrap_path.resolve()),
             "AOTA_TASK_MAIN_TRACE": trace_str,
         }
@@ -890,6 +923,11 @@ __all__ = [
     "PRODUCTION_LAUNCHER_SEMANTIC_CONTROL_CALLS",
     "PLAN_AUTHORITY_OPERATOR_SELECTABLE",
     "PLAN_AUTHORITY_HARDCODED_TO_ISSUE_37",
+    "TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_HANDOFF",
+    "TASK_MAIN_LAUNCH_ENV_CONTAINS_WORKER_AUTHORITY_KEYS",
+    "TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF",
+    "TASK_MAIN_WORKER_AUTHORITY_CHANNEL_SEPARATION",
+    "TASK_MAIN_PLACEHOLDER_SPECIAL_CASE_ADDED",
     "OPERATOR_STARTUP_PROMPT_PATH",
     "SEED_STARTUP_PROMPT_PATH",
     "MAX_STARTUP_PROMPT_BYTES",

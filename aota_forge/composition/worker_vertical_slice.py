@@ -111,6 +111,23 @@ MECHANICAL_SAFE_ENV_KEYS = frozenset({"PATH", "PYTHONPATH", "AOTA_FORGE_REPO_ROO
 WORKER_AUTHORITY_ENV_KEYS = frozenset({MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV})
 # task-main authority-bearing: trusted bootstrap signals only.
 TASK_MAIN_AUTHORITY_ENV_KEYS = frozenset({"AOTA_TASK_MAIN_BOOTSTRAP", "AOTA_TASK_MAIN_TRACE"})
+# M1/W2-R1 authority channel separation (I45-B001 repair):
+# task-main process env = task-main authority channels only;
+# Worker process env = Worker authority channels only.
+# No variable masquerades as both unless explicitly proven
+# mechanical/non-authoritative (see MECHANICAL_SAFE_ENV_KEYS).
+# Production task-main launcher emits NO Worker authority keys and NO
+# AOTA_W3_HANDOFF_JSON placeholder; Worker child env emits NO task-main
+# bootstrap authority. Fail-closed discrimination is preserved: malformed
+# or conflicting authority on either channel still fails closed, never
+# silently ignored.
+TASK_MAIN_WORKER_AUTHORITY_CHANNEL_SEPARATION = True
+TASK_MAIN_REQUIRES_PLACEHOLDER_TASK_HANDOFF = False
+TASK_MAIN_PLACEHOLDER_SPECIAL_CASE_ADDED = False
+TASK_HANDOFF_REQUIRED_FIELDS_WEAKENED = False
+MALFORMED_CONFLICTING_AUTHORITY_IGNORED = False
+CONFLICTING_CONTEXTS_FAIL_CLOSED = True
+MISSING_CONTEXT_FAILS_CLOSED = True
 # Conflicting / must-clear in any Worker child: task-main bootstrap authority.
 WORKER_CHILD_MUST_CLEAR_ENV_KEYS = frozenset({"AOTA_TASK_MAIN_BOOTSTRAP"})
 # Optional routing assertion only (ROLE_HINT_IS_AUTHORITY=no). Verified, never
@@ -614,6 +631,14 @@ def select_runtime_context() -> TrustedWorkerBinding:
     - task-main valid + worker absent -> task-main
     - both valid -> AMBIGUOUS_RUNTIME_CONTEXT (fail closed)
     - neither valid -> MISSING_RUNTIME_CONTEXT (fail closed)
+    - valid task-main + malformed Worker authority material -> fail closed
+    - valid Worker + malformed/conflicting task-main authority -> fail closed
+
+    M1/W2-R1 (I45-B001): production task-main launch env carries task-main
+    authority only (no Worker vars, no AOTA_W3_HANDOFF_JSON placeholder), so
+    the normal task-main path is worker-absent + task-main valid. A manually
+    injected malformed Worker handoff alongside a valid task-main context
+    still fails closed (never silently ignored).
 
     The explicit AOTA_TASK_MAIN_BOOTSTRAP presence is the Hermes-controlled
     routing assertion: a Worker child (aota-worker profile) never receives
@@ -625,11 +650,15 @@ def select_runtime_context() -> TrustedWorkerBinding:
     hint = _context_kind_hint()
     explicit_signal = _explicit_task_main_signal_present()
     # Worker candidate: absent (None) vs valid vs present-but-invalid (raises).
-    # A task-main-role handoff on the Worker channel is the task-main
-    # placeholder (launcher) or a misdirected task-main handoff: it is never
-    # a valid Worker binding. For task-main sessions it counts as absent
-    # (placeholder); for Worker sessions without explicit signal it still
-    # fails closed downstream as missing (never becomes task-main).
+    # A well-formed task-main-role TaskHandoff on the Worker channel is a
+    # legacy compatibility placeholder or a misdirected task-main handoff: it
+    # is never a valid Worker binding and counts as absent here (production
+    # task-main no longer emits any Worker-channel material, so this path is
+    # unreachable in production). A MALFORMED Worker handoff (missing
+    # required TaskHandoff fields, e.g. the historical I45-B001 placeholder
+    # {"work_role":"task-main","task_kind":"task-main-control"}) is
+    # present-but-invalid and fails closed downstream, never treated as
+    # absent. No role-name special casing is added for malformed data.
     worker_binding: TrustedWorkerBinding | None = None
     worker_error: Exception | None = None
     try:
