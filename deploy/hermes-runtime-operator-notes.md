@@ -89,35 +89,79 @@ the parent process environment.
 
 ## 8. Trusted MCP child binding seam (per-server env)
 
-The shared server's *trusted* per-worker binding (task, project, worktree,
-handoff, trace) must be supplied through the approved per-server env seam
-configured in the Hermes profile, e.g.:
+The shared server's *trusted* pre-resolved binding reaches the MCP child
+through exactly one mechanical channel: the opaque transport locator
+`AOTA_PRE_RESOLVED_BINDING`. AF runtime composition creates the
+signed/digest-bound pre-resolved binding envelope **before** MCP dispatch
+and exports only its locator; the Hermes host/profile forwards the locator
+mechanically into the MCP child, which verifies/loads the already-resolved
+binding and dispatches to canonical Core. The locator is transport, not
+authority:
+
+```text
+AOTA_PRE_RESOLVED_BINDING_IS_TRANSPORT_LOCATOR=yes
+AOTA_PRE_RESOLVED_BINDING_IS_AUTHORITY_SOURCE=no
+ENVIRONMENT_IS_AUTHORITY_SOURCE=no
+TRUSTED_BINDING_AUTHORITY_SOURCE=AF_RUNTIME_COMPOSITION_PLUS_VERIFIED_BINDING_CONTENT
+HOST_ENV_ONLY_TRANSPORTS_OPAQUE_LOCATOR=yes
+HOST_CREATES_BINDING=no
+HOST_INTERPRETS_BINDING=no
+HOST_DECIDES_AUTHORITY=no
+```
+
+The approved per-server env seam in the Hermes profile forwards the current
+process value (Hermes `${VAR}` interpolation resolves from the Hermes
+process environment; an unset variable keeps the literal placeholder and
+fails closed downstream — there is no placeholder special-casing in AF):
 
 ```yaml
-# *example* Hermes profile config (profiles/aota-worker/config.yaml)
+# canonical shape (profiles/aota-worker/config.yaml, profiles/task-main/config.yaml)
 mcp_servers:
   aota:
     command: /usr/bin/python3        # *example* interpreter path
     args: ["-m", "aota_forge.composition.worker_vertical_slice", "--mcp-server"]
     env:
       PYTHONPATH: ${AOTA_FORGE_REPO_ROOT}   # operator-selected AF checkout
-      AOTA_W3_MCP_ROOT: ${AOTA_W3_MCP_ROOT}
-      AOTA_W3_PROJECT_ID: ${AOTA_W3_PROJECT_ID}
-      AOTA_W3_WORKTREE_ID: ${AOTA_W3_WORKTREE_ID}
-      AOTA_W3_TASK_ID: ${AOTA_W3_TASK_ID}
-      AOTA_W3_HANDOFF_JSON: ${AOTA_W3_HANDOFF_JSON}
-      AOTA_W3_TOOL_TRACE: ${AOTA_W3_TOOL_TRACE}
+      AOTA_PRE_RESOLVED_BINDING: ${AOTA_PRE_RESOLVED_BINDING}  # opaque locator, per-launch runtime data
+      AOTA_W3_TOOL_TRACE: ${AOTA_W3_TOOL_TRACE}  # diagnostics only, never authority
+      # (task-main profile additionally forwards AOTA_TASK_MAIN_BOOTSTRAP /
+      # AOTA_TASK_MAIN_TRACE as routing/diagnostics; never as authority)
 ```
 
-The AF one-shot composition exports these variables to the Hermes process;
-they never appear as model-facing tool arguments.
+The AF launcher/host exports the locator to the Hermes process; the locator
+never appears as a model-facing tool argument. The locator value is
+per-launch runtime data (envelope path), never static profile authority, so
+normal task-main/Worker launch requires no human to insert it:
+
+```text
+LIVE_PROFILE_UPDATE_REQUIRES_MANUAL_OPERATOR_EDIT=no
+```
+
+The old `AOTA_W3_*` authority-like fields (`AOTA_W3_MCP_ROOT`,
+`AOTA_W3_PROJECT_ID`, `AOTA_W3_WORKTREE_ID`, `AOTA_W3_TASK_ID`,
+`AOTA_W3_HANDOFF_JSON`) are **not** production authority and are removed
+from the canonical production profile contract:
+
+```text
+OLD_AOTA_W3_ENV_IS_PRODUCTION_AUTHORITY=no
+```
 
 ## 9. Unresolved or missing binding fails closed
 
-If any binding variable is missing, blank, malformed (e.g. invalid handoff
-JSON), or the `${AOTA_FORGE_REPO_ROOT}` ref is left unresolved (variable not
-exported), the MCP child raises before serving any tool. There is **no cwd or
-source-tree fallback**: an unbound server never answers `tools/list`.
+If the opaque locator is missing, blank, or points at a missing/tampered
+envelope, the MCP child raises `MissingRuntimeContextError` before serving
+any tool. There is **no cwd or source-tree fallback**, no fallback to old
+`AOTA_W3_*` fields, and no legacy discovery: an unbound server never
+answers `tools/list`. Old `AOTA_W3_*` values alone — including
+placeholder-like `${VAR}` literals — cannot restore authority and cannot
+affect binding selection:
+
+```text
+MISSING_BINDING_FAILS_CLOSED=yes
+OLD_ENV_CHANNEL_FALLBACK_ON_MISSING_BINDING=no
+LEGACY_DISCOVERY_AUTOMATIC_FALLBACK=no
+HERMES_PLACEHOLDER_FILTER_SPECIAL_CASE=no
+```
 
 ## 10. Worker native terminal/shell toolsets are mechanically disabled
 
