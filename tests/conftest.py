@@ -85,3 +85,19 @@ def _operator_runtime_config_env(operator_config_file: Path) -> Any:
         os.environ.pop("AOTA_FORGE_RUNTIME_CONFIG", None)
     else:
         os.environ["AOTA_FORGE_RUNTIME_CONFIG"] = previous
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_project_evidence_for_tests(monkeypatch) -> Any:
+    """Explicit test-only seam for synthetic project evidence (W2).
+
+    Production path must fail closed without canonical evidence
+    (SYNTHETIC_PROJECT_AUTHORITY_PRODUCTION_PATH=no). Tests that use
+    tmp_path without a real manifest may explicitly allow synthetic via this
+    seam. This fixture provides the seam for legacy tests that have not yet
+    migrated to valid manifests; tests that verify fail-closed behavior can
+    clear the env var via monkeypatch.delenv.
+    """
+    monkeypatch.setenv("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE", "1")
+    yield
+    # monkeypatch automatically undoes

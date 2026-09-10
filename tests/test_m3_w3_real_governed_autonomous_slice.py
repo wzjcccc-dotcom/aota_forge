@@ -38,6 +38,7 @@ from aota_forge.core.plan.read_model import portable_plan_digest
 from aota_forge.core.result_governance import ResultGovernanceProjection
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.task_main.control import (
+    AF_TASK_MAIN_ROLE,
     TASK_MAIN_PROFILE,
     TaskMainControlService,
 )
@@ -1141,10 +1142,10 @@ class TestControlIsolation:
             view = _view(["W1"])
             h = w.activate(view)
             service = TaskMainControlService(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher)
-            with pytest.raises(Exception, match="aota-task-main"):
+            with pytest.raises(Exception, match="task-main"):
                 service.advance_once(profile="aota-worker", coordinator_id=h.coordinator_id, live_plan_view=view, handoff_resolver=_resolver(["W1"]))
-            # task-main can
-            out = service.advance_once(profile=TASK_MAIN_PROFILE, coordinator_id=h.coordinator_id, live_plan_view=view, handoff_resolver=_resolver(["W1"]))
+            # task-main can — neutral AF role (D8)
+            out = service.advance_once(profile=AF_TASK_MAIN_ROLE, coordinator_id=h.coordinator_id, live_plan_view=view, handoff_resolver=_resolver(["W1"]))
             assert out.disposition in (DISPOSITION_DISPATCHED_WORK, DISPOSITION_WAITING_FOR_WORKERS)
             assert WORKER_CAN_CALL_TASK_MAIN_CONTROL is False
         finally:

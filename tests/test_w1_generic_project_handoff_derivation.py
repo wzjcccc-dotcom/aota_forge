@@ -64,8 +64,25 @@ def _create_project_with_kind(ws: TempWorkspaceFixture, project_id: str, kind: s
 
 def _handoff_for_generic(work_item_id: str, milestone_ref: str, project_id: str, plan_authority: str) -> TaskHandoff:
     # Import from task_main_host_bootstrap's generic derivation
+    # D7: generic fallback removed; Worker scope must come from trusted WorkSemanticProjection.
+    # Provide minimal explicit projection for test generic proof.
     from aota_forge.composition.task_main_host_bootstrap import _handoff_for
-    return _handoff_for(work_item_id, milestone_ref=milestone_ref, project_id=project_id, plan_authority=plan_authority, plan_digest="a"*64)
+    from aota_forge.work_plane.handoff_runtime import WorkSemanticProjection
+
+    proj = WorkSemanticProjection(
+        objective=f"Test objective for {work_item_id} in {milestone_ref}",
+        bounded_scope=f"work/{work_item_id}/bounded-scope",
+        validation_expectations=(f"validation for {work_item_id}",),
+        semantic_stop_expectations=(f"stop if {work_item_id} unclear",),
+    )
+    work_semantics = {work_item_id: proj}
+    # For review items, _handoff_for handles reviewer generically without projection;
+    # for Worker items, projection required.
+    if work_item_id.lower().startswith("rv"):
+        return _handoff_for(work_item_id, milestone_ref=milestone_ref, project_id=project_id, plan_authority=plan_authority, plan_digest="a" * 64)
+    return _handoff_for(
+        work_item_id, milestone_ref=milestone_ref, project_id=project_id, plan_authority=plan_authority, plan_digest="a" * 64, work_semantics=work_semantics
+    )
 
 
 # ---------------------------------------------------------------------------

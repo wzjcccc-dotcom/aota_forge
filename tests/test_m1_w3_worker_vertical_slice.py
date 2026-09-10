@@ -103,7 +103,44 @@ def test_w3_host_accepts_compiler_metadata_but_rejects_real_artifacts(tmp_path: 
         host._validate_payload(payload)
 
 
+def _ensure_project(tmp_path: Path, project_id: str = "aota_forge") -> None:
+    (tmp_path / ".aota").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".aota" / "project.yaml").write_text(
+        "schema_version: 1\n"
+        "project:\n"
+        f"  id: {project_id}\n"
+        "  name: t\n"
+        "  kind: test\n"
+        "  status: active\n"
+        "summary: test\n"
+        "capabilities: []\n"
+        "paths:\n"
+        "  source_root: .\n"
+        "  source: []\n"
+        "  docs: []\n"
+        "  scripts: []\n"
+        "  profiles: []\n"
+        "  skills: []\n"
+        "  tests: []\n"
+        "commands:\n"
+        "  validate: []\n"
+        "  deploy: []\n"
+        "  verify_deploy: []\n"
+        "runtime:\n"
+        "  deployment_type: manual\n"
+        "  requires_human_checkpoint: false\n"
+        "codegraph:\n"
+        "  enabled: false\n"
+        "  index_location: .codegraph\n"
+        "plan:\n"
+        "  active_plan_id: null\n"
+        "constraints: []\n",
+        encoding="utf-8",
+    )
+
+
 def test_w3_trusted_binding_pins_project_worktree_and_role(tmp_path: Path):
+    _ensure_project(tmp_path, "aota_forge")
     handoff = _handoff()
     binding = build_worker_binding(
         root=tmp_path,
@@ -124,6 +161,7 @@ def test_w3_trusted_binding_pins_project_worktree_and_role(tmp_path: Path):
 
 
 def test_w3_shared_server_is_existing_restricted_surface(tmp_path: Path):
+    _ensure_project(tmp_path, "aota_forge")
     binding = build_worker_binding(
         root=tmp_path,
         project_id="aota_forge",

@@ -149,9 +149,42 @@ def _bootstrap_without_semantics(tmp_path: Path, work_items: list[str]):
     view = _view(work_items)
     root = tmp_path / "wt"
     root.mkdir(exist_ok=True)
+    # Valid manifest for canonical evidence (D7 synthetic removed)
+    (root / ".aota").mkdir(parents=True, exist_ok=True)
+    (root / ".aota" / "project.yaml").write_text(
+        "schema_version: 1\n"
+        "project:\n"
+        f"  id: {PROJECT_ID}\n"
+        "  name: t\n"
+        "  kind: test\n"
+        "  status: active\n"
+        "summary: test\n"
+        "capabilities: []\n"
+        "paths:\n"
+        "  source_root: .\n"
+        "  source: []\n"
+        "  docs: []\n"
+        "  scripts: []\n"
+        "  profiles: []\n"
+        "  skills: []\n"
+        "  tests: []\n"
+        "commands:\n"
+        "  validate: []\n"
+        "  deploy: []\n"
+        "  verify_deploy: []\n"
+        "runtime:\n"
+        "  deployment_type: manual\n"
+        "  requires_human_checkpoint: false\n"
+        "codegraph:\n"
+        "  enabled: false\n"
+        "  index_location: .codegraph\n"
+        "plan:\n"
+        "  active_plan_id: null\n"
+        "constraints: []\n",
+        encoding="utf-8",
+    )
     coord = root / ".aota" / "coordinator.json"
     execp = root / ".aota" / "execution.json"
-    coord.parent.mkdir(parents=True, exist_ok=True)
     if not coord.exists():
         coord.write_text("{}", encoding="utf-8")
     if not execp.exists():

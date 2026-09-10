@@ -32,7 +32,7 @@ from aota_forge.mcp_transport import (
     TrustedBindingError,
     create_shared_mcp_server,
 )
-from aota_forge.runtime.task_main.control import TaskMainControlService, TASK_MAIN_PROFILE, WORKER_PROFILE
+from aota_forge.runtime.task_main.control import TaskMainControlService, TASK_MAIN_PROFILE, WORKER_PROFILE, AF_TASK_MAIN_ROLE
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
@@ -500,12 +500,12 @@ class TestAdversarialCore:
         binding, _ = _make_task_main_binding(tmp_path, view)
         cs = binding.trusted_task_main_context.control_service
         coord_id = binding.trusted_task_main_context.coordinator_id
-        # First activate to have coordinator
-        cs.activate_milestone(profile=TASK_MAIN_PROFILE, plan_view=view, origin_task_main_session_ref=binding.trusted_task_main_context.origin_task_main_session_ref, executor_id="hermes", project_id=PROJECT_ID, coordinator_id=coord_id)
+        # First activate to have coordinator — neutral AF role (D8)
+        cs.activate_milestone(profile=AF_TASK_MAIN_ROLE, plan_view=view, origin_task_main_session_ref=binding.trusted_task_main_context.origin_task_main_session_ref, executor_id="hermes", project_id=PROJECT_ID, coordinator_id=coord_id)
         # Now try recover with stale
         from aota_forge.runtime.task_main.coordinator import PlanDriftError
         with pytest.raises(Exception) as exc:
-            cs.recover_coordinator(profile=TASK_MAIN_PROFILE, coordinator_id=coord_id, live_plan_view=stale_view, session_available=True)
+            cs.recover_coordinator(profile=AF_TASK_MAIN_ROLE, coordinator_id=coord_id, live_plan_view=stale_view, session_available=True)
         assert "PLAN_DRIFT" in str(exc.value) or isinstance(exc.value, PlanDriftError)
 
     def test_tampered_ref_fail_closed(self, tmp_path: Path):

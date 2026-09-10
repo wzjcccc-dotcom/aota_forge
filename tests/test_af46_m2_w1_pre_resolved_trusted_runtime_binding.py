@@ -132,7 +132,39 @@ def _make_project(tmp: Path, project_id: str = PROJECT_ID):
     root = tmp / f"wt-{project_id}"
     root.mkdir(parents=True, exist_ok=True)
     (root / ".aota").mkdir(exist_ok=True)
-    (root / ".aota" / "project.yaml").write_text(f"project_id: {project_id}\nname: t\n", encoding="utf-8")
+    # Valid canonical manifest (M1-B strict) so evidence is RESOLVED without synthetic fallback.
+    (root / ".aota" / "project.yaml").write_text(
+        f"schema_version: 1\n"
+        f"project:\n"
+        f"  id: {project_id}\n"
+        f"  name: t\n"
+        f"  kind: test\n"
+        f"  status: active\n"
+        f"summary: test project\n"
+        f"capabilities: []\n"
+        f"paths:\n"
+        f"  source_root: .\n"
+        f"  source: []\n"
+        f"  docs: []\n"
+        f"  scripts: []\n"
+        f"  profiles: []\n"
+        f"  skills: []\n"
+        f"  tests: []\n"
+        f"commands:\n"
+        f"  validate: []\n"
+        f"  deploy: []\n"
+        f"  verify_deploy: []\n"
+        f"runtime:\n"
+        f"  deployment_type: manual\n"
+        f"  requires_human_checkpoint: false\n"
+        f"codegraph:\n"
+        f"  enabled: false\n"
+        f"  index_location: .codegraph\n"
+        f"plan:\n"
+        f"  active_plan_id: null\n"
+        f"constraints: []\n",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -241,9 +273,9 @@ class TestTier1CoreSemantic:
         root = _make_project(tmp_path, PROJECT_ID)
         h = _handoff()
         binding = wvs.build_worker_binding(root=root, project_id=PROJECT_ID, worktree_id=WORKTREE_ID, canonical_task_id=f"{PROJECT_ID}:M1:W1:attempt-1", handoff=h)
-        # Principal present
+        # Principal present — neutral AF principal (D8)
         assert binding.trusted_context.principal is not None
-        assert binding.trusted_context.principal.principal_id == "hermes-worker"
+        assert binding.trusted_context.principal.principal_id == "worker"
         # Project/worktree mismatch fails closed
         bad_sandbox = _sandbox(root, project_id="other_proj", worktree_id=WORKTREE_ID)
         with pytest.raises(TrustedBindingError):
@@ -787,13 +819,13 @@ class TestIsolation:
         root = _make_project(tmp_path, PROJECT_ID)
         h = _handoff()
         envelope = create_worker_envelope(worktree_root=root, project_id=PROJECT_ID, worktree_id=WORKTREE_ID, canonical_task_id=f"{PROJECT_ID}:M1:W1:attempt-1", handoff=h)
-        # Load and check principal is hermes-worker, not task-main
+        # Load and check principal is neutral worker, not task-main (D8)
         with _EnvGuard() as g:
             g.clear_aota()
             os.environ[PRE_RESOLVED_BINDING_ENV] = str(envelope)
             b = wvs.select_runtime_context()
-            assert b.trusted_context.principal.principal_type == "hermes-worker"
-            # Task-main envelope principal is hermes-task-main
+            assert b.trusted_context.principal.principal_type == "worker"
+            # Task-main envelope principal is task-main (neutral)
             # If we try to use worker envelope's principal for task-main operation, it fails at gate
 
     def test_project_worktree_mismatch_fails_closed(self, tmp_path: Path):
@@ -911,9 +943,9 @@ class TestPublicSurface:
             # Both bindings use same sandbox/authority construction (work_plane)
             assert worker_binding.sandbox is not None
             assert tm_binding.sandbox is not None
-            # They differ by principal/role
-            assert worker_binding.trusted_context.principal.principal_type == "hermes-worker"
-            assert tm_binding.trusted_context.principal.principal_type == "hermes-task-main"
+            # They differ by principal/role — neutral AF principal (D8)
+            assert worker_binding.trusted_context.principal.principal_type == "worker"
+            assert tm_binding.trusted_context.principal.principal_type == "task-main"
             assert worker_binding.handoff.work_role.value == "coder"
             assert tm_binding.handoff.work_role.value == "task-main"
             # But share same authority engine (both have same type of context binding)

@@ -132,7 +132,38 @@ def _make_project(tmp: Path, project_id: str = PROJECT_ID):
     root = tmp / f"wt-{project_id}"
     root.mkdir(parents=True, exist_ok=True)
     (root / ".aota").mkdir(exist_ok=True)
-    (root / ".aota" / "project.yaml").write_text(f"project_id: {project_id}\nname: t\n", encoding="utf-8")
+    (root / ".aota" / "project.yaml").write_text(
+        f"schema_version: 1\n"
+        f"project:\n"
+        f"  id: {project_id}\n"
+        f"  name: t\n"
+        f"  kind: test\n"
+        f"  status: active\n"
+        f"summary: test project\n"
+        f"capabilities: []\n"
+        f"paths:\n"
+        f"  source_root: .\n"
+        f"  source: []\n"
+        f"  docs: []\n"
+        f"  scripts: []\n"
+        f"  profiles: []\n"
+        f"  skills: []\n"
+        f"  tests: []\n"
+        f"commands:\n"
+        f"  validate: []\n"
+        f"  deploy: []\n"
+        f"  verify_deploy: []\n"
+        f"runtime:\n"
+        f"  deployment_type: manual\n"
+        f"  requires_human_checkpoint: false\n"
+        f"codegraph:\n"
+        f"  enabled: false\n"
+        f"  index_location: .codegraph\n"
+        f"plan:\n"
+        f"  active_plan_id: null\n"
+        f"constraints: []\n",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -446,7 +477,7 @@ def test_j_metadata_mismatch_rejected(tmp_path: Path) -> None:
         os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         root = _make_project(tmp_path)
         h = _handoff()
-        _set_worker_env(root, h, project_id="proj_OTHER")
+        _set_worker_env(root, h, project_id="proj_other")
         with pytest.raises(TrustedBindingError) as exc:
             wvs.select_runtime_context()
         assert "MISMATCH" in str(exc.value)
@@ -542,10 +573,10 @@ def test_l_task_main_authority(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_m_concurrent_isolation(tmp_path: Path) -> None:
-    root_a = _make_project(tmp_path, "proj_A")
-    root_b = _make_project(tmp_path, "proj_B")
-    h_a = _handoff(project_id="proj_A")
-    h_b = _handoff(project_id="proj_B")
+    root_a = _make_project(tmp_path, "proj_a")
+    root_b = _make_project(tmp_path, "proj_b")
+    h_a = _handoff(project_id="proj_a")
+    h_b = _handoff(project_id="proj_b")
     results: dict[str, dict] = {}
     errors: list = []
 
@@ -560,18 +591,18 @@ def test_m_concurrent_isolation(tmp_path: Path) -> None:
             errors.append(e)
 
     threads = [
-        threading.Thread(target=build, args=("A", root_a, h_a, "proj_A")),
-        threading.Thread(target=build, args=("B", root_b, h_b, "proj_B")),
+        threading.Thread(target=build, args=("A", root_a, h_a, "proj_a")),
+        threading.Thread(target=build, args=("B", root_b, h_b, "proj_b")),
     ]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
     assert not errors
-    assert results["A"]["AOTA_W3_PROJECT_ID"] == "proj_A"
-    assert results["B"]["AOTA_W3_PROJECT_ID"] == "proj_B"
+    assert results["A"]["AOTA_W3_PROJECT_ID"] == "proj_a"
+    assert results["B"]["AOTA_W3_PROJECT_ID"] == "proj_b"
     assert results["A"]["AOTA_W3_HANDOFF_JSON"] != results["B"]["AOTA_W3_HANDOFF_JSON"]
-    assert json.loads(results["A"]["AOTA_W3_HANDOFF_JSON"])["project_ref"]["ref"] == "proj_A"
+    assert json.loads(results["A"]["AOTA_W3_HANDOFF_JSON"])["project_ref"]["ref"] == "proj_a"
     # Dispatch-level isolation: two concurrent dispatches get distinct envs.
     seen: dict[str, str] = {}
 
@@ -600,14 +631,14 @@ def test_m_concurrent_isolation(tmp_path: Path) -> None:
         seen[tag] = captured[0]["env"]["AOTA_W3_PROJECT_ID"]
 
     threads = [
-        threading.Thread(target=dispatch_isolation, args=("A", "proj_A", h_a, root_a)),
-        threading.Thread(target=dispatch_isolation, args=("B", "proj_B", h_b, root_b)),
+        threading.Thread(target=dispatch_isolation, args=("A", "proj_a", h_a, root_a)),
+        threading.Thread(target=dispatch_isolation, args=("B", "proj_b", h_b, root_b)),
     ]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    assert seen["A"] == "proj_A" and seen["B"] == "proj_B"
+    assert seen["A"] == "proj_a" and seen["B"] == "proj_b"
 
 
 # ---------------------------------------------------------------------------
@@ -746,12 +777,12 @@ def _child_probe_script() -> str:
 
 
 def test_process_boundary_context_proof(tmp_path: Path) -> None:
-    root_a = _make_project(tmp_path, "proj_PA")
-    root_b = _make_project(tmp_path, "proj_PB")
-    h_a = _handoff(project_id="proj_PA")
-    h_b = _handoff(project_id="proj_PB")
-    env_a = wvs.build_worker_child_environment(root=root_a, project_id="proj_PA", worktree_id="wt-A", canonical_task_id="proj_PA:M1:W1:attempt-1", handoff=h_a)
-    env_b = wvs.build_worker_child_environment(root=root_b, project_id="proj_PB", worktree_id="wt-B", canonical_task_id="proj_PB:M1:W1:attempt-1", handoff=h_b)
+    root_a = _make_project(tmp_path, "proj_pa")
+    root_b = _make_project(tmp_path, "proj_pb")
+    h_a = _handoff(project_id="proj_pa")
+    h_b = _handoff(project_id="proj_pb")
+    env_a = wvs.build_worker_child_environment(root=root_a, project_id="proj_pa", worktree_id="wt-A", canonical_task_id="proj_pa:M1:W1:attempt-1", handoff=h_a)
+    env_b = wvs.build_worker_child_environment(root=root_b, project_id="proj_pb", worktree_id="wt-B", canonical_task_id="proj_pb:M1:W1:attempt-1", handoff=h_b)
     # task-main env for comparison.
     with _EnvGuard():
         for tag, env in (("A", env_a), ("B", env_b)):
@@ -761,7 +792,7 @@ def test_process_boundary_context_proof(tmp_path: Path) -> None:
             proc = subprocess.run([sys.executable, "-c", _child_probe_script()], capture_output=True, text=True, env=full, cwd=str(Path.cwd()), timeout=60)
             assert proc.returncode == 0, f"child {tag} failed: {proc.stderr[:800]}"
             data = json.loads(proc.stdout.strip().splitlines()[-1])
-            expected_proj = "proj_PA" if tag == "A" else "proj_PB"
+            expected_proj = "proj_pa" if tag == "A" else "proj_pb"
             assert data["project"] == expected_proj
             assert data["role"] == "coder"
             assert data["has_tm"] is False

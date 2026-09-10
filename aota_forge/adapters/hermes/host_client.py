@@ -547,18 +547,13 @@ class HermesHostClient:
                 )
             cleaned[key] = value
         # M2/W1 envelope verification: if pre-resolved locator present, verify
-        # file exists, is not placeholder, digest-bound, and not outside
-        # worktree scope. This is the last-mile tamper check before dispatch.
+        # file exists, digest-bound. Host representation is irrelevant.
         envelope_path = cleaned.get(PRE_RESOLVED_BINDING_ENV)
         if envelope_path:
-            if "${" in envelope_path:
-                raise HermesHostClientError(
-                    "PACKAGE_INVALID: envelope path contains placeholder literal",
-                    "PACKAGE_INVALID",
-                )
             # Mechanical check: file must exist and be bounded JSON (no deep
             # AF canonical digest verification here — MCP child verifies digest
-            # as authority. Host layer stays mechanical.
+            # as authority. Host layer stays mechanical. No placeholder
+            # special-casing (HERMES_PLACEHOLDER_FILTER_SPECIAL_CASE=no).
             try:
                 from pathlib import Path as _Path
                 import json as _json
@@ -578,13 +573,9 @@ class HermesHostClient:
                     "PACKAGE_INVALID",
                 ) from exc
             # When envelope present, old handoff channel is ignored (not authority)
-            # but if also present, ensure it does not contradict envelope digest
-            # (defense: placeholder handoff must not silently co-exist)
             handoff_json = cleaned.get("AOTA_W3_HANDOFF_JSON")
-            if handoff_json and "${" in handoff_json:
-                # Placeholder literals in deprecated channel must not affect
-                # authority; they are ignored when envelope present, but we
-                # still ensure they don't become authority via fallback.
+            if handoff_json:
+                # Old channel ignored when envelope present; no placeholder check.
                 pass
         else:
             # No envelope: deprecated handoff channel validation (kept for

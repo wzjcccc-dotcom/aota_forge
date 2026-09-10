@@ -157,8 +157,12 @@ def _load_bootstrap_dict() -> dict[str, Any] | None:
     # Explicit path takes precedence (harness-controlled). No ad-hoc /tmp
     # diagnostics: failures are fail-closed via None/raises and bounded
     # trace/observation mechanisms.
+    # Host representation is semantically irrelevant: placeholder literals like
+    # "${VAR}" are not specially recognized (HERMES_PLACEHOLDER_FILTER_SPECIAL_CASE=no).
+    # An explicit path that is a literal placeholder fails closed as missing file,
+    # not via special-case filtering.
     explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
-    if explicit and explicit.strip() and "${" not in explicit:
+    if explicit and explicit.strip():
         p = Path(explicit)
         if p.is_file():
             try:
@@ -166,9 +170,6 @@ def _load_bootstrap_dict() -> dict[str, Any] | None:
             except Exception:
                 return None
         return None
-    elif explicit and "${" in explicit:
-        # Literal from hermes mcp_servers expansion when var not set in hermes env; ignore and fall back
-        pass  # fall through to root_env
     root_env = os.environ.get(BOOTSTRAP_ENV_ROOT)
     if not root_env:
         return None
@@ -202,34 +203,27 @@ def _handoff_for(
     project_id and plan_authority (from bootstrap). No model-supplied
     authority.
 
-    M1/W1 bounded scope contract: when a trusted WorkSemanticProjection is
-    supplied for this Work Item (legacy operator/test channel: the runtime
-    faithfully transports that projection), the handoff carries usable
-    bounded semantics via the existing TaskHandoff contract (REUSE, no
-    parallel contract). M1/W1-R1 production authority is the task-main-owned
-    durable coordinator projection (see try_build_task_main_binding durable
-    path + runtime.task_main.coordinator.commit_task_main_work_projection);
-    this operator-supplied mapping is retained ONLY as test/bootstrap
-    compatibility, never production authority. Without a projection the
-    legacy generic scope-free derivation is preserved for
-    backward-compatible direct callers; the PRODUCTION resolver built by
-    try_build_task_main_binding never uses that fallback silently — it
-    fails closed with WorkScopeInsufficientError instead.
-
-    bounded_scope is the Worker's only scope source; policy derivation must
-    align to it (see worker_vertical_slice).
+    M2/W2 Host Representation Neutralization (D7/D8):
+    - Heuristic generic scope (GENERIC_SCOPE_FALLBACK_PRODUCTION_PATH=no) is
+      removed from production. A Worker TaskHandoff must derive from a trusted
+      WorkSemanticProjection (via durable coordinator or explicit bootstrap
+      table). Generic "Execute Work Item W1..." without projection fails closed
+      with WorkScopeInsufficientError (WORK_SCOPE_INSUFFICIENT_FAILS_CLOSED=yes).
+    - The operator bootstrap table is retained ONLY as explicit test-only
+      compatibility (never production authority). The durable coordinator path
+      remains the production normal path.
+    - Reviewer generic is preserved only for reviewer role (not Worker scope);
+      Worker coder role never synthesizes scope.
     """
     wid = work_item_id.strip()
     mid = milestone_ref.strip() if milestone_ref else "M1"
     lower = wid.lower()
     is_review = lower.startswith("rv") or "/rv" in lower or "review" in lower
 
-    if not is_review and work_semantics is not None:
-        # Explicit trusted projection channel: the entry must exist and must
-        # yield a Worker-usable handoff. A missing entry fails closed here
-        # (no silent generic substitution); callers wanting the legacy
-        # generic derivation pass work_semantics=None.
-        if wid not in work_semantics:
+    if not is_review:
+        # Heuristic fallback removed (D7). Production must supply trusted
+        # WorkSemanticProjection; generic scope synthesis is not authority.
+        if work_semantics is None or wid not in work_semantics:
             raise WorkScopeInsufficientError(
                 f"no trusted Work semantics for Work Item {wid!r} "
                 f"(Milestone {mid!r}); refusing scope-free derivation"
@@ -247,7 +241,7 @@ def _handoff_for(
 
     if is_review:
         work_role = "reviewer"
-        # Generic review kind
+        # Generic review kind — reviewer lifecycle preserved (not Worker scope)
         safe_mid = "".join(c if c.isalnum() or c in "-_" else "-" for c in mid.lower())[:32] or "m1"
         safe_wi = "".join(c if c.isalnum() or c in "-_" else "-" for c in wid.lower().replace("/", "-"))[:48] or "rv1"
         task_kind = f"{safe_mid}-{safe_wi}-review"
@@ -262,20 +256,11 @@ def _handoff_for(
         validation_expectations = ("integrated review validation",)
         semantic_stop_expectations = ("stop if review scope unclear",)
     else:
-        work_role = "coder"
-        # Generic scope-free fallback shape. The exact template rule lives in
-        # handoff_runtime.generic_fallback_scope_template /
-        # generic_fallback_task_kind (single source of truth shared with the
-        # Worker-usability gate); outputs are unchanged.
-        task_kind = generic_fallback_task_kind(wid, mid)
-        objective = (
-            f"Execute Work Item {wid} for Milestone {mid}. "
-            f"Implement bounded functionality via workspace.* operations only. "
-            f"Use only governed operations; stop if scope unclear."
+        # Unreachable: non-review already returned or raised above.
+        raise WorkScopeInsufficientError(
+            f"no trusted Work semantics for Work Item {wid!r} "
+            f"(Milestone {mid!r}); refusing scope-free derivation"
         )
-        bounded_scope = generic_fallback_scope_template(wid, mid)
-        validation_expectations = (f"validation for {wid}",)
-        semantic_stop_expectations = (f"stop if {wid} scope unclear",)
 
     project_ref = SemanticReference(ref=project_id) if project_id else None
     plan_ref = SemanticReference(ref=plan_authority, digest=plan_digest) if plan_authority else None
@@ -342,7 +327,7 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
     # Verify worktree_root matches the trusted env root (scope matching)
     trusted_root: Path | None = None
     explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
-    if explicit and explicit.strip() and "${" not in explicit:
+    if explicit and explicit.strip():
         try:
             trusted_root = Path(explicit).parent.parent.resolve() if explicit.endswith(BOOTSTRAP_RELPATH) else Path(explicit).parent.resolve()
             # If explicit is file path, its parent/.aota parent is worktree root
@@ -395,7 +380,7 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
 
 def _bootstrap_path_for_validation() -> Path | None:
     explicit = os.environ.get(BOOTSTRAP_EXPLICIT_ENV)
-    if explicit and explicit.strip() and "${" not in explicit:
+    if explicit and explicit.strip():
         p = Path(explicit)
         if p.is_file():
             return p.resolve()
@@ -681,60 +666,16 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     _w2_holder["reviewer_handoff_resolver"] = reviewer_handoff_resolver
 
     def governed_review_resolver(cid: str, digest: str):
-        # For this slice we synthesize a PASS review evidence deterministically
-        # The actual review result card will be attached by the reviewer worker;
-        # but the resolver is asked during advance to reconcile the review.
-        # We return a minimal GovernedReviewEvidence that will be validated
-        # against the actual card. For PASS we set no findings.
-        # We need to fetch the actual card digest? The MCP transport will call
-        # this with the actual cid/digest of the reviewer completion, so we
-        # should load the card from exec_store to produce correct evidence.
-        try:
-            rec = exec_store.get(cid)
-            card_dict = rec.worker_result_card if rec and rec.worker_result_card else None
-            if card_dict:
-                from aota_forge.work_plane.result_card import WorkerResultCard
-                card = WorkerResultCard.from_dict(card_dict)
-                ev = MilestoneReviewEvidence(
-                    milestone_ref=SemanticReference(ref=live_view.milestone_id),
-                    review_cycle=ReviewCycle.RV1,
-                    reviewed_frontier_ref=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
-                    review_result_ref=card.result_handoff_ref,
-                    review_result_digest=card.compute_card_digest(),
-                    finding_refs=(),
-                )
-                return GovernedReviewEvidence(
-                    review_evidence=ev,
-                    review_findings=(),
-                    review_task_handoff=_reviewer_handoff(
-                        milestone_ref=live_view.milestone_id,
-                        project_id=project_id,
-                        plan_authority=live_view.plan_authority,
-                        plan_digest=live_view.plan_digest,
-                    ),
-                    expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
-                )
-        except Exception:
-            pass
-        # Fallback minimal (generic, no M3 fixture)
-        ev = MilestoneReviewEvidence(
-            milestone_ref=SemanticReference(ref=live_view.milestone_id),
-            review_cycle=ReviewCycle.RV1,
-            reviewed_frontier_ref=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
-            review_result_ref=SemanticReference(ref=cid),
-            review_result_digest=digest,
-            finding_refs=(),
-        )
-        return GovernedReviewEvidence(
-            review_evidence=ev,
-            review_findings=(),
-            review_task_handoff=_reviewer_handoff(
-                milestone_ref=live_view.milestone_id,
-                project_id=project_id,
-                plan_authority=live_view.plan_authority,
-                plan_digest=live_view.plan_digest,
-            ),
-            expected_final_frontier=SemanticReference(ref=f"frontier-{live_view.milestone_id}-rv1"),
+        # D7: synthetic review acceptance removed (SYNTHETIC_REVIEW_ACCEPTANCE_PRODUCTION_PATH=no).
+        # Review truth must come from governed review/reconciliation path
+        # (AF_RECONCILIATION_OR_GOVERNED_REVIEW). If review evidence is
+        # unavailable, fail closed (do not fabricate PASS).
+        return derive_governed_review_evidence(
+            reviewer_canonical_task_id=cid,
+            card_digest=digest,
+            execution_store=exec_store,
+            live_plan_view=live_view,
+            reviewer_handoff_resolver=reviewer_handoff_resolver,
         )
 
     def reviewer_canonical_task_id_resolver():
@@ -757,38 +698,44 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         coordinator_id=coordinator_id,
     )
 
-    # Build the outer TrustedWorkerBinding for profile aota-task-main
-    # The sandbox/handoff/tool_surface are for the task-main session itself
-    # Generic evidence via shared helper; fallback to synthetic for legacy
-    # test harnesses with synthetic tmp_path only (production always has real manifest)
+    # Build the outer TrustedWorkerBinding for task-main (neutral AF principal).
+    # D7: synthetic project evidence removed from production path
+    # (SYNTHETIC_PROJECT_AUTHORITY_PRODUCTION_PATH=no). Missing canonical
+    # project evidence fails closed (MISSING_CANONICAL_PROJECT_EVIDENCE_FAILS_CLOSED=yes).
+    # Test fixtures may create synthetic evidence only via explicit test seam
+    # (AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE=1).
     try:
         _ev = _project_evidence(worktree_root, project_id)
         if _ev.status != "RESOLVED":
             raise ValueError(f"evidence not resolved: {_ev.status}")
         sandbox = bind_worktree_sandbox(_ev, worktree_id, worktree_root)
-    except Exception:
-        from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
-        synthetic = ProjectCandidateEvidence(
-            workspace_id=f"test-{project_id}",
-            workspace_root=str(worktree_root),
-            project_id=project_id,
-            project_root=str(worktree_root),
-            manifest_path=".aota/project.yaml",
-            name=project_id,
-            kind="test-synthetic",
-            status="active",
-            registry_fingerprint="0"*64,
-            candidate_fingerprint="1"*64,
-        )
-        synth_ev = ProjectResolutionEvidence(
-            status="RESOLVED",
-            workspace_id=f"test-{project_id}",
-            workspace_root=str(worktree_root),
-            registry_fingerprint="0"*64,
-            listing_fingerprint="0"*64,
-            candidates=(synthetic,),
-        )
-        sandbox = bind_worktree_sandbox(synth_ev, worktree_id, worktree_root)
+    except Exception as exc:
+        if os.environ.get("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE") == "1" or os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1":
+            from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
+
+            synthetic = ProjectCandidateEvidence(
+                workspace_id=f"test-{project_id}",
+                workspace_root=str(worktree_root),
+                project_id=project_id,
+                project_root=str(worktree_root),
+                manifest_path=".aota/project.yaml",
+                name=project_id,
+                kind="test-synthetic",
+                status="active",
+                registry_fingerprint="0" * 64,
+                candidate_fingerprint="1" * 64,
+            )
+            synth_ev = ProjectResolutionEvidence(
+                status="RESOLVED",
+                workspace_id=f"test-{project_id}",
+                workspace_root=str(worktree_root),
+                registry_fingerprint="0" * 64,
+                listing_fingerprint="0" * 64,
+                candidates=(synthetic,),
+            )
+            sandbox = bind_worktree_sandbox(synth_ev, worktree_id, worktree_root)
+        else:
+            raise TrustedBindingError(f"missing canonical project evidence: {exc}") from exc
     handoff = TaskHandoff(
         work_role="task-main",
         task_kind="task-main-control",
@@ -822,7 +769,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         canonical_task_id=f"{project_id}:{live_view.milestone_id}:task-main:{origin_session[:8]}",
         project_id=project_id,
         worktree_id=worktree_id,
-        trusted_context=bind_trusted_context(principal_id="hermes-task-main", principal_type="hermes-task-main", channel="mcp"),
+        trusted_context=bind_trusted_context(principal_id="task-main", principal_type="task-main", channel="mcp"),
         handoff=handoff,
         sandbox=sandbox,
         tool_surface=tool_surface,

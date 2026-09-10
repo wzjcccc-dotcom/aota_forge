@@ -140,14 +140,33 @@ def test_a_normal_projection_is_usable_and_non_generic() -> None:
 
 
 def test_a_generic_fallback_is_not_worker_usable() -> None:
-    # The legacy semantics-free derivation is preserved for backward
-    # compatibility but is structurally recognized as not Worker-usable.
-    h = _handoff_for(WORK_ITEM, milestone_ref=MILESTONE, project_id=PROJECT_ID,
+    # D7/W2: generic semantics-free derivation removed from production
+    # (GENERIC_SCOPE_FALLBACK_PRODUCTION_PATH=no). Calling without trusted
+    # WorkSemanticProjection now fails closed (WORK_SCOPE_INSUFFICIENT).
+    with pytest.raises(WorkScopeInsufficientError) as exc:
+        _handoff_for(WORK_ITEM, milestone_ref=MILESTONE, project_id=PROJECT_ID,
                      plan_authority=PLAN_AUTH, plan_digest=PLAN_DIGEST)
-    assert h.bounded_scope == generic_fallback_scope_template(WORK_ITEM, MILESTONE)
-    assert is_worker_usable_handoff(h, work_item_id=WORK_ITEM, milestone_ref=MILESTONE) is False
+    assert WORK_SCOPE_INSUFFICIENT in str(exc.value)
+    # The generic template constants remain defined for legacy detection but
+    # are not authority and never become Worker-usable.
+    template = generic_fallback_scope_template(WORK_ITEM, MILESTONE)
+    assert template == f"{MILESTONE.lower()}/{WORK_ITEM.lower()}/bounded-scope"
+    # A handoff with generic scope is still not worker_usable if manually constructed
+    h_generic = TaskHandoff(
+        work_role="coder",
+        task_kind=template.replace("/", "-") + "-implementation",
+        objective=f"Execute Work Item {WORK_ITEM} for Milestone {MILESTONE}. Implement bounded functionality via workspace.* operations only. Use only governed operations; stop if scope unclear.",
+        bounded_scope=template,
+        validation_expectations=(f"validation for {WORK_ITEM}",),
+        semantic_stop_expectations=(f"stop if {WORK_ITEM} scope unclear",),
+        work_item_ref=SemanticReference(ref=WORK_ITEM),
+        milestone_ref=SemanticReference(ref=MILESTONE),
+        project_ref=SemanticReference(ref=PROJECT_ID),
+        plan_ref=SemanticReference(ref=PLAN_AUTH, digest=PLAN_DIGEST),
+    )
+    assert is_worker_usable_handoff(h_generic, work_item_id=WORK_ITEM, milestone_ref=MILESTONE) is False
     with pytest.raises(WorkScopeInsufficientError):
-        assert_worker_usable_handoff(h, work_item_id=WORK_ITEM, milestone_ref=MILESTONE)
+        assert_worker_usable_handoff(h_generic, work_item_id=WORK_ITEM, milestone_ref=MILESTONE)
 
 
 def test_a_projection_path_through_handoff_for() -> None:
@@ -329,10 +348,12 @@ def test_k_model_facing_instruction_carries_scope() -> None:
         assert val in payload["instruction"]
 
 
-def test_k_role_bootstrap_summary_carries_scope() -> None:
+def test_k_role_bootstrap_summary_carries_scope(monkeypatch) -> None:
     from aota_forge.composition.worker_vertical_slice import build_worker_binding
     from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
 
+    # D7: synthetic project evidence requires explicit test seam
+    monkeypatch.setenv("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE", "1")
     h = _rich_handoff()
     binding = build_worker_binding(
         root=Path("/tmp"),
@@ -443,9 +464,42 @@ def test_production_resolver_fails_closed_without_semantics(tmp_path: Path) -> N
                              milestone_user_approval_satisfied=True)
     root = tmp_path / "wt"
     root.mkdir()
+    # Valid manifest for canonical evidence (D7 synthetic removed)
+    (root / ".aota").mkdir(parents=True, exist_ok=True)
+    (root / ".aota" / "project.yaml").write_text(
+        "schema_version: 1\n"
+        "project:\n"
+        f"  id: {PROJECT_ID}\n"
+        "  name: t\n"
+        "  kind: test\n"
+        "  status: active\n"
+        "summary: test\n"
+        "capabilities: []\n"
+        "paths:\n"
+        "  source_root: .\n"
+        "  source: []\n"
+        "  docs: []\n"
+        "  scripts: []\n"
+        "  profiles: []\n"
+        "  skills: []\n"
+        "  tests: []\n"
+        "commands:\n"
+        "  validate: []\n"
+        "  deploy: []\n"
+        "  verify_deploy: []\n"
+        "runtime:\n"
+        "  deployment_type: manual\n"
+        "  requires_human_checkpoint: false\n"
+        "codegraph:\n"
+        "  enabled: false\n"
+        "  index_location: .codegraph\n"
+        "plan:\n"
+        "  active_plan_id: null\n"
+        "constraints: []\n",
+        encoding="utf-8",
+    )
     coord = root / ".aota" / "coordinator.json"
     execp = root / ".aota" / "execution.json"
-    coord.parent.mkdir(parents=True, exist_ok=True)
     coord.write_text("{}", encoding="utf-8")
     execp.write_text("{}", encoding="utf-8")
     cfg = tmp_path / "runtime.json"
@@ -483,7 +537,6 @@ def test_production_resolver_fails_closed_without_semantics(tmp_path: Path) -> N
         if old_explicit is not None:
             os.environ[BOOTSTRAP_EXPLICIT_ENV] = old_explicit
 
-
 def test_production_resolver_succeeds_with_semantics(tmp_path: Path) -> None:
     from aota_forge.runtime.task_main.coordinator import MilestonePlanView
     from aota_forge.work_plane.progression import MilestoneWorkItemGraph
@@ -491,6 +544,7 @@ def test_production_resolver_succeeds_with_semantics(tmp_path: Path) -> None:
     from aota_forge.composition.task_main_host_bootstrap import (
         BOOTSTRAP_ENV_ROOT,
         BOOTSTRAP_EXPLICIT_ENV,
+
     )
 
     graph = MilestoneWorkItemGraph(milestone_ref=MILESTONE, work_items=[WORK_ITEM], dependencies=[])
@@ -500,9 +554,41 @@ def test_production_resolver_succeeds_with_semantics(tmp_path: Path) -> None:
                              milestone_user_approval_satisfied=True)
     root = tmp_path / "wt"
     root.mkdir()
+    (root / ".aota").mkdir(parents=True, exist_ok=True)
+    (root / ".aota" / "project.yaml").write_text(
+        "schema_version: 1\n"
+        "project:\n"
+        f"  id: {PROJECT_ID}\n"
+        "  name: t\n"
+        "  kind: test\n"
+        "  status: active\n"
+        "summary: test\n"
+        "capabilities: []\n"
+        "paths:\n"
+        "  source_root: .\n"
+        "  source: []\n"
+        "  docs: []\n"
+        "  scripts: []\n"
+        "  profiles: []\n"
+        "  skills: []\n"
+        "  tests: []\n"
+        "commands:\n"
+        "  validate: []\n"
+        "  deploy: []\n"
+        "  verify_deploy: []\n"
+        "runtime:\n"
+        "  deployment_type: manual\n"
+        "  requires_human_checkpoint: false\n"
+        "codegraph:\n"
+        "  enabled: false\n"
+        "  index_location: .codegraph\n"
+        "plan:\n"
+        "  active_plan_id: null\n"
+        "constraints: []\n",
+        encoding="utf-8",
+    )
     coord = root / ".aota" / "coordinator.json"
     execp = root / ".aota" / "execution.json"
-    coord.parent.mkdir(parents=True, exist_ok=True)
     coord.write_text("{}", encoding="utf-8")
     execp.write_text("{}", encoding="utf-8")
     cfg = tmp_path / "runtime.json"

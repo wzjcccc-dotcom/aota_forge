@@ -349,7 +349,7 @@ def _dispatch_task_main(
         surface_role = ""
     if handoff_role != "task-main" or surface_role != "task-main":
         return ToolResponse.failure(
-            {"code": "AUTHORITY_DENIED", "message": "task-main control requires profile aota-task-main"}
+            {"code": "AUTHORITY_DENIED", "message": "task-main control requires AF role task-main"}
         )
     ctx = binding.trusted_task_main_context
     if ctx is None or not hasattr(ctx, "control_service"):
@@ -358,8 +358,9 @@ def _dispatch_task_main(
         )
     # Reuse existing TaskMainControlService/Runner/Coordinator without
     # rewriting lifecycle semantics (LEAF rewrite = no).
+    # D8: neutral AF role, not Hermes profile literal.
     try:
-        from aota_forge.runtime.task_main.control import TASK_MAIN_PROFILE
+        from aota_forge.runtime.task_main.control import AF_TASK_MAIN_ROLE
     except Exception as exc:
         return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)})
     try:
@@ -387,7 +388,7 @@ def _dispatch_task_main(
                 except Exception:
                     resolved_id = ctx.coordinator_id
                 handle = ctx.control_service.activate_milestone(
-                    profile=TASK_MAIN_PROFILE,
+                    profile=AF_TASK_MAIN_ROLE,
                     plan_view=live,
                     origin_task_main_session_ref=ctx.origin_task_main_session_ref,
                     executor_id=ctx.executor_id,
@@ -437,7 +438,7 @@ def _dispatch_task_main(
                 )
             try:
                 handle = ctx.control_service.recover_coordinator(
-                    profile=TASK_MAIN_PROFILE,
+                    profile=AF_TASK_MAIN_ROLE,
                     coordinator_id=coord_id,
                     live_plan_view=live,
                     session_available=ctx.session_available,
@@ -475,7 +476,7 @@ def _dispatch_task_main(
                 )
             try:
                 outcome = ctx.control_service.advance_once(
-                    profile=TASK_MAIN_PROFILE,
+                    profile=AF_TASK_MAIN_ROLE,
                     coordinator_id=coord_id,
                     live_plan_view=live,
                     handoff_resolver=ctx.handoff_resolver,

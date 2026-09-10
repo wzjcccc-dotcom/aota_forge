@@ -45,8 +45,18 @@ from aota_forge.runtime.task_main.runner import (
 )
 from aota_forge.work_plane.handoff import TaskHandoff
 
+# Host-edge mechanical Hermes profile names (not authority).
+# The mapping Hermes profile → neutral AF role is owned by the host adapter
+# only (HERMES_PROFILE_TO_AF_ROLE_MAPPING_OWNER=HOST_EDGE_ONLY). Core/runtime
+# authority must not branch on these literals (CORE_AUTHORITY_BRANCHES_ON_HERMES_LITERAL=no).
 TASK_MAIN_PROFILE = "aota-task-main"
 WORKER_PROFILE = "aota-worker"
+
+# AF-neutral principal/role for semantic decisions (D8).
+AF_TASK_MAIN_ROLE = "task-main"
+AF_WORKER_ROLE = "worker"
+# For backward compat, expose neutral as principal identity
+AF_PRINCIPAL_IDENTITY_EXECUTOR_NEUTRAL = True
 
 TASK_MAIN_CONTROL_OPERATIONS: tuple[str, ...] = (
     "task_main.activate_milestone",
@@ -71,10 +81,15 @@ class TaskMainControlAuthorityError(PermissionError):
 
 
 def _require_task_main_profile(profile: str | None) -> None:
-    if profile != TASK_MAIN_PROFILE:
+    # AF-neutral authority check (D8): Core/runtime must not depend on Hermes
+    # profile literal (AF_CORE_DEPENDS_ON_HERMES_PROFILE_NAME=no,
+    # AF_RUNTIME_AUTHORITY_DEPENDS_ON_HERMES_PROFILE_NAME=no).
+    # Host representation is mechanically mapped at the outer edge to neutral role
+    # before reaching Core. The neutral role is "task-main".
+    if profile != AF_TASK_MAIN_ROLE:
         raise TaskMainControlAuthorityError(
-            f"task-main control requires profile {TASK_MAIN_PROFILE!r}, got {profile!r}: "
-            "aota-worker cannot access task-main control"
+            f"task-main control requires AF role {AF_TASK_MAIN_ROLE!r}, got {profile!r}: "
+            "worker cannot access task-main control"
         )
 
 
@@ -345,7 +360,8 @@ class TaskMainControlService:
 
 def is_worker_allowed_to_call_task_main_control(profile: str) -> bool:
     """Helper for MCP server-side binding: workers are never allowed."""
-    return profile == TASK_MAIN_PROFILE
+    # Neutral check (not Hermes literal)
+    return profile == AF_TASK_MAIN_ROLE
 
 
 __all__ = [

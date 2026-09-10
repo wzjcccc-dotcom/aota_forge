@@ -148,7 +148,38 @@ def _make_project(tmp: Path, project_id: str = PROJECT_ID):
     root = tmp / f"wt-r1-{project_id}"
     root.mkdir(parents=True, exist_ok=True)
     (root / ".aota").mkdir(exist_ok=True)
-    (root / ".aota" / "project.yaml").write_text(f"project_id: {project_id}\nname: t\n", encoding="utf-8")
+    (root / ".aota" / "project.yaml").write_text(
+        f"schema_version: 1\n"
+        f"project:\n"
+        f"  id: {project_id}\n"
+        f"  name: t\n"
+        f"  kind: test\n"
+        f"  status: active\n"
+        f"summary: test project\n"
+        f"capabilities: []\n"
+        f"paths:\n"
+        f"  source_root: .\n"
+        f"  source: []\n"
+        f"  docs: []\n"
+        f"  scripts: []\n"
+        f"  profiles: []\n"
+        f"  skills: []\n"
+        f"  tests: []\n"
+        f"commands:\n"
+        f"  validate: []\n"
+        f"  deploy: []\n"
+        f"  verify_deploy: []\n"
+        f"runtime:\n"
+        f"  deployment_type: manual\n"
+        f"  requires_human_checkpoint: false\n"
+        f"codegraph:\n"
+        f"  enabled: false\n"
+        f"  index_location: .codegraph\n"
+        f"plan:\n"
+        f"  active_plan_id: null\n"
+        f"constraints: []\n",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -440,7 +471,7 @@ def test_r1_j_metadata_mismatch_rejected(tmp_path: Path) -> None:
         os.environ["AOTA_ALLOW_LEGACY_ENV_DISCOVERY"] = "1"
         root = _make_project(tmp_path)
         h = _handoff()
-        _set_worker_env(root, h, project_id="proj_OTHER")
+        _set_worker_env(root, h, project_id="proj_other")
         with pytest.raises(TrustedBindingError) as exc:
             wvs.select_runtime_context()
         assert "MISMATCH" in str(exc.value)
@@ -515,10 +546,10 @@ def test_r1_l_worker_popen_env_isolated(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_r1_m_concurrent_worker_isolation(tmp_path: Path) -> None:
-    root_a = _make_project(tmp_path, "proj_RA")
-    root_b = _make_project(tmp_path, "proj_RB")
-    h_a = _handoff(project_id="proj_RA")
-    h_b = _handoff(project_id="proj_RB")
+    root_a = _make_project(tmp_path, "proj_ra")
+    root_b = _make_project(tmp_path, "proj_rb")
+    h_a = _handoff(project_id="proj_ra")
+    h_b = _handoff(project_id="proj_rb")
     results: dict[str, dict] = {}
     errors: list = []
 
@@ -532,16 +563,16 @@ def test_r1_m_concurrent_worker_isolation(tmp_path: Path) -> None:
             errors.append(e)
 
     threads = [
-        threading.Thread(target=build, args=("A", root_a, h_a, "proj_RA")),
-        threading.Thread(target=build, args=("B", root_b, h_b, "proj_RB")),
+        threading.Thread(target=build, args=("A", root_a, h_a, "proj_ra")),
+        threading.Thread(target=build, args=("B", root_b, h_b, "proj_rb")),
     ]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
     assert not errors
-    assert results["A"]["AOTA_W3_PROJECT_ID"] == "proj_RA"
-    assert results["B"]["AOTA_W3_PROJECT_ID"] == "proj_RB"
+    assert results["A"]["AOTA_W3_PROJECT_ID"] == "proj_ra"
+    assert results["B"]["AOTA_W3_PROJECT_ID"] == "proj_rb"
 
 
 def test_r1_n_task_main_worker_simultaneous_isolation(tmp_path: Path) -> None:

@@ -258,47 +258,43 @@ def build_worker_binding(
         raise
     except Exception as exc:
         raise TrustedBindingError(f"worker handoff bounded projection failed: {exc}") from exc
-    # Generic project evidence via canonical helper (same helper as task-main)
-    # If no canonical project is found at root (e.g., legacy test tmp_path without
-    # .aota/project.yaml), create a minimal in-memory fixture manifest so that
-    # legacy unit tests that use synthetic tmp_path still pass, while production
-    # worktrees with real manifests use canonical derivation. This is not a
-    # heuristic fallback for production: production worktrees always have a
-    # real manifest at the worktree root, so the canonical path succeeds.
+    # D7: synthetic project evidence removed from production path
+    # (SYNTHETIC_PROJECT_AUTHORITY_PRODUCTION_PATH=no). Canonical evidence
+    # required, fail closed. Test fixtures via explicit seam
+    # AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE=1 only.
     try:
         evidence = _project_evidence(root, project_id)
         if evidence.status != "RESOLVED":
             raise ValueError(f"project evidence not resolved: {evidence.status}")
         sandbox = bind_worktree_sandbox(evidence, worktree_id, root)
-    except Exception:
-        # Fallback for legacy test harnesses with synthetic tmp_path only:
-        # create a minimal synthetic evidence that still passes sandbox
-        # but is clearly marked as synthetic and not used as production authority
-        # for real projects. Production worktrees with real manifests never hit
-        # this branch.
-        from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
-        import hashlib, json
-        synthetic = ProjectCandidateEvidence(
-            workspace_id=f"test-{project_id}",
-            workspace_root=str(root),
-            project_id=project_id,
-            project_root=str(root),
-            manifest_path=".aota/project.yaml",
-            name=project_id,
-            kind="test-synthetic",
-            status="active",
-            registry_fingerprint="0"*64,
-            candidate_fingerprint="1"*64,
-        )
-        synth_ev = ProjectResolutionEvidence(
-            status="RESOLVED",
-            workspace_id=f"test-{project_id}",
-            workspace_root=str(root),
-            registry_fingerprint="0"*64,
-            listing_fingerprint="0"*64,
-            candidates=(synthetic,),
-        )
-        sandbox = bind_worktree_sandbox(synth_ev, worktree_id, root)
+    except Exception as exc:
+        if os.environ.get("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE") == "1" or os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1":
+            from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
+            import hashlib, json
+
+            synthetic = ProjectCandidateEvidence(
+                workspace_id=f"test-{project_id}",
+                workspace_root=str(root),
+                project_id=project_id,
+                project_root=str(root),
+                manifest_path=".aota/project.yaml",
+                name=project_id,
+                kind="test-synthetic",
+                status="active",
+                registry_fingerprint="0" * 64,
+                candidate_fingerprint="1" * 64,
+            )
+            synth_ev = ProjectResolutionEvidence(
+                status="RESOLVED",
+                workspace_id=f"test-{project_id}",
+                workspace_root=str(root),
+                registry_fingerprint="0" * 64,
+                listing_fingerprint="0" * 64,
+                candidates=(synthetic,),
+            )
+            sandbox = bind_worktree_sandbox(synth_ev, worktree_id, root)
+        else:
+            raise TrustedBindingError(f"missing canonical project evidence: {exc}") from exc
     # Generic: policy scope must be derived from TaskHandoff bounded_scope
     # so that effective worker scope equals handoff scope
     # No hard-coded fixture scope.
@@ -433,8 +429,8 @@ def build_worker_binding(
         project_id=project_id,
         worktree_id=worktree_id,
         trusted_context=bind_trusted_context(
-            principal_id="hermes-worker",
-            principal_type="hermes-worker",
+            principal_id="worker",
+            principal_type="worker",
             channel="mcp",
         ),
         handoff=handoff,
@@ -529,8 +525,6 @@ def _explicit_task_main_signal_present() -> bool:
     """
     raw = os.environ.get("AOTA_TASK_MAIN_BOOTSTRAP", "")
     if not raw or not raw.strip():
-        return False
-    if "${" in raw:
         return False
     return True
 
@@ -790,10 +784,10 @@ def select_runtime_context() -> TrustedWorkerBinding:
     legacy channel cannot re-activate without the envelope.
     """
     # Pre-resolved envelope is the canonical authority channel after W1
+    # Host representation is semantically irrelevant: placeholder literals are
+    # not specially recognized; they are treated as normal paths that fail closed.
     envelope_path = os.environ.get(PRE_RESOLVED_BINDING_ENV, "")
     if envelope_path and envelope_path.strip():
-        if "${" in envelope_path:
-            raise TrustedBindingError(f"envelope path contains placeholder literal: {envelope_path!r}")
         try:
             binding = load_binding_from_envelope(envelope_path)
             try:
@@ -805,12 +799,14 @@ def select_runtime_context() -> TrustedWorkerBinding:
         except Exception as exc:
             raise TrustedBindingError(f"pre-resolved binding load failed: {type(exc).__name__}: {exc}") from exc
         if _ekind == "task-main":
-            # Check if a competing worker channel is fully present and not placeholder.
-            # Only a valid competing channel (all required keys present, handoff is valid JSON)
-            # should be considered conflicting; placeholder/bogus/incomplete channels are
-            # ignored for poisoning proof (host representation cannot affect authority).
+            # Check if a competing worker channel is fully present.
+            # When envelope is present, host env is irrelevant; only a fully
+            # valid competing channel (all keys present and handoff is valid JSON)
+            # is considered conflicting. Placeholder/bogus/incomplete channels are
+            # ignored for poisoning proof (host representation cannot affect authority
+            # without special-case filtering — placeholder fails JSON parse).
             _worker_keys = (MCP_ROOT_ENV, MCP_PROJECT_ENV, MCP_WORKTREE_ENV, MCP_TASK_ENV, MCP_HANDOFF_ENV)
-            if all(k in os.environ and os.environ[k].strip() and "${" not in os.environ[k] for k in _worker_keys):
+            if all(k in os.environ and os.environ[k].strip() for k in _worker_keys):
                 try:
                     import json as _json
                     _h = _json.loads(os.environ[MCP_HANDOFF_ENV])
@@ -821,10 +817,10 @@ def select_runtime_context() -> TrustedWorkerBinding:
                 except Exception:
                     pass
         elif _ekind == "worker":
-            # Check for competing task-main bootstrap that is a real file (not placeholder/bogus)
+            # Check for competing task-main bootstrap that is a real file.
             for _k in ("AOTA_TASK_MAIN_BOOTSTRAP",):
                 _v = os.environ.get(_k, "")
-                if _v and _v.strip() and "${" not in _v:
+                if _v and _v.strip():
                     try:
                         _pp = Path(_v)
                         if _pp.is_file():
