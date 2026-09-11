@@ -156,6 +156,20 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
                     ws_views.append(GovernedWorkSemanticView.from_dict(entry))
             except Exception:
                 raise TrustedBindingError(f"bootstrap work_semantics entry invalid: {entry!r}")
+    # W4: restore bounded faithful Work source slices (structural).
+    wss_raw = d.get("work_source_slices", ())
+    wss_views: list[Any] = []
+    if isinstance(wss_raw, (list, tuple)):
+        try:
+            from aota_forge.core.plan.read_model import WorkSourceSlice
+        except Exception:
+            WorkSourceSlice = None  # type: ignore
+        for entry in wss_raw:
+            try:
+                if WorkSourceSlice is not None and isinstance(entry, dict):
+                    wss_views.append(WorkSourceSlice.from_dict(entry))
+            except Exception:
+                raise TrustedBindingError(f"bootstrap work_source_slices entry invalid: {entry!r}")
     return MilestonePlanView(
         plan_authority=d["plan_authority"],
         plan_digest=d["plan_digest"],
@@ -166,6 +180,7 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
         milestone_user_approval_satisfied=bool(d["milestone_user_approval_satisfied"]),
         plan_amendment_required=bool(d.get("plan_amendment_required", False)),
         work_semantics=tuple(ws_views),
+        work_source_slices=tuple(wss_views),
     )
 
 
@@ -853,6 +868,19 @@ def write_bootstrap_file(
                 except Exception:
                     continue
             d["work_semantics"] = items
+        # W4: carry bounded faithful Work source slices (structural, digest-bound).
+        try:
+            wss = tuple(getattr(v, "work_source_slices", ()) or ())
+        except Exception:
+            wss = ()
+        if wss:
+            items_s: list[dict[str, Any]] = []
+            for w in wss:
+                try:
+                    items_s.append(w.to_dict() if hasattr(w, "to_dict") else dict(w))
+                except Exception:
+                    continue
+            d["work_source_slices"] = items_s
         return d
 
     payload = {

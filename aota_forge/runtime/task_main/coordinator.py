@@ -239,6 +239,9 @@ class MilestonePlanView:
     plan_source_revision: str | None = None
     plan_amendment_required: bool = False
     work_semantics: tuple[Any, ...] = ()
+    # W4 bounded Work source slices (structural, faithful, digest-bound). The task-main LLM
+    # reasons over these slices; Control Plane never synthesizes objective.
+    work_source_slices: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "plan_authority", _require_non_empty_str(self.plan_authority, "plan_authority"))
@@ -305,11 +308,65 @@ class MilestonePlanView:
                     seen.add(wid_ordered)
                     ordered.append(v)
         object.__setattr__(self, "work_semantics", tuple(ordered))
+        # work_source_slices: tuple of WorkSourceSlice (structural, faithful).
+        # Validated lightly (duck typing) to avoid Plan layer import cycles.
+        wss = getattr(self, "work_source_slices", ())
+        if not isinstance(wss, (tuple, list)):
+            raise TypeError("work_source_slices must be tuple/list")
+        cleaned_s: list[Any] = []
+        for idx, v in enumerate(wss):
+            try:
+                wid = getattr(v, "work_item_id", None)
+                mid = getattr(v, "milestone_id", None)
+                title = getattr(v, "title", None)
+                source = getattr(v, "source_text", None)
+            except Exception:
+                raise TypeError(f"work_source_slices[{idx}] must be WorkSourceSlice")
+            if not isinstance(wid, str) or not wid.strip():
+                raise ValueError(f"work_source_slices[{idx}].work_item_id must be non-empty")
+            if not isinstance(mid, str) or mid.strip() != self.milestone_id:
+                raise ValueError(
+                    f"work_source_slices[{idx}].milestone_id {mid!r} contradicts view {self.milestone_id!r}"
+                )
+            if not isinstance(title, str) or not title.strip():
+                raise ValueError(f"work_source_slices[{idx}].title must be non-empty")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError(f"work_source_slices[{idx}].source_text must be non-empty")
+            if wid.strip() not in set(self.graph.work_items):
+                raise ValueError(f"work_source_slices[{idx}] unknown Work Item {wid!r}")
+            # Structural slice must be bounded and not contain sibling leakage already enforced at creation,
+            # but we enforce non-empty and not full Plan dump (bounded check implicit via WorkSourceSlice validation)
+            cleaned_s.append(v)
+        seen_s: set[str] = set()
+        ordered_s: list[Any] = []
+        for wid_ordered in self.graph.work_items:
+            for v in cleaned_s:
+                if getattr(v, "work_item_id").strip() == wid_ordered and wid_ordered not in seen_s:
+                    seen_s.add(wid_ordered)
+                    ordered_s.append(v)
+        object.__setattr__(self, "work_source_slices", tuple(ordered_s))
 
     @property
     def user_gate_blocked(self) -> bool:
         """True when progression must stop before the user gate."""
         return (not self.milestone_user_approval_satisfied) or self.plan_amendment_required
+
+    def get_work_source_slice(self, work_item_id: str) -> Any | None:
+        """Return the bounded faithful source slice for one Work Item, or None.
+
+        This is the W4 model-visible path: task-main reads this slice and
+        reasons via LLM (no Control Plane semantic interpretation).
+        """
+        if not isinstance(work_item_id, str):
+            return None
+        wid = work_item_id.strip()
+        for v in self.work_source_slices:
+            try:
+                if getattr(v, "work_item_id", "").strip() == wid:
+                    return v
+            except Exception:
+                continue
+        return None
 
     def get_work_semantic_view(self, work_item_id: str) -> Any | None:
         """Return the bounded governed view for one Work Item, or None."""

@@ -67,6 +67,7 @@ class BodySection:
     start_line: int
     end_line: int
     raw_text: str = ""
+    level: int | None = None
 
 
 def normalize_title(title: str) -> str:
@@ -197,6 +198,7 @@ def parse_body_sections(body: str) -> list[BodySection]:
                 start_line=start_line,
                 end_line=start_line + len(block_lines),
                 raw_text=raw_joined,
+                level=level,
             )
         )
     return sections

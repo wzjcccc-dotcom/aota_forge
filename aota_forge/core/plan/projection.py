@@ -36,8 +36,10 @@ from aota_forge.core.plan.normalize import PlanNormalizationError
 from aota_forge.core.plan.read_model import (
     MAX_WORK_SEMANTIC_CONTEXT_LENGTH,
     MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH,
+    MAX_WORK_SOURCE_TEXT_LENGTH,
     GovernedWorkSemanticView,
     PortablePlanDocument,
+    WorkSourceSlice,
 )
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 
@@ -269,6 +271,79 @@ def get_milestone_work_semantic_views(
     return tuple(out)
 
 
+# ---------------------------------------------------------------------------
+# W4 structural Work source slice (bounded faithful source, not semantics)
+# ---------------------------------------------------------------------------
+
+
+def get_work_source_slice(
+    document: PortablePlanDocument, milestone_id: str, work_item_id: str
+) -> WorkSourceSlice:
+    """Deterministic structural Work source slice from canonical document.
+
+    Returns the faithful bounded source slice for one governed Work Item:
+    title + Work-local authoritative prose/lists/code blocks (no sibling leakage).
+    Hierarchical headings have priority; inline compatibility is fallback.
+    Missing structural context fails closed with MISSING_WORK_SOURCE (no
+    heuristic "Implement W1", no full Plan dump, no sibling scope).
+    Identity is exact: W1 != W10, cross-milestone capture prohibited,
+    duplicate ambiguity already failed at normalize.
+    """
+    if not isinstance(milestone_id, str) or not milestone_id.strip():
+        raise PlanNormalizationError("MALFORMED_MILESTONE_ID", "milestone_id invalid")
+    if not isinstance(work_item_id, str) or not work_item_id.strip():
+        raise PlanNormalizationError("MALFORMED_WORK_ITEM_ID", "work_item_id invalid")
+    mid = milestone_id.strip()
+    wid = work_item_id.strip()
+    work_items = document.milestone_work_items.get(mid)
+    if work_items is None or wid not in set(work_items):
+        raise PlanNormalizationError(
+            "UNKNOWN_WORK_ITEM",
+            f"Work Item {wid!r} is not a governed Work Item of Milestone {mid!r}",
+        )
+    slices = (document.work_source_slices or {}).get(mid, ())
+    for s in slices:
+        try:
+            if getattr(s, "work_item_id", "").strip() == wid and getattr(s, "milestone_id", "").strip() == mid:
+                return s  # type: ignore[return-value]
+        except Exception:
+            continue
+    raise PlanNormalizationError(
+        "MISSING_WORK_SOURCE",
+        f"No structural Work source for {mid}/{wid}: hierarchical and inline structural context unavailable; refusing heuristic scope",
+    )
+
+
+def get_milestone_work_source_slices(
+    document: PortablePlanDocument, milestone_id: str
+) -> tuple[WorkSourceSlice, ...]:
+    """Best-effort source slices for all governed Works (skip missing, no fail).
+
+    Used by project_milestone_views to populate MilestonePlanView.work_source_slices.
+    Missing structural context is skipped here; callers needing a specific Work
+    should call get_work_source_slice (fail-closed).
+    """
+    try:
+        mid = milestone_id.strip()
+    except Exception:
+        return ()
+    try:
+        work_items = document.milestone_work_items.get(mid, ())
+    except Exception:
+        return ()
+    if not work_items:
+        return ()
+    out: list[WorkSourceSlice] = []
+    for wid in work_items:
+        try:
+            out.append(get_work_source_slice(document, mid, wid))
+        except PlanNormalizationError:
+            continue
+        except Exception:
+            continue
+    return tuple(out)
+
+
 def project_milestone_views(
     document: PortablePlanDocument,
     *,
@@ -315,6 +390,7 @@ def project_milestone_views(
         milestone_user_approval_satisfied=approved,
         plan_amendment_required=False,
         work_semantics=get_milestone_work_semantic_views(document, current_id),
+        work_source_slices=get_milestone_work_source_slices(document, current_id),
     )
 
     next_id = get_next_milestone_id(document)
@@ -343,5 +419,6 @@ def project_milestone_views(
             milestone_user_approval_satisfied=bool(next_approved),
             plan_amendment_required=False,
             work_semantics=get_milestone_work_semantic_views(document, next_id),
+            work_source_slices=get_milestone_work_source_slices(document, next_id),
         )
     return live_view, next_view
