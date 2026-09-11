@@ -762,25 +762,41 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         work_item_ref=SemanticReference(ref=f"{live_view.milestone_id}/task-main"),
         milestone_ref=SemanticReference(ref=live_view.milestone_id),
     )
-    # Task-main eager is exactly the 4 controls; no workspace ops, no shell
+    # Task-main eager is exactly the 4 controls; W3 adds broad read + inspection
     # W2-R1 bounded repair: task-main requires progressive result.hydrate to consume
     # production by_ref Skill content (7053-14911 bytes > 4096). Progressive only,
     # scoped to valid ToolOutputRef via existing result.hydrate canonical operation.
     # HYDRATE_AUTHORITY_SCOPED=yes, no new operation, no new MCP tool.
     # M3/W1 writer: task_main.submit_work_projection joins eager (canonical writer).
+    # W3 rebalance: task-main gets broad authorized project search/read + bounded
+    # restricted terminal (inspection + git_inspection) per role×family.
     tool_surface = create_role_tool_surface(
         "task-main",
-        eager=("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"),
-        progressive=("result.hydrate",),
+        eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"),
+        progressive=("result.hydrate", "restricted_shell.run"),
     )
-    # For task-main we still need read authorities? The binding validation
-    # allows 0..2 read authorities. Provide none for task-main (it doesn't do
-    # workspace ops). But we need at least sandbox/handoff match.
-    # The mcp_transport checks that read_authorities are tuple and <=2, and each
-    # must match sandbox/handoff and be search/read. Empty is allowed.
-    read_authorities: tuple = ()
-    # But to satisfy tool_surface vs authority separation, we keep empty and
-    # rely on task-main ops not needing workspace authority.
+    # W3 broad read: task-main may perform small targeted project search/read
+    # without needing Analyst or Worker TaskHandoff. Provide read authorities
+    # via broad seam (sandbox + operation, handoff as context not ACL).
+    # Use the control handoff itself as context (not Worker TaskHandoff).
+    from aota_forge.work_plane.workspace_tools import (
+        create_broad_workspace_read_authority,
+        WORKSPACE_READ_DESCRIPTOR as _W3_READ_DESC,
+        WORKSPACE_SEARCH_DESCRIPTOR as _W3_SEARCH_DESC,
+    )
+    try:
+        read_authorities = (
+            create_broad_workspace_read_authority(sandbox, _W3_SEARCH_DESC, handoff=handoff, applicable_policies=()),
+            create_broad_workspace_read_authority(sandbox, _W3_READ_DESC, handoff=handoff, applicable_policies=()),
+        )
+    except Exception:
+        read_authorities = ()
+    # W3 restricted shell for task-main: inspection + git_inspection only
+    from aota_forge.work_plane.restricted_shell import create_restricted_shell_authority, RESTRICTED_SHELL_DESCRIPTOR as _W3_SHELL_DESC
+    try:
+        restricted_shell_authority = create_restricted_shell_authority(sandbox, handoff, (), _W3_SHELL_DESC)
+    except Exception:
+        restricted_shell_authority = None
 
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{project_id}:{live_view.milestone_id}:task-main:{origin_session[:8]}",
@@ -792,7 +808,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         tool_surface=tool_surface,
         read_authorities=read_authorities,
         mutation_authority=None,
-        restricted_shell_authority=None,
+        restricted_shell_authority=restricted_shell_authority,
         trusted_task_main_context=ctx,
     )
     return binding

@@ -149,6 +149,35 @@ GIT_OPERATION_IMPLEMENTED_IN_W1: bool = False
 RESTRICTED_SHELL_IMPLEMENTED_IN_W1: bool = False
 
 # ---------------------------------------------------------------------------
+# W3 Narrow Write Rebalance — AF #48 M1/W3
+# ---------------------------------------------------------------------------
+# Product/source write conceptual authority (W3):
+#   task-main = denied, analyst = denied, reviewer = denied,
+#   coder = allowed only inside assigned authorized project/worktree,
+#   project-steward = only explicitly governed steward mutation abilities.
+# Control-plane artifact/state writes are separate from product/source write.
+TASK_MAIN_PRODUCT_SOURCE_WRITE_ALLOWED: bool = False
+ANALYST_PRODUCT_SOURCE_WRITE_ALLOWED: bool = False
+REVIEWER_PRODUCT_SOURCE_WRITE_ALLOWED: bool = False
+CODER_ASSIGNED_WORKTREE_WRITE_ALLOWED: bool = True
+PROJECT_STEWARD_GOVERNED_MUTATION_ONLY: bool = True
+CODER_PRODUCT_SOURCE_WRITE_ALLOWED: bool = True  # alias, assigned scope only
+# Narrow write hard boundaries (reaffirmed)
+CROSS_PROJECT_WRITE_FAIL_CLOSED_W3: bool = True
+CROSS_WORKTREE_WRITE_FAIL_CLOSED_W3: bool = True
+PATH_TRAVERSAL_WRITE_FAIL_CLOSED_W3: bool = True
+WRITE_SYMLINK_ESCAPE_FAIL_CLOSED_W3: bool = True
+RAW_ABSOLUTE_WRITE_PATH_ALLOWED_W3: bool = False
+# Role is trusted binding, not caller supplied
+TRUSTED_BINDING_OWNS_ROLE: bool = True
+MODEL_CAN_SELF_ASSERT_AUTHORITY_W3: bool = False
+POLICY_YAML_EXTERNALIZATION_PERFORMED_W3: bool = False
+GENERIC_POLICY_ENGINE_CREATED_W3: bool = False
+# W1 contract already had these, reaffirm for W3 provider
+NARROW_WRITE_IMPLEMENTED: bool = True
+BROAD_READ_IMPLEMENTED: bool = True
+
+# ---------------------------------------------------------------------------
 # Bounds
 # ---------------------------------------------------------------------------
 
@@ -645,6 +674,18 @@ class BoundedWorkspaceMutationProvider:
                     return ToolResponse.failure({"code": "POLICY_CONTEXT_INVALID", "message": f"policy context invalid: {exc}"})
             if not self._handoff.bounded_scope or not self._handoff.bounded_scope.strip():
                 return ToolResponse.failure({"code": "TASK_SCOPE_MISSING", "message": "task scope missing"})
+            # W3 narrow write enforcement: trusted role determines mutation authority
+            # Caller-supplied role string is NOT authority; trusted binding handoff owns role.
+            try:
+                role_val = getattr(getattr(self._handoff, "work_role", None), "value", None) or str(getattr(self._handoff, "work_role", ""))
+            except Exception:
+                role_val = ""
+            # Only coder is allowed for generic product/source write inside assigned worktree.
+            # project-steward only via governed finalizer, not generic workspace.write.
+            # task-main / analyst / reviewer are denied for product write.
+            allowed_mutation_roles = {"coder"}
+            if role_val not in allowed_mutation_roles:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": f"role {role_val!r} not authorized for product source write (narrow write)"})
             if request.operation.name == "workspace.write":
                 return self._handle_write(request)
             else:
@@ -890,4 +931,22 @@ __all__ = [
     "TEST_EXECUTION_IMPLEMENTED_IN_W1",
     "GIT_OPERATION_IMPLEMENTED_IN_W1",
     "RESTRICTED_SHELL_IMPLEMENTED_IN_W1",
+    # W3 narrow write
+    "TASK_MAIN_PRODUCT_SOURCE_WRITE_ALLOWED",
+    "ANALYST_PRODUCT_SOURCE_WRITE_ALLOWED",
+    "REVIEWER_PRODUCT_SOURCE_WRITE_ALLOWED",
+    "CODER_ASSIGNED_WORKTREE_WRITE_ALLOWED",
+    "PROJECT_STEWARD_GOVERNED_MUTATION_ONLY",
+    "CODER_PRODUCT_SOURCE_WRITE_ALLOWED",
+    "CROSS_PROJECT_WRITE_FAIL_CLOSED_W3",
+    "CROSS_WORKTREE_WRITE_FAIL_CLOSED_W3",
+    "PATH_TRAVERSAL_WRITE_FAIL_CLOSED_W3",
+    "WRITE_SYMLINK_ESCAPE_FAIL_CLOSED_W3",
+    "RAW_ABSOLUTE_WRITE_PATH_ALLOWED_W3",
+    "TRUSTED_BINDING_OWNS_ROLE",
+    "MODEL_CAN_SELF_ASSERT_AUTHORITY_W3",
+    "POLICY_YAML_EXTERNALIZATION_PERFORMED_W3",
+    "GENERIC_POLICY_ENGINE_CREATED_W3",
+    "NARROW_WRITE_IMPLEMENTED",
+    "BROAD_READ_IMPLEMENTED",
 ]
