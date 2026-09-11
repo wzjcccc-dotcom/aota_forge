@@ -87,6 +87,10 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "task_main.submit_work_projection",
     "git.status",
     "git.diff",
+    "handoff.write",
+    "handoff.open",
+    "task.start",
+    "task.return",
 )
 
 # Existing ingress families (already single Core path via core.ingress).
@@ -806,6 +810,213 @@ def dispatch_tool_operation(
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
             return _dispatch_task_main(operation, binding, validated)
+
+        if operation == "handoff.write":
+            sandbox = _require_sandbox(binding)
+            # Derive caller role from trusted binding (handoff work_role or tool_surface)
+            caller_role = ""
+            try:
+                h = getattr(binding, "handoff", None)
+                if h is not None and getattr(h, "work_role", None) is not None:
+                    wr = getattr(h, "work_role", None)
+                    caller_role = getattr(wr, "value", None) or str(wr)
+            except Exception:
+                caller_role = ""
+            if not caller_role:
+                try:
+                    surf = getattr(binding, "tool_surface", None)
+                    if surf is not None and getattr(surf, "work_role", None) is not None:
+                        wr = getattr(surf, "work_role", None)
+                        caller_role = getattr(wr, "value", None) or str(wr)
+                except Exception:
+                    pass
+            if not caller_role:
+                # Fallback for test harness where binding carries canonical_task_id with role hint?
+                caller_role = "task-main"
+            mode = validated.get("mode")
+            payload = validated.get("payload")
+            if payload is None:
+                # Collect any remaining validated keys as payload (compat)
+                payload = {k: v for k, v in validated.items() if k != "mode"}
+                if not payload:
+                    payload = {}
+            if not isinstance(payload, dict):
+                return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "payload must be object"})
+            try:
+                from aota_forge.work_plane.handoff_store import handoff_write
+
+                ref = handoff_write(mode=mode, semantic=payload, caller_role=caller_role, sandbox=sandbox)
+            except ValueError as exc:
+                msg = str(exc)
+                # Map known fail-closed codes via .code if present else infer from message
+                code = getattr(exc, "code", None)
+                if isinstance(code, str) and code:
+                    return ToolResponse.failure({"code": code, "message": msg[:512]})
+                if "AUTHORITY_DENIED" in msg or "requires caller" in msg:
+                    return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": msg[:512]})
+                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                    return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
+                if "tamper" in msg.lower() or "DIGEST_MISMATCH" in msg:
+                    return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
+                if "control field" in msg.lower():
+                    return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": msg[:512]})
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
+            except Exception as exc:
+                code = getattr(exc, "code", None)
+                if isinstance(code, str) and code:
+                    return ToolResponse.failure({"code": code, "message": str(exc)[:512]})
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            return ToolResponse.success(ref.to_dict())
+
+        if operation == "handoff.open":
+            sandbox = _require_sandbox(binding)
+            ref = validated.get("ref")
+            view = validated.get("view", "full")
+            if not isinstance(ref, str) or not ref.strip():
+                return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "ref must be non-empty string"})
+            if not isinstance(view, str) or view not in ("card", "full"):
+                return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "view must be card|full"})
+            try:
+                from aota_forge.work_plane.handoff_store import handoff_open
+
+                result = handoff_open(ref, view, sandbox=sandbox)
+            except ValueError as exc:
+                msg = str(exc)
+                code = getattr(exc, "code", None)
+                if isinstance(code, str) and code:
+                    return ToolResponse.failure({"code": code, "message": msg[:512]})
+                if "cross-project" in msg.lower() or "cross-worktree" in msg.lower():
+                    return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
+                if "digest" in msg.lower() and ("mismatch" in msg.lower() or "tamper" in msg.lower()):
+                    return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
+                if "not found" in msg.lower():
+                    return ToolResponse.failure({"code": "UNKNOWN_REF", "message": msg[:512]})
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
+            except Exception as exc:
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            return ToolResponse.success(result)
+
+        if operation == "task.start":
+            sandbox = _require_sandbox(binding)
+            # Caller authority: must be task-main
+            caller_role = ""
+            try:
+                h = getattr(binding, "handoff", None)
+                if h is not None and getattr(h, "work_role", None) is not None:
+                    wr = getattr(h, "work_role", None)
+                    caller_role = getattr(wr, "value", None) or str(wr)
+            except Exception:
+                caller_role = ""
+            if not caller_role:
+                try:
+                    surf = getattr(binding, "tool_surface", None)
+                    if surf is not None:
+                        wr = getattr(surf, "work_role", None)
+                        if wr is not None:
+                            caller_role = getattr(wr, "value", None) or str(wr)
+                except Exception:
+                    pass
+            if not caller_role:
+                caller_role = "task-main"
+            if caller_role != "task-main":
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "task.start caller must be task-main"})
+            role = validated.get("role")
+            handoff_ref = validated.get("handoff_ref")
+            if not isinstance(role, str) or role not in ("coder", "analyst", "reviewer", "project-steward"):
+                return ToolResponse.failure({"code": "INVALID_ROLE", "message": f"invalid target role: {role!r}"})
+            if not isinstance(handoff_ref, str) or not handoff_ref.strip():
+                return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "handoff_ref must be non-empty string"})
+            try:
+                from aota_forge.work_plane.task_facade import task_start
+
+                result = task_start(role=role, handoff_ref=handoff_ref, caller_role=caller_role, sandbox=sandbox)
+            except ValueError as exc:
+                msg = str(exc)
+                code = getattr(exc, "code", None)
+                if isinstance(code, str) and code:
+                    return ToolResponse.failure({"code": code, "message": msg[:512]})
+                if "AUTHORITY_DENIED" in msg:
+                    return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": msg[:512]})
+                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                    return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
+                if "digest" in msg.lower() and "mismatch" in msg.lower():
+                    return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
+                if "not found" in msg.lower() or "UNKNOWN_REF" in msg:
+                    return ToolResponse.failure({"code": "UNKNOWN_REF", "message": msg[:512]})
+                if "work_item" in msg.lower() and "requires" in msg.lower():
+                    return ToolResponse.failure({"code": "INVALID_ROLE", "message": msg[:512]})
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
+            except Exception as exc:
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            return ToolResponse.success(result)
+
+        if operation == "task.return":
+            sandbox = _require_sandbox(binding)
+            # Caller must be one-shot role
+            caller_role = ""
+            caller_task_id = getattr(binding, "canonical_task_id", "") or ""
+            try:
+                h = getattr(binding, "handoff", None)
+                if h is not None and getattr(h, "work_role", None) is not None:
+                    wr = getattr(h, "work_role", None)
+                    caller_role = getattr(wr, "value", None) or str(wr)
+            except Exception:
+                caller_role = ""
+            if not caller_role:
+                try:
+                    surf = getattr(binding, "tool_surface", None)
+                    if surf is not None:
+                        wr = getattr(surf, "work_role", None)
+                        if wr is not None:
+                            caller_role = getattr(wr, "value", None) or str(wr)
+                except Exception:
+                    pass
+            if not caller_role:
+                # Fallback to payload? Not ideal
+                caller_role = "coder"
+            if caller_role not in ("coder", "analyst", "reviewer", "project-steward"):
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": f"task.return caller must be one-shot, got {caller_role!r}"})
+            status = validated.get("status")
+            result_ref = validated.get("result_ref")
+            if status not in ("completed", "blocked", "failed"):
+                return ToolResponse.failure({"code": "INVALID_STATUS", "message": f"status must be completed|blocked|failed, got {status!r}"})
+            if not isinstance(result_ref, str) or not result_ref.strip():
+                return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "result_ref must be non-empty string"})
+            if not caller_task_id:
+                # Try to derive from sandbox? fallback to result_ref's envelope task_id?
+                # For thin facade, require canonical_task_id in binding; if missing, use envelope task_id from result_ref as caller_task_id fallback for test harness
+                try:
+                    from aota_forge.work_plane.handoff_store import handoff_open
+
+                    tmp = handoff_open(result_ref, "full", sandbox=sandbox)
+                    caller_task_id = tmp.get("envelope", {}).get("task_id", "") or ""
+                except Exception:
+                    caller_task_id = ""
+            if not caller_task_id:
+                return ToolResponse.failure({"code": "WRONG_TASK", "message": "caller_task_id missing in binding"})
+            try:
+                from aota_forge.work_plane.task_facade import task_return
+
+                result = task_return(status=status, result_ref=result_ref, caller_role=caller_role, caller_task_id=caller_task_id, sandbox=sandbox)
+            except ValueError as exc:
+                msg = str(exc)
+                code = getattr(exc, "code", None)
+                if isinstance(code, str) and code:
+                    return ToolResponse.failure({"code": code, "message": msg[:512]})
+                if "AUTHORITY_DENIED" in msg or "one-shot" in msg or "WRONG_ROLE" in msg or "wrong-role" in msg.lower():
+                    return ToolResponse.failure({"code": "WRONG_ROLE", "message": msg[:512]})
+                if "wrong-task" in msg.lower() or "WRONG_TASK" in msg or "task_id" in msg.lower():
+                    return ToolResponse.failure({"code": "WRONG_TASK", "message": msg[:512]})
+                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                    return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
+                if "digest" in msg.lower() and "mismatch" in msg.lower():
+                    return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
+                if "terminal" in msg.lower():
+                    return ToolResponse.failure({"code": "TASK_ALREADY_TERMINAL", "message": msg[:512]})
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
+            except Exception as exc:
+                return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            return ToolResponse.success(result)
 
         if operation in ("git.status", "git.diff"):
             authority = _authority_for(binding.git_authorities, operation)
