@@ -171,6 +171,31 @@ AUTHORITY_COMPOSITION_SEAM_INSUFFICIENT: bool = False
 AUTHORITY_EVIDENCE_SEAM: str = "WorktreeSandboxBoundary+TaskHandoff+AgentsPolicyCandidate+OperationContractDescriptor"
 
 # ---------------------------------------------------------------------------
+# W3 Broad Read / Narrow Write Rebalance — AF #48 M1/W3
+# ---------------------------------------------------------------------------
+# W3 rebalances read/search to broad: trusted role + trusted project/worktree
+# binding + authorized read/search operation + safe resource path → allowed.
+# TaskHandoff / AGENTS policy / bounded_scope provide context but are NOT
+# filesystem ACL. These flags freeze the rebalance without creating a generic
+# policy engine.
+BROAD_READ_IMPLEMENTED: bool = True
+TASK_MAIN_SEARCH_ALLOWED: bool = True
+TASK_MAIN_READ_ALLOWED: bool = True
+ANALYST_IS_READ_PERMISSION_PROXY: bool = False  # reaffirmed
+READ_REQUIRES_TASK_HANDOFF_SCOPE: bool = False
+BOUNDED_SCOPE_IS_FILESYSTEM_ACL: bool = False  # reaffirmed
+AGENTS_APPLICABILITY_IS_FILESYSTEM_AUTHORITY: bool = False  # reaffirmed
+# W3 keeps hard boundaries for cross-project/worktree/host/symlink
+CROSS_PROJECT_READ_FAIL_CLOSED_W3: bool = True
+CROSS_WORKTREE_ESCAPE_FAIL_CLOSED: bool = True
+SYMLINK_ESCAPE_FAIL_CLOSED_W3: bool = True
+HOST_PROTECTED_PATH_FAIL_CLOSED: bool = True
+# Broad read does not imply broad write
+NARROW_WRITE_REAFFIRMED: bool = True
+POLICY_YAML_EXTERNALIZATION_PERFORMED: bool = False
+GENERIC_POLICY_ENGINE_CREATED: bool = False
+
+# ---------------------------------------------------------------------------
 # Bounds (local Milestone constants, not Child Plan authority)
 # ---------------------------------------------------------------------------
 
@@ -246,10 +271,15 @@ class WorkspaceAuthorityEvidence:
 
     WORKSPACE_PROVIDER_IS_AUTHORITY_DECISION_MAKER=no
     MODEL_CAN_SELF_ASSERT_AUTHORITY=no
+
+    W3 rebalance: handoff and applicable_policies are OPTIONAL context for
+    broad read — they may be None/empty and provider must NOT treat absent
+    scope as denial. Cross-project/worktree/host/symlink still fail closed
+    via sandbox + path validation. See BROAD_READ_IMPLEMENTED.
     """
 
     sandbox: WorktreeSandboxBoundary
-    handoff: TaskHandoff
+    handoff: TaskHandoff | None
     applicable_policies: tuple[AgentsPolicyCandidate, ...]
     operation: OperationContractDescriptor
     evidence_id: str
@@ -257,8 +287,8 @@ class WorkspaceAuthorityEvidence:
     def __post_init__(self) -> None:
         if not isinstance(self.sandbox, WorktreeSandboxBoundary):
             raise WorkspaceAuthorityError(f"sandbox must be WorktreeSandboxBoundary, got {type(self.sandbox).__name__}")
-        if not isinstance(self.handoff, TaskHandoff):
-            raise WorkspaceAuthorityError(f"handoff must be TaskHandoff, got {type(self.handoff).__name__}")
+        if self.handoff is not None and not isinstance(self.handoff, TaskHandoff):
+            raise WorkspaceAuthorityError(f"handoff must be TaskHandoff or None, got {type(self.handoff).__name__}")
         if not isinstance(self.applicable_policies, (tuple, list)):
             raise WorkspaceAuthorityError("applicable_policies must be tuple or list")
         for idx, p in enumerate(self.applicable_policies):
@@ -279,12 +309,13 @@ class WorkspaceAuthorityEvidence:
         self.operation.validate()
 
     def canonical_dict(self) -> dict[str, Any]:
+        handoff_digest = self.handoff.handoff_digest if self.handoff is not None else "no-handoff"
         return {
             "evidence_id": self.evidence_id,
             "operation": self.operation.name,
             "contract_hash": self.operation.contract_hash(),
             "sandbox_digest": self.sandbox.compute_digest(),
-            "handoff_digest": self.handoff.handoff_digest,
+            "handoff_digest": handoff_digest,
             "policy_count": len(self.applicable_policies),
             "policy_digests": sorted([p.content_digest or "" for p in self.applicable_policies]),
         }
@@ -370,6 +401,68 @@ def create_workspace_authority(
         operation=operation,
         evidence_id=evidence_id,
     )
+
+
+def create_broad_workspace_read_authority(
+    sandbox: WorktreeSandboxBoundary,
+    operation: OperationContractDescriptor,
+    *,
+    handoff: TaskHandoff | None = None,
+    applicable_policies: Sequence[AgentsPolicyCandidate] = (),
+    evidence_id: str | None = None,
+) -> WorkspaceAuthorityEvidence:
+    """W3 broad read authority — trusted role + project/worktree binding + operation.
+
+    Unlike ``create_workspace_authority`` this does NOT require TaskHandoff
+    semantic scope as filesystem ACL. handoff and policy are optional context;
+    when absent provider skips TASK_SCOPE_MISSING check. Caller's role is still
+    derived from trusted binding (handoff.work_role when present, else sandbox
+    is sufficient for broad read). Cross-project/worktree/host/symlink still
+    fail closed via sandbox + path validation.
+
+    This is the W3 rebalance seam: BROAD_READ=yes, READ_REQUIRES_TASK_HANDOFF_SCOPE=no.
+    """
+    if not isinstance(sandbox, WorktreeSandboxBoundary):
+        raise WorkspaceAuthorityError(f"sandbox must be WorktreeSandboxBoundary, got {type(sandbox).__name__}")
+    if handoff is not None and not isinstance(handoff, TaskHandoff):
+        raise WorkspaceAuthorityError(f"handoff must be TaskHandoff or None, got {type(handoff).__name__}")
+    if not isinstance(operation, OperationContractDescriptor):
+        raise WorkspaceAuthorityError(f"operation must be OperationContractDescriptor, got {type(operation).__name__}")
+    operation.validate()
+    if operation.read_write != READ_ONLY:
+        raise WorkspaceAuthorityError("operation must be read-only")
+    if operation.name not in ("workspace.read", "workspace.search"):
+        raise WorkspaceAuthorityError(f"operation name must be workspace.read or workspace.search, got {operation.name!r}")
+    policies_tuple = tuple(applicable_policies) if applicable_policies is not None else ()
+    for p in policies_tuple:
+        if not isinstance(p, AgentsPolicyCandidate):
+            raise WorkspaceAuthorityError(f"policy must be AgentsPolicyCandidate, got {type(p).__name__}")
+    if len(policies_tuple) > 0:
+        resolved = resolve_applicable_policies(policies_tuple, sandbox.project_id)
+        policies_tuple = resolved
+    if evidence_id is None:
+        h_digest = handoff.handoff_digest if handoff is not None else "no-handoff"
+        seed = f"{sandbox.compute_digest()}:{operation.contract_hash()}:{h_digest}:broad"
+        evidence_id = "wse-broad-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    else:
+        if not isinstance(evidence_id, str) or not evidence_id.strip():
+            raise WorkspaceAuthorityError("evidence_id must be non-empty string")
+        evidence_id = evidence_id.strip()
+        if len(evidence_id) > 128:
+            raise WorkspaceAuthorityError("evidence_id exceeds bound")
+        if "/" in evidence_id or "\\" in evidence_id:
+            raise WorkspaceAuthorityError("evidence_id must not contain path separators")
+    return WorkspaceAuthorityEvidence(
+        sandbox=sandbox,
+        handoff=handoff,
+        applicable_policies=policies_tuple,
+        operation=operation,
+        evidence_id=evidence_id,
+    )
+
+
+# Alias for discoverability
+create_workspace_broad_authority = create_broad_workspace_read_authority
 
 
 # ---------------------------------------------------------------------------
@@ -557,16 +650,30 @@ class BoundedWorkspaceToolProvider:
                     return ToolResponse.failure({"code": "SANDBOX_MISMATCH", "message": "sandbox canonical root mismatch (stale evidence)"})
             except OSError as exc:
                 return ToolResponse.failure({"code": "SANDBOX_ERROR", "message": f"sandbox revalidation failed: {exc}"})
-            # Policy context required: if authority had policies, ensure they are still applicable
-            # (re-resolve to detect cross-project contamination)
+            # Policy context: if authority had policies, ensure they are still applicable
+            # (re-resolve to detect cross-project contamination) — but policy is NOT
+            # filesystem authority (W3: AGENTS_APPLICABILITY_IS_FILESYSTEM_AUTHORITY=no)
+            # Empty policy chain is valid for broad read.
             if len(self._policies) > 0:
                 try:
                     resolve_applicable_policies(self._policies, self._sandbox.project_id)
                 except Exception as exc:
                     return ToolResponse.failure({"code": "POLICY_CONTEXT_INVALID", "message": f"policy context invalid: {exc}"})
-            # Task scope required: handoff bounded_scope must be non-empty (already validated at handoff creation)
-            if not self._handoff.bounded_scope or not self._handoff.bounded_scope.strip():
-                return ToolResponse.failure({"code": "TASK_SCOPE_MISSING", "message": "task scope missing"})
+            # Task scope: W3 rebalance — TaskHandoff bounded_scope is NOT filesystem ACL
+            # (BOUNDED_SCOPE_IS_FILESYSTEM_ACL=no, READ_REQUIRES_TASK_HANDOFF_SCOPE=no)
+            # Provider must NOT deny read/search merely because handoff scope is missing
+            # or empty. Trusted role + project/worktree binding + operation + safe path
+            # is sufficient. Handoff/policy may provide context but never deny broad read.
+            # Keep defensive check only if handoff was strictly required by old caller —
+            # for broad read we skip the TASK_SCOPE_MISSING denial.
+            if self._handoff is not None:
+                # Re-affirm that handoff when present is valid TaskHandoff, but do not
+                # treat its bounded_scope as filesystem ACL. Empty scope is allowed for broad read.
+                try:
+                    _ = self._handoff.bounded_scope
+                except Exception:
+                    pass
+            # Note: no TASK_SCOPE_MISSING failure for broad read
             # Dispatch to bounded handlers
             if request.operation.name == "workspace.read":
                 return self._handle_read(request)
@@ -943,6 +1050,8 @@ __all__ = [
     "WORKSPACE_SEARCH_DESCRIPTOR",
     "WorkspaceAuthorityEvidence",
     "create_workspace_authority",
+    "create_broad_workspace_read_authority",
+    "create_workspace_broad_authority",
     "BoundedWorkspaceToolProvider",
     "MAX_READ_BYTES",
     "MAX_SEARCH_QUERY_LENGTH",
@@ -996,4 +1105,16 @@ __all__ = [
     "TOOL_RESULT_GOVERNANCE_IMPLEMENTED_IN_W2",
     "AUTHORITY_EVIDENCE_SEAM",
     "AUTHORITY_COMPOSITION_SEAM_INSUFFICIENT",
+    # W3 broad read
+    "BROAD_READ_IMPLEMENTED",
+    "TASK_MAIN_SEARCH_ALLOWED",
+    "TASK_MAIN_READ_ALLOWED",
+    "READ_REQUIRES_TASK_HANDOFF_SCOPE",
+    "CROSS_PROJECT_READ_FAIL_CLOSED_W3",
+    "CROSS_WORKTREE_ESCAPE_FAIL_CLOSED",
+    "SYMLINK_ESCAPE_FAIL_CLOSED_W3",
+    "HOST_PROTECTED_PATH_FAIL_CLOSED",
+    "NARROW_WRITE_REAFFIRMED",
+    "POLICY_YAML_EXTERNALIZATION_PERFORMED",
+    "GENERIC_POLICY_ENGINE_CREATED",
 ]

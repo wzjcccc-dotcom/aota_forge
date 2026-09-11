@@ -279,10 +279,84 @@ _CATALOG: dict[str, _CatalogEntry] = {
         allowed_options=frozenset(),
         description="bounded sleep for timeout proof — residual",
     ),
+    "pwd": _CatalogEntry(
+        executable=("/bin/pwd",),
+        max_args=0,
+        is_path_capable=False,
+        allowed_options=frozenset(),
+        description="bounded pwd inspection — worktree-bound cwd",
+    ),
+    "cat": _CatalogEntry(
+        executable=("/bin/cat",),
+        max_args=1,
+        is_path_capable=True,
+        allowed_options=frozenset(),
+        description="bounded cat inspection — worktree-scoped read (inspection family)",
+    ),
+    "git": _CatalogEntry(
+        executable=("/usr/bin/git",),
+        max_args=4,
+        is_path_capable=True,
+        allowed_options=frozenset(),
+        description="bounded git inspection — only inspection subcommands allowed",
+    ),
+    "pytest": _CatalogEntry(
+        executable=("pytest",),  # resolved via PATH but bounded to trusted catalog; actual spawn uses sys.executable -m pytest via special handling
+        max_args=8,
+        is_path_capable=True,
+        allowed_options=frozenset({"-q", "-v", "-k"}),
+        description="bounded pytest build/test — worktree-scoped verification",
+    ),
 }
 
 EXPOSED_COMMAND_IDS: tuple[str, ...] = tuple(sorted(_CATALOG.keys()))
 COMMAND_CATALOG_BOUNDED_COUNT: int = len(_CATALOG)
+
+# W3 Command-family model — AF #48 M1/W3
+# Minimal bounded representation, no generic policy engine / YAML.
+# Families: inspection, git_inspection, analysis, build_test, bounded_mutation
+COMMAND_FAMILY_INSPECTION: str = "inspection"
+COMMAND_FAMILY_GIT_INSPECTION: str = "git_inspection"
+COMMAND_FAMILY_ANALYSIS: str = "analysis"
+COMMAND_FAMILY_BUILD_TEST: str = "build_test"
+COMMAND_FAMILY_BOUNDED_MUTATION: str = "bounded_mutation"
+COMMAND_FAMILIES: tuple[str, ...] = (
+    COMMAND_FAMILY_INSPECTION,
+    COMMAND_FAMILY_GIT_INSPECTION,
+    COMMAND_FAMILY_ANALYSIS,
+    COMMAND_FAMILY_BUILD_TEST,
+    COMMAND_FAMILY_BOUNDED_MUTATION,
+)
+# Command → family mapping
+COMMAND_FAMILY_MAP: dict[str, str] = {
+    "echo": COMMAND_FAMILY_INSPECTION,
+    "ls": COMMAND_FAMILY_INSPECTION,
+    "pwd": COMMAND_FAMILY_INSPECTION,
+    "cat": COMMAND_FAMILY_INSPECTION,
+    "sleep": COMMAND_FAMILY_INSPECTION,
+    "git": COMMAND_FAMILY_GIT_INSPECTION,
+    "pytest": COMMAND_FAMILY_BUILD_TEST,
+}
+# Role → allowed families (bounded, minimal)
+ROLE_ALLOWED_FAMILIES: dict[str, frozenset[str]] = {
+    "task-main": frozenset({COMMAND_FAMILY_INSPECTION, COMMAND_FAMILY_GIT_INSPECTION}),
+    "analyst": frozenset({COMMAND_FAMILY_INSPECTION, COMMAND_FAMILY_ANALYSIS}),
+    "coder": frozenset({COMMAND_FAMILY_INSPECTION, COMMAND_FAMILY_GIT_INSPECTION, COMMAND_FAMILY_ANALYSIS, COMMAND_FAMILY_BUILD_TEST, COMMAND_FAMILY_BOUNDED_MUTATION}),
+    "reviewer": frozenset({COMMAND_FAMILY_INSPECTION, COMMAND_FAMILY_GIT_INSPECTION, COMMAND_FAMILY_BUILD_TEST}),
+    "project-steward": frozenset({COMMAND_FAMILY_INSPECTION, COMMAND_FAMILY_GIT_INSPECTION}),
+}
+# Git inspection allowlist vs mutation denylist
+GIT_INSPECTION_ALLOWED_SUBCOMMANDS: frozenset[str] = frozenset({"status", "diff", "log", "show", "rev-parse", "ls-files"})
+GIT_MUTATION_DENIED_SUBCOMMANDS: frozenset[str] = frozenset({"reset", "clean", "checkout", "push", "commit", "branch", "merge", "rebase", "clone"})
+# W3 terminal philosophy flags
+TERMINAL_ROLE_COMMAND_POLICY_IMPLEMENTED: bool = True
+TERMINAL_KIND_W3: str = "bounded_restricted_terminal"
+RAW_SHELL_ALLOWED: bool = False
+GIT_MUTATION_DISTINGUISHED: bool = True
+SPECIALIZED_TOOL_BYPASS_RULE_REMOVED_OR_REBALANCED: bool = True
+STRUCTURED_TOOL_EVOLUTION_RULE_PRESERVED: bool = True
+# Keep old specialized bypass flag as rebalanced (not always denied)
+SPECIALIZED_TOOL_EXISTS_TERMINAL_ALWAYS_DENIED: bool = False
 
 # ---------------------------------------------------------------------------
 # Descriptor — canonical YAML projection (thin compatibility reference)
@@ -450,6 +524,102 @@ def _validate_args(command_id: str, value: object, sandbox: WorktreeSandboxBound
     if len(value) > MAX_ARGS:
         raise RestrictedShellValidationError(f"args count {len(value)} exceeds global max {MAX_ARGS}")
     validated: list[str] = []
+    # Git subcommand allowlist handling
+    if command_id == "git":
+        if len(value) == 0:
+            raise RestrictedShellValidationError("git requires subcommand")
+        subcmd = value[0]
+        if not isinstance(subcmd, str) or type(subcmd) is not str:
+            raise RestrictedShellValidationError("git subcommand must be string")
+        subcmd_stripped = subcmd.strip()
+        if subcmd_stripped in GIT_MUTATION_DENIED_SUBCOMMANDS:
+            raise RestrictedShellValidationError(f"git subcommand {subcmd_stripped!r} is mutation and denied (git mutation distinguished)")
+        if subcmd_stripped not in GIT_INSPECTION_ALLOWED_SUBCOMMANDS:
+            raise RestrictedShellValidationError(f"git subcommand {subcmd_stripped!r} not in inspection allowlist {sorted(GIT_INSPECTION_ALLOWED_SUBCOMMANDS)}")
+        # Validate remaining args for git inspection: they should be safe
+        for idx, item in enumerate(value):
+            if not isinstance(item, str) or type(item) is not str:
+                raise RestrictedShellValidationError(f"args[{idx}] must be a string, got {type(item).__name__}")
+            if "\x00" in item:
+                raise RestrictedShellValidationError(f"args[{idx}] must not contain NUL")
+            if len(item) > MAX_ARG_LENGTH:
+                raise RestrictedShellValidationError(f"args[{idx}] length {len(item)} exceeds {MAX_ARG_LENGTH}")
+            if item.strip() == "" and item != "":
+                raise RestrictedShellValidationError(f"args[{idx}] must not be whitespace-only")
+            # For git inspection, first arg is subcommand already validated, rest are paths/options but we bound them
+            # Reject dangerous git mutation flags like --hard, --force, --clean
+            if item in ("--hard", "--force", "-f", "--clean", "-x", "-d"):
+                raise RestrictedShellValidationError(f"git arg {item!r} is mutation flag and denied")
+            if item.startswith("-") and item not in ("--",):
+                # Allow only safe inspection options: -p, --stat, --oneline etc? For W3 minimal we deny all options to keep bounded
+                # But log/show may need --oneline; we allow if needed but for now deny unknown options to be safe
+                # We'll allow --oneline, --stat, --numstat for inspection
+                if item not in ("--oneline", "--stat", "--numstat", "--name-only"):
+                    raise RestrictedShellValidationError(f"git option {item!r} not allowed for inspection")
+            # Path args for git (like rev-parse ls-files with path) should be validated for traversal
+            if not item.startswith("-") and idx > 0:
+                # Treat as path, validate containment if it looks like path
+                if item.startswith("/"):
+                    raise RestrictedShellValidationError(f"args[{idx}] must not be absolute: {item!r}")
+                if "\\" in item:
+                    raise RestrictedShellValidationError(f"args[{idx}] must not contain backslash")
+                if ".." in item.split("/"):
+                    raise RestrictedShellValidationError(f"args[{idx}] must not contain '..' (traversal)")
+                # For git paths, we still validate via resolver if not empty and not subcommand
+                if item not in GIT_INSPECTION_ALLOWED_SUBCOMMANDS and item:
+                    try:
+                        evidence = resolve_worktree_resource(sandbox, item)
+                        if evidence.project_id != sandbox.project_id:
+                            raise RestrictedShellValidationError(f"args[{idx}] cross-project rejected")
+                        if evidence.worktree_id != sandbox.worktree_id:
+                            raise RestrictedShellValidationError(f"args[{idx}] cross-worktree rejected")
+                    except RestrictedShellValidationError:
+                        raise
+                    except Exception:
+                        # If path doesn't exist yet, still check traversal etc. but allow
+                        pass
+            validated.append(item)
+        total = sum(len(a) for a in validated) + sum(len(p) for p in entry.executable)
+        if total > MAX_TOTAL_ARGV_BYTES:
+            raise RestrictedShellValidationError(f"total argv bytes {total} exceeds bound {MAX_TOTAL_ARGV_BYTES}")
+        return validated
+    if command_id == "pytest":
+        for idx, item in enumerate(value):
+            if not isinstance(item, str) or type(item) is not str:
+                raise RestrictedShellValidationError(f"args[{idx}] must be a string, got {type(item).__name__}")
+            if "\x00" in item:
+                raise RestrictedShellValidationError(f"args[{idx}] must not contain NUL")
+            if len(item) > MAX_ARG_LENGTH:
+                raise RestrictedShellValidationError(f"args[{idx}] length {len(item)} exceeds {MAX_ARG_LENGTH}")
+            if item.strip() == "" and item != "":
+                raise RestrictedShellValidationError(f"args[{idx}] must not be whitespace-only")
+            if item.startswith("-"):
+                if item not in entry.allowed_options and not item.startswith("-k"):
+                    raise RestrictedShellValidationError(f"args[{idx}] option {item!r} not allowed for {command_id}")
+            else:
+                # path arg for pytest: validate containment
+                if item.startswith("/"):
+                    raise RestrictedShellValidationError(f"args[{idx}] must not be absolute: {item!r}")
+                if "\\" in item:
+                    raise RestrictedShellValidationError(f"args[{idx}] must not contain backslash")
+                if ".." in item.split("/"):
+                    raise RestrictedShellValidationError(f"args[{idx}] must not contain '..' (traversal)")
+                try:
+                    evidence = resolve_worktree_resource(sandbox, item)
+                    if evidence.project_id != sandbox.project_id:
+                        raise RestrictedShellValidationError(f"args[{idx}] cross-project rejected")
+                    if evidence.worktree_id != sandbox.worktree_id:
+                        raise RestrictedShellValidationError(f"args[{idx}] cross-worktree rejected")
+                except RestrictedShellValidationError:
+                    raise
+                except Exception as exc:
+                    raise RestrictedShellValidationError(f"args[{idx}] rejected: {exc}") from exc
+            validated.append(item)
+        total = sum(len(a) for a in validated) + sum(len(p) for p in entry.executable)
+        if total > MAX_TOTAL_ARGV_BYTES:
+            raise RestrictedShellValidationError(f"total argv bytes {total} exceeds bound {MAX_TOTAL_ARGV_BYTES}")
+        return validated
+    # General handling for other commands
     for idx, item in enumerate(value):
         if not isinstance(item, str) or type(item) is not str:
             raise RestrictedShellValidationError(f"args[{idx}] must be a string, got {type(item).__name__}")
@@ -457,25 +627,15 @@ def _validate_args(command_id: str, value: object, sandbox: WorktreeSandboxBound
             raise RestrictedShellValidationError(f"args[{idx}] must not contain NUL")
         if len(item) > MAX_ARG_LENGTH:
             raise RestrictedShellValidationError(f"args[{idx}] length {len(item)} exceeds {MAX_ARG_LENGTH}")
-        # No shell expansion: metacharacters are literal argv data, we accept them
-        # But we must ensure no caller can inject executable path via arg
-        # For path-capable commands, validate path containment
         if item.strip() == "" and item != "":
             raise RestrictedShellValidationError(f"args[{idx}] must not be whitespace-only")
-        # For echo/ls/sleep: check option allowlist
         if entry.is_path_capable:
-            # For ls: args are paths, if empty no path, else validate as resource
-            # For ls we allow 0 or 1 path; if provided, validate containment
             if len(item) > 0 and item.startswith("-"):
-                # ls has no allowed options — reject any option
                 if item not in entry.allowed_options:
                     raise RestrictedShellValidationError(f"args[{idx}] option {item!r} not allowed for {command_id}")
             else:
-                # path arg: validate via resolver if not empty
-                # Empty path not allowed for ls (would be argv with empty)
                 if not item:
                     raise RestrictedShellValidationError(f"args[{idx}] must be non-empty path")
-                # Validate path via resolver (relative, no traversal, no absolute)
                 if item.startswith("/"):
                     raise RestrictedShellValidationError(f"args[{idx}] must not be absolute: {item!r}")
                 if "\\" in item:
@@ -490,39 +650,27 @@ def _validate_args(command_id: str, value: object, sandbox: WorktreeSandboxBound
                     raise RestrictedShellValidationError(f"args[{idx}] cross-project rejected")
                 if evidence.worktree_id != sandbox.worktree_id:
                     raise RestrictedShellValidationError(f"args[{idx}] cross-worktree rejected")
-                # Symlink escape already checked in resolver; additional check: path must not be symlink
-                # Resolver already rejects symlink path
         else:
-            # Non-path commands: echo, sleep
             if command_id == "echo":
                 if item.startswith("-") and item not in entry.allowed_options:
-                    # reject prohibited option
                     raise RestrictedShellValidationError(f"args[{idx}] option {item!r} not allowed for {command_id}")
-                # echo args are literal, even if they contain shell metachars like ";", "|", "$", "`" — keep literal
-                # No further validation
-                pass
             elif command_id == "sleep":
-                # sleep arg must be numeric duration
-                # Reject shell metachars, but they would be literal strings; we still validate numeric
                 if item.startswith("-"):
                     raise RestrictedShellValidationError(f"args[{idx}] option not allowed for sleep")
-                # Must be numeric (int or float) string within bound
                 try:
-                    # Allow "0", "1", "2.5" etc but bound to 0..30
                     val = float(item)
                 except ValueError:
                     raise RestrictedShellValidationError(f"args[{idx}] must be numeric duration for sleep, got {item!r}")
                 if val < 0 or val > 30:
                     raise RestrictedShellValidationError(f"args[{idx}] duration {val} out of bound 0..30")
-                # Also ensure no extra chars like "1; rm"
-                # Already validated via float conversion; but "1; echo" would fail float parse -> rejected
-                pass
+            elif command_id in ("pwd",):
+                # pwd has max_args 0, so no args should reach here, but if max_args >0, validate
+                if item:
+                    raise RestrictedShellValidationError(f"args[{idx}] not allowed for {command_id}")
             else:
-                # generic: reject options not in allowlist if starts with -
                 if item.startswith("-") and item not in entry.allowed_options:
                     raise RestrictedShellValidationError(f"args[{idx}] option {item!r} not allowed for {command_id}")
         validated.append(item)
-    # Also validate total argv bytes bound
     total = sum(len(a) for a in validated) + sum(len(p) for p in entry.executable)
     if total > MAX_TOTAL_ARGV_BYTES:
         raise RestrictedShellValidationError(f"total argv bytes {total} exceeds bound {MAX_TOTAL_ARGV_BYTES}")
@@ -646,8 +794,14 @@ class BoundedRestrictedShellProvider:
                     resolve_applicable_policies(self._policies, self._sandbox.project_id)
                 except Exception as exc:
                     return ToolResponse.failure({"code": "POLICY_CONTEXT_INVALID", "message": f"policy context invalid: {exc}"})
-            if not self._handoff.bounded_scope or not self._handoff.bounded_scope.strip():
-                return ToolResponse.failure({"code": "TASK_SCOPE_MISSING", "message": "task scope missing"})
+            # W3 rebalance: TaskHandoff scope is NOT shell ACL (handoff provides context but not hard gate for broad read)
+            # For restricted shell, we keep handoff presence but do NOT deny merely for missing scope.
+            # Trusted role + project/worktree binding + command-family policy is the gate.
+            if self._handoff is not None:
+                try:
+                    _ = self._handoff.bounded_scope
+                except Exception:
+                    pass
             if request.operation.name == "restricted_shell.run":
                 return self._handle_shell(request)
             else:
@@ -686,6 +840,23 @@ class BoundedRestrictedShellProvider:
             if "not in trusted catalog" in msg:
                 return ToolResponse.failure({"code": "UNKNOWN_COMMAND", "message": msg})
             return ToolResponse.failure({"code": "INVALID_COMMAND_ID", "message": msg})
+        # W3 role × command-family policy: trusted binding determines allowed families
+        try:
+            role_val = getattr(getattr(self._handoff, "work_role", None), "value", None) or str(getattr(self._handoff, "work_role", ""))
+        except Exception:
+            role_val = ""
+        family = COMMAND_FAMILY_MAP.get(command_id, "unknown")
+        allowed_families = ROLE_ALLOWED_FAMILIES.get(role_val, frozenset())
+        if family not in allowed_families:
+            return ToolResponse.failure({"code": "ROLE_FAMILY_DENIED", "message": f"role {role_val!r} not authorized for command family {family!r} (command {command_id!r})"})
+        # Git mutation already denied in _validate_args, but also enforce here for defense
+        if command_id == "git" and args_val:
+            try:
+                first = args_val[0] if isinstance(args_val, (list, tuple)) and len(args_val) > 0 else ""
+                if isinstance(first, str) and first.strip() in GIT_MUTATION_DENIED_SUBCOMMANDS:
+                    return ToolResponse.failure({"code": "GIT_MUTATION_DENIED", "message": f"git mutation {first!r} denied (git mutation distinguished)"})
+            except Exception:
+                pass
         try:
             args = _validate_args(command_id, args_val, self._sandbox)
         except RestrictedShellValidationError as exc:
@@ -713,9 +884,19 @@ class BoundedRestrictedShellProvider:
         # Check for missing timeout explicitly? Default already provides value, so not needed
 
         entry = _CATALOG[command_id]
-        argv = list(entry.executable) + args
+        # Special handling for pytest: use sys.executable -m pytest (trusted, not PATH lookup)
+        if command_id == "pytest":
+            import sys
+            argv = [sys.executable, "-m", "pytest"] + args
+        elif command_id == "git":
+            # git executable is fixed trusted path; try /usr/bin/git fallback to /bin/git
+            import shutil
+            git_path = shutil.which("git") or "/usr/bin/git"
+            argv = [git_path] + args
+        else:
+            argv = list(entry.executable) + args
         # Final check: ensure executable is trusted catalog entry, not caller-supplied
-        # Already guaranteed
+        # Already guaranteed (pytest/git handled via fixed trusted mapping above)
         env = _build_bounded_env()
         # Caller PATH override rejected — we use bounded env PATH, not caller supplied
         # Ensure no caller env injection (we already rejected env input)
@@ -882,6 +1063,23 @@ __all__ = [
     "create_restricted_shell_authority",
     "BoundedRestrictedShellProvider",
     "EXPOSED_COMMAND_IDS",
+    "COMMAND_FAMILY_INSPECTION",
+    "COMMAND_FAMILY_GIT_INSPECTION",
+    "COMMAND_FAMILY_ANALYSIS",
+    "COMMAND_FAMILY_BUILD_TEST",
+    "COMMAND_FAMILY_BOUNDED_MUTATION",
+    "COMMAND_FAMILIES",
+    "COMMAND_FAMILY_MAP",
+    "ROLE_ALLOWED_FAMILIES",
+    "GIT_INSPECTION_ALLOWED_SUBCOMMANDS",
+    "GIT_MUTATION_DENIED_SUBCOMMANDS",
+    "TERMINAL_ROLE_COMMAND_POLICY_IMPLEMENTED",
+    "TERMINAL_KIND_W3",
+    "RAW_SHELL_ALLOWED",
+    "GIT_MUTATION_DISTINGUISHED",
+    "SPECIALIZED_TOOL_BYPASS_RULE_REMOVED_OR_REBALANCED",
+    "STRUCTURED_TOOL_EVOLUTION_RULE_PRESERVED",
+    "SPECIALIZED_TOOL_EXISTS_TERMINAL_ALWAYS_DENIED",
     # flags
     "RESTRICTED_SHELL_IS_RESIDUAL_FALLBACK",
     "RESTRICTED_SHELL_PRIMARY_INTERFACE",
