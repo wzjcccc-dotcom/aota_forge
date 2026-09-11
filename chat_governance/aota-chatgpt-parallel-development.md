@@ -20,7 +20,12 @@ ADAPTER_MAY_REDEFINE_SHARED_CORE=no
 Read the shared core first for `S/M/W` identifiers, Body normative contract,
 fixed 5 managed comments, body update semantics, Milestone-first workflow,
 Steward checkpoints (`PLAN_INIT / MILESTONE_CLOSE / PLAN_CLOSE`), Git
-checkpoint levels, and materialization timing.
+checkpoint levels, and materialization timing. Validation planning and
+proof levels are specialized by:
+
+```text
+CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
+```
 
 ## Entry condition
 
@@ -129,6 +134,10 @@ syntax / import-load / typecheck / lint / build / targeted unit test / targeted 
 (choose minimal subset relevant to that W)
 ```
 
+The W phase executes only the **assigned minimum cheap/focused proof** from
+the Milestone Validation Plan, unless that W is itself an explicitly
+authorized vertical validation Work Item.
+
 Per lane / per W **do not** run by default:
 
 - independent Plan Review, independent source review, full regression, E2E,
@@ -137,8 +146,11 @@ Per lane / per W **do not** run by default:
 ```text
 CHEAP_VALIDATION_EARLY=yes
 EXPENSIVE_REVIEW_LATE=yes
+MINIMUM_SUFFICIENT_PROOF=yes
 NORMAL_WORK_ITEM_INDEPENDENT_PLAN_REVIEW_DEFAULT=no
 NORMAL_WORK_ITEM_INDEPENDENT_SOURCE_REVIEW_DEFAULT=no
+NORMAL_WORK_ITEM_FULL_SUITE_DEFAULT=no
+NORMAL_WORK_ITEM_REAL_VERTICAL_DEFAULT=no
 ```
 
 If cheap validation FAILs, bounded source fix within the same W is allowed
@@ -193,7 +205,9 @@ Not a large test matrix. Not auto-written to GitHub.
 ## Integration and ONE Milestone review
 
 When all required W are `source-ready` and necessary source has been
-mechanically integrated, create one final integrated source state, then enter:
+mechanically integrated, create one final integrated source state. If the
+Milestone Validation Plan requires V3/V4, run the bounded V3/V4 proof before
+acceptance; it must not be replaced by deterministic tests. Then enter:
 
 ```text
 RV1  (one integrated Milestone review)
@@ -201,12 +215,17 @@ RV1  (one integrated Milestone review)
 
 Review covers: Milestone objective, acceptance criteria, cross-W consistency,
 source integration, scope drift, architecture/security constraints, relevant
-regression, smoke/E2E only when Milestone requires it.
+regression, smoke/E2E only when Milestone requires it. The RV1 reviewer
+checks `AC → required proof → actual evidence`, not the number of tests run.
 
 ```text
 NORMAL_MILESTONE_FORMAL_REVIEW_COUNT=1
 REVIEW_BATCH_ORIENTED=yes
 FINDING_BY_FINDING_REVIEW_LOOP_DEFAULT=no
+REQUIRED_V3_V4_BEFORE_ACCEPTANCE=yes
+DETERMINISTIC_TESTS_CANNOT_REPLACE_V3_V4=yes
+RV1_CHECKS_AC_TO_PROOF_TO_EVIDENCE=yes
+TEST_COUNT_IS_NOT_ACCEPTANCE_METRIC=yes
 ```
 
 Do not run: per-lane review, per-W review, per-integration-wave review, plus

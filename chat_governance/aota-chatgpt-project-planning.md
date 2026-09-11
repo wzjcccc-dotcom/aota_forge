@@ -75,7 +75,10 @@ fully assumes runtime.
    reconnaissance pass. Do not infer current state from chat memory.
 4. **Milestone planning** — produce a Milestone implementation plan,
    decompose `W1..Wn`, define dependencies, acceptance, and review
-   expectations per the shared core.
+   expectations per the shared core. Complete validation planning in the
+   same pass: classify change surface, reconcile risk / process depth,
+   and map each important Acceptance Criterion to its required proof per
+   `aota-chatgpt-validation-governance.md`.
 5. **Bounded Codex feasibility review** — one review only. Treat
    Codex suggestions as advisory.
 6. **Friday reconciliation** — reconcile user feedback, Codex feedback,
@@ -86,11 +89,61 @@ fully assumes runtime.
 8. **Construction SPEC / review triage** — generate execution SPECs,
    then after work, triage each `RV1`/`RV2` finding batch as a whole.
 
+Milestone planning order:
+
+```text
+source reconnaissance
+↓
+Milestone/W decomposition
+↓
+Change Surface classification
+↓
+Risk reconciliation
+↓
+Acceptance → Required Proof mapping
+↓
+bounded feasibility review
+↓
+Friday reconciliation
+↓
+user approval
+↓
+construction
+```
+
+```text
+VALIDATION_PLAN_BEFORE_CONSTRUCTION=yes
+CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
+```
+
 ```text
 CODEX_RECOMMENDATION_IS_ADVISORY=yes
 FRIDAY_RECONCILIATION_REQUIRED=yes
 BLINDLY_COPY_REVIEWER_RECOMMENDATION=no
 USER_MILESTONE_APPROVAL_REQUIRED=yes
+```
+
+## Validation planning
+
+Before construction, Friday / task-main maps each important Acceptance
+Criterion to a change surface, risk / process depth, and required proof per
+`aota-chatgpt-validation-governance.md`. Planning stays proportional: a
+simple `W` can be very short.
+
+```text
+CHANGE_SURFACE=pure_logic
+PROCESS_DEPTH=FAST
+REQUIRED_PROOF=V1
+```
+
+For real operational surfaces (`runtime_wiring`, `transport`,
+`agent_model_boundary`, `lifecycle`, `authority_or_security_boundary`,
+`persistence`, `concurrency`, `deployment`) the required proof defaults to
+V3 when the acceptance involves real operational behavior.
+
+```text
+VALIDATION_PLAN_BEFORE_CONSTRUCTION=yes
+PROOF_DRIVEN_ACCEPTANCE=yes
 ```
 
 ## Construction prompt gate
@@ -105,6 +158,16 @@ specific `W` only when the user explicitly says:
 Without that intent, Friday stays in planning / reconciliation / triage.
 A prompt must be scoped to one `W`, bound to the exact Milestone
 acceptance, and must not invent Plan scope.
+
+The construction prompt must carry the bounded validation requirements for
+that `W` (change surface, required proof, validation method, budget /
+stopping rule). Codex must not self-expand the validation scope beyond the
+assigned bounded requirements.
+
+```text
+CONSTRUCTION_PROMPT_CARRIES_BOUNDED_VALIDATION=yes
+CODEX_SELF_EXPANDS_VALIDATION_SCOPE=no
+```
 
 ## Normal Work Item defaults
 

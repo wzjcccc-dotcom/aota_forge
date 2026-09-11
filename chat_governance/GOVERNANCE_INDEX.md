@@ -10,6 +10,7 @@ CANONICAL_CHAT_GOVERNANCE_ROOT=/home/latios/workspace/aota_forge/chat_governance
 SHARED_CORE=aota-portable-plan-governance.md
 
 CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
+CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
 
 PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
 WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
@@ -50,11 +51,22 @@ manually-synced normative authorities for the same concern.
 ```text
 SHARED_CORE=aota-portable-plan-governance.md
 CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
+CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
 PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
 WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
 LEGACY_GITHUB_ENTRY_ALIAS=aota-github-issue-planning.md
 ONE_SHARED_GOVERNANCE_AUTHORITY=yes
 DUPLICATE_NORMATIVE_AUTHORITY_ALLOWED=no
+```
+
+`aota-chatgpt-validation-governance.md` is the canonical
+change/risk/validation/evidence planning specialization. It references the
+shared core and does not replace it.
+
+```text
+CHATGPT_VALIDATION_GOVERNANCE_SCOPE=change/risk/validation/evidence_planning_specialization
+VALIDATION_GOVERNANCE_IS_SHARED_CORE_REPLACEMENT=no
+VALIDATION_GOVERNANCE_CREATES_SECOND_PLAN_AUTHORITY=no
 ```
 
 P2 adapters are canonicalized. P3 owns wrapper/alias consistency and drift
