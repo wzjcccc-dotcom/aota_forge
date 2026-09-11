@@ -68,6 +68,12 @@ MISSING_PRODUCTION_DISPATCHER_FAIL_CLOSED = True
 TEST_DOUBLE_PRODUCTION_REACHABLE = False
 PARENT_SIDE_DURABLE_RECONCILIATION_OWNS_TERMINAL_TRUTH = True
 TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE = False
+# AF #49 M1/W3 terminal semantic return boundary (frozen):
+TASK_RETURN_REQUIRES_PARENT_STORE = False
+TASK_RETURN_PARENT_STORE_MUTATION = False
+TASK_RETURN_SEMANTIC_RETURN_WITHOUT_PARENT_STORE = True
+WORKER_PARENT_STORE_PATH_EXPOSED = False
+PARENT_TERMINAL_TRUTH_OWNER = "parent_side_execution_reconciliation"
 
 CompletionSink = MutableMapping[str, dict[str, Any]]
 
@@ -305,17 +311,22 @@ def task_return(
     dispatcher: ExecutionDispatcher | None = None,
     completion_sink: CompletionSink | None = None,
 ) -> dict[str, Any]:
-    """Agent-facing task.return — child -> parent terminal return.
+    """Agent-facing task.return — child -> parent terminal semantic return.
 
-    Validates child trusted identity, active task/attempt, result_ref ownership/digest/binding.
-    Reuses the existing execution state store for durable terminal attachment and derives the
-    deterministic Worker Result Card.
+    Validates the trusted child identity, the result_ref ownership/digest/binding,
+    and — when the caller supplies a trusted parent-boundary dispatcher — the
+    active task/attempt truth. It derives the deterministic Worker Result Card
+    from the durable full Result handoff and returns the terminal semantic
+    return envelope.
 
-    AF #49 M1/W1 boundary: this returns the terminal semantic return envelope only. It does
-    NOT establish durable production completion delivery or parent re-entry (AF #49 M1/W3).
-    ``dispatcher`` must be the trusted production ExecutionDispatcher (or an explicit
-    test/component double injected by the caller); absent -> typed fail-closed.
-    Process-local completion observation exists only through an explicitly injected
+    AF #49 M1/W3 boundary: this NEVER mutates the parent's durable
+    ExecutionStateStore. Durable terminal execution truth is owned by
+    parent-side ExecutionDispatcher reconciliation of the Hermes supervisor
+    mechanical evidence; completion delivery / parent re-entry is owned by the
+    production task-main progression pass over the wired DurableCompletionCoordinator.
+    ``dispatcher`` is optional: the production Worker has no parent store
+    authority and completes its semantic role without it. Process-local
+    completion observation exists only through an explicitly injected
     ``completion_sink`` (test/component only; never a production channel).
 
     Distinct from handoff.write and execution.task_result.
@@ -343,20 +354,37 @@ def task_return(
     # Validate status coherence: semantic payload should not contradict status? We allow.
     # Build CanonicalResult from status + semantic
     # For W2, we reuse CanonicalResult creation via factory methods
-    # AF #49 M1/W1: require the explicitly supplied trusted dispatcher + store;
-    # never construct or reach a test-double fallback in the production path.
-    disp = _require_explicit_dispatcher(dispatcher, "task.return")
-    store = _require_execution_store(disp, "task.return")
-    # Retrieve existing execution record for this task (must be active)
-    record = store.get(caller_task_id)  # type: ignore[arg-type]
-    if record is None:
-        raise ValueError(f"task.return: no active execution record for {caller_task_id!r} — wrong-task fail-closed")
-    if record.canonical_task_state.is_terminal:
-        raise ValueError(f"task.return: task {caller_task_id!r} already terminal {record.canonical_task_state.value} — wrong-task fail-closed")
+    #
+    # AF #49 M1/W3 terminal semantic return boundary:
+    # - when a trusted parent-boundary dispatcher is explicitly supplied, it is
+    #   validated and (when it carries a durable store) used for the truthful
+    #   active task/attempt check — it is NEVER mutated from here;
+    # - the production Worker path has no parent ExecutionStateStore authority
+    #   in its environment: it validates the trusted Worker identity + result
+    #   binding only and exits normally. Durable terminal execution truth is
+    #   established later by the parent-side ExecutionDispatcher reconciliation
+    #   of the Hermes supervisor mechanical evidence (PARENT_TERMINAL_TRUTH).
+    record = None
+    if dispatcher is not None:
+        disp = _require_explicit_dispatcher(dispatcher, "task.return")
+        store = _require_execution_store(disp, "task.return")
+        # Retrieve existing execution record for this task (must be active)
+        record = store.get(caller_task_id)  # type: ignore[arg-type]
+        if record is None:
+            raise ValueError(f"task.return: no active execution record for {caller_task_id!r} — wrong-task fail-closed")
+        if record.canonical_task_state.is_terminal:
+            raise ValueError(f"task.return: task {caller_task_id!r} already terminal {record.canonical_task_state.value} — wrong-task fail-closed")
     # Derive CanonicalResult
     # result_data carries the full semantic result payload (bounded)
-    executor_id = record.executor_id if hasattr(record, "executor_id") else "reference-fake"
-    correlation_id = getattr(record, "correlation_id", stored_digest) or stored_digest
+    if record is not None:
+        executor_id = str(record.executor_id)
+        correlation_id = getattr(record, "correlation_id", stored_digest) or stored_digest
+    else:
+        # Production Worker semantic return: no parent executor identity is
+        # available or claimed; this transient observation envelope is never
+        # persisted as parent truth.
+        executor_id = "worker-return-pending-parent-reconciliation"
+        correlation_id = stored_digest or f"pending-parent-reconciliation:{caller_task_id}".replace(" ", "")
     if status == "completed":
         canonical_result = CanonicalResult.success(
             canonical_task_id=caller_task_id,
@@ -364,7 +392,6 @@ def task_return(
             result_data=dict(semantic),
             correlation_id=correlation_id,
         )
-        work_state = CanonicalTaskState.COMPLETED
     elif status == "failed":
         # Use semantic summary as error message
         msg = semantic.get("summary") or semantic.get("work_done") or "worker failed"
@@ -378,7 +405,6 @@ def task_return(
             result_data=dict(semantic),
             correlation_id=correlation_id,
         )
-        work_state = CanonicalTaskState.FAILED
     else:  # blocked
         msg = semantic.get("summary") or semantic.get("blockers") or "blocked"
         if isinstance(msg, list):
@@ -395,7 +421,6 @@ def task_return(
             status="failed",
             canonical_task_state=CanonicalTaskState.FAILED.value,
         )
-        work_state = CanonicalTaskState.FAILED
     # Derive governance projection (reuse existing seam)
     from aota_forge.runtime.completion import governance_projection_for_result
 
@@ -412,40 +437,13 @@ def task_return(
         blocking_finding_count=int(semantic.get("findings", 0)) if isinstance(semantic.get("findings"), int) else 0,
         next_hint=semantic.get("recommendation") if isinstance(semantic.get("recommendation"), str) else None,
     )
-    # Persist terminal truth via ExecutionStateStore CAS (reuse existing state machinery)
-    # Need to CAS terminal_result and card
-    try:
-        # First ensure we have latest revision
-        latest = store.get(caller_task_id)
-        if latest is None:
-            raise ValueError("record disappeared")
-        # Attach terminal result + card via store.compare_and_swap
-        # For InMemory store, we need to set canonical_task_state terminal first?
-        # The store's with_cas_updates will handle both in one CAS if we provide both
-        rev = latest.record_revision
-        token = latest.revision_token
-        # Provide both terminal_result and worker card in one CAS — must also set state
-        # Use canonical_task_state from canonical_result
-        updates: dict[str, Any] = {
-            "canonical_task_state": work_state.value,
-            "terminal_result": canonical_result,
-            "worker_result_card": card.to_dict(),
-            "worker_result_card_digest": card.card_digest,
-        }
-        # For PREPARED -> DISPATCHED transition, record may still be PREPARED with CREATED
-        # We may need to also set execution_phase to DISPATCHED if still PREPARED
-        # Check current phase
-        if latest.execution_phase.value == "PREPARED":
-            # Also set dispatched bindings if not set? The dispatcher already set them on dispatch
-            # But for task_return path, the execution record should already be DISPATCHED from task.start
-            # If it's still PREPARED due to crash, we fail closed? For test we can ignore.
-            pass
-        updated = store.compare_and_swap(caller_task_id, rev, updates, expected_revision_token=token)
-    except Exception as exc:
-        # If CAS fails due to revision or invalid, propagate as fail-closed
-        raise ValueError(f"task.return finalization failed: {exc}") from exc
-    # Terminal semantic return envelope. Durable production completion delivery
-    # and parent re-entry are AF #49 M1/W3 and are explicitly NOT established here.
+    # AF #49 M1/W3: task.return performs NO direct mutation of the parent's
+    # durable ExecutionStateStore (TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE=no).
+    # The Worker process has no parent store authority path
+    # (WORKER_PARENT_STORE_PATH_EXPOSED=no); the parent-side
+    # ExecutionDispatcher reconciliation of the durable Hermes supervisor
+    # mechanical evidence owns terminal execution truth and derives/attaches
+    # the deterministic WorkerResultCard there.
     completion = {
         "task_id": caller_task_id,
         "status": status,
@@ -453,7 +451,9 @@ def task_return(
         "card_digest": card.card_digest,
         "full_result_ref": opened.get("ref") or str(result_ref),
         "governance_outcome": governance.outcome.value if hasattr(governance.outcome, "value") else str(governance.outcome),
-        "durable_completion": "not_established_in_W1",
+        "durable_completion": "parent_side_reconciliation_pending",
+        "parent_durable_truth_owner": "parent_side_execution_reconciliation",
+        "parent_store_mutated": False,
         "process_local_completion_recorded": completion_sink is not None,
     }
     # Explicit test/component-only local observation; never silent production state.
@@ -501,6 +501,11 @@ __all__ = [
     "TEST_DOUBLE_PRODUCTION_REACHABLE",
     "PARENT_SIDE_DURABLE_RECONCILIATION_OWNS_TERMINAL_TRUTH",
     "TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE",
+    "TASK_RETURN_PARENT_STORE_MUTATION",
+    "TASK_RETURN_REQUIRES_PARENT_STORE",
+    "TASK_RETURN_SEMANTIC_RETURN_WITHOUT_PARENT_STORE",
+    "WORKER_PARENT_STORE_PATH_EXPOSED",
+    "PARENT_TERMINAL_TRUTH_OWNER",
     "CompletionSink",
     "ProductionDispatcherUnavailableError",
     "ProductionExecutionStoreUnavailableError",

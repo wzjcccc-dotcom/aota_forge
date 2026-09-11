@@ -105,6 +105,22 @@ TASK_MAIN_RAW_SHELL_REQUIRED = False
 TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED = False
 WORKER_CAN_CALL_TASK_MAIN_CONTROL = False
 
+# AF #49 M1/W3 — production completion delivery trigger.
+# The bounded task-main progression pass itself reconciles durable terminal
+# Worker evidence into authoritative parent-side truth and delivers pending
+# completion envelopes through the wired transport (parent re-entry). No
+# operator/manual harness call, no manual recover_once/deliver_pending_once,
+# no background loop, no scheduler, no model-controlled polling.
+PRODUCTION_COMPLETION_DELIVERY_TRIGGER_IMPLEMENTED = True
+PRODUCTION_COMPLETION_TRIGGER_PATH = "aota_forge/runtime/task_main/runner.py:advance_milestone_once"
+PRODUCTION_COMPLETION_TRIGGER_STAGES = (
+    "completion_coordinator.recover_once",
+    "completion_coordinator.deliver_pending_once",
+)
+MANUAL_HARNESS_COMPLETION_TRIGGER_REQUIRED = False
+COMPLETION_TRIGGER_IS_BOUNDED_PASS = True
+COMPLETION_TRIGGER_BACKGROUND_LOOP_CREATED = False
+
 CARD_FIRST_FLAG = CARD_FIRST
 ACK_BEFORE_SEMANTIC_RECONCILIATION_FLAG = ACK_BEFORE_SEMANTIC_RECONCILIATION
 MODEL_ACK_STRING_ALONE_SUFFICIENT_FLAG = MODEL_ACK_STRING_ALONE_SUFFICIENT
@@ -275,6 +291,31 @@ def _observe_terminal_via_coordinator(
         # No terminal completions or coordinator not active; bounded no-op.
         # Plan drift/session errors are handled at the recover layer above.
         pass
+
+
+def _production_completion_pass(
+    completion_coordinator: DurableCompletionCoordinator | None,
+) -> tuple[Any, Any]:
+    """Bounded production completion trigger (AF #49 M1/W3 §14/§15).
+
+    One recovery pass + one bounded delivery pass, executed as part of the
+    production task-main lifecycle call itself:
+
+    - ``recover_once()`` reconciles durable adapter/supervisor terminal
+      evidence into authoritative parent-side execution truth (CanonicalResult
+      + deterministic WorkerResultCard) through the existing dispatcher;
+    - ``deliver_pending_once()`` delivers any pending CARD-first completion
+      envelope through the wired transport (exact trusted parent session
+      re-entry) with the existing claim/retry/ACK safety.
+
+    No loop, no scheduler, no daemon, no model-controlled polling; a lifecycle
+    pass that has nothing pending performs bounded no-op observations only.
+    """
+    if completion_coordinator is None:
+        return None, None
+    recovery = completion_coordinator.recover_once()
+    delivery = completion_coordinator.deliver_pending_once()
+    return recovery, delivery
 
 
 def _find_pending_worker_reconciliation(state: TaskMainCoordinatorState) -> str | None:
@@ -549,6 +590,13 @@ def advance_milestone_once(
                 user_gate_required=False,
                 reasons=("NEXT_MILESTONE_USER_GATE: current closure ready; next milestone requires explicit activation",),
             )
+
+    # ---- production completion trigger (bounded, AF #49 M1/W3) ----
+    # Reconcile durable terminal Worker evidence into parent-side truth and
+    # deliver pending completions (exact trusted parent re-entry) as part of
+    # this normal lifecycle call. No operator/manual recovery or delivery call
+    # participates; the pass stays bounded to one recovery + one delivery pass.
+    _production_completion_pass(completion_coordinator)
 
     # ---- observe terminal completions (W1 bounded) ----
     _observe_terminal_via_coordinator(
@@ -1091,6 +1139,12 @@ __all__ = [
     "NEXT_MILESTONE_AUTO_ACTIVATION",
     "PERSISTENCE_REQUIRES_FOREVER_PROCESS",
     "PER_ROLE_MCP_ARCHITECTURE_CREATED",
+    "COMPLETION_TRIGGER_BACKGROUND_LOOP_CREATED",
+    "COMPLETION_TRIGGER_IS_BOUNDED_PASS",
+    "MANUAL_HARNESS_COMPLETION_TRIGGER_REQUIRED",
+    "PRODUCTION_COMPLETION_DELIVERY_TRIGGER_IMPLEMENTED",
+    "PRODUCTION_COMPLETION_TRIGGER_PATH",
+    "PRODUCTION_COMPLETION_TRIGGER_STAGES",
     "RUNNER_DISPOSITIONS",
     "TASK_MAIN_CAN_CROSS_NEXT_MILESTONE_GATE",
     "TASK_MAIN_CAN_CROSS_USER_GATE",

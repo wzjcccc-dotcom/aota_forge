@@ -1212,18 +1212,15 @@ def dispatch_tool_operation(
                     caller_task_id = ""
             if not caller_task_id:
                 return ToolResponse.failure({"code": "WRONG_TASK", "message": "caller_task_id missing in binding"})
-            # AF #49 M1/W1: terminal return uses the trusted production
-            # dispatcher + its durable store; fail closed when none is bound.
-            # No process-local completion channel is written on this path.
+            # AF #49 M1/W1 + M1/W3: terminal return uses the trusted production
+            # dispatcher + its durable store ONLY when one is bound (trusted
+            # parent-boundary active-task check); no process-local completion
+            # channel is written on this path. The production Worker has no
+            # parent ExecutionStateStore authority: its task.return performs the
+            # terminal SEMANTIC return without mutating parent durability, and
+            # the parent-side ExecutionDispatcher reconciliation of the durable
+            # Hermes supervisor mechanical evidence owns terminal truth.
             trusted_dispatcher = _trusted_production_execution_dispatcher()
-            if trusted_dispatcher is None:
-                return ToolResponse.failure(
-                    {
-                        "code": "PRODUCTION_DISPATCHER_UNAVAILABLE",
-                        "message": "task.return requires a trusted production ExecutionDispatcher; "
-                        "test doubles are never a silent production fallback",
-                    }
-                )
             try:
                 from aota_forge.work_plane.task_facade import task_return
 

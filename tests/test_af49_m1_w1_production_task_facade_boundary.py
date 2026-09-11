@@ -3,19 +3,26 @@
 Proves the frozen boundary between the test/component lifecycle seam and the
 production execution seam:
 
-* canonical task.start / task.return without a trusted production
-  ExecutionDispatcher fail closed (typed); no ReferenceFakeExecutorAdapter or
-  InMemoryExecutionStateStore is silently constructed or reachable;
+* canonical task.start without a trusted production ExecutionDispatcher fails
+  closed (typed); no ReferenceFakeExecutorAdapter or InMemoryExecutionStateStore
+  is silently constructed or reachable;
 * explicit test/component dispatcher injection still exercises the façade;
 * the canonical Agent-facing ingress supplies the trusted production
   dispatcher from the existing core.ingress binding seam;
 * process-local completion state is not a production durability channel;
   observation is only through an explicitly injected sink.
 
+AF #49 M1/W3 update (bounded): task.return is the Worker terminal SEMANTIC
+return. It never mutates the parent's durable ExecutionStateStore; the
+production Worker path validates trusted Worker identity + result binding
+without parent-store authority, and parent-side execution reconciliation owns
+durable terminal truth. task.start keeps the W1 missing-dispatcher fail-closed
+boundary.
+
 Proof boundary: V1 contract + targeted V2 (canonical ingress <-> task façade
 <-> existing ExecutionDispatcher seam). This does NOT prove real Hermes
 dispatch, real parent re-entry, or production completion durability
-(those belong to M1/W3 and the M1 V3 gate).
+(those belong to the M1/W3 trigger wiring and the M1 V3 gate).
 """
 from __future__ import annotations
 
@@ -169,21 +176,32 @@ class TestFailClosedWithoutTrustedDispatcher:
             task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb)
         assert excinfo.value.code == "PRODUCTION_DISPATCHER_UNAVAILABLE"
 
-    def test_task_return_without_dispatcher_typed_fail_closed(self):
+    def test_task_return_without_dispatcher_is_truthful_semantic_return(self):
+        """AF #49 M1/W3: the production Worker has no parent-store authority.
+
+        task.return without a trusted parent dispatcher performs the terminal
+        SEMANTIC return only: trusted identity + result binding validation, no
+        parent-store read/write, no durability claim, no process-local channel.
+        """
         sb = _sandbox()
         task_id = "af49-task-return-no-dispatcher"
         rref = _result_handoff(sb, task_id)
-        with pytest.raises(ProductionDispatcherUnavailableError) as excinfo:
-            task_return(
-                status="completed",
-                result_ref=rref.ref,
-                caller_role="coder",
-                caller_task_id=task_id,
-                sandbox=sb,
-            )
-        assert excinfo.value.code == "PRODUCTION_DISPATCHER_UNAVAILABLE"
+        comp = task_return(
+            status="completed",
+            result_ref=rref.ref,
+            caller_role="coder",
+            caller_task_id=task_id,
+            sandbox=sb,
+        )
+        assert comp["task_id"] == task_id
+        assert comp["durable_completion"] == "parent_side_reconciliation_pending"
+        assert comp["parent_store_mutated"] is False
+        assert comp["parent_durable_truth_owner"] == "parent_side_execution_reconciliation"
+        assert comp["process_local_completion_recorded"] is False
+        assert "card" in comp and "card_digest" in comp
 
-    def test_task_return_with_storeless_dispatcher_typed_fail_closed(self):
+    def test_task_return_storeless_dispatcher_fails_closed(self):
+        """An explicitly supplied parent boundary must be complete (W1)."""
         sb = _sandbox()
         task_id = "af49-task-return-no-store"
         rref = _result_handoff(sb, task_id)
@@ -241,9 +259,13 @@ class TestExplicitTestInjection:
         assert comp["task_id"] == task_id
         assert comp["status"] == "completed"
         assert "card" in comp
+        # AF #49 M1/W3: task.return never mutates the parent store; terminal
+        # truth comes from parent-side reconciliation of adapter evidence.
         record = disp.state_store.get(task_id)
         assert record is not None
-        assert record.canonical_task_state.is_terminal
+        assert not record.canonical_task_state.is_terminal
+        assert record.terminal_result is None
+        assert comp["parent_store_mutated"] is False
 
     def test_explicit_completion_sink_observes_completion(self):
         sb = _sandbox()
@@ -313,7 +335,8 @@ class TestProcessLocalCompletionIsNotProductionDurability:
             sandbox=sb,
             dispatcher=disp,
         )
-        assert comp["durable_completion"] == "not_established_in_W1"
+        assert comp["durable_completion"] == "parent_side_reconciliation_pending"
+        assert comp["parent_store_mutated"] is False
         assert comp["process_local_completion_recorded"] is False
         assert get_completion(task_id, completion_sink={}) is None
         assert not hasattr(task_facade, "_GLOBAL_COMPLETIONS")
@@ -362,10 +385,14 @@ class TestCanonicalIngressBoundary:
         assert resp.ok, f"task.return via trusted ingress dispatcher failed: {resp.error}"
         assert resp.payload["task_id"] == task_id
         assert resp.payload["process_local_completion_recorded"] is False
+        assert resp.payload["parent_store_mutated"] is False
         assert not hasattr(task_facade, "_GLOBAL_COMPLETIONS")
         record = disp.state_store.get(task_id)
         assert record is not None
-        assert record.terminal_result is not None
+        # No direct parent-store mutation from task.return (M1/W3): terminal
+        # truth belongs to parent-side execution reconciliation.
+        assert record.terminal_result is None
+        assert not record.canonical_task_state.is_terminal
 
     def test_canonical_task_start_uses_existing_production_composition_seam(self):
         reset_execution_dispatcher()

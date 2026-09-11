@@ -27,16 +27,27 @@ runtime-side ``origin_session_ref`` (never TaskHandoff, never model-supplied).
 The admission-scope resolver and the concurrency bounds map are derived ONLY
 from the operator RuntimeConfig bindings, so a fresh process reconstructs the
 same accounting after restart.
+
+AF #49 M1/W3: ``create_hermes_completion_delivery_transport`` wires the
+accepted W2 exact-session seam as the production completion transport; the
+target session identity is per-delivery durable ``origin_session_ref`` truth,
+never a construction/factory input and never model/Worker supplied.
 """
 
 from __future__ import annotations
 
+import os
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable
 
+from aota_forge.adapters.hermes.delivery import HermesCompletionDeliveryTransport
 from aota_forge.adapters.hermes.executor import HermesAdapter
 from aota_forge.adapters.hermes.host_client import HermesHostClient
+from aota_forge.adapters.hermes.session_reentry import (
+    DEFAULT_REENTRY_TIMEOUT_SECONDS,
+    HermesExactSessionReentry,
+)
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore, OriginSessionRef
@@ -215,6 +226,82 @@ def create_durable_completion_coordinator(
         admission_limits=admission_limits_from_runtime_config(config),
         **coordinator_kwargs,
     )
+
+
+# AF #49 M1/W3 — production completion delivery transport wiring.
+# The task-main profile/executable identity comes only from the operator-owned
+# RuntimeConfig; the durable session identity is supplied per delivery from the
+# trusted execution record's origin_session_ref, never from this factory and
+# never from model/Worker input.
+TASK_MAIN_COMPLETION_DELIVERY_ROLE = "task-main"
+
+
+def _resolve_task_main_hermes_home(profile: str) -> Path | None:
+    """Deterministic trusted Hermes home for exact-session re-entry (read-only).
+
+    Bounded candidate order over operator/runtime-controlled locations already
+    used by the accepted launcher/re-entry seams (``HERMES_HOME``,
+    ``AOTA_HERMES_HOME_HOST``, the per-profile home). Never CWD-derived, never
+    model/Worker supplied. Returns the first candidate with a durable
+    ``state.db``; the deterministic per-profile default otherwise (the W2
+    adapter then fails closed as unknown/not-found rather than guessing a new
+    session).
+    """
+    candidates: list[Path] = []
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    if env_home:
+        candidates.append(Path(env_home))
+    alt_home = os.environ.get("AOTA_HERMES_HOME_HOST", "").strip()
+    if alt_home:
+        candidates.append(Path(alt_home) / "profiles" / profile)
+    if env_home:
+        candidates.append(Path(env_home) / "profiles" / profile)
+    candidates.append(Path.home() / ".hermes" / "profiles" / profile)
+    candidates.append(Path.home() / ".hermes")
+    for candidate in candidates:
+        try:
+            if (candidate / "state.db").is_file():
+                return candidate
+        except OSError:
+            continue
+    return Path.home() / ".hermes" / "profiles" / profile
+
+
+def create_hermes_completion_delivery_transport(
+    *,
+    runtime_config: Any | None = None,
+    hermes_home: str | PathLike[str] | None = None,
+    state_db_path: str | PathLike[str] | None = None,
+    spool_root: str | PathLike[str] | None = None,
+    timeout_seconds: float | None = None,
+) -> HermesCompletionDeliveryTransport:
+    """Production Hermes completion transport over the accepted W2 exact-session seam.
+
+    Reuses ``HermesExactSessionReentry`` + ``HermesCompletionDeliveryTransport``
+    exactly as accepted (M2/W2/W3). The task-main profile comes from the
+    operator RuntimeConfig binding; the exact target session arrives per
+    delivery from the durable execution record's trusted
+    ``origin_session_ref``. No session identity is supplied here and none can
+    be supplied by the model or the Worker.
+    """
+    config = _resolve_operator_runtime_config(runtime_config)
+    task_main_profile = config.get_binding(TASK_MAIN_COMPLETION_DELIVERY_ROLE).profile
+    effective_home: Path | None = None
+    if hermes_home is not None:
+        effective_home = Path(hermes_home)
+    else:
+        effective_home = _resolve_task_main_hermes_home(task_main_profile)
+    reentry = HermesExactSessionReentry(
+        config.executable,
+        hermes_home=effective_home,
+        profile=task_main_profile,
+        state_db_path=Path(state_db_path) if state_db_path is not None else None,
+        spool_root=Path(spool_root) if spool_root is not None else None,
+        timeout_seconds=(
+            DEFAULT_REENTRY_TIMEOUT_SECONDS if timeout_seconds is None else float(timeout_seconds)
+        ),
+    )
+    return HermesCompletionDeliveryTransport(reentry)
 
 
 def prune_reconciled_hermes_receipts(

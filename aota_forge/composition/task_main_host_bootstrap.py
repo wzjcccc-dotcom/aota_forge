@@ -38,7 +38,6 @@ from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import portable_plan_digest
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
-from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.control import TaskMainControlService
@@ -484,16 +483,25 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         from aota_forge.core.ingress import bind_execution_dispatcher
 
         bind_execution_dispatcher(dispatcher)
-        # Completion coordinator (admission-gated, optional)
-        # For this slice we create one without transport (delivery is via harness)
-        # Use same store as dispatcher (ensured above) and limits from config
-        from aota_forge.composition.execution import admission_limits_from_runtime_config
+        # AF #49 M1/W3: the production task-main completion coordinator now
+        # carries the real Hermes completion delivery transport (exact-session
+        # re-entry through the accepted W2 seam). The task-main profile comes
+        # from the operator RuntimeConfig binding; the exact target session
+        # arrives per delivery from the durable execution record's trusted
+        # origin binding (origin_task_main_session_ref), never from model or
+        # Worker input. No manual harness trigger is required: the bounded
+        # task-main progression pass reconciles terminal evidence and delivers
+        # pending completions through this transport.
+        from aota_forge.composition.execution import (
+            create_durable_completion_coordinator,
+            create_hermes_completion_delivery_transport,
+        )
 
-        completion = DurableCompletionCoordinator(
+        completion = create_durable_completion_coordinator(
             dispatcher=dispatcher,
-            store=exec_store,
-            transport=None,
-            admission_limits=admission_limits_from_runtime_config(runtime_cfg),
+            state_store=exec_store,
+            runtime_config=runtime_cfg,
+            transport=create_hermes_completion_delivery_transport(runtime_config=runtime_cfg),
         )
     finally:
         if need_restore:
