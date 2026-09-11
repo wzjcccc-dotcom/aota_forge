@@ -331,12 +331,14 @@ class TestW2ArchitectureOwnership:
     def test_no_new_agent_operation_or_mcp_tool(self):
         import aota_forge.core_ingress as ci
 
+        # AF #48 M1/W2 extends with handoff/task thin façade (4 ops) via shared hot file ownership.
         assert set(ci.PROVIDER_BACKED_OPERATIONS) <= {
             "workspace.search", "workspace.read", "workspace.write", "result.hydrate",
             "restricted_shell.run", "role.bootstrap", "skill.open", "test.run",
             "task_main.activate_milestone", "task_main.recover_coordinator",
             "task_main.advance_once", "task_main.submit_work_projection",
             "git.status", "git.diff",
+            "handoff.write", "handoff.open", "task.start", "task.return",
         }
         import aota_forge.mcp_transport as mt
 

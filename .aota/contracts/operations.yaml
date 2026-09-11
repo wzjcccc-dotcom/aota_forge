@@ -750,6 +750,144 @@ contracts:
   - INPUT_SIZE_EXCEEDED
   - INTERNAL_MECHANICAL_ERROR
   protocol_version: '1.0'
+- name: handoff.write
+  description: Thin Agent-facing handoff write (AF #48 M1/W2). LLM provides bounded semantic payload per mode; Control Plane validates caller role, fills trusted envelope, persists digest-bound durable artifact, returns handoff_ref.
+  inputs:
+  - name: mode
+    type: str
+  - name: payload
+    type: dict
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: handoff
+  required_authority: trusted_handoff_write
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: not_idempotent
+  result_contract: result.handoff.write.v1
+  errors:
+  - AUTHORITY_DENIED
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - INPUT_TYPE_INVALID
+  - CROSS_SCOPE_DENIED
+  - TAMPERED_REF
+  - DIGEST_MISMATCH
+  - INVALID_MODE
+  - PAYLOAD_TOO_LARGE
+  protocol_version: '1.0'
+- name: handoff.open
+  description: Thin Agent-facing handoff open (AF #48 M1/W2). Returns bounded semantic artifact + necessary model-visible control metadata (full) or deterministic compact projection (card).
+  inputs:
+  - name: ref
+    type: str
+  - name: view
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - UNKNOWN_REF
+  - DIGEST_MISMATCH
+  - CROSS_SCOPE_DENIED
+  - TAMPERED_REF
+  - TAMPERED_PAYLOAD
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  protocol_version: '1.0'
+- name: task.start
+  description: Thin Agent-facing task start (AF #48 M1/W2). Validates task-main caller, target role, handoff_ref digest/binding, resolves semantic handoff, compiles to execution package, invokes existing execution machinery. Reuses execution.task_start.
+  inputs:
+  - name: role
+    type: str
+  - name: handoff_ref
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: execution_task
+  required_authority: caller_execution_intent
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent under (handoff_digest, role)
+  result_contract: result.task.start.v1
+  errors:
+  - AUTHORITY_DENIED
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - CROSS_SCOPE_DENIED
+  - TAMPERED_REF
+  - DIGEST_MISMATCH
+  - UNKNOWN_REF
+  - INVALID_ROLE
+  - WORK_SCOPE_INSUFFICIENT
+  - DISPATCH_REJECTED
+  - EXECUTOR_NOT_FOUND
+  protocol_version: '1.0'
+- name: task.return
+  description: Thin Agent-facing task return (AF #48 M1/W2). Child -> parent terminal lifecycle return. Validates child trusted identity, active task/attempt, result_ref ownership/digest/binding, reuses completion/finalization/wakeup, derives governance + deterministic card, marks terminal, triggers parent wakeup. Distinct from handoff.write and execution.task_result.
+  inputs:
+  - name: status
+    type: str
+  - name: result_ref
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: execution_task
+  required_authority: caller_execution_intent
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent
+  result_contract: result.task.return.v1
+  errors:
+  - AUTHORITY_DENIED
+  - UNKNOWN_OPERATION
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  - CROSS_SCOPE_DENIED
+  - TAMPERED_REF
+  - DIGEST_MISMATCH
+  - UNKNOWN_REF
+  - WRONG_ROLE
+  - WRONG_TASK
+  - TASK_ALREADY_TERMINAL
+  - INVALID_STATUS
+  protocol_version: '1.0'
 - name: task_main.submit_work_projection
   description: Canonical task-main Work semantic submission (M3/W1). Model proposes bounded Work semantics for one governed Work Item; Core validates against trusted Plan/Milestone/Work binding and persists the canonical WorkSemanticProjection durably. Trusted runtime supplies project/Plan/Milestone/coordinator identity; model supplies only work_item_id correlation plus four bounded semantic fields.
   inputs:

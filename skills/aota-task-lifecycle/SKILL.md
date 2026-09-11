@@ -219,6 +219,22 @@ layer consumed the completion. It does NOT mean: task approved, source
 correct, review passed, user accepted, or next task started. Auto-dispatch
 is never implied by ack.
 
+## Handoff + Task Lifecycle Thin Façade (AF #48 M1/W2)
+
+W2 implements the W1-frozen thin Agent-facing façade via One-Core `aota.invoke`:
+
+* `handoff.write(mode=milestone|work_item|result, payload=bounded semantic)` — LLM-owned semantic, Control Plane fills trusted envelope (`artifact_id`, `project_id`, `worktree_id`, `plan_ref`, `milestone_id`, `work_item_id`, `source_role`, `target_role`, `task_id`, `attempt_id`, `created_at`, `schema_version`, `provenance`, `digest`). Digest-bound durable artifact under `.aota/handoffs/<digest>.json`; restart-readable, tamper fail-closed, cross-project/worktree fail-closed. `LLM_MUTATES_CONTROL_FIELDS=no`, `CONTROL_PLANE_REWRITES_LLM_SEMANTICS=no`; `HANDOFF_CONTROL_ENVELOPE_SEPARATE_FROM_SEMANTIC_PAYLOAD=yes`. Modes: `milestone`/`work_item` writer = `task-main` only; `result` writer = `coder|analyst|reviewer|project-steward` (one full result, `WORKER_AUTHORS_RESULT_CARD=no`, single write). Reuses `TaskHandoff` semantic contract, `CanonicalResult`/`ResultGovernanceProjection`/`WorkerResultCard`/`ResultHandoffRef` (no second Result ontology).
+
+* `handoff.open(ref, view=card|full)` — `full` = bounded semantic artifact + necessary model-visible control metadata (artifact_id, project/worktree/plan/milestone/work_item, source/target role, task/attempt, created_at, digest); never full internal storage/secret/host internals. `card` = deterministic compact projection (`card_digest` over canonical card). Digest + project/worktree binding verified.
+
+* `task.start(role=target AgentWorkRole, handoff_ref=work_item handoff)` — `task-main` only. Validates dispatch authority, target role, handoff existence/digest/binding, resolves semantic `TaskHandoff`, compiles via `compile_handoff_to_execution_package`, invokes existing `execution.task_start` seam (reuses `ExecutionDispatcher`, no new engine/state-machine). Returns `{task_id, status}`.
+
+* `task.return(status=completed|blocked|failed, result_ref=durable result handoff)` — `coder|analyst|reviewer|project-steward` only (child → parent terminal return). Distinct from `handoff.write` and `execution.task_result`. Validates child identity, active task/attempt, result_ref ownership/digest/binding, derives `ResultGovernanceProjection` + deterministic `WorkerResultCard` from existing `CanonicalResult` seam, marks terminal via existing `ExecutionStateStore` CAS, delivers inline compact card + `full_result_ref` via parent wakeup (existing `DurableCompletionCoordinator` / `ExecutionDispatcher` recovery, not new coordinator). `NORMAL_TASK_MAIN_CARD_EXTRA_READ_CALL=0`.
+
+* Worker startup separation: `role.bootstrap` (who am I / tools / Skill / trusted identity) then `handoff.open(work_item_ref, view=full)` (what exact task am I doing). Full Work handoff never re-injected into `role.bootstrap`.
+
+* Durability: reuse `ExecutionStateStore` + `durable_result_store` patterns; minimal bounded adapter `.aota/handoffs` (one file per digest, atomic temp+rename, digest-verified). `handoff` never dispatches worker, never terminates task; `task.start` never invents semantics; `task.return` never creates work semantics. `task_main.submit_work_projection` remains internal compatibility (`WORK_SEMANTIC_PROJECTION_AGENT_FACING_REQUIRED=no`).
+
 ## Deployment and Runtime Guidance
 
 - Profile runtime assembly is manifest-driven. The canonical assembly manifest
