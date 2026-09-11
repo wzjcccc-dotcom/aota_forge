@@ -140,9 +140,24 @@ class PortablePlanDocument:
     entry_base: str | None = None
     # M3/W1-R1 bounded milestone prose (executor-neutral, digest-covered)
     milestone_section_prose: dict[str, str] = field(default_factory=dict)
+    # W4 bounded Work source slices (structural, digest-covered, faithful)
+    work_source_slices: dict[str, tuple[Any, ...]] = field(default_factory=dict)
 
     def canonical_dict(self) -> dict[str, Any]:
         """Digest payload: everything except the derived digest itself."""
+        # Serialize work_source_slices deterministically for digest
+        slices_payload: dict[str, list[dict[str, Any]]] = {}
+        for mid in sorted(self.work_source_slices.keys()):
+            raw = self.work_source_slices.get(mid, ())
+            items: list[dict[str, Any]] = []
+            for s in raw:
+                try:
+                    items.append(s.to_dict() if hasattr(s, "to_dict") else dict(s))
+                except Exception:
+                    continue
+            # Deterministic order by work_item_id
+            items.sort(key=lambda d: d.get("work_item_id", ""))
+            slices_payload[mid] = items
         return {
             "source_kind": self.source_kind,
             "source_revision": self.source_revision,
@@ -166,6 +181,7 @@ class PortablePlanDocument:
             "milestone_dag_raw": dict(self.milestone_dag_raw),
             "entry_base": self.entry_base,
             "milestone_section_prose": dict(self.milestone_section_prose),
+            "work_source_slices": slices_payload,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -192,6 +208,9 @@ def portable_plan_digest(document: PortablePlanDocument) -> str:
 
 MAX_WORK_SEMANTIC_OBJECTIVE_LENGTH: int = 1024
 MAX_WORK_SEMANTIC_CONTEXT_LENGTH: int = 2048
+
+MAX_WORK_SOURCE_TEXT_LENGTH: int = 8192
+MAX_WORK_SOURCE_TITLE_LENGTH: int = 512
 
 
 @dataclass(frozen=True)
@@ -246,6 +265,73 @@ class GovernedWorkSemanticView:
             milestone_id=data["milestone_id"],
             objective=data["objective"],
             semantic_context=data["semantic_context"],
+        )
+
+
+# ---------------------------------------------------------------------------
+# W4 structural Work source slice (bounded, faithful, digest-bound).
+#
+# Deterministic structural projection of the authoritative Plan source:
+#   plan_ref / plan_digest + milestone_id + work_item_id + title + source_text
+# No semantic rewriting: the slice is the original Work-local title, prose,
+# lists and code blocks as bounded faithful source, truncated to
+# MAX_WORK_SOURCE_TEXT_LENGTH. Sibling scope never leaks, digest binds the
+# slice, and the Control Plane never synthesizes objective.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WorkSourceSlice:
+    """Bounded faithful Work source slice (structural, not semantic)."""
+
+    milestone_id: str
+    work_item_id: str
+    title: str
+    source_text: str
+
+    def __post_init__(self) -> None:
+        for label, val, bound in (
+            ("milestone_id", self.milestone_id, 128),
+            ("work_item_id", self.work_item_id, 128),
+            ("title", self.title, MAX_WORK_SOURCE_TITLE_LENGTH),
+            ("source_text", self.source_text, MAX_WORK_SOURCE_TEXT_LENGTH),
+        ):
+            if not isinstance(val, str) or type(val) is not str:
+                raise TypeError(f"{label} must be a string")
+            if not val.strip():
+                raise ValueError(f"{label} must be non-empty")
+            if len(val.strip()) > bound:
+                raise ValueError(f"{label} exceeds maximum {bound}")
+            if "\x00" in val:
+                raise ValueError(f"{label} must not contain NUL")
+        object.__setattr__(self, "milestone_id", self.milestone_id.strip())
+        object.__setattr__(self, "work_item_id", self.work_item_id.strip())
+        object.__setattr__(self, "title", self.title.strip())
+        object.__setattr__(self, "source_text", self.source_text.strip())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "milestone_id": self.milestone_id,
+            "work_item_id": self.work_item_id,
+            "title": self.title,
+            "source_text": self.source_text,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "WorkSourceSlice":
+        if not isinstance(data, dict):
+            raise TypeError("WorkSourceSlice data must be a dict")
+        for req in ("milestone_id", "work_item_id", "title", "source_text"):
+            if req not in data:
+                raise ValueError(f"missing required field: {req!r}")
+        extra = set(data.keys()) - {"milestone_id", "work_item_id", "title", "source_text"}
+        if extra:
+            raise ValueError(f"unknown field(s): {sorted(extra)}")
+        return cls(
+            milestone_id=data["milestone_id"],
+            work_item_id=data["work_item_id"],
+            title=data["title"],
+            source_text=data["source_text"],
         )
 
 

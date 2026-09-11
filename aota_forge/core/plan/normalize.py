@@ -30,7 +30,13 @@ from dataclasses import replace
 from typing import Any
 
 from aota_forge.core.contracts.errors import ForgeError
-from aota_forge.core.plan.read_model import PortablePlanDocument, portable_plan_digest
+from aota_forge.core.plan.read_model import (
+    MAX_WORK_SOURCE_TEXT_LENGTH,
+    MAX_WORK_SOURCE_TITLE_LENGTH,
+    PortablePlanDocument,
+    WorkSourceSlice,
+    portable_plan_digest,
+)
 from aota_forge.core.plan.sections import (
     KIND_APPENDIX,
     KIND_CURRENT,
@@ -51,6 +57,8 @@ MILESTONE_APPROVAL_KEY_RE = re.compile(r"^(M[0-9]+)_USER_APPROVAL_SATISFIED$")
 _KV_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*\s*=\s*.*$")
 
 MAX_MILESTONE_PROSE_CHARS = 4096
+# Work source slice is structural, not semantic: exact heading identity only
+WORK_HEADING_RE = re.compile(r"^\s*(M\d+)\s*/\s*([A-Za-z0-9][A-Za-z0-9._-]*)\b")
 ENTRY_BASE_KEY = "ENTRY_BASE"
 
 PROJECT_CONTEXT_KEYS = frozenset(
@@ -637,6 +645,294 @@ def _extract_milestone_section_prose(
     return out
 
 
+def _detect_work_heading(title: str) -> tuple[str, str] | None:
+    """Deterministic Work identity from heading title only.
+
+    Only a heading whose *title* starts with the exact Work identity
+    ``M<digits>/W<token>`` (e.g. ``M1/W1``, ``M2/W2``) is a structural Work
+    definition. Prose containing ``W1`` elsewhere never counts.
+    Returns (milestone_id, work_item_id) or None. Exact token match:
+    ``M1/W1`` does not match ``M1/W10``.
+    """
+    if not isinstance(title, str) or not title.strip():
+        return None
+    m = WORK_HEADING_RE.match(title.strip())
+    if not m:
+        return None
+    mid_raw, wid_raw = m.group(1).strip(), m.group(2).strip()
+    # Normalize milestone to canonical M<digits> upper
+    mid = mid_raw.upper()
+    wid = wid_raw
+    if not MILESTONE_ID_RE.fullmatch(mid):
+        return None
+    if not _WORK_ITEM_TOKEN_RE.fullmatch(wid):
+        return None
+    return mid, wid
+
+
+def _collect_hierarchical_source(
+    sections: list[BodySection],
+    work_idx: int,
+) -> str:
+    """Faithful bounded source for a hierarchical Work heading.
+
+    Includes the Work title plus its Work-local block (raw_text) and any
+    descendant subsections (level > work_level) until the next sibling
+    (level <= work_level). Sibling scope never leaks.
+    """
+    sec = sections[work_idx]
+    lvl = getattr(sec, "level", None)
+    # Fallback level if missing
+    if lvl is None:
+        lvl = 4
+    parts: list[str] = []
+    title = sec.title.strip()
+    if title:
+        parts.append(title[:MAX_WORK_SOURCE_TITLE_LENGTH])
+    raw = (sec.raw_text or "").strip()
+    if raw:
+        parts.append(raw[: MAX_WORK_SOURCE_TEXT_LENGTH - sum(len(p) + 1 for p in parts) if sum(len(p) + 1 for p in parts) < MAX_WORK_SOURCE_TEXT_LENGTH else 0])
+    # Descendant collection: child headings with level > lvl
+    try:
+        current_len = sum(len(p) + 1 for p in parts)
+        for j in range(work_idx + 1, len(sections)):
+            nxt = sections[j]
+            nxt_lvl = getattr(nxt, "level", None)
+            if nxt_lvl is None:
+                break
+            if nxt_lvl <= lvl:
+                break
+            # descendant — include wholly (faithful)
+            if nxt.title and nxt.title.strip():
+                t = nxt.title.strip()[:500]
+                if current_len + len(t) + 1 > MAX_WORK_SOURCE_TEXT_LENGTH:
+                    break
+                parts.append(t)
+                current_len += len(t) + 1
+            nxt_raw = (nxt.raw_text or "").strip()
+            if nxt_raw:
+                # Truncate to bound
+                remaining = MAX_WORK_SOURCE_TEXT_LENGTH - current_len
+                if remaining <= 0:
+                    break
+                chunk = nxt_raw[:remaining]
+                parts.append(chunk)
+                current_len += len(chunk) + 1
+                if current_len >= MAX_WORK_SOURCE_TEXT_LENGTH:
+                    break
+    except Exception:
+        pass
+    joined = "\n".join(parts).strip()
+    if len(joined) > MAX_WORK_SOURCE_TEXT_LENGTH:
+        joined = joined[:MAX_WORK_SOURCE_TEXT_LENGTH].strip()
+    return joined
+
+
+def _work_line_matches_inline(line: str, milestone_id: str, work_item_id: str) -> bool:
+    """Generic Work-mention test for inline fallback (exact token, not substring).
+
+    Matches when the line contains the governed Work identity as:
+    - {MID}/{WID}, {MID}_{WID}, {MID}-{WID}, or
+    - WID as an exact token (split on non [A-Za-z0-9._-]).
+    W1 does not match W10.
+    """
+    if not isinstance(line, str) or not line:
+        return False
+    if not isinstance(work_item_id, str) or not work_item_id.strip():
+        return False
+    wid = work_item_id.strip()
+    mid = (milestone_id or "").strip()
+    if mid and (f"{mid}/{wid}" in line or f"{mid}_{wid}" in line or f"{mid}-{wid}" in line):
+        return True
+    try:
+        tokens = re.split(r"[^A-Za-z0-9._-]+", line)
+    except Exception:
+        return wid in line
+    return wid in tokens
+
+
+def _extract_work_source_slices(
+    sections: list[BodySection],
+    milestone_work_items: dict[str, tuple[str, ...]],
+    milestone_specs: dict[str, dict[str, Any]],
+    current_fields: dict[str, str],
+    diagnostics: list[dict[str, Any]],
+) -> dict[str, tuple[WorkSourceSlice, ...]]:
+    """Structural, faithful Work source slices (W4).
+
+    Priority:
+      1) explicit hierarchical Work section (heading starting with M<x>/W<y>)
+      2) existing inline compatibility (per-Work KV + Work-mention prose)
+      3) fail closed (no generic fallback, no full Plan dump, no sibling leakage)
+
+    Hierarchical detection uses only heading titles (not prose) and respects
+    exact identity (W1 != W10), cross-milestone capture prohibition, and
+    duplicate ambiguity (fail closed). Bounded, digest-bound, faithful.
+    Non-semantic: no objective synthesis, no acceptance prioritization.
+    """
+    # Collect hierarchical Work headings deterministically, one canonical interpretation
+    hierarchical: dict[tuple[str, str], int] = {}
+    for idx, sec in enumerate(sections):
+        hit = _detect_work_heading(sec.title)
+        if hit is None:
+            continue
+        mid, wid = hit
+        key = (mid, wid)
+        if key in hierarchical:
+            # Duplicate Work identity — ambiguous, fail closed deterministically
+            raise PlanNormalizationError(
+                "DUPLICATE_WORK_IDENTITY",
+                f"duplicate hierarchical Work heading for {mid}/{wid}: "
+                f"{sections[hierarchical[key]].title!r} vs {sec.title!r}",
+            )
+        # Cross-milestone capture check: if parent milestone exists and differs, still record
+        # but grouped by its own milestone prefix (so not captured under wrong milestone)
+        # The grouping itself prevents cross capture; diagnostics for stray placement
+        hierarchical[key] = idx
+
+    out: dict[str, list[WorkSourceSlice]] = {}
+
+    all_mids = set(milestone_work_items.keys()) | set(milestone_specs.keys())
+    for mid in sorted(all_mids):
+        work_items = tuple(milestone_work_items.get(mid, ()))
+        if not work_items:
+            continue
+        slices: list[WorkSourceSlice] = []
+        for wid in work_items:
+            key = (mid, wid)
+            # Attempt hierarchical first
+            if key in hierarchical:
+                idx = hierarchical[key]
+                sec = sections[idx]
+                title = sec.title.strip()[:MAX_WORK_SOURCE_TITLE_LENGTH] or f"{mid}/{wid}"
+                source = _collect_hierarchical_source(sections, idx)
+                if not source.strip():
+                    source = title
+                # Ensure source is bounded and faithful (already)
+                # Sibling leakage check is inherent via hierarchical collection
+                try:
+                    sl = WorkSourceSlice(
+                        milestone_id=mid,
+                        work_item_id=wid,
+                        title=title,
+                        source_text=source,
+                    )
+                except Exception as exc:
+                    raise PlanNormalizationError("MALFORMED_WORK_SOURCE_SLICE", f"hierarchical slice for {mid}/{wid} invalid: {exc}") from exc
+                slices.append(sl)
+                continue
+
+            # Inline fallback: only if no hierarchical
+            # Look for inline evidence: per-Work KV fragments or Work-mention prose under milestone
+            # Gather candidates from any section whose title mentions the milestone OR any raw line mentions the work
+            # But keep bounded and faithful
+            inline_parts: list[str] = []
+            # Per-Work KV fragments
+            for sec in sections:
+                for k, v in sec.key_values.items():
+                    if k.startswith(f"{mid}_{wid}_") and isinstance(v, str) and v.strip():
+                        frag = f"{wid}: {v.strip()}"[:500]
+                        if frag not in inline_parts:
+                            inline_parts.append(frag)
+                exact = f"{mid}_{wid}"
+                if exact in sec.key_values:
+                    v = sec.key_values[exact]
+                    if isinstance(v, str) and v.strip():
+                        frag = f"{wid}: {v.strip()}"[:500]
+                        if frag not in inline_parts:
+                            inline_parts.append(frag)
+
+            # Free prose lines mentioning the work (exact token)
+            # For inline, we scan all sections for work-mention lines (not just milestone-titled)
+            # to preserve existing M2 inline compatibility where work lines may be under milestone heading or current state
+            try:
+                mid_pat = re.compile(r"\b" + re.escape(mid) + r"\b")
+            except Exception:
+                mid_pat = None
+
+            for sec in sections:
+                # Inline scope must not leak across milestones: bare WID match only counts
+                # when the section's title mentions the milestone; explicit MID/WID is always safe.
+                title_hit = False
+                try:
+                    title_hit = bool(mid_pat and mid_pat.search(sec.title or ""))
+                except Exception:
+                    title_hit = False
+                raw = getattr(sec, "raw_text", "") or ""
+                for line in raw.splitlines():
+                    s = line.strip()
+                    if not s:
+                        continue
+                    if s.startswith("```"):
+                        continue
+                    if _KV_LINE_RE.match(line.strip()):
+                        continue
+                    if not _work_line_matches_inline(line, mid, wid):
+                        continue
+                    # Cross-milestone capture guard: require title_hit for bare WID
+                    is_explicit = f"{mid}/{wid}" in line or f"{mid}_{wid}" in line or f"{mid}-{wid}" in line
+                    if not is_explicit and not title_hit:
+                        continue
+                    if s not in inline_parts:
+                        inline_parts.append(s[:500])
+                    if sum(len(p) + 1 for p in inline_parts) > MAX_WORK_SOURCE_TEXT_LENGTH:
+                        break
+                # Also consider the heading itself if it mentions the work via inline pattern
+                # (e.g., a section titled "M2 Work" containing "M2/W1 — ..."? That would have been caught as hierarchical, so skip)
+                if _work_line_matches_inline(sec.title or "", mid, wid):
+                    is_explicit_title = f"{mid}/{wid}" in sec.title or f"{mid}_{wid}" in sec.title or f"{mid}-{wid}" in sec.title
+                    if not is_explicit_title and not title_hit:
+                        pass
+                    else:
+                        t = sec.title.strip()[:500]
+                        if t not in inline_parts:
+                            # Avoid adding hierarchical headings of other works
+                            hit = _detect_work_heading(sec.title)
+                            if hit is None or hit == (mid, wid):
+                                inline_parts.append(t)
+
+                if sum(len(p) + 1 for p in inline_parts) > MAX_WORK_SOURCE_TEXT_LENGTH:
+                    break
+
+            if inline_parts:
+                # Choose title as first inline part that looks like a Work title, else fallback
+                title_candidate = inline_parts[0][:MAX_WORK_SOURCE_TITLE_LENGTH] if inline_parts else f"{mid}/{wid}"
+                # If the first part is a KV fragment, prefer second if available
+                if title_candidate.startswith(f"{wid}:") and len(inline_parts) > 1:
+                    title_candidate = inline_parts[1][:MAX_WORK_SOURCE_TITLE_LENGTH]
+                # Also if we have a milestone spec title, incorporate?
+                joined = "\n".join(inline_parts).strip()
+                if len(joined) > MAX_WORK_SOURCE_TEXT_LENGTH:
+                    joined = joined[:MAX_WORK_SOURCE_TEXT_LENGTH].strip()
+                # Non-contradictory compatibility: if both hierarchical and inline exist, hierarchical already won
+                # If only inline, we emit it; contradictory check for hierarchical+inline not needed (hierarchical priority)
+                try:
+                    sl_inline = WorkSourceSlice(
+                        milestone_id=mid,
+                        work_item_id=wid,
+                        title=title_candidate,
+                        source_text=joined,
+                    )
+                except Exception as exc:
+                    raise PlanNormalizationError("MALFORMED_WORK_SOURCE_SLICE", f"inline slice for {mid}/{wid} invalid: {exc}") from exc
+                slices.append(sl_inline)
+                diagnostics.append(
+                    {"code": "INLINE_WORK_SOURCE_USED", "severity": "info", "milestone": mid, "work_item": wid}
+                )
+                continue
+
+            # No hierarchical nor inline source => missing structural context, no slice (fail closed on access)
+            diagnostics.append(
+                {"code": "MISSING_WORK_SOURCE_SLICE", "severity": "info", "milestone": mid, "work_item": wid}
+            )
+            # Do not create a slice; absence will cause get_work_source_slice to fail closed
+        if slices:
+            # Deterministic order by work_item_id as per graph order, but sort for stability
+            # Preserve graph order: milestone_work_items is sorted, slices already in that order
+            out[mid] = tuple(slices)
+    return out
+
+
 def normalize_portable_plan(body: str, *, source_revision: str | None = None) -> PortablePlanDocument:
     """Normalize the authoritative issue body into a PortablePlanDocument.
 
@@ -704,6 +1000,12 @@ def normalize_portable_plan(body: str, *, source_revision: str | None = None) ->
         current_fields[key] for key in KNOWN_GOOD_CHECKPOINT_KEYS if key in current_fields
     )
 
+    # W4 structural Work source slices (hierarchical + inline compatibility)
+    # Must be extracted before document creation so they influence the digest (digest-bound)
+    work_source_slices = _extract_work_source_slices(
+        sections, milestone_work_items, milestone_specs, current_fields, diagnostics
+    )
+
     governance: dict[str, str] = {}
     provenance_observations: dict[str, dict[str, str]] = {}
     for section in sections:
@@ -749,6 +1051,7 @@ def normalize_portable_plan(body: str, *, source_revision: str | None = None) ->
         milestone_section_prose=_extract_milestone_section_prose(
             sections, milestone_work_items, milestone_specs, current_fields
         ),
+        work_source_slices=work_source_slices,
     )
     digest = portable_plan_digest(document)
     return replace(document, source_digest=digest)
