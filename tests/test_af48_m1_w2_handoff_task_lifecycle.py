@@ -12,6 +12,11 @@ from aota_forge.work_plane.handoff_store import handoff_write, handoff_open, Han
 from aota_forge.work_plane.task_facade import task_start, task_return, get_completion, clear_completions
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.core_ingress import dispatch_via_core, CanonicalDispatchBinding, resolve_descriptor
+from aota_forge.core.ingress import bind_execution_dispatcher, reset_execution_dispatcher
+from aota_forge.core.execution.dispatcher import ExecutionDispatcher
+from aota_forge.core.execution.durable_state import InMemoryExecutionStateStore
+from aota_forge.core.execution.registry import ExecutorRegistry
+from aota_forge.adapters.execution.reference import ReferenceFakeExecutorAdapter
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.agent_facing_contract import (
     HANDOFF_WRITE_MODES,
@@ -23,6 +28,19 @@ from aota_forge.work_plane.agent_facing_contract import (
     WORKER_RESULT_FULL_WRITE_COUNT_NORMAL,
     WORKER_AUTHORS_RESULT_CARD,
 )
+
+
+def _explicit_test_dispatcher() -> ExecutionDispatcher:
+    """AF #49 M1/W1: test doubles are only reachable through explicit injection."""
+    registry = ExecutorRegistry()
+    registry.register(ReferenceFakeExecutorAdapter())
+    return ExecutionDispatcher(registry, state_store=InMemoryExecutionStateStore())
+
+
+def _bind_test_ingress_dispatcher() -> ExecutionDispatcher:
+    dispatcher = _explicit_test_dispatcher()
+    bind_execution_dispatcher(dispatcher)
+    return dispatcher
 
 def _sandbox(project_id="projA", worktree_id="wtA") -> WorktreeSandboxBoundary:
     td = tempfile.mkdtemp(prefix="handoff-test-")
@@ -177,7 +195,7 @@ class TestTaskStart:
             "task_kind": "impl",
         }
         ref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb, milestone_id="M1", work_item_id="W1")
-        result = task_start(role="coder", handoff_ref=ref.ref, caller_role="task-main", sandbox=sb)
+        result = task_start(role="coder", handoff_ref=ref.ref, caller_role="task-main", sandbox=sb, dispatcher=_explicit_test_dispatcher())
         assert "task_id" in result
         assert "status" in result
         assert result["handoff_digest"] == ref.digest
@@ -210,7 +228,7 @@ class TestTaskStart:
         ref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
         bad_ref = ref.ref.replace(ref.digest, "f"*64)
         try:
-            task_start(role="coder", handoff_ref=bad_ref, caller_role="task-main", sandbox=sb)
+            task_start(role="coder", handoff_ref=bad_ref, caller_role="task-main", sandbox=sb, dispatcher=_explicit_test_dispatcher())
             assert False
         except ValueError:
             pass
@@ -250,31 +268,35 @@ class TestTaskStart:
             tool_surface=surf,
             read_authorities=(),
         )
-        resp = dispatch_via_core("task.start", {"role": "coder", "handoff_ref": ref.ref}, binding)
-        assert resp.ok, f"task.start via ingress failed: {resp.error}"
-        assert "task_id" in resp.payload
+        _bind_test_ingress_dispatcher()
+        try:
+            resp = dispatch_via_core("task.start", {"role": "coder", "handoff_ref": ref.ref}, binding)
+            assert resp.ok, f"task.start via ingress failed: {resp.error}"
+            assert "task_id" in resp.payload
 
-        # Worker trying task.start via ingress should be denied
-        h_worker = TaskHandoff(
-            work_role="coder",
-            task_kind="test",
-            objective="obj",
-            bounded_scope="scope",
-            validation_expectations=["v"],
-            semantic_stop_expectations=["s"],
-        )
-        surf_worker = create_role_tool_surface("coder", eager=("workspace.search","workspace.read"), progressive=())
-        binding_worker = CanonicalDispatchBinding(
-            canonical_task_id="worker-1",
-            project_id=sb.project_id,
-            worktree_id=sb.worktree_id,
-            handoff=h_worker,
-            sandbox=sb,
-            tool_surface=surf_worker,
-        )
-        resp2 = dispatch_via_core("task.start", {"role": "coder", "handoff_ref": ref.ref}, binding_worker)
-        assert not resp2.ok
-        assert resp2.error["code"] == "AUTHORITY_DENIED"
+            # Worker trying task.start via ingress should be denied
+            h_worker = TaskHandoff(
+                work_role="coder",
+                task_kind="test",
+                objective="obj",
+                bounded_scope="scope",
+                validation_expectations=["v"],
+                semantic_stop_expectations=["s"],
+            )
+            surf_worker = create_role_tool_surface("coder", eager=("workspace.search","workspace.read"), progressive=())
+            binding_worker = CanonicalDispatchBinding(
+                canonical_task_id="worker-1",
+                project_id=sb.project_id,
+                worktree_id=sb.worktree_id,
+                handoff=h_worker,
+                sandbox=sb,
+                tool_surface=surf_worker,
+            )
+            resp2 = dispatch_via_core("task.start", {"role": "coder", "handoff_ref": ref.ref}, binding_worker)
+            assert not resp2.ok
+            assert resp2.error["code"] == "AUTHORITY_DENIED"
+        finally:
+            reset_execution_dispatcher()
 
 class TestTaskReturn:
     def _setup_task(self):
@@ -287,8 +309,9 @@ class TestTaskReturn:
             "work_role": "coder",
             "task_kind": "impl",
         }
+        self._disp = _explicit_test_dispatcher()
         wref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
-        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb)
+        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb, dispatcher=self._disp)
         task_id = start["task_id"]
         return sb, task_id, wref, start
 
@@ -296,7 +319,7 @@ class TestTaskReturn:
         sb, task_id, wref, start = self._setup_task()
         sem_result = {"summary": "done", "work_done": "implemented", "validation": "pytest ok"}
         rref = handoff_write(mode="result", semantic=sem_result, caller_role="coder", sandbox=sb, task_id=task_id)
-        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb)
+        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb, dispatcher=self._disp)
         assert comp["task_id"] == task_id
         assert comp["status"] == "completed"
         assert "card" in comp
@@ -306,14 +329,14 @@ class TestTaskReturn:
         sb, task_id, _, _ = self._setup_task()
         sem = {"summary": "blocked", "blockers": "needs input", "work_done": "partial"}
         rref = handoff_write(mode="result", semantic=sem, caller_role="coder", sandbox=sb, task_id=task_id)
-        comp = task_return(status="blocked", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb)
+        comp = task_return(status="blocked", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb, dispatcher=self._disp)
         assert comp["status"] == "blocked"
 
     def test_task_return_failed_pass(self):
         sb, task_id, _, _ = self._setup_task()
         sem = {"summary": "failed", "findings": "error"}
         rref = handoff_write(mode="result", semantic=sem, caller_role="coder", sandbox=sb, task_id=task_id)
-        comp = task_return(status="failed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb)
+        comp = task_return(status="failed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb, dispatcher=self._disp)
         assert comp["status"] == "failed"
 
     def test_task_main_calling_task_return_denied(self):
@@ -371,9 +394,10 @@ class TestTaskReturn:
         sb, task_id, _, _ = self._setup_task()
         sem = {"summary": "completed work", "work_done": "did X"}
         rref = handoff_write(mode="result", semantic=sem, caller_role="coder", sandbox=sb, task_id=task_id)
-        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb)
-        # Parent can get completion without extra read
-        fetched = get_completion(task_id)
+        sink = {}
+        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb, dispatcher=self._disp, completion_sink=sink)
+        # Parent can get completion from the explicitly injected test sink
+        fetched = get_completion(task_id, completion_sink=sink)
         assert fetched is not None
         assert fetched["card"] == comp["card"]
         assert fetched["full_result_ref"] == comp["full_result_ref"]
@@ -395,7 +419,8 @@ class TestTaskReturn:
         # Start task via facade to get task_id
         sem = {"objective": "obj", "bounded_scope": "scope", "validation_expectations": ["v"], "semantic_stop_expectations": ["s"]}
         wref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
-        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb)
+        disp = _explicit_test_dispatcher()
+        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb, dispatcher=disp)
         task_id = start["task_id"]
         # Create result handoff
         sem_r = {"summary": "done ingress"}
@@ -411,24 +436,28 @@ class TestTaskReturn:
             sandbox=sb,
             tool_surface=surf,
         )
-        resp = dispatch_via_core("task.return", {"status": "completed", "result_ref": rref.ref}, binding)
-        assert resp.ok, f"task.return via ingress failed: {resp.error}"
-        assert resp.payload["task_id"] == task_id
-        assert "card" in resp.payload
-        # task-main calling task.return via ingress should be denied
-        h_main = TaskHandoff(work_role="task-main", task_kind="test", objective="obj", bounded_scope="scope", validation_expectations=["v"], semantic_stop_expectations=["s"])
-        surf_main = create_role_tool_surface("task-main", eager=("workspace.search","workspace.read"), progressive=())
-        binding_main = CanonicalDispatchBinding(
-            canonical_task_id=task_id,
-            project_id=sb.project_id,
-            worktree_id=sb.worktree_id,
-            handoff=h_main,
-            sandbox=sb,
-            tool_surface=surf_main,
-        )
-        resp2 = dispatch_via_core("task.return", {"status": "completed", "result_ref": rref.ref}, binding_main)
-        assert not resp2.ok
-        assert resp2.error["code"] in ("AUTHORITY_DENIED", "WRONG_ROLE")
+        bind_execution_dispatcher(disp)
+        try:
+            resp = dispatch_via_core("task.return", {"status": "completed", "result_ref": rref.ref}, binding)
+            assert resp.ok, f"task.return via ingress failed: {resp.error}"
+            assert resp.payload["task_id"] == task_id
+            assert "card" in resp.payload
+            # task-main calling task.return via ingress should be denied
+            h_main = TaskHandoff(work_role="task-main", task_kind="test", objective="obj", bounded_scope="scope", validation_expectations=["v"], semantic_stop_expectations=["s"])
+            surf_main = create_role_tool_surface("task-main", eager=("workspace.search","workspace.read"), progressive=())
+            binding_main = CanonicalDispatchBinding(
+                canonical_task_id=task_id,
+                project_id=sb.project_id,
+                worktree_id=sb.worktree_id,
+                handoff=h_main,
+                sandbox=sb,
+                tool_surface=surf_main,
+            )
+            resp2 = dispatch_via_core("task.return", {"status": "completed", "result_ref": rref.ref}, binding_main)
+            assert not resp2.ok
+            assert resp2.error["code"] in ("AUTHORITY_DENIED", "WRONG_ROLE")
+        finally:
+            reset_execution_dispatcher()
 
 class TestHandoffTaskIntegration:
     def test_worker_writes_one_full_result_card_deterministic(self):
@@ -444,19 +473,22 @@ class TestHandoffTaskIntegration:
         assert WORKER_AUTHORS_RESULT_CARD is False
 
     def test_existing_wakeup_reentry_non_regression(self):
-        # Ensure get_completion (parent wakeup) works after task_return
+        # Ensure explicit-sink completion observation works after task_return
         sb = _sandbox()
         sem = {"objective": "obj", "bounded_scope": "scope", "validation_expectations": ["v"], "semantic_stop_expectations": ["s"]}
+        disp = _explicit_test_dispatcher()
         wref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
-        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb)
+        start = task_start(role="coder", handoff_ref=wref.ref, caller_role="task-main", sandbox=sb, dispatcher=disp)
         task_id = start["task_id"]
         rref = handoff_write(mode="result", semantic={"summary": "done"}, caller_role="coder", sandbox=sb, task_id=task_id)
-        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb)
-        # Parent wakeup: completion should be available immediately
-        fetched = get_completion(task_id)
+        sink = {}
+        comp = task_return(status="completed", result_ref=rref.ref, caller_role="coder", caller_task_id=task_id, sandbox=sb, dispatcher=disp, completion_sink=sink)
+        # Explicit test sink: completion should be available immediately
+        fetched = get_completion(task_id, completion_sink=sink)
         assert fetched is not None
         assert fetched["task_id"] == task_id
-        clear_completions()
+        clear_completions(sink)
+        assert get_completion(task_id, completion_sink=sink) is None
 
 class TestW1Contract:
     def test_w1_contract_still_passes(self):

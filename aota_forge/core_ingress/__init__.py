@@ -213,6 +213,27 @@ def _require_sandbox(binding: CanonicalDispatchBinding) -> Any:
     return binding.sandbox
 
 
+def _trusted_production_execution_dispatcher() -> Any | None:
+    """Resolve the trusted production ExecutionDispatcher, if one is bound.
+
+    AF #49 M1/W1: bounded reuse of the existing ``core.ingress`` mechanical
+    binding seam. Production composition binds the real dispatcher through
+    ``bind_production_execution_dispatcher``; task.start / task.return then
+    receive it explicitly. Returns None when no trusted production dispatcher
+    is bound; callers must fail closed. Never constructs a test double and
+    never falls back to ReferenceFakeExecutorAdapter / in-memory state.
+    """
+    try:
+        from aota_forge.core.execution.dispatcher import ExecutionDispatcher
+        from aota_forge.core.ingress import get_execution_dispatcher
+    except Exception:
+        return None
+    bound = get_execution_dispatcher()
+    if isinstance(bound, ExecutionDispatcher):
+        return bound
+    return None
+
+
 def _persist_governed_if_needed(binding: CanonicalDispatchBinding, response: Any, operation: str) -> None:
     """Core-owned durability seam (D5): persist by_ref tool payloads.
 
@@ -926,10 +947,27 @@ def dispatch_tool_operation(
                 return ToolResponse.failure({"code": "INVALID_ROLE", "message": f"invalid target role: {role!r}"})
             if not isinstance(handoff_ref, str) or not handoff_ref.strip():
                 return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "handoff_ref must be non-empty string"})
+            # AF #49 M1/W1: supply the trusted production dispatcher from the
+            # existing Core binding seam; fail closed when none is bound.
+            trusted_dispatcher = _trusted_production_execution_dispatcher()
+            if trusted_dispatcher is None:
+                return ToolResponse.failure(
+                    {
+                        "code": "PRODUCTION_DISPATCHER_UNAVAILABLE",
+                        "message": "task.start requires a trusted production ExecutionDispatcher; "
+                        "test doubles are never a silent production fallback",
+                    }
+                )
             try:
                 from aota_forge.work_plane.task_facade import task_start
 
-                result = task_start(role=role, handoff_ref=handoff_ref, caller_role=caller_role, sandbox=sandbox)
+                result = task_start(
+                    role=role,
+                    handoff_ref=handoff_ref,
+                    caller_role=caller_role,
+                    sandbox=sandbox,
+                    dispatcher=trusted_dispatcher,
+                )
             except ValueError as exc:
                 msg = str(exc)
                 code = getattr(exc, "code", None)
@@ -994,10 +1032,29 @@ def dispatch_tool_operation(
                     caller_task_id = ""
             if not caller_task_id:
                 return ToolResponse.failure({"code": "WRONG_TASK", "message": "caller_task_id missing in binding"})
+            # AF #49 M1/W1: terminal return uses the trusted production
+            # dispatcher + its durable store; fail closed when none is bound.
+            # No process-local completion channel is written on this path.
+            trusted_dispatcher = _trusted_production_execution_dispatcher()
+            if trusted_dispatcher is None:
+                return ToolResponse.failure(
+                    {
+                        "code": "PRODUCTION_DISPATCHER_UNAVAILABLE",
+                        "message": "task.return requires a trusted production ExecutionDispatcher; "
+                        "test doubles are never a silent production fallback",
+                    }
+                )
             try:
                 from aota_forge.work_plane.task_facade import task_return
 
-                result = task_return(status=status, result_ref=result_ref, caller_role=caller_role, caller_task_id=caller_task_id, sandbox=sandbox)
+                result = task_return(
+                    status=status,
+                    result_ref=result_ref,
+                    caller_role=caller_role,
+                    caller_task_id=caller_task_id,
+                    sandbox=sandbox,
+                    dispatcher=trusted_dispatcher,
+                )
             except ValueError as exc:
                 msg = str(exc)
                 code = getattr(exc, "code", None)

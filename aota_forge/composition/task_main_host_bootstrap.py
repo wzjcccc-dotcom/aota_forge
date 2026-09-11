@@ -478,6 +478,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             state_store=exec_store,
             origin_session_ref=OriginSessionRef(value=origin_session),
         )
+        # AF #49 M1/W1: bind this same trusted production dispatcher onto the
+        # canonical ingress seam so Agent-facing task.start/task.return resolve
+        # the real production graph; no test-double fallback is reachable.
+        from aota_forge.core.ingress import bind_execution_dispatcher
+
+        bind_execution_dispatcher(dispatcher)
         # Completion coordinator (admission-gated, optional)
         # For this slice we create one without transport (delivery is via harness)
         # Use same store as dispatcher (ensured above) and limits from config

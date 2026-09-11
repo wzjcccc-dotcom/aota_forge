@@ -1,4 +1,4 @@
-"""Task lifecycle thin façade — AF #48 M1/W2.
+"""Task lifecycle thin façade — AF #48 M1/W2; AF #49 M1/W1 production boundary.
 
 Implements Agent-facing thin façade:
 
@@ -6,6 +6,19 @@ Implements Agent-facing thin façade:
   task.return(status, result_ref)
 
 Thin façade over existing execution machinery, no new engine/coordinator/ontology.
+
+AF #49 M1/W1 production/test-double boundary (frozen):
+
+* the façade resolves no execution dependency itself: ``task.start`` and
+  ``task.return`` require an explicitly supplied ``ExecutionDispatcher`` and
+  fail closed (typed error) when it is absent;
+* reference fake executor adapters / in-memory execution state stores are never
+  silently constructed or reachable from the normal production path; explicit
+  test/component injection is the only way a test double reaches the façade;
+* process-local completion observation is explicit test-only injection through
+  ``completion_sink``; it is never a production durability channel.
+  Production terminal truth belongs to parent-side execution reconciliation
+  (AF #49 M1/W3), which this module does not implement.
 
 Reuses:
 * TaskHandoff + handoff_store (digest-bound durability)
@@ -16,29 +29,20 @@ Reuses:
 * runtime.completion governance_projection + card digest
 
 Thin: validates caller dispatch authority, handoff existence/digest/binding,
-then delegates to existing seams.
+then delegates to existing seams. The trusted production dispatcher is resolved
+and supplied by the canonical ingress (``core_ingress``) through the existing
+``core.ingress`` binding seam.
 
 """
 from __future__ import annotations
 
-import hashlib
 import uuid
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, MutableMapping
 
-from aota_forge.core.contracts.canonical import canonical_json, canonicalize
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
-from aota_forge.core.execution.durable_state import (
-    DurableExecutionRecord,
-    ExecutionPhase,
-    ExecutionStateStore,
-    InMemoryExecutionStateStore,
-    OriginSessionRef,
-)
-from aota_forge.core.execution.package import ExecutionPackage
+from aota_forge.core.execution.durable_state import ExecutionStateStore
 from aota_forge.core.execution.results import CanonicalResult
-from aota_forge.core.execution.state import CanonicalTaskState, parse_state
+from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
@@ -54,45 +58,72 @@ WORKER_AUTHORS_RESULT_CARD = False
 RESULT_CARD_DETERMINISTIC = True
 NORMAL_TASK_MAIN_CARD_EXTRA_READ_CALL = 0
 
-# Global per-worktree singleton stores for thin façade
-_GLOBAL_DISPATCHERS: dict[str, ExecutionDispatcher] = {}
-_GLOBAL_STORES: dict[str, ExecutionStateStore] = {}
-_GLOBAL_COMPLETIONS: dict[str, dict[str, Any]] = {}  # task_id -> completion event
+# AF #49 M1/W1 boundary contract markers (frozen; see module docstring).
+PRODUCTION_REFERENCE_FAKE_EXECUTOR_FALLBACK = False
+PRODUCTION_IN_MEMORY_EXECUTION_STORE_FALLBACK = False
+PRODUCTION_PROCESS_LOCAL_COMPLETION_CHANNEL = False
+TEST_DOUBLE_EXPLICIT_INJECTION_ALLOWED = True
+TEST_DOUBLE_SILENT_PRODUCTION_FALLBACK_ALLOWED = False
+MISSING_PRODUCTION_DISPATCHER_FAIL_CLOSED = True
+TEST_DOUBLE_PRODUCTION_REACHABLE = False
+PARENT_SIDE_DURABLE_RECONCILIATION_OWNS_TERMINAL_TRUTH = True
+TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE = False
+
+CompletionSink = MutableMapping[str, dict[str, Any]]
+
+
+class ProductionDispatcherUnavailableError(ValueError):
+    """Typed fail-closed error: no trusted production ExecutionDispatcher."""
+
+    code = "PRODUCTION_DISPATCHER_UNAVAILABLE"
+
+    def __init__(self, operation: str) -> None:
+        self.operation = operation
+        super().__init__(
+            f"{self.code}: {operation} requires a trusted production ExecutionDispatcher "
+            f"(explicit injection or canonical ingress resolution); test doubles are never "
+            f"a silent production fallback"
+        )
+
+
+class ProductionExecutionStoreUnavailableError(ValueError):
+    """Typed fail-closed error: dispatcher carries no execution state store."""
+
+    code = "PRODUCTION_EXECUTION_STORE_UNAVAILABLE"
+
+    def __init__(self, operation: str) -> None:
+        self.operation = operation
+        super().__init__(
+            f"{self.code}: {operation} requires an ExecutionDispatcher wired to an "
+            f"ExecutionStateStore; process-local state is not production truth"
+        )
+
+
+def _require_explicit_dispatcher(
+    dispatcher: ExecutionDispatcher | None, operation: str
+) -> ExecutionDispatcher:
+    if dispatcher is None:
+        raise ProductionDispatcherUnavailableError(operation)
+    if not isinstance(dispatcher, ExecutionDispatcher):
+        raise TypeError(
+            f"dispatcher must be an ExecutionDispatcher, got {type(dispatcher).__name__}"
+        )
+    return dispatcher
+
+
+def _require_execution_store(
+    dispatcher: ExecutionDispatcher, operation: str
+) -> ExecutionStateStore:
+    store = dispatcher.state_store
+    if store is None:
+        raise ProductionExecutionStoreUnavailableError(operation)
+    return store
 
 
 def _handoff_store_handoff_open(ref: Any, sandbox: WorktreeSandboxBoundary, view: str = "full") -> dict[str, Any]:
     from aota_forge.work_plane.handoff_store import handoff_open
 
     return handoff_open(ref, view, sandbox=sandbox)
-
-
-def _get_store(sandbox: WorktreeSandboxBoundary) -> ExecutionStateStore:
-    key = sandbox.worktree_root
-    if key in _GLOBAL_STORES:
-        return _GLOBAL_STORES[key]
-    # Use in-memory for tests; could be FileBacked for prod durability
-    store = InMemoryExecutionStateStore()
-    _GLOBAL_STORES[key] = store
-    return store
-
-
-def _get_dispatcher(sandbox: WorktreeSandboxBoundary) -> ExecutionDispatcher:
-    key = sandbox.worktree_root
-    if key in _GLOBAL_DISPATCHERS:
-        return _GLOBAL_DISPATCHERS[key]
-    from aota_forge.adapters.execution.reference import ReferenceFakeExecutorAdapter
-    from aota_forge.core.execution.registry import ExecutorRegistry
-
-    registry = ExecutorRegistry()
-    adapter = ReferenceFakeExecutorAdapter()
-    registry.register(adapter)
-    store = _get_store(sandbox)
-    # Origin session ref is deterministically derived from worktree digest for tests
-    origin = OriginSessionRef(f"origin-{sandbox.worktree_id}-{sandbox.project_id}")
-    disp = ExecutionDispatcher(registry, state_store=store, origin_session_ref=origin)
-    _GLOBAL_DISPATCHERS[key] = disp
-    # Also bind globally for completion coordinator? not needed
-    return disp
 
 
 def _validate_task_start_caller(caller_role: str) -> None:
@@ -205,6 +236,8 @@ def task_start(
     caller_role must be task-main (fail-closed).
     role must be one of analyst|coder|reviewer|project-steward.
     handoff_ref must be durable work_item handoff, digest-bound, project/worktree bound.
+    dispatcher must be the trusted production ExecutionDispatcher (or an explicit
+    test/component double injected by the caller); absent -> typed fail-closed.
 
     Returns {task_id, status, handoff_digest}
     """
@@ -215,6 +248,9 @@ def task_start(
 
     if not isinstance(role, str) or role not in {"coder", "analyst", "reviewer", "project-steward"}:
         raise ValueError(f"task.start target role must be one of coder/analyst/reviewer/project-steward, got {role!r}")
+    # AF #49 M1/W1: require the explicitly supplied trusted dispatcher before
+    # any handoff IO; never resolve or construct an execution dependency here.
+    disp = _require_explicit_dispatcher(dispatcher, "task.start")
     # Validate handoff_ref existence, digest, binding
     opened = _handoff_store_handoff_open(handoff_ref, sandbox, view="full")
     if opened.get("mode") != "work_item":
@@ -243,8 +279,6 @@ def task_start(
     # Use sandbox project_id as binding project
     binding = TrustedExecutionBinding(canonical_task_id=canonical_task_id, project_id=sandbox.project_id)
     package = compile_handoff_to_execution_package(task_handoff, binding)
-    # Invoke existing execution machinery
-    disp = dispatcher if dispatcher is not None else _get_dispatcher(sandbox)
     # Dispatch — this is the existing execution.task_start seam reused
     try:
         result = disp.dispatch(package)
@@ -269,12 +303,20 @@ def task_return(
     caller_task_id: str,
     sandbox: WorktreeSandboxBoundary,
     dispatcher: ExecutionDispatcher | None = None,
+    completion_sink: CompletionSink | None = None,
 ) -> dict[str, Any]:
     """Agent-facing task.return — child -> parent terminal return.
 
     Validates child trusted identity, active task/attempt, result_ref ownership/digest/binding.
-    Reuses completion/finalization, derives governance, deterministic card, marks terminal,
-    triggers wakeup.
+    Reuses the existing execution state store for durable terminal attachment and derives the
+    deterministic Worker Result Card.
+
+    AF #49 M1/W1 boundary: this returns the terminal semantic return envelope only. It does
+    NOT establish durable production completion delivery or parent re-entry (AF #49 M1/W3).
+    ``dispatcher`` must be the trusted production ExecutionDispatcher (or an explicit
+    test/component double injected by the caller); absent -> typed fail-closed.
+    Process-local completion observation exists only through an explicitly injected
+    ``completion_sink`` (test/component only; never a production channel).
 
     Distinct from handoff.write and execution.task_result.
     """
@@ -301,8 +343,10 @@ def task_return(
     # Validate status coherence: semantic payload should not contradict status? We allow.
     # Build CanonicalResult from status + semantic
     # For W2, we reuse CanonicalResult creation via factory methods
-    disp = dispatcher if dispatcher is not None else _get_dispatcher(sandbox)
-    store = disp.state_store if disp.state_store is not None else _get_store(sandbox)
+    # AF #49 M1/W1: require the explicitly supplied trusted dispatcher + store;
+    # never construct or reach a test-double fallback in the production path.
+    disp = _require_explicit_dispatcher(dispatcher, "task.return")
+    store = _require_execution_store(disp, "task.return")
     # Retrieve existing execution record for this task (must be active)
     record = store.get(caller_task_id)  # type: ignore[arg-type]
     if record is None:
@@ -400,7 +444,8 @@ def task_return(
     except Exception as exc:
         # If CAS fails due to revision or invalid, propagate as fail-closed
         raise ValueError(f"task.return finalization failed: {exc}") from exc
-    # Derive completion event for parent task-main
+    # Terminal semantic return envelope. Durable production completion delivery
+    # and parent re-entry are AF #49 M1/W3 and are explicitly NOT established here.
     completion = {
         "task_id": caller_task_id,
         "status": status,
@@ -408,29 +453,32 @@ def task_return(
         "card_digest": card.card_digest,
         "full_result_ref": opened.get("ref") or str(result_ref),
         "governance_outcome": governance.outcome.value if hasattr(governance.outcome, "value") else str(governance.outcome),
+        "durable_completion": "not_established_in_W1",
+        "process_local_completion_recorded": completion_sink is not None,
     }
-    # Store for parent wakeup/re-entry — thin in-memory delivery
-    _GLOBAL_COMPLETIONS[caller_task_id] = completion
-    # Trigger wakeup — reuse existing completion wakeup seam conceptually
-    # For W2, we mark delivery as if DurableCompletionCoordinator would deliver
-    # We don't actually call Hermes transport, but we record that wakeup would happen
-    # The parent task-main can now observe completion via get_completion
+    # Explicit test/component-only local observation; never silent production state.
+    if completion_sink is not None:
+        if not isinstance(completion_sink, MutableMapping):
+            raise TypeError("completion_sink must be an explicit bounded mutable mapping")
+        completion_sink[caller_task_id] = completion
     return completion
 
 
-def get_completion(task_id: str) -> dict[str, Any] | None:
-    """Parent-visible completion getter (task-main observes card inline)."""
-    return _GLOBAL_COMPLETIONS.get(task_id)
+def get_completion(task_id: str, *, completion_sink: CompletionSink) -> dict[str, Any] | None:
+    """Read a completion from an explicitly supplied bounded test/component sink.
+
+    There is no process-local production completion channel; production completion
+    durability is parent-side execution reconciliation (AF #49 M1/W3).
+    """
+    if not isinstance(completion_sink, MutableMapping):
+        raise TypeError("completion_sink must be an explicit bounded mutable mapping")
+    return completion_sink.get(task_id)
 
 
-def clear_completions() -> None:
-    _GLOBAL_COMPLETIONS.clear()
-
-
-def _clear_dispatcher_store(sandbox: WorktreeSandboxBoundary) -> None:
-    key = sandbox.worktree_root
-    _GLOBAL_DISPATCHERS.pop(key, None)
-    _GLOBAL_STORES.pop(key, None)
+def clear_completions(completion_sink: CompletionSink) -> None:
+    if not isinstance(completion_sink, MutableMapping):
+        raise TypeError("completion_sink must be an explicit bounded mutable mapping")
+    completion_sink.clear()
 
 
 __all__ = [
@@ -444,6 +492,18 @@ __all__ = [
     "WORKER_AUTHORS_RESULT_CARD",
     "RESULT_CARD_DETERMINISTIC",
     "NORMAL_TASK_MAIN_CARD_EXTRA_READ_CALL",
+    "PRODUCTION_REFERENCE_FAKE_EXECUTOR_FALLBACK",
+    "PRODUCTION_IN_MEMORY_EXECUTION_STORE_FALLBACK",
+    "PRODUCTION_PROCESS_LOCAL_COMPLETION_CHANNEL",
+    "TEST_DOUBLE_EXPLICIT_INJECTION_ALLOWED",
+    "TEST_DOUBLE_SILENT_PRODUCTION_FALLBACK_ALLOWED",
+    "MISSING_PRODUCTION_DISPATCHER_FAIL_CLOSED",
+    "TEST_DOUBLE_PRODUCTION_REACHABLE",
+    "PARENT_SIDE_DURABLE_RECONCILIATION_OWNS_TERMINAL_TRUTH",
+    "TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE",
+    "CompletionSink",
+    "ProductionDispatcherUnavailableError",
+    "ProductionExecutionStoreUnavailableError",
     "task_start",
     "task_return",
     "get_completion",
