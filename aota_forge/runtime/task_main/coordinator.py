@@ -154,6 +154,47 @@ CONTROL_PLANE_REWRITES_PLAN_WORK_TEXT = False
 AUTHORITATIVE_WORK_CONTEXT_IS_STRUCTURAL_SOURCE = True
 AUTHORITATIVE_WORK_CONTEXT_IS_LLM_SEMANTIC_REWRITE = False
 
+# AF #49 M1/W4 trusted source grounding (repairs I40-B004 sub-finding
+# UNGROUNDED_WORK_PROJECTION_ACCEPTED).
+#
+# Grounding is mechanical identity/digest binding only: the Control Plane
+# verifies plan_ref / plan_digest / milestone_id / work_item_id /
+# work_source_digest against the trusted runtime context and the authoritative
+# WorkSourceSlice. It never scores natural-language quality, never judges
+# objective meaning, never rewrites semantic scope, and never compares prose
+# similarity to the Plan. Semantic meaning stays LLM-owned.
+SOURCE_GROUNDING_KIND = "mechanical_identity_and_digest_binding"
+SOURCE_GROUNDING_OWNER = "control_plane"
+SEMANTIC_MEANING_OWNER = "llm"
+CONTROL_PLANE_NATURAL_LANGUAGE_SCORING = False
+CONTROL_PLANE_SEMANTIC_REWRITE = False
+CONTROL_PLANE_SEMANTIC_INTERPRETATION = False
+WORK_HANDOFF_BINDS_TO_THE_SOURCE_SEEN_BY_TASK_MAIN = True
+GENERIC_UNGROUNDED_PROJECTION_CANNOT_BYPASS_NORMAL_PATH = True
+MODEL_CAN_SUPPLY_TRUSTED_GROUNDING = False
+TASK_START_SEMANTIC_INTERPRETER = False
+
+# Typed Grounding failure identities (mechanical; no string classification).
+WORK_SOURCE_GROUNDING_MISSING = "WORK_SOURCE_GROUNDING_MISSING"
+WORK_SOURCE_GROUNDING_MISMATCH = "WORK_SOURCE_GROUNDING_MISMATCH"
+PLAN_REF_MISMATCH = "PLAN_REF_MISMATCH"
+PLAN_DIGEST_MISMATCH = "PLAN_DIGEST_MISMATCH"
+MILESTONE_MISMATCH = "MILESTONE_MISMATCH"
+WORK_ITEM_MISMATCH = "WORK_ITEM_MISMATCH"
+WORK_SOURCE_DIGEST_MISMATCH = "WORK_SOURCE_DIGEST_MISMATCH"
+
+_WORK_SOURCE_GROUNDING_CODES: frozenset[str] = frozenset(
+    {
+        WORK_SOURCE_GROUNDING_MISSING,
+        WORK_SOURCE_GROUNDING_MISMATCH,
+        PLAN_REF_MISMATCH,
+        PLAN_DIGEST_MISMATCH,
+        MILESTONE_MISMATCH,
+        WORK_ITEM_MISMATCH,
+        WORK_SOURCE_DIGEST_MISMATCH,
+    }
+)
+
 USER_GATE_REASON = "USER_GATE_REQUIRED"
 SESSION_GATE_REASON = "SESSION_RECOVERY_REQUIRED"
 NEXT_MILESTONE_GUARD = "NEXT_MILESTONE_REQUIRES_EXPLICIT_APPROVAL"
@@ -187,6 +228,98 @@ class CoordinatorBindingError(TaskMainCoordinatorError):
 
 class CoordinatorRuntimeError(TaskMainCoordinatorError):
     pass
+
+
+class WorkSourceGroundingError(TaskMainCoordinatorError):
+    """Typed mechanical Work-source grounding failure (AF #49 M1/W4).
+
+    Raised when a Work handoff / durable Work projection is not mechanically
+    bound to the current trusted Plan/Milestone/Work/source identity. The
+    ``code`` is one of the frozen grounding identities above; callers map it
+    type-first (never by string classification).
+    """
+
+    def __init__(self, code: str, detail: str) -> None:
+        if code not in _WORK_SOURCE_GROUNDING_CODES:
+            raise ValueError(f"unknown Work source grounding code: {code!r}")
+        self.code = code
+        super().__init__(f"{code}: {detail}")
+
+
+def compute_work_source_digest(source_text: str) -> str:
+    """Deterministic SHA-256 digest over the exact bounded Work source text.
+
+    Single shared definition reused by the W2 model-visible Work context and
+    the W4 grounding binding (no independent digest definition can disagree).
+    The source text is already normalized (stripped) by ``WorkSourceSlice``;
+    ``strip()`` here is idempotent for that input.
+    """
+    if not isinstance(source_text, str) or type(source_text) is not str:
+        raise TypeError(f"source_text must be a string, got {type(source_text).__name__}")
+    normalized = source_text.strip()
+    if not normalized:
+        raise ValueError("source_text must be a non-empty string")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def view_carries_authoritative_work_source(live_plan_view: Any) -> bool:
+    """True when the trusted Plan view carries W4 authoritative source slices."""
+    if not isinstance(live_plan_view, MilestonePlanView):
+        return False
+    try:
+        slices = getattr(live_plan_view, "work_source_slices", ()) or ()
+        return len(tuple(slices)) > 0
+    except Exception:
+        return False
+
+
+def resolve_trusted_work_grounding(
+    live_plan_view: MilestonePlanView,
+    *,
+    work_item_id: str,
+) -> dict[str, Any]:
+    """Mechanical grounding identity for one governed Work Item (W4).
+
+    Returns exactly the trusted identity/digest binding used by the normal
+    path: plan_ref / plan_digest / milestone_id / work_item_id /
+    work_source_digest. Missing or contradictory source fails closed; no
+    README/generic/neighbor fallback and no semantic inspection.
+    """
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    if not isinstance(work_item_id, str) or type(work_item_id) is not str or not work_item_id.strip():
+        raise WorkSourceGroundingError(
+            WORK_SOURCE_GROUNDING_MISSING, "work_item_id must be a non-empty governed Work Item id"
+        )
+    wid = work_item_id.strip()
+    if wid not in set(live_plan_view.graph.work_items):
+        raise WorkSourceGroundingError(
+            WORK_ITEM_MISMATCH,
+            f"Work Item {wid!r} is not governed by Milestone {live_plan_view.milestone_id!r}",
+        )
+    source_slice = live_plan_view.get_work_source_slice(wid)
+    if source_slice is None:
+        raise WorkSourceGroundingError(
+            WORK_SOURCE_GROUNDING_MISSING,
+            f"no trusted WorkSourceSlice for {live_plan_view.milestone_id}/{wid}; "
+            "refusing generic/README/neighbor fallback",
+        )
+    slice_wid = str(getattr(source_slice, "work_item_id", "")).strip()
+    slice_mid = str(getattr(source_slice, "milestone_id", "")).strip()
+    source_text = str(getattr(source_slice, "source_text", "")).strip()
+    if slice_wid != wid or slice_mid != live_plan_view.milestone_id or not source_text:
+        raise WorkSourceGroundingError(
+            WORK_SOURCE_GROUNDING_MISMATCH,
+            f"trusted WorkSourceSlice identity/content mismatch for "
+            f"{live_plan_view.milestone_id}/{wid}",
+        )
+    return {
+        "plan_ref": live_plan_view.plan_authority,
+        "plan_digest": live_plan_view.plan_digest,
+        "milestone_id": live_plan_view.milestone_id,
+        "work_item_id": wid,
+        "work_source_digest": compute_work_source_digest(source_text),
+    }
 
 
 def _require_non_empty_str(value: Any, label: str, *, max_length: int = 512) -> str:
@@ -611,7 +744,7 @@ def build_model_visible_work_context(
             "refusing fallback"
         )
         return base
-    source_digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    source_digest = compute_work_source_digest(source_text)
     return {
         "state": WORK_CONTEXT_STATE_AVAILABLE,
         "work_item_id": slice_wid,
@@ -843,6 +976,13 @@ def commit_task_main_work_projection(
         "project_id": state.project_id,
         "work_item_id": wid,
     }
+    # AF #49 M1/W4: when the live view carries authoritative Work source
+    # slices, the durable projection must be mechanically bound to the exact
+    # source the model reasoned over. An ungrounded projection cannot become
+    # a valid production escape hatch through this compatibility seam.
+    if view_carries_authoritative_work_source(live_plan_view):
+        _grounding = resolve_trusted_work_grounding(live_plan_view, work_item_id=wid)
+        bound["work_source_digest"] = _grounding["work_source_digest"]
     existing_table = dict(getattr(state, "work_projections", {}) or {})
     existing_record = existing_table.get(wid)
     if isinstance(existing_record, Mapping):
@@ -856,6 +996,7 @@ def commit_task_main_work_projection(
             and existing_record.get("milestone_id") == bound["milestone_id"]
             and existing_record.get("project_id") == bound["project_id"]
             and existing_record.get("work_item_id") == bound["work_item_id"]
+            and existing_record.get("work_source_digest") == bound.get("work_source_digest")
         )
         if same_projection and same_identity:
             # Identical retry: idempotent, no mutation, no error.
@@ -912,6 +1053,7 @@ def commit_task_main_work_projection(
                         and fresh_record.get("milestone_id") == bound["milestone_id"]
                         and fresh_record.get("project_id") == bound["project_id"]
                         and fresh_record.get("work_item_id") == bound["work_item_id"]
+                        and fresh_record.get("work_source_digest") == bound.get("work_source_digest")
                     )
                     if fresh_same and fresh_identity:
                         return fresh
@@ -976,6 +1118,26 @@ def resolve_task_main_work_handoff(
             raise WorkScopeInsufficientError(
                 f"durable Work projection for {wid!r} is not bound to current "
                 f"trusted {field} (stored {stored!r}); refusing stale/cross-Work dispatch"
+            )
+    # AF #49 M1/W4: when the live view carries authoritative Work source
+    # slices, the durable projection must still be mechanically bound to the
+    # exact same source digest. A legacy/ungrounded projection (or a source
+    # changed under the same Plan identity) fails closed here.
+    if view_carries_authoritative_work_source(live_plan_view):
+        grounding = resolve_trusted_work_grounding(live_plan_view, work_item_id=wid)
+        stored_source_digest = record.get("work_source_digest")
+        if not isinstance(stored_source_digest, str) or not stored_source_digest.strip():
+            raise WorkSourceGroundingError(
+                WORK_SOURCE_GROUNDING_MISSING,
+                f"durable Work projection for {wid!r} carries no trusted Work source "
+                "digest binding; refusing ungrounded dispatch",
+            )
+        if stored_source_digest.strip() != grounding["work_source_digest"]:
+            raise WorkSourceGroundingError(
+                WORK_SOURCE_DIGEST_MISMATCH,
+                f"durable Work projection for {wid!r} is not bound to the current "
+                "trusted Work source (source digest changed); refusing stale/cross-source "
+                "dispatch",
             )
     return resolve_bounded_work_handoff(
         work_item_id=wid,
@@ -1718,8 +1880,29 @@ __all__ = [
     "AUTHORITATIVE_WORK_CONTEXT_IS_STRUCTURAL_SOURCE",
     "CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH",
     "CONTROL_PLANE_INTERPRETS_WORK_MEANING",
+    "CONTROL_PLANE_NATURAL_LANGUAGE_SCORING",
     "CONTROL_PLANE_REWRITES_PLAN_WORK_TEXT",
+    "CONTROL_PLANE_SEMANTIC_INTERPRETATION",
+    "CONTROL_PLANE_SEMANTIC_REWRITE",
     "COORDINATOR_DISPATCH_ATTEMPT",
+    "GENERIC_UNGROUNDED_PROJECTION_CANNOT_BYPASS_NORMAL_PATH",
+    "MILESTONE_MISMATCH",
+    "MODEL_CAN_SUPPLY_TRUSTED_GROUNDING",
+    "PLAN_DIGEST_MISMATCH",
+    "PLAN_REF_MISMATCH",
+    "SEMANTIC_MEANING_OWNER",
+    "SOURCE_GROUNDING_KIND",
+    "SOURCE_GROUNDING_OWNER",
+    "TASK_START_SEMANTIC_INTERPRETER",
+    "WORK_HANDOFF_BINDS_TO_THE_SOURCE_SEEN_BY_TASK_MAIN",
+    "WORK_ITEM_MISMATCH",
+    "WORK_SOURCE_DIGEST_MISMATCH",
+    "WORK_SOURCE_GROUNDING_MISMATCH",
+    "WORK_SOURCE_GROUNDING_MISSING",
+    "WorkSourceGroundingError",
+    "compute_work_source_digest",
+    "resolve_trusted_work_grounding",
+    "view_carries_authoritative_work_source",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "DAG_PROGRESSION_DETERMINISTIC",
     "DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE",

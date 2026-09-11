@@ -36,6 +36,7 @@ and supplied by the canonical ingress (``core_ingress``) through the existing
 """
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from typing import Any, Mapping, MutableMapping
 
@@ -43,7 +44,7 @@ from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore
 from aota_forge.core.execution.results import CanonicalResult
 from aota_forge.core.execution.state import CanonicalTaskState
-from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 TASK_START_AGENT_FACADE_REUSES_EXISTING_EXECUTION_START_SEAM = True
@@ -143,12 +144,67 @@ def _validate_task_return_caller(caller_role: str) -> None:
         raise ValueError(f"task.return caller must be one of {sorted(allowed)}, got {caller_role!r}")
 
 
-def _load_work_item_task_handoff(semantic: Mapping[str, Any], sandbox: WorktreeSandboxBoundary | None = None) -> TaskHandoff:
+def _semantic_ref_value(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, Mapping):
+        ref = value.get("ref")
+        if isinstance(ref, str) and ref.strip():
+            return ref.strip()
+    return None
+
+
+def _trusted_envelope_identity(
+    envelope: Mapping[str, Any] | None,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Extract trusted grounding identity from a durable handoff envelope.
+
+    AF #49 M1/W4: the control envelope fields (plan_ref/milestone_id/
+    work_item_id + provenance plan_digest) were filled mechanically by the
+    Control Plane at ``handoff.write``. They are authority for the Worker
+    compilation; semantic payload never supplies them.
+    """
+    if not isinstance(envelope, Mapping):
+        return None, None, None, None
+    plan_ref = _semantic_ref_value(envelope.get("plan_ref"))
+    milestone_id = _semantic_ref_value(envelope.get("milestone_id"))
+    work_item_id = _semantic_ref_value(envelope.get("work_item_id"))
+    plan_digest: str | None = None
+    provenance = envelope.get("provenance")
+    if isinstance(provenance, Mapping):
+        plan_digest = _semantic_ref_value(provenance.get("plan_digest"))
+    return plan_ref, plan_digest, milestone_id, work_item_id
+
+
+def _load_work_item_task_handoff(
+    semantic: Mapping[str, Any],
+    sandbox: WorktreeSandboxBoundary | None = None,
+    envelope: Mapping[str, Any] | None = None,
+) -> TaskHandoff:
+    trusted_plan_ref, trusted_plan_digest, trusted_mid, trusted_wid = _trusted_envelope_identity(envelope)
+
+    def _ground(handoff: TaskHandoff) -> TaskHandoff:
+        updates: dict[str, Any] = {}
+        if handoff.project_ref is None and sandbox is not None:
+            updates["project_ref"] = SemanticReference(ref=sandbox.project_id)
+        if trusted_plan_ref:
+            updates["plan_ref"] = SemanticReference(ref=trusted_plan_ref, digest=trusted_plan_digest)
+        if trusted_mid:
+            updates["milestone_ref"] = SemanticReference(ref=trusted_mid)
+        if trusted_wid:
+            updates["work_item_ref"] = SemanticReference(ref=trusted_wid)
+        if not updates:
+            return handoff
+        try:
+            return dataclasses.replace(handoff, **updates)
+        except Exception:
+            return handoff
+
     # Try direct TaskHandoff first
     try:
         # If semantic already matches TaskHandoff fields, use it
         if "work_role" in semantic and "task_kind" in semantic:
-            return TaskHandoff.from_dict(semantic)  # type: ignore[arg-type]
+            return _ground(TaskHandoff.from_dict(semantic))  # type: ignore[arg-type]
     except Exception:
         pass
     # Fallback: synthesize from generic semantic (objective/scope etc.)
@@ -175,33 +231,30 @@ def _load_work_item_task_handoff(semantic: Mapping[str, Any], sandbox: WorktreeS
         validation_expectations=tuple(validation_expectations),  # type: ignore
         semantic_stop_expectations=tuple(semantic_stop_expectations),  # type: ignore
     )
-    # Resolve to TaskHandoff — need milestone/work_item ids; extract from semantic refs if present
-    wid = "W1"
-    mid = "M1"
-    # Use sandbox project_id for trusted binding, so Worker-usable check passes (requires project_ref+plan_ref)
+    # Resolve to TaskHandoff — trusted envelope identity first, then semantic
+    # refs, then legacy defaults (never model authority when grounded).
+    wid = trusted_wid or "W1"
+    mid = trusted_mid or "M1"
     if sandbox is not None:
         proj_id = sandbox.project_id
         plan_auth = f"plan-{sandbox.project_id}"
     else:
         proj_id = "proj-test"
         plan_auth = "plan-test"
-    # Try to get work_item_id from semantic's work_item_ref or work_item_id
-    for k in ("work_item_id", "work_item_ref"):
-        v = semantic.get(k)
-        if isinstance(v, str) and v.strip():
-            wid = v.strip()
-            break
-        if isinstance(v, dict) and "ref" in v:
-            wid = str(v["ref"]).strip()
-            break
-    for k in ("milestone_id", "milestone_ref"):
-        v = semantic.get(k)
-        if isinstance(v, str) and v.strip():
-            mid = v.strip()
-            break
-        if isinstance(v, dict) and "ref" in v:
-            mid = str(v["ref"]).strip()
-            break
+    if trusted_plan_ref:
+        plan_auth = trusted_plan_ref
+    if not trusted_wid:
+        for k in ("work_item_id", "work_item_ref"):
+            v = _semantic_ref_value(semantic.get(k))
+            if v:
+                wid = v
+                break
+    if not trusted_mid:
+        for k in ("milestone_id", "milestone_ref"):
+            v = _semantic_ref_value(semantic.get(k))
+            if v:
+                mid = v
+                break
     # Derive work_role from semantic's work_role or default coder
     wk_role = semantic.get("work_role")
     if not isinstance(wk_role, str) or not wk_role.strip():
@@ -213,6 +266,7 @@ def _load_work_item_task_handoff(semantic: Mapping[str, Any], sandbox: WorktreeS
         projection=proj,
         project_id=proj_id,
         plan_authority=plan_auth,
+        plan_digest=trusted_plan_digest,
     )
     # Override work_role if semantic specified
     if wk_role.strip() != handoff.work_role.value:
@@ -220,13 +274,10 @@ def _load_work_item_task_handoff(semantic: Mapping[str, Any], sandbox: WorktreeS
             from aota_forge.work_plane.roles import parse_agent_work_role
 
             parsed = parse_agent_work_role(wk_role)
-            # Need to recreate TaskHandoff with correct role — use dataclass replace
-            import dataclasses
-
             handoff = dataclasses.replace(handoff, work_role=parsed)
         except Exception:
             pass
-    return handoff
+    return _ground(handoff)
 
 
 def task_start(
@@ -268,9 +319,11 @@ def task_start(
     # Validate handoff_digest binding? The envelope digest must match opened digest
     # Additional: wrong task/attempt fail-closed — ensure envelope task binding not foreign?
     # For now, ensure at least envelope project matches sandbox (already)
-    # Resolve semantic handoff to TaskHandoff
+    # Resolve semantic handoff to TaskHandoff. AF #49 M1/W4: trusted control
+    # envelope identity (from handoff.write grounding) is authority for the
+    # Worker compilation refs; semantic payload stays LLM-owned.
     try:
-        task_handoff = _load_work_item_task_handoff(semantic, sandbox)  # type: ignore
+        task_handoff = _load_work_item_task_handoff(semantic, sandbox, envelope)  # type: ignore
     except Exception as exc:
         raise ValueError(f"handoff semantic cannot be resolved to TaskHandoff: {exc}") from exc
     # Compile/reuse existing execution-start inputs

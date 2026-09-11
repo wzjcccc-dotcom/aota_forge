@@ -638,6 +638,10 @@ def handoff_open(
             "created_at": envelope.get("created_at"),
             "schema_version": envelope.get("schema_version"),
             "digest": envelope.get("digest"),
+            # AF #49 M1/W4: control-plane provenance carries the trusted
+            # plan/work-source digest binding for a grounded work_item
+            # handoff (never semantic payload; bounded control metadata).
+            "provenance": envelope.get("provenance"),
         }
         # Remove None values for compactness
         model_visible_envelope = {k: v for k, v in model_visible_envelope.items() if v is not None}

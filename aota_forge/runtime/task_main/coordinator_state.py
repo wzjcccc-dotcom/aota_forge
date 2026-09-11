@@ -581,6 +581,9 @@ _ALLOWED_WORK_PROJECTION_FIELDS: frozenset[str] = frozenset(
         "milestone_id",
         "project_id",
         "work_item_id",
+        # AF #49 M1/W4: optional mechanical Work-source digest binding
+        # (absent on legacy records; never model-supplied authority).
+        "work_source_digest",
     }
 )
 
@@ -678,7 +681,7 @@ def _normalize_work_projections(raw: Any, work_items: tuple[str, ...]) -> dict[s
             raise ValueError(
                 f"work_projections[{wid!r}].projection invalid: {exc}"
             ) from exc
-        normalized[wid] = {
+        entry: dict[str, Any] = {
             "projection": validated.to_dict(),
             "plan_authority": str(val["plan_authority"]).strip(),
             "plan_digest": str(val["plan_digest"]).strip(),
@@ -686,6 +689,16 @@ def _normalize_work_projections(raw: Any, work_items: tuple[str, ...]) -> dict[s
             "project_id": str(val["project_id"]).strip(),
             "work_item_id": stored_wid,
         }
+        # AF #49 M1/W4: optional mechanical Work-source digest binding (W4
+        # records only; legacy records simply omit it and stay reloadable).
+        stored_source_digest = val.get("work_source_digest")
+        if stored_source_digest is not None:
+            entry["work_source_digest"] = _require_non_empty_str(
+                stored_source_digest,
+                f"work_projections[{wid!r}].work_source_digest",
+                max_length=128,
+            )
+        normalized[wid] = entry
     return normalized
 
 

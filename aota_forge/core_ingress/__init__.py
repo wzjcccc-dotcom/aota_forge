@@ -44,6 +44,7 @@ It must not own operation semantic dispatch.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -366,6 +367,265 @@ def _attach_work_context(
             "is unavailable; refusing silent truncation or semantic fallback"
         ),
     }
+
+
+def _claimed_semantic_ref(payload: Mapping[str, Any], field: str) -> str | None:
+    """Model-supplied semantic ref (correlation only, never authority)."""
+    value = payload.get(field)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, Mapping):
+        ref = value.get("ref")
+        if isinstance(ref, str) and ref.strip():
+            return ref.strip()
+    return None
+
+
+def _current_authoritative_work_context(
+    trusted_ctx: Any, *, project_id: str, live_plan_view: Any
+) -> dict[str, Any] | None:
+    """Mechanical current model-visible authoritative Work context.
+
+    Reuses the W2 selection seam (ready -> in-flight -> completion pending)
+    through the trusted control service. Never interprets Work meaning.
+    """
+    service = getattr(trusted_ctx, "control_service", None)
+    if service is None or live_plan_view is None:
+        return None
+    coordinator_id = getattr(trusted_ctx, "coordinator_id", None)
+    try:
+        resolved = service.resolve_coordinator_id(
+            project_id=project_id,
+            live_plan_view=live_plan_view,
+            coordinator_id=coordinator_id,
+        )
+    except Exception:
+        resolved = coordinator_id
+    if not isinstance(resolved, str) or not resolved.strip():
+        return None
+    try:
+        from aota_forge.runtime.task_main.control import AF_TASK_MAIN_ROLE
+
+        context = service.get_model_visible_work_context(
+            profile=AF_TASK_MAIN_ROLE,
+            coordinator_id=resolved,
+            live_plan_view=live_plan_view,
+        )
+    except Exception:
+        return None
+    return context if isinstance(context, dict) else None
+
+
+def _grounded_work_item_write_binding(
+    *,
+    binding: CanonicalDispatchBinding,
+    live_plan_view: Any,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Trusted envelope fields for handoff.write(mode=work_item) (AF #49 W4).
+
+    Mechanical identity/digest binding only: the Control Plane fills the
+    durable handoff control envelope from the trusted task-main runtime
+    context and the authoritative WorkSourceSlice. Model-supplied refs are
+    correlation only and are rejected when they contradict the trusted
+    identity; they never override it.
+    """
+    from aota_forge.runtime.task_main.coordinator import (
+        MILESTONE_MISMATCH,
+        WORK_ITEM_MISMATCH,
+        WORK_SOURCE_GROUNDING_MISMATCH,
+        WORK_SOURCE_GROUNDING_MISSING,
+        WorkSourceGroundingError,
+        resolve_trusted_work_grounding,
+    )
+
+    claimed_wid = _claimed_semantic_ref(payload, "work_item_ref")
+    claimed_mid = _claimed_semantic_ref(payload, "milestone_ref")
+    claimed_proj = _claimed_semantic_ref(payload, "project_ref")
+    if claimed_proj is not None and claimed_proj != binding.project_id:
+        raise WorkSourceGroundingError(
+            WORK_SOURCE_GROUNDING_MISMATCH,
+            f"model project_ref {claimed_proj!r} contradicts trusted project "
+            f"{binding.project_id!r}; refusing foreign scope",
+        )
+    if claimed_mid is not None and claimed_mid != live_plan_view.milestone_id:
+        raise WorkSourceGroundingError(
+            MILESTONE_MISMATCH,
+            f"model milestone_ref {claimed_mid!r} contradicts current trusted "
+            f"Milestone {live_plan_view.milestone_id!r}",
+        )
+    context = _current_authoritative_work_context(
+        binding.trusted_task_main_context,
+        project_id=binding.project_id,
+        live_plan_view=live_plan_view,
+    )
+    current_wid = None
+    if isinstance(context, Mapping):
+        current = context.get("work_item_id")
+        if isinstance(current, str) and current.strip():
+            current_wid = current.strip()
+    if claimed_wid is not None and current_wid is not None and claimed_wid != current_wid:
+        raise WorkSourceGroundingError(
+            WORK_ITEM_MISMATCH,
+            f"model Work Item {claimed_wid!r} contradicts current authoritative "
+            f"Work Item {current_wid!r}; refusing cross-Work binding",
+        )
+    wid = claimed_wid or current_wid
+    if wid is None:
+        raise WorkSourceGroundingError(
+            WORK_SOURCE_GROUNDING_MISSING,
+            "no current authoritative Work Item/source is available for grounding; "
+            "refusing ungrounded work_item handoff",
+        )
+    grounding = resolve_trusted_work_grounding(live_plan_view, work_item_id=wid)
+    return {
+        "plan_ref": grounding["plan_ref"],
+        "milestone_id": grounding["milestone_id"],
+        "work_item_id": grounding["work_item_id"],
+        "provenance": {
+            "plan_digest": grounding["plan_digest"],
+            "work_source_digest": grounding["work_source_digest"],
+            "grounding": "task_main_authoritative_work_source",
+        },
+    }
+
+
+def _map_handoff_open_error(exc: Exception) -> dict[str, Any]:
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        return {"code": code, "message": str(exc)[:512]}
+    msg = str(exc)
+    lowered = msg.lower()
+    if "cross-project" in lowered or "cross-worktree" in lowered:
+        return {"code": "CROSS_SCOPE_DENIED", "message": msg[:512]}
+    if "digest" in lowered and ("mismatch" in lowered or "tamper" in lowered):
+        return {"code": "DIGEST_MISMATCH", "message": msg[:512]}
+    if "not found" in lowered:
+        return {"code": "UNKNOWN_REF", "message": msg[:512]}
+    return {"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512] or "handoff open failed"}
+
+
+def _verify_grounded_task_start(
+    *,
+    binding: CanonicalDispatchBinding,
+    live_plan_view: Any,
+    handoff_ref: str,
+    sandbox: Any,
+) -> dict[str, Any] | None:
+    """Verify a task.start handoff against the current authorized Work identity.
+
+    AF #49 M1/W4: exact equality / digest equality / identity lookup only.
+    Returns a bounded failure dict when the durable handoff is not
+    mechanically grounded to the current trusted Plan/Milestone/Work/source;
+    returns None when grounded (or when the handoff carries no trusted
+    context requirement, handled by the caller).
+    """
+    from aota_forge.runtime.task_main.coordinator import (
+        MILESTONE_MISMATCH,
+        PLAN_DIGEST_MISMATCH,
+        PLAN_REF_MISMATCH,
+        WORK_ITEM_MISMATCH,
+        WORK_SOURCE_DIGEST_MISMATCH,
+        WORK_SOURCE_GROUNDING_MISSING,
+        resolve_trusted_work_grounding,
+    )
+
+    try:
+        from aota_forge.work_plane.handoff_store import handoff_open
+
+        opened = handoff_open(handoff_ref, "full", sandbox=sandbox)
+    except Exception as exc:
+        return _map_handoff_open_error(exc)
+    envelope = opened.get("envelope")
+    if not isinstance(envelope, Mapping):
+        return {
+            "code": WORK_SOURCE_GROUNDING_MISSING,
+            "message": "task.start handoff carries no control envelope; refusing ungrounded dispatch",
+        }
+    provenance = envelope.get("provenance")
+    provenance = provenance if isinstance(provenance, Mapping) else {}
+    plan_ref = envelope.get("plan_ref")
+    milestone_id = envelope.get("milestone_id")
+    work_item_id = envelope.get("work_item_id")
+    plan_digest = provenance.get("plan_digest")
+    source_digest = provenance.get("work_source_digest")
+    missing = [
+        name
+        for name, value in (
+            ("plan_ref", plan_ref),
+            ("plan_digest", plan_digest),
+            ("milestone_id", milestone_id),
+            ("work_item_id", work_item_id),
+            ("work_source_digest", source_digest),
+        )
+        if not isinstance(value, str) or not value.strip()
+    ]
+    if missing:
+        return {
+            "code": WORK_SOURCE_GROUNDING_MISSING,
+            "message": (
+                f"task.start handoff is not source-grounded (missing {missing}); "
+                "refusing ungrounded dispatch"
+            )[:512],
+        }
+    if plan_ref.strip() != live_plan_view.plan_authority:
+        return {
+            "code": PLAN_REF_MISMATCH,
+            "message": (
+                f"handoff plan_ref {plan_ref!r} != current trusted plan "
+                f"{live_plan_view.plan_authority!r}; refusing cross-Plan dispatch"
+            )[:512],
+        }
+    if plan_digest.strip() != live_plan_view.plan_digest:
+        return {
+            "code": PLAN_DIGEST_MISMATCH,
+            "message": (
+                "handoff plan_digest does not match the current trusted Plan revision; "
+                "refusing stale Plan binding (no silent rebinding)"
+            )[:512],
+        }
+    if milestone_id.strip() != live_plan_view.milestone_id:
+        return {
+            "code": MILESTONE_MISMATCH,
+            "message": (
+                f"handoff milestone_id {milestone_id!r} != current trusted Milestone "
+                f"{live_plan_view.milestone_id!r}; refusing cross-Milestone dispatch"
+            )[:512],
+        }
+    try:
+        grounding = resolve_trusted_work_grounding(live_plan_view, work_item_id=work_item_id)
+    except Exception as exc:
+        return {
+            "code": getattr(exc, "code", WORK_SOURCE_GROUNDING_MISSING),
+            "message": str(exc)[:512],
+        }
+    if source_digest.strip() != grounding["work_source_digest"]:
+        return {
+            "code": WORK_SOURCE_DIGEST_MISMATCH,
+            "message": (
+                f"handoff Work source digest does not match the current authoritative "
+                f"Work source of {grounding['work_item_id']!r}; refusing stale/cross-source dispatch"
+            )[:512],
+        }
+    context = _current_authoritative_work_context(
+        binding.trusted_task_main_context,
+        project_id=binding.project_id,
+        live_plan_view=live_plan_view,
+    )
+    current_wid = None
+    if isinstance(context, Mapping):
+        current = context.get("work_item_id")
+        if isinstance(current, str) and current.strip():
+            current_wid = current.strip()
+    if current_wid is None or current_wid != grounding["work_item_id"]:
+        return {
+            "code": WORK_ITEM_MISMATCH,
+            "message": (
+                f"handoff Work Item {grounding['work_item_id']!r} is not the current "
+                f"authorized Work Item {current_wid!r}; refusing cross-Work dispatch"
+            )[:512],
+        }
+    return None
 
 
 def _task_main_success(binding: CanonicalDispatchBinding, operation: str, payload: dict[str, Any]) -> ToolResponse:
@@ -1043,10 +1303,38 @@ def dispatch_tool_operation(
                     payload = {}
             if not isinstance(payload, dict):
                 return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "payload must be object"})
+            # AF #49 M1/W4 normal-path cutover: a task-main work_item handoff is
+            # mechanically bound to the current trusted Plan/Milestone/Work
+            # source identity at this seam. The semantic payload stays LLM-owned
+            # (stored verbatim); only the control envelope is filled here.
+            write_kwargs: dict[str, Any] = {}
+            if mode == "work_item":
+                trusted_ctx = getattr(binding, "trusted_task_main_context", None)
+                live_view = getattr(trusted_ctx, "live_plan_view", None)
+                if trusted_ctx is not None and live_view is not None:
+                    try:
+                        write_kwargs = _grounded_work_item_write_binding(
+                            binding=binding,
+                            live_plan_view=live_view,
+                            payload=payload,
+                        )
+                    except Exception as exc:
+                        return ToolResponse.failure(
+                            {
+                                "code": _map_task_main_exception(exc),
+                                "message": str(exc)[:512] or "Work source grounding failed",
+                            }
+                        )
             try:
                 from aota_forge.work_plane.handoff_store import handoff_write
 
-                ref = handoff_write(mode=mode, semantic=payload, caller_role=caller_role, sandbox=sandbox)
+                ref = handoff_write(
+                    mode=mode,
+                    semantic=payload,
+                    caller_role=caller_role,
+                    sandbox=sandbox,
+                    **write_kwargs,
+                )
             except ValueError as exc:
                 msg = str(exc)
                 # Map known fail-closed codes via .code if present else infer from message
@@ -1138,6 +1426,21 @@ def dispatch_tool_operation(
                         "test doubles are never a silent production fallback",
                     }
                 )
+            # AF #49 M1/W4: a task-main task.start may consume only a durable
+            # work_item handoff whose trusted grounding matches the current
+            # authorized Plan/Milestone/Work/source identity. Mechanical
+            # identity/digest verification only (no semantic interpretation).
+            trusted_ctx = getattr(binding, "trusted_task_main_context", None)
+            live_view = getattr(trusted_ctx, "live_plan_view", None)
+            if trusted_ctx is not None and live_view is not None:
+                grounding_error = _verify_grounded_task_start(
+                    binding=binding,
+                    live_plan_view=live_view,
+                    handoff_ref=handoff_ref,
+                    sandbox=sandbox,
+                )
+                if grounding_error is not None:
+                    return ToolResponse.failure(grounding_error)
             try:
                 from aota_forge.work_plane.task_facade import task_start
 
