@@ -254,6 +254,126 @@ def _persist_governed_if_needed(binding: CanonicalDispatchBinding, response: Any
         pass
 
 
+_DEFAULT_INLINE_OUTPUT_BOUND = 4096
+_DEFAULT_INLINE_ERROR_BOUND = 2048
+
+
+def _work_context_inline_bound() -> int:
+    try:
+        from aota_forge.work_plane.tool_result_governance import TOOL_INLINE_OUTPUT_MAX_BYTES
+
+        return int(TOOL_INLINE_OUTPUT_MAX_BYTES)
+    except Exception:
+        return _DEFAULT_INLINE_OUTPUT_BOUND
+
+
+def _error_context_inline_bound() -> int:
+    try:
+        from aota_forge.work_plane.tool_result_governance import TOOL_ERROR_INLINE_MAX_BYTES
+
+        return int(TOOL_ERROR_INLINE_MAX_BYTES)
+    except Exception:
+        return _DEFAULT_INLINE_ERROR_BOUND
+
+
+def _canonical_payload_bytes(payload: Any) -> int:
+    try:
+        from aota_forge.core.contracts.canonical import canonical_json, canonicalize
+
+        return len(canonical_json(canonicalize(payload, path="payload")).encode("utf-8"))
+    except Exception:
+        return 2**31 - 1
+
+
+def _work_context_by_ref(binding: CanonicalDispatchBinding, operation: str, work_context: dict[str, Any]) -> dict[str, Any] | None:
+    """Persist exact source text via the existing durable result mechanism.
+
+    Reuses result governance's ToolOutputRef persistence (no new store, no new
+    protocol); the returned metadata keeps plan/milestone/work identity and the
+    source digest/ref so the model can hydrate the exact source with the
+    existing result.hydrate operation.
+    """
+    sandbox = binding.sandbox
+    if sandbox is None:
+        return None
+    source_text = work_context.get("source_text")
+    if not isinstance(source_text, str) or not source_text:
+        return None
+    try:
+        from aota_forge.work_plane.durable_result_store import persist_tool_output_payload
+
+        ref = persist_tool_output_payload(sandbox, source_text.encode("utf-8"), capability_name=operation)
+    except Exception:
+        return None
+    from aota_forge.runtime.task_main.coordinator import WORK_CONTEXT_STATE_BY_REF
+
+    meta = {key: value for key, value in work_context.items() if key != "source_text"}
+    meta["state"] = WORK_CONTEXT_STATE_BY_REF
+    meta["source_ref"] = {
+        "ref": ref.ref,
+        "digest": ref.digest,
+        "project_id": ref.project_id,
+        "worktree_id": ref.worktree_id,
+        "byte_length": ref.byte_length,
+    }
+    return meta
+
+
+def _attach_work_context(
+    binding: CanonicalDispatchBinding,
+    payload: dict[str, Any],
+    work_context: Any,
+    *,
+    operation: str,
+    inline_bound: int,
+) -> None:
+    """Attach bounded model-visible authoritative Work context.
+
+    Inline when the whole result safely fits the existing transport bound;
+    otherwise persist the exact source through the existing trusted by-ref
+    hydration mechanism (never silent truncation). Missing structural source
+    stays an explicit typed insufficient state.
+    """
+    if not isinstance(work_context, dict):
+        return
+    from aota_forge.runtime.task_main.coordinator import (
+        WORK_CONTEXT_STATE_AVAILABLE,
+        WORK_CONTEXT_STATE_INSUFFICIENT,
+    )
+
+    if work_context.get("state") != WORK_CONTEXT_STATE_AVAILABLE or "source_text" not in work_context:
+        payload["work_context"] = dict(work_context)
+        return
+    candidate = dict(payload)
+    candidate["work_context"] = dict(work_context)
+    if _canonical_payload_bytes(candidate) <= inline_bound:
+        payload["work_context"] = candidate["work_context"]
+        return
+    by_ref = _work_context_by_ref(binding, operation, work_context)
+    if by_ref is not None:
+        payload["work_context"] = by_ref
+        return
+    payload["work_context"] = {
+        "state": WORK_CONTEXT_STATE_INSUFFICIENT,
+        "work_item_id": work_context.get("work_item_id"),
+        "milestone_id": work_context.get("milestone_id"),
+        "plan_ref": work_context.get("plan_ref"),
+        "plan_digest": work_context.get("plan_digest"),
+        "selection": work_context.get("selection"),
+        "code": "WORK_SOURCE_UNREPRESENTABLE",
+        "reason": (
+            "authoritative Work source exceeds the inline bound and trusted by-ref "
+            "is unavailable; refusing silent truncation or semantic fallback"
+        ),
+    }
+
+
+def _task_main_success(binding: CanonicalDispatchBinding, operation: str, payload: dict[str, Any]) -> ToolResponse:
+    response = ToolResponse.success(payload)
+    _persist_governed_if_needed(binding, response, operation)
+    return response
+
+
 def _map_task_main_exception(exc: Exception) -> str:
     """Typed Core error identity (no transport string classification).
 
@@ -466,7 +586,22 @@ def _dispatch_task_main(
                     pass
             except Exception:
                 payload = {"coordinator_id": getattr(handle, "coordinator_id", ""), "status": "ACTIVE"}
-            return ToolResponse.success(payload)
+            try:
+                work_context = ctx.control_service.get_model_visible_work_context(
+                    profile=AF_TASK_MAIN_ROLE,
+                    coordinator_id=str(payload.get("coordinator_id") or resolved_id),
+                    live_plan_view=live,
+                )
+                _attach_work_context(
+                    binding,
+                    payload,
+                    work_context,
+                    operation=operation,
+                    inline_bound=_work_context_inline_bound(),
+                )
+            except Exception:
+                pass
+            return _task_main_success(binding, operation, payload)
         if operation == "task_main.recover_coordinator":
             live = ctx.live_plan_view
             # Coordinator identity owned by Core service (D4).
@@ -516,7 +651,22 @@ def _dispatch_task_main(
                     pass
             except Exception:
                 payload = {"coordinator_id": coord_id, "status": "ACTIVE"}
-            return ToolResponse.success(payload)
+            try:
+                work_context = ctx.control_service.get_model_visible_work_context(
+                    profile=AF_TASK_MAIN_ROLE,
+                    coordinator_id=str(payload.get("coordinator_id") or coord_id),
+                    live_plan_view=live,
+                )
+                _attach_work_context(
+                    binding,
+                    payload,
+                    work_context,
+                    operation=operation,
+                    inline_bound=_work_context_inline_bound(),
+                )
+            except Exception:
+                pass
+            return _task_main_success(binding, operation, payload)
         if operation == "task_main.advance_once":
             live = ctx.live_plan_view
             # Coordinator identity + discovery owned by Core service (D4):
@@ -565,6 +715,21 @@ def _dispatch_task_main(
                         err["missing_governed_work_semantics"] = miss
                 except Exception:
                     pass
+                try:
+                    work_context = ctx.control_service.get_model_visible_work_context(
+                        profile=AF_TASK_MAIN_ROLE,
+                        coordinator_id=coord_id,
+                        live_plan_view=live,
+                    )
+                    _attach_work_context(
+                        binding,
+                        err,
+                        work_context,
+                        operation=operation,
+                        inline_bound=_error_context_inline_bound(),
+                    )
+                except Exception:
+                    pass
                 return ToolResponse.failure(err)
             try:
                 payload = {
@@ -602,7 +767,22 @@ def _dispatch_task_main(
                     pass
             except Exception:
                 payload = {"coordinator_id": coord_id, "disposition": getattr(outcome, "disposition", "UNKNOWN")}
-            return ToolResponse.success(payload)
+            try:
+                work_context = ctx.control_service.get_model_visible_work_context(
+                    profile=AF_TASK_MAIN_ROLE,
+                    coordinator_id=str(payload.get("coordinator_id") or coord_id),
+                    live_plan_view=live,
+                )
+                _attach_work_context(
+                    binding,
+                    payload,
+                    work_context,
+                    operation=operation,
+                    inline_bound=_work_context_inline_bound(),
+                )
+            except Exception:
+                pass
+            return _task_main_success(binding, operation, payload)
         if operation == "task_main.submit_work_projection":
             # M3/W1 canonical writer: model proposes bounded semantics for one
             # governed Work Item; Core validates against trusted binding and
@@ -679,7 +859,7 @@ def _dispatch_task_main(
                     pass
             except Exception:
                 payload = {"coordinator_id": coord_id, "work_item_id": args.get("work_item_id", "")}
-            return ToolResponse.success(payload)
+            return _task_main_success(binding, operation, payload)
     except ForgeError as exc:
         return ToolResponse.failure({"code": exc.code, "message": exc.message})
     except Exception as exc:

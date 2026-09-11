@@ -46,6 +46,7 @@ parses or applies WorkerResultCard semantics.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -63,6 +64,7 @@ from aota_forge.runtime.completion import (
 )
 from aota_forge.runtime.task_main.coordinator_state import (
     COORDINATOR_STATE_IS_PLAN_AUTHORITY,
+    WI_SEMANTIC_RECONCILED,
     CoordinatorStatus,
     TaskMainCoordinatorState,
     WorkItemCoordinatorStatus,
@@ -134,6 +136,23 @@ OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS = False
 TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION = False
 DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE = False
 TASK_HANDOFF_CAN_EXPAND_PLAN_AUTHORITY = False
+
+# AF #49 M1/W2 model-visible authoritative Work context (repairs I40-B004).
+# The task-main LLM must see the authoritative bounded WorkSourceSlice through
+# the existing task-main control result payload before any semantic projection
+# submission. Selection is mechanical (ready -> in-flight -> completion pending)
+# from trusted execution state; the Control Plane never interprets Work meaning.
+WORK_CONTEXT_STATE_AVAILABLE = "AUTHORITATIVE_SOURCE_AVAILABLE"
+WORK_CONTEXT_STATE_INSUFFICIENT = "INSUFFICIENT_AUTHORITATIVE_SOURCE"
+WORK_CONTEXT_STATE_BY_REF = "AUTHORITATIVE_SOURCE_BY_REF"
+WORK_CONTEXT_SELECTION_READY = "READY"
+WORK_CONTEXT_SELECTION_IN_FLIGHT = "IN_FLIGHT"
+WORK_CONTEXT_SELECTION_COMPLETION_PENDING = "COMPLETION_PENDING_RECONCILIATION"
+WORK_CONTEXT_MISSING_SOURCE_CODE = "MISSING_WORK_SOURCE"
+CONTROL_PLANE_INTERPRETS_WORK_MEANING = False
+CONTROL_PLANE_REWRITES_PLAN_WORK_TEXT = False
+AUTHORITATIVE_WORK_CONTEXT_IS_STRUCTURAL_SOURCE = True
+AUTHORITATIVE_WORK_CONTEXT_IS_LLM_SEMANTIC_REWRITE = False
 
 USER_GATE_REASON = "USER_GATE_REQUIRED"
 SESSION_GATE_REASON = "SESSION_RECOVERY_REQUIRED"
@@ -493,6 +512,117 @@ def build_projection_required_context(
             continue
         required.append({"work_item_id": wid, "governed_work_semantics": gov})
     return required, missing
+
+
+def select_model_visible_work_item(
+    *,
+    graph: MilestoneWorkItemGraph,
+    wi_status: Mapping[str, str] | None = None,
+    wi_semantic_status: Mapping[str, str] | None = None,
+) -> tuple[str | None, str | None]:
+    """Mechanically select the current/ready Work Item (no semantics).
+
+    Precedence follows existing coordinator execution state exactly:
+    deterministic ready set first, then in-flight (ACTIVE), then terminal
+    completion pending semantic reconciliation. Returns (work_item_id,
+    selection) or (None, None) when no governed Work Item requires reasoning.
+    """
+    if not isinstance(graph, MilestoneWorkItemGraph):
+        raise TypeError(f"graph must be MilestoneWorkItemGraph, got {type(graph).__name__}")
+    work_items = tuple(graph.work_items)
+    if wi_status is None:
+        status_map: Mapping[str, str] = {
+            wid: WorkItemCoordinatorStatus.PENDING.value for wid in work_items
+        }
+    else:
+        if not isinstance(wi_status, Mapping):
+            raise TypeError(f"wi_status must be a mapping, got {type(wi_status).__name__}")
+        missing = [wid for wid in work_items if wid not in wi_status]
+        if missing:
+            raise ValueError(f"wi_status missing Work Item entrie(s): {missing!r}")
+        status_map = wi_status
+    semantic_map: Mapping[str, str] = wi_semantic_status if isinstance(wi_semantic_status, Mapping) else {}
+    ready = evaluate_ready_work_items(graph=graph, wi_status=status_map, gate_blocked=False)
+    if ready:
+        return ready[0], WORK_CONTEXT_SELECTION_READY
+    for wid in work_items:
+        if status_map.get(wid) == WorkItemCoordinatorStatus.ACTIVE.value:
+            return wid, WORK_CONTEXT_SELECTION_IN_FLIGHT
+    for wid in work_items:
+        if status_map.get(wid) == WorkItemCoordinatorStatus.COMPLETION_PENDING_RECONCILIATION.value:
+            if semantic_map.get(wid) != WI_SEMANTIC_RECONCILED:
+                return wid, WORK_CONTEXT_SELECTION_COMPLETION_PENDING
+    return None, None
+
+
+def build_model_visible_work_context(
+    live_plan_view: MilestonePlanView,
+    *,
+    wi_status: Mapping[str, str] | None = None,
+    wi_semantic_status: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Build the authoritative model-visible Work context (M1/W2, I40-B004).
+
+    Pure mechanical projection of the trusted ``WorkSourceSlice`` selected by
+    ``select_model_visible_work_item``. Field semantics are mandatory:
+    work_item_id / milestone_id / title / source_text / plan_ref / plan_digest /
+    work_source_digest. Never falls back to README, generic objective, neighbor
+    Work Item, or free-text reconstruction; a missing slice returns the explicit
+    typed INSUFFICIENT_AUTHORITATIVE_SOURCE state instead.
+    """
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    graph = live_plan_view.graph
+    wid, selection = select_model_visible_work_item(
+        graph=graph, wi_status=wi_status, wi_semantic_status=wi_semantic_status
+    )
+    if wid is None or selection is None:
+        return None
+    base: dict[str, Any] = {
+        "state": WORK_CONTEXT_STATE_INSUFFICIENT,
+        "work_item_id": wid,
+        "milestone_id": live_plan_view.milestone_id,
+        "plan_ref": live_plan_view.plan_authority,
+        "plan_digest": live_plan_view.plan_digest,
+        "selection": selection,
+    }
+    try:
+        source_slice = live_plan_view.get_work_source_slice(wid)
+    except Exception:
+        source_slice = None
+    if source_slice is None:
+        base["code"] = WORK_CONTEXT_MISSING_SOURCE_CODE
+        base["reason"] = (
+            f"no trusted WorkSourceSlice for {live_plan_view.milestone_id}/{wid}; "
+            "refusing README/generic/neighbor fallback"
+        )
+        return base
+    try:
+        slice_wid = str(getattr(source_slice, "work_item_id", "")).strip()
+        slice_mid = str(getattr(source_slice, "milestone_id", "")).strip()
+        title = str(getattr(source_slice, "title", "")).strip()
+        source_text = str(getattr(source_slice, "source_text", "")).strip()
+    except Exception:
+        slice_wid = slice_mid = title = source_text = ""
+    if slice_wid != wid or slice_mid != live_plan_view.milestone_id or not title or not source_text:
+        base["code"] = WORK_CONTEXT_MISSING_SOURCE_CODE
+        base["reason"] = (
+            f"trusted WorkSourceSlice identity/content mismatch for {live_plan_view.milestone_id}/{wid}; "
+            "refusing fallback"
+        )
+        return base
+    source_digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    return {
+        "state": WORK_CONTEXT_STATE_AVAILABLE,
+        "work_item_id": slice_wid,
+        "milestone_id": slice_mid,
+        "title": title,
+        "source_text": source_text,
+        "plan_ref": live_plan_view.plan_authority,
+        "plan_digest": live_plan_view.plan_digest,
+        "work_source_digest": source_digest,
+        "selection": selection,
+    }
 
 
 @dataclass(frozen=True)
@@ -1584,7 +1714,11 @@ def build_work_item_handoff_ref(work_item_id: str) -> SemanticReference:
 
 
 __all__ = [
+    "AUTHORITATIVE_WORK_CONTEXT_IS_LLM_SEMANTIC_REWRITE",
+    "AUTHORITATIVE_WORK_CONTEXT_IS_STRUCTURAL_SOURCE",
     "CODEX_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH",
+    "CONTROL_PLANE_INTERPRETS_WORK_MEANING",
+    "CONTROL_PLANE_REWRITES_PLAN_WORK_TEXT",
     "COORDINATOR_DISPATCH_ATTEMPT",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "DAG_PROGRESSION_DETERMINISTIC",
@@ -1605,6 +1739,13 @@ __all__ = [
     "TASK_MAIN_SEMANTIC_LAYER_PRODUCES_WORK_PROJECTION",
     "TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED",
     "USER_GATE_REASON",
+    "WORK_CONTEXT_MISSING_SOURCE_CODE",
+    "WORK_CONTEXT_SELECTION_COMPLETION_PENDING",
+    "WORK_CONTEXT_SELECTION_IN_FLIGHT",
+    "WORK_CONTEXT_SELECTION_READY",
+    "WORK_CONTEXT_STATE_AVAILABLE",
+    "WORK_CONTEXT_STATE_BY_REF",
+    "WORK_CONTEXT_STATE_INSUFFICIENT",
     "WORK_PROJECTION_BOUND_TO_TRUSTED_PLAN_IDENTITY",
     "WORK_PROJECTION_BOUND_TO_WORK_ITEM",
     "WORK_PROJECTION_DURABLE",
@@ -1619,10 +1760,12 @@ __all__ = [
     "TaskMainCoordinator",
     "TaskMainCoordinatorError",
     "activate_milestone",
+    "build_model_visible_work_context",
     "build_work_item_handoff_ref",
     "commit_task_main_work_projection",
     "dispatch_identity_for",
     "evaluate_ready_work_items",
     "recover_coordinator",
     "resolve_task_main_work_handoff",
+    "select_model_visible_work_item",
 ]

@@ -356,6 +356,44 @@ class TaskMainControlService:
             live_plan_view, wi_status=wi_status, work_projections=work_projs
         )
 
+    def get_model_visible_work_context(
+        self,
+        *,
+        profile: str,
+        coordinator_id: str,
+        live_plan_view: MilestonePlanView,
+    ) -> dict[str, Any] | None:
+        """Mechanical model-visible authoritative Work context (M1/W2).
+
+        Selects the current/ready Work Item from the durable coordinator state
+        (ready -> in-flight -> completion pending) and returns the trusted
+        bounded WorkSourceSlice fields. Never interprets Work meaning, never
+        falls back to README/generic/neighbor content; missing structural
+        source returns the explicit typed insufficient state.
+        """
+        from aota_forge.runtime.task_main.coordinator import build_model_visible_work_context
+
+        _require_task_main_profile(profile)
+        if not isinstance(live_plan_view, MilestonePlanView):
+            raise TypeError("live_plan_view must be MilestonePlanView")
+        try:
+            state = self._coord_store.get(coordinator_id)
+        except Exception:
+            state = None
+        if state is None:
+            return build_model_visible_work_context(live_plan_view)
+        try:
+            wi_status = dict(getattr(state, "wi_status", {}) or {})
+            wi_semantic_status = dict(getattr(state, "wi_semantic_status", {}) or {})
+        except Exception:
+            wi_status = {}
+            wi_semantic_status = {}
+        return build_model_visible_work_context(
+            live_plan_view,
+            wi_status=wi_status or None,
+            wi_semantic_status=wi_semantic_status or None,
+        )
+
     def reconcile_worker_completion(
         self,
         *,
