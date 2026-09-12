@@ -22,6 +22,15 @@ Hard ordering (M2/W3 §19): a delivery attempt may only happen after the
 terminal CanonicalResult AND the Worker Result CARD are durable on the same
 record. This module never delivers from in-memory truth.
 
+AF #49 M1/W9 (I49-B007): mechanical Worker process termination and governed
+semantic task completion are different facts. An adapter-observed terminal
+success (process exit 0) is gated against durable governed semantic-return
+evidence (a valid result handoff written for the exact canonical task plus a
+valid ``task.return`` for that exact active execution) BEFORE any sticky
+terminal success is persisted. Exit 0 without that proof reconciles to truthful
+failure in the same first persist (never a post-hoc terminal mutation), and
+the failure Card remains delivery-eligible so the parent learns the failure.
+
 Authority boundaries (wzjcccc-dotcom/aota-hermes-tools#36):
 
 - The AF ``DurableExecutionRecord`` is canonical runtime truth. Hermes'
@@ -88,6 +97,10 @@ from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.result_governance import ResultGovernanceProjection
 from aota_forge.work_plane.result_card import project_worker_result_card
 from aota_forge.work_plane.roles import parse_agent_work_role
+from aota_forge.work_plane.task_return_receipt import (
+    SemanticReturnEvidence,
+    SemanticReturnEvidenceProvider,
+)
 
 # ---------------------------------------------------------------------------
 # Governance markers
@@ -117,6 +130,22 @@ PREPARED_UNRESOLVED_COUNTS_ACTIVE = True
 HERMES_LOCATOR_IS_AF_AUTHORITY = False
 HERMES_LEDGER_IS_AF_AUTHORITY = False
 AF_DURABLE_RECORD_IS_CANONICAL_RUNTIME_TRUTH = True
+
+# AF #49 M1/W9 (I49-B007) semantic terminal truth boundary (frozen):
+# mechanical Worker process termination and governed semantic task completion
+# are different facts. A terminal adapter success observation (process exit 0)
+# is NOT semantic success; governed success additionally requires durable,
+# validated semantic-return evidence (valid result handoff + valid task.return
+# for the exact canonical execution) BEFORE terminal truth becomes sticky.
+PROCESS_EXIT_SUCCESS_IS_SEMANTIC_SUCCESS = False
+SEMANTIC_SUCCESS_REQUIRES_VALID_TASK_RETURN = True
+TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF = True
+SUCCESS_CARD_WITH_NULL_OR_NONE_RESULT_DIGEST_ALLOWED = False
+SEMANTIC_RESULT_NOT_PROVEN = "SEMANTIC_RESULT_NOT_PROVEN"
+SEMANTIC_RESULT_NOT_PROVEN_MESSAGE = (
+    "worker process terminated successfully but no governed task.return with a "
+    "valid result handoff was proven for this exact execution"
+)
 
 # Bounded mechanical defaults (M2/W3 §24). Source review found no better AF
 # policy seam; these mirror the Hermes runtime's bounded lease posture (claim
@@ -281,6 +310,9 @@ RECOVER_UNKNOWN_PERSISTED = "unknown_persisted"
 RECOVER_PREPARED_UNRESOLVED_UNKNOWN = "prepared_unresolved_unknown"
 RECOVER_PROTOCOL_ERROR_PRESERVED = "protocol_error_preserved"
 RECOVER_UNRECOVERABLE = "unrecoverable"
+# AF #49 M1/W9: adapter-observed success without proven governed semantic return
+# is reconciled to truthful failure BEFORE any sticky terminal success persist.
+RECOVER_SEMANTIC_RESULT_NOT_PROVEN = "semantic_result_not_proven"
 
 DELIVER_ACKNOWLEDGED = "acknowledged"
 DELIVER_RELEASED_RETRYABLE = "released_retryable"
@@ -426,11 +458,19 @@ class DurableCompletionCoordinator:
         max_deliveries_per_pass: int = MAX_DELIVERIES_PER_PASS,
         now_fn: Callable[[], float] = time.time,
         require_recovery_before_admission: bool = True,
+        semantic_return_provider: SemanticReturnEvidenceProvider | None = None,
     ) -> None:
         if not isinstance(dispatcher, ExecutionDispatcher):
             raise TypeError("dispatcher must be an ExecutionDispatcher")
         if not isinstance(store, ExecutionStateStore):
             raise TypeError("store must be an ExecutionStateStore")
+        if semantic_return_provider is not None and not callable(
+            getattr(semantic_return_provider, "resolve", None)
+        ):
+            raise TypeError(
+                "semantic_return_provider must implement resolve(record) "
+                "(semantic-return evidence seam)"
+            )
         if dispatcher.state_store is not store:
             raise CompletionCoordinatorError(
                 "the coordinator and the dispatcher must share the same ExecutionStateStore"
@@ -458,6 +498,7 @@ class DurableCompletionCoordinator:
         self._max_deliveries_per_pass = max_deliveries_per_pass
         self._now_fn = now_fn
         self._require_recovery_before_admission = require_recovery_before_admission
+        self._semantic_return_provider = semantic_return_provider
         self._recovered = False
 
     # -- properties -----------------------------------------------------------
@@ -506,7 +547,11 @@ class DurableCompletionCoordinator:
             self._cas_persist_unknown(task_id)
             return RECOVER_PREPARED_UNRESOLVED_UNKNOWN
         try:
-            state = self._dispatcher.reconcile_status(task_id)
+            # AF #49 M1/W9: PURE observation first. The adapter's mechanical
+            # terminal success (process exit 0) must be gated against durable
+            # governed semantic-return evidence BEFORE any sticky terminal
+            # success is persisted (§16/§18). No persistence happens here.
+            state = self._dispatcher.observe_status(task_id)
         except DispatchOutcomeUnresolvedError:
             self._cas_persist_unknown(task_id)
             return RECOVER_PREPARED_UNRESOLVED_UNKNOWN
@@ -518,22 +563,85 @@ class DurableCompletionCoordinator:
             self._cas_persist_unknown(task_id)
             return RECOVER_UNKNOWN_PERSISTED
         if state == CanonicalTaskState.UNKNOWN:
+            self._cas_persist_unknown(task_id)
             return RECOVER_UNKNOWN_PERSISTED
         if not state.is_terminal:
-            # reconcile_status has already persisted the current nonterminal
-            # observation durably (RUNNING/QUEUED/...).
+            # Persist the nonterminal observation directly (no second adapter
+            # observation, no gate bypass window): RUNNING/QUEUED/...
+            self._cas_persist_observed_state(task_id, state)
             return RECOVER_RUNNING
         if state.is_terminal:
-            return self._persist_terminal_truth(task_id)
+            return self._persist_terminal_truth(task_id, observed_state=state)
         return RECOVER_UNRECOVERABLE
 
-    def _persist_terminal_truth(self, task_id: str) -> str:
-        """Adapter reported terminal: CanonicalResult -> governance -> CARD -> store.
+    def _resolve_semantic_return_evidence_safe(
+        self, task_id: str
+    ) -> SemanticReturnEvidence | None:
+        """Resolve durable semantic-return evidence; any doubt is None (fail closed)."""
+        provider = self._semantic_return_provider
+        if provider is None:
+            return None
+        record = self._store.get(task_id)
+        if record is None:
+            return None
+        try:
+            evidence = provider.resolve(record)
+        except Exception:  # noqa: BLE001 - evidence absence, never a success claim
+            return None
+        if not isinstance(evidence, SemanticReturnEvidence):
+            return None
+        if evidence.canonical_task_id != task_id:
+            return None
+        if evidence.status not in ("completed", "blocked", "failed"):
+            return None
+        digest = evidence.result_digest
+        if not isinstance(digest, str) or len(digest) != 64:
+            return None
+        if not isinstance(evidence.result_ref, str) or not evidence.result_ref.strip():
+            return None
+        return evidence
+
+    def _persist_terminal_truth(self, task_id: str, *, observed_state: CanonicalTaskState) -> str:
+        """Terminal observation: govern semantic truth, then persist CARD truth.
+
+        AF #49 M1/W9: when the adapter observes terminal success
+        (``COMPLETED``), governed semantic-return evidence is required BEFORE
+        the adapter's success can become sticky durable semantic success. A
+        missing or non-success-permitting return reconciles to truthful
+        failure (existing CanonicalTaskState.FAILED + CanonicalResult.failure
+        representation) in the SAME first persist; terminal truth is never
+        mutated post-hoc. Non-success terminal observations (mechanical
+        failures/timeouts/cancellations) are preserved unchanged.
 
         The existing dispatcher result seam performs the CanonicalResult
         validation and persists terminal truth (W1 CAS). No delivery attempt
         may precede this point (§19); delivery only happens in a later pass.
         """
+        semantic_evidence: SemanticReturnEvidence | None = None
+        if observed_state == CanonicalTaskState.COMPLETED and self._semantic_return_provider is not None:
+            semantic_evidence = self._resolve_semantic_return_evidence_safe(task_id)
+            if semantic_evidence is None:
+                return self._persist_semantic_failure(
+                    task_id,
+                    error_code=SEMANTIC_RESULT_NOT_PROVEN,
+                    error_message=SEMANTIC_RESULT_NOT_PROVEN_MESSAGE,
+                )
+            if not semantic_evidence.permits_success:
+                # A valid governed task.return explicitly reported blocked/failed:
+                # truthful failure governance, never success because exit was 0.
+                if semantic_evidence.status == "blocked":
+                    error_code = "SEMANTIC_STOP"
+                else:
+                    error_code = "EXECUTION_FAILED"
+                return self._persist_semantic_failure(
+                    task_id,
+                    error_code=error_code,
+                    error_message=(
+                        f"governed task.return status={semantic_evidence.status!r} "
+                        f"does not permit semantic success"
+                    ),
+                    semantic_evidence=semantic_evidence,
+                )
         try:
             result = self._dispatcher.result(task_id)
         except Exception:  # noqa: BLE001 - honest uncertainty, never a fabrication
@@ -542,10 +650,71 @@ class DurableCompletionCoordinator:
         if not result.canonical_task_state or not CanonicalTaskState(result.canonical_task_state).is_terminal:
             self._cas_persist_unknown(task_id)
             return RECOVER_UNKNOWN_PERSISTED
-        self._attach_card(result, task_id)
+        self._attach_card(result, task_id, semantic_evidence=semantic_evidence)
         return RECOVER_TERMINAL_PERSISTED
 
-    def _attach_card(self, result: CanonicalResult, task_id: str) -> bool:
+    def _persist_semantic_failure(
+        self,
+        task_id: str,
+        *,
+        error_code: str,
+        error_message: str,
+        semantic_evidence: SemanticReturnEvidence | None = None,
+    ) -> str:
+        """Persist truthful terminal failure (same first-persist, never post-hoc).
+
+        Uses the existing CanonicalTaskState.FAILED + CanonicalResult.failure
+        representation. If terminal truth is already durable it is NEVER
+        repaired post-hoc; a durable success result without proven semantic
+        return simply never becomes a success CARD/delivery.
+        """
+        current = self._store.get(task_id)
+        if current is None:
+            return RECOVER_UNRECOVERABLE
+        if current.canonical_task_state.is_terminal:
+            if current.terminal_result is not None and current.worker_result_card is None:
+                if current.terminal_result.ok is True:
+                    # No proven semantic return: never derive a success CARD
+                    # from an already-durable success result. No delivery.
+                    return RECOVER_SEMANTIC_RESULT_NOT_PROVEN
+                self._attach_card(current.terminal_result, task_id)
+            return RECOVER_TERMINAL_ALREADY_DURABLE
+        failure = CanonicalResult.failure(
+            canonical_task_id=task_id,
+            executor_id=current.executor_id,
+            error_code=error_code,
+            error_message=error_message,
+            retryable=False,
+            exit_code=None,
+            correlation_id=current.correlation_id,
+            status="failed",
+            canonical_task_state=CanonicalTaskState.FAILED.value,
+        )
+        try:
+            self._dispatcher.persist_reconciled_terminal_result(task_id, failure)
+        except Exception:  # noqa: BLE001 - never fabricate a state change
+            self._cas_persist_unknown(task_id)
+            return RECOVER_UNKNOWN_PERSISTED
+        self._attach_card(
+            failure,
+            task_id,
+            semantic_evidence=semantic_evidence,
+            summary=(
+                semantic_evidence.summary
+                if semantic_evidence is not None and semantic_evidence.summary
+                else None
+            ),
+        )
+        return RECOVER_SEMANTIC_RESULT_NOT_PROVEN
+
+    def _attach_card(
+        self,
+        result: CanonicalResult,
+        task_id: str,
+        *,
+        semantic_evidence: SemanticReturnEvidence | None = None,
+        summary: str | None = None,
+    ) -> bool:
         current = self._store.get(task_id)
         if current is None:
             return False
@@ -559,11 +728,21 @@ class DurableCompletionCoordinator:
             return False
         try:
             governance = governance_projection_for_result(result)
+            result_handoff_ref: dict[str, str] | None = None
+            if semantic_evidence is not None:
+                # AF #49 M1/W9 §25: a CARD linked to a validated governed result
+                # handoff carries the ACTUAL validated result digest. A success
+                # CARD can never carry a null/None digest.
+                result_handoff_ref = {
+                    "ref": task_id,
+                    "digest": semantic_evidence.result_digest,
+                }
             card = project_worker_result_card(
                 result,
                 governance,
                 role,
-                summary=_terminal_summary(result),
+                summary=summary or _terminal_summary(result),
+                result_handoff_ref=result_handoff_ref,
             )
             self._dispatcher.attach_worker_result_card(task_id, card)
         except Exception:  # noqa: BLE001
@@ -574,11 +753,45 @@ class DurableCompletionCoordinator:
         if record.terminal_result is None:
             # Terminal state durable without an attached result yet: attempt the
             # adapter result seam once (bounded), then stay recovery-eligible.
-            kind = self._persist_terminal_truth(record.canonical_task_id)
+            kind = self._persist_terminal_truth(
+                record.canonical_task_id, observed_state=record.canonical_task_state
+            )
             return kind
         if record.worker_result_card is None:
-            self._attach_card(record.terminal_result, record.canonical_task_id)
+            semantic_evidence: SemanticReturnEvidence | None = None
+            if record.terminal_result.ok is True and self._semantic_return_provider is not None:
+                semantic_evidence = self._resolve_semantic_return_evidence_safe(
+                    record.canonical_task_id
+                )
+                if semantic_evidence is None or not semantic_evidence.permits_success:
+                    # Durable success result without proven governed semantic
+                    # return: never derive a success CARD/delivery. Terminal
+                    # truth stays sticky and is never mutated post-hoc (§16).
+                    return RECOVER_SEMANTIC_RESULT_NOT_PROVEN
+            self._attach_card(
+                record.terminal_result,
+                record.canonical_task_id,
+                semantic_evidence=semantic_evidence,
+            )
         return RECOVER_TERMINAL_ALREADY_DURABLE
+
+    def _cas_persist_observed_state(self, task_id: str, state: CanonicalTaskState) -> None:
+        """Persist a nonterminal observation directly; terminal truth is sticky."""
+        current = self._store.get(task_id)
+        if current is None or current.canonical_task_state.is_terminal:
+            return
+        if current.canonical_task_state == state:
+            return
+        try:
+            self._store.compare_and_swap(
+                task_id,
+                current.record_revision,
+                {"canonical_task_state": state.value},
+            )
+        except Exception:  # noqa: BLE001
+            # A concurrent reconciler already advanced the record; the durable
+            # store's CAS rules keep the truth safe either way.
+            pass
 
     def _cas_persist_unknown(self, task_id: str) -> None:
         """Persist a conservative UNKNOWN; terminal truth is never un-terminated."""
@@ -879,15 +1092,24 @@ __all__ = [
     "MAX_DELIVERIES_PER_PASS",
     "POST_ACK_REDELIVERY",
     "PREPARED_UNRESOLVED_COUNTS_ACTIVE",
+    "PROCESS_EXIT_SUCCESS_IS_SEMANTIC_SUCCESS",
     "RECOVER_PREPARED_UNRESOLVED_UNKNOWN",
     "RECOVER_PROTOCOL_ERROR_PRESERVED",
     "RECOVER_RUNNING",
+    "RECOVER_SEMANTIC_RESULT_NOT_PROVEN",
     "RECOVER_TERMINAL_ALREADY_DURABLE",
     "RECOVER_TERMINAL_PERSISTED",
     "RECOVER_UNKNOWN_PERSISTED",
     "RECOVER_UNRECOVERABLE",
     "RECOVERY_PASS_IMPLEMENTED",
     "RecoveryReport",
+    "SEMANTIC_RESULT_NOT_PROVEN",
+    "SEMANTIC_RESULT_NOT_PROVEN_MESSAGE",
+    "SEMANTIC_SUCCESS_REQUIRES_VALID_TASK_RETURN",
+    "SUCCESS_CARD_WITH_NULL_OR_NONE_RESULT_DIGEST_ALLOWED",
+    "SemanticReturnEvidence",
+    "SemanticReturnEvidenceProvider",
+    "TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF",
     "TERMINAL_RESULT_PERSISTED_BEFORE_DELIVERY",
     "UNKNOWN_COUNTS_ACTIVE",
     "build_completion_envelope",

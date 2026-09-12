@@ -1259,6 +1259,10 @@ class DailyTaskMainLauncher:
                 worktree_root=ctx.worktree_root,
                 runtime_config=ctx.runtime_config,
                 relevant_origin_session_ref=session_id,
+                # AF #49 M1/W9: trusted lifecycle identity enables the governed
+                # semantic-return gate (process exit 0 is not semantic success).
+                project_id=ctx.project_id,
+                worktree_id=ctx.worktree_id,
                 timeout_seconds=effective_timeout,
             )
         finally:

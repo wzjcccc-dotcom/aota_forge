@@ -86,6 +86,16 @@ TASK_RETURN_PARENT_STORE_MUTATION = False
 TASK_RETURN_SEMANTIC_RETURN_WITHOUT_PARENT_STORE = True
 WORKER_PARENT_STORE_PATH_EXPOSED = False
 PARENT_TERMINAL_TRUTH_OWNER = "parent_side_execution_reconciliation"
+# AF #49 M1/W9 (I49-B007) semantic terminal truth boundary (frozen):
+# the trusted task.return path writes ONE bounded durable mechanical receipt
+# (exact canonical task + exact result handoff ref/digest) so the parent-side
+# reconciliation can distinguish a proven governed semantic return from a
+# result handoff write alone. Process exit success is NOT semantic success.
+TASK_RETURN_WRITES_BOUNDED_DURABLE_RECEIPT = True
+TASK_RETURN_RECEIPT_IS_AUTHORITY = False
+PROCESS_EXIT_SUCCESS_IS_SEMANTIC_SUCCESS = False
+SEMANTIC_SUCCESS_REQUIRES_VALID_TASK_RETURN = True
+TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF = True
 
 CompletionSink = MutableMapping[str, dict[str, Any]]
 
@@ -567,6 +577,22 @@ def task_return(
         blocking_finding_count=int(semantic.get("findings", 0)) if isinstance(semantic.get("findings"), int) else 0,
         next_hint=semantic.get("recommendation") if isinstance(semantic.get("recommendation"), str) else None,
     )
+    # AF #49 M1/W9 (I49-B007): the trusted task.return path durably records a
+    # bounded mechanical receipt for the EXACT canonical task + result handoff
+    # ref/digest. This is governance evidence only (no new result ontology, no
+    # new task state, no semantic content duplicate): the parent-side
+    # coordinator re-opens and digest-verifies the referenced result handoff
+    # before any semantic-return claim. A failed receipt persist fails the
+    # return closed; a process exit alone can never become semantic success.
+    from aota_forge.work_plane.task_return_receipt import write_task_return_receipt
+
+    receipt = write_task_return_receipt(
+        sandbox,
+        canonical_task_id=caller_task_id,
+        result_ref=opened.get("ref") or str(result_ref),
+        result_digest=stored_digest,
+        status=status,
+    )
     # AF #49 M1/W3: task.return performs NO direct mutation of the parent's
     # durable ExecutionStateStore (TASK_RETURN_DIRECTLY_OWNS_DURABLE_PARENT_STATE=no).
     # The Worker process has no parent store authority path
@@ -581,6 +607,7 @@ def task_return(
         "card_digest": card.card_digest,
         "full_result_ref": opened.get("ref") or str(result_ref),
         "governance_outcome": governance.outcome.value if hasattr(governance.outcome, "value") else str(governance.outcome),
+        "semantic_return_receipt_digest": receipt.receipt_digest,
         "durable_completion": "parent_side_reconciliation_pending",
         "parent_durable_truth_owner": "parent_side_execution_reconciliation",
         "parent_store_mutated": False,
@@ -636,6 +663,11 @@ __all__ = [
     "TASK_RETURN_SEMANTIC_RETURN_WITHOUT_PARENT_STORE",
     "WORKER_PARENT_STORE_PATH_EXPOSED",
     "PARENT_TERMINAL_TRUTH_OWNER",
+    "TASK_RETURN_WRITES_BOUNDED_DURABLE_RECEIPT",
+    "TASK_RETURN_RECEIPT_IS_AUTHORITY",
+    "PROCESS_EXIT_SUCCESS_IS_SEMANTIC_SUCCESS",
+    "SEMANTIC_SUCCESS_REQUIRES_VALID_TASK_RETURN",
+    "TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF",
     "TRUSTED_WORK_HANDOFF_CONTEXT_KEY",
     "CompletionSink",
     "ProductionDispatcherUnavailableError",

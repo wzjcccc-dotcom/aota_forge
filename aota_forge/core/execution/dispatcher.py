@@ -900,16 +900,16 @@ class ExecutionDispatcher:
         self._persist_route_state(canonical_task_id, route.last_known_state)
         return resume_res
 
-    def reconcile_status(self, canonical_task_id: str) -> CanonicalTaskState:
-        """Reconcile task state from adapter status query.
+    def _observe_adapter_state(self, canonical_task_id: str) -> CanonicalTaskState:
+        """Mechanical adapter status observation WITHOUT any persistence.
 
-        - Definitive adapter states map to canonical state.
-        - Adapter unknown, disconnect, or uncertain outcome remains UNKNOWN.
-        - UNKNOWN is NEVER inferred as completed or successful.
-        - Typed protocol/binding integrity violations carrying an accepted
-          canonical protocol code (e.g. ADAPTER_PROTOCOL_ERROR) fail closed
-          and propagate; the route is left unmutated (S2/M3/R1 F02).
-        - Returns reconciled CanonicalTaskState.
+        Shared by :meth:`reconcile_status` (observe + persist) and
+        :meth:`observe_status` (pure observation). Preserves the accepted
+        reconciliation semantics exactly:
+        - definitive adapter states map to canonical state;
+        - adapter unknown/disconnect/uncertain outcome observes UNKNOWN;
+        - typed protocol/binding integrity violations fail closed and propagate
+          (the route is left unmutated, S2/M3/R1 F02).
         """
         route = self._get_internal_route(canonical_task_id)
         adapter = route._adapter
@@ -927,7 +927,69 @@ class ExecutionDispatcher:
             if route.last_known_state.is_terminal:
                 return route.last_known_state
             state = CanonicalTaskState.UNKNOWN
+        return state
 
+    def observe_status(self, canonical_task_id: str) -> CanonicalTaskState:
+        """Mechanical adapter status observation that NEVER persists.
+
+        AF #49 M1/W9: the parent-side completion coordinator must be able to
+        gate a false adapter success BEFORE terminal truth becomes sticky
+        durable state. This is a pure observation seam: it queries the exact
+        stored route, applies the same canonical state mapping/validation as
+        :meth:`reconcile_status`, and writes nothing. It carries no semantic
+        policy and no AF work-plane ontology; the caller owns any gate.
+        """
+        return self._observe_adapter_state(canonical_task_id)
+
+    def reconcile_status(self, canonical_task_id: str) -> CanonicalTaskState:
+        """Reconcile task state from adapter status query.
+
+        - Definitive adapter states map to canonical state.
+        - Adapter unknown, disconnect, or uncertain outcome remains UNKNOWN.
+        - UNKNOWN is NEVER inferred as completed or successful.
+        - Typed protocol/binding integrity violations carrying an accepted
+          canonical protocol code (e.g. ADAPTER_PROTOCOL_ERROR) fail closed
+          and propagate; the route is left unmutated (S2/M3/R1 F02).
+        - Returns reconciled CanonicalTaskState.
+        """
+        state = self._observe_adapter_state(canonical_task_id)
+        route = self._get_internal_route(canonical_task_id)
         route.last_known_state = state
         self._persist_route_state(canonical_task_id, state)
         return state
+
+    def persist_reconciled_terminal_result(
+        self, canonical_task_id: str, result: CanonicalResult
+    ) -> None:
+        """Mechanically persist a parent-side reconciled terminal result.
+
+        AF #49 M1/W9: the parent-side completion coordinator may reconcile
+        terminal truth that differs from the adapter's mechanical observation
+        (for example: process exit 0 without a governed semantic ``task.return``
+        is NOT semantic success). Core validates the result identity and state
+        against the exact stored route, then attaches it exactly once through
+        the existing terminal-result persistence; it never interprets AF
+        work-plane semantics and remains executor-neutral.
+        """
+        if not isinstance(result, CanonicalResult):
+            raise TypeError(f"result must be a CanonicalResult, got {type(result).__name__}")
+        route = self._get_internal_route(canonical_task_id)
+        if result.canonical_task_id != canonical_task_id:
+            raise AdapterProtocolError(
+                f"reconciled result canonical_task_id {result.canonical_task_id!r} "
+                f"does not match Core task {canonical_task_id!r}"
+            )
+        if result.executor_id != route.executor_id:
+            raise AdapterProtocolError(
+                f"reconciled result executor_id {result.executor_id!r} does not "
+                f"match route executor {route.executor_id!r}"
+            )
+        state = self._validated_response_state(
+            route, result.canonical_task_state, "persist_reconciled_terminal_result"
+        )
+        if not state.is_terminal:
+            raise AdapterProtocolError(
+                "persist_reconciled_terminal_result requires a terminal result state"
+            )
+        route.last_known_state = state
+        self._persist_terminal_result(canonical_task_id, result)

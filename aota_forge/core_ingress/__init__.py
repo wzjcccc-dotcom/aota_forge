@@ -1333,6 +1333,17 @@ def dispatch_tool_operation(
                                 "message": str(exc)[:512] or "Work source grounding failed",
                             }
                         )
+            elif mode == "result":
+                # AF #49 M1/W9: the Control Plane mechanically binds the durable
+                # result handoff control envelope to the trusted caller execution
+                # identity. The Worker/model never supplies control fields, and
+                # task.return's exact-task contract requires the result handoff
+                # to belong to the caller's canonical execution. Without this
+                # binding a genuine Worker result handoff could never satisfy
+                # the governed semantic return.
+                trusted_task_id = getattr(binding, "canonical_task_id", "") or ""
+                if isinstance(trusted_task_id, str) and trusted_task_id.strip():
+                    write_kwargs["task_id"] = trusted_task_id.strip()
             try:
                 from aota_forge.work_plane.handoff_store import handoff_write
 

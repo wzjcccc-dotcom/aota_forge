@@ -213,6 +213,7 @@ def create_durable_completion_coordinator(
     state_store: ExecutionStateStore,
     runtime_config: Any | None = None,
     transport: Any | None = None,
+    semantic_return_provider: Any | None = None,
     **coordinator_kwargs: Any,
 ) -> DurableCompletionCoordinator:
     """Wire the narrow W3 coordinator over the SAME durable dispatcher graph.
@@ -221,6 +222,12 @@ def create_durable_completion_coordinator(
     (explicit injection or the trusted env channel; never a source-owned
     default). ``transport`` is the executor-neutral completion delivery seam
     (e.g. the Hermes exact-session transport); the coordinator runs no loop.
+
+    AF #49 M1/W9: ``semantic_return_provider`` is the trusted
+    semantic-return evidence seam. When wired, an adapter-observed terminal
+    success (process exit 0) can only become semantic success with a valid
+    governed ``task.return`` for the exact execution. Production task-main
+    composition always wires it; component/test construction may omit it.
     """
     config = _resolve_operator_runtime_config(runtime_config)
     if dispatcher.state_store is not state_store:
@@ -234,6 +241,7 @@ def create_durable_completion_coordinator(
         store=state_store,
         transport=transport,
         admission_limits=admission_limits_from_runtime_config(config),
+        semantic_return_provider=semantic_return_provider,
         **coordinator_kwargs,
     )
 
@@ -420,6 +428,41 @@ class CompletionContinuationReport:
         }
 
 
+def build_semantic_return_evidence_provider(
+    *,
+    worktree_root: str | PathLike[str],
+    project_id: str,
+    worktree_id: str,
+) -> Any:
+    """Build the trusted worktree semantic-return evidence provider (AF #49 M1/W9).
+
+    Inputs are trusted lifecycle identity (operator/launcher supplied), never
+    model/Worker input. Canonical project evidence is resolved through the same
+    shared helper used by the task-main host bootstrap; missing/ambiguous
+    evidence fails closed (an ungated false success is never an acceptable
+    fallback).
+    """
+    from aota_forge.composition.project_binding import resolve_trusted_project_evidence
+    from aota_forge.work_plane.task_return_receipt import (
+        WorktreeSemanticReturnEvidenceProvider,
+    )
+    from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
+
+    root = Path(worktree_root).resolve()
+    evidence = resolve_trusted_project_evidence(worktree_root=root, project_id=project_id)
+    if (
+        getattr(evidence, "status", None) != "RESOLVED"
+        or len(getattr(evidence, "candidates", ())) != 1
+    ):
+        raise CompletionContinuationError(
+            f"semantic-return proof requires resolved canonical project evidence for {project_id!r}"
+        )
+    sandbox = bind_worktree_sandbox(
+        evidence, worktree_id, root, expected_project_id=project_id
+    )
+    return WorktreeSemanticReturnEvidenceProvider(sandbox)
+
+
 def _relevant_records(
     store: ExecutionStateStore, relevant_origin_session_ref: str
 ) -> list[Any]:
@@ -450,6 +493,8 @@ def run_bounded_completion_continuation(
     worktree_root: str | PathLike[str],
     runtime_config: Any | None = None,
     relevant_origin_session_ref: str,
+    project_id: str | None = None,
+    worktree_id: str | None = None,
     timeout_seconds: float = DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS,
     poll_interval_seconds: float = DEFAULT_COMPLETION_CONTINUATION_POLL_SECONDS,
     max_iterations: int = MAX_COMPLETION_CONTINUATION_ITERATIONS,
@@ -475,6 +520,13 @@ def run_bounded_completion_continuation(
       timeout expires, or the bounded iteration budget is exhausted;
     - it never fabricates completion truth, never spawns a replacement parent
       session, and never becomes a forever scan.
+
+    AF #49 M1/W9: when the trusted lifecycle identity (``project_id`` +
+    ``worktree_id``) is supplied, the coordinator is wired with the governed
+    semantic-return evidence provider, so process exit 0 without a valid
+    ``task.return`` reconciles to truthful failure. Both are supplied together
+    by the production launcher; omitting them keeps the historical
+    component-level behavior (no semantic-return gate configured).
     """
     if not isinstance(relevant_origin_session_ref, str) or not relevant_origin_session_ref.strip():
         raise CompletionContinuationError("relevant_origin_session_ref must be a non-empty string")
@@ -501,13 +553,35 @@ def run_bounded_completion_continuation(
 
     initial_relevant = _relevant_records(store, session_ref)
     if not initial_relevant:
-        # NO_RELEVANT_ACTIVE_EXECUTION -> no watcher/continuation required.
+        # NO_RELEVANT_ACTIVE_EXECUTION -> no watcher/continuation required and
+        # no semantic-return proof is needed (nothing is reconciled/derived).
         return CompletionContinuationReport(
             relevant_origin_session_ref=session_ref,
             iterations=0,
             stop_reason=COMPLETION_CONTINUATION_STOP_NO_RELEVANT,
             durable_records=len(store.list_all()),
             relevant_records_remaining=0,
+        )
+
+    # AF #49 M1/W9: relevant terminal reconciliation requires governed
+    # semantic-return proof. Build it from trusted lifecycle identity; missing
+    # canonical project evidence fails closed (never gate-less success).
+    semantic_return_provider: Any | None = None
+    if project_id is not None or worktree_id is not None:
+        if not (
+            isinstance(project_id, str)
+            and project_id.strip()
+            and isinstance(worktree_id, str)
+            and worktree_id.strip()
+        ):
+            raise CompletionContinuationError(
+                "project_id and worktree_id must be supplied together (trusted lifecycle "
+                "identity) to enable governed semantic-return proof"
+            )
+        semantic_return_provider = build_semantic_return_evidence_provider(
+            worktree_root=worktree_root,
+            project_id=project_id.strip(),
+            worktree_id=worktree_id.strip(),
         )
 
     dispatcher_kwargs: dict[str, Any] = {
@@ -530,6 +604,7 @@ def run_bounded_completion_continuation(
         state_store=store,
         runtime_config=config,
         transport=effective_transport,
+        semantic_return_provider=semantic_return_provider,
     )
 
     deadline = now_fn() + float(timeout_seconds)

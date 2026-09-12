@@ -509,12 +509,24 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             create_durable_completion_coordinator,
             create_hermes_completion_delivery_transport,
         )
+        from aota_forge.work_plane.task_return_receipt import (
+            WorktreeSemanticReturnEvidenceProvider,
+        )
 
+        # AF #49 M1/W9 (I49-B007): the parent-side terminal-truth boundary
+        # carries the governed semantic-return evidence seam. The trusted
+        # worktree sandbox is resolved lazily (it is built below, before this
+        # binding is ever used); a missing sandbox resolves to no evidence and
+        # therefore never permits an unproven success.
+        semantic_return_provider = WorktreeSemanticReturnEvidenceProvider(
+            sandbox_resolver=lambda: _w2_holder.get("sandbox"),
+        )
         completion = create_durable_completion_coordinator(
             dispatcher=dispatcher,
             state_store=exec_store,
             runtime_config=runtime_cfg,
             transport=create_hermes_completion_delivery_transport(runtime_config=runtime_cfg),
+            semantic_return_provider=semantic_return_provider,
         )
     finally:
         if need_restore:
@@ -564,8 +576,10 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             return None
         return None
 
-    # Placeholder installed now; rebound after handoff resolvers are defined
-    # (closures capture the names, resolved at call time).
+    # AF #49 M1/W9: the trusted worktree sandbox holder is declared before the
+    # completion coordinator (above) so the semantic-return provider can
+    # resolve it lazily; it is populated later by the W8 binding section.
+    # (Closures capture the name, resolved at call time.)
     _w2_holder: dict[str, Any] = {}
 
     def _w2_binding_unavailable(detail: str) -> TrustedBindingError:
