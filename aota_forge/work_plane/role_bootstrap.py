@@ -72,7 +72,26 @@ NORMAL_PROGRESSIVE_SKILL_REQUIRES_RESULT_HYDRATE = False
 RESULT_HYDRATE_FOR_NORMAL_SKILL_LOADING = False
 RESULT_HYDRATE_FOR_LARGE_RESULT_OR_ARTIFACT = True
 MAINTAINER_CONTENT_IN_NORMAL_LLM_CONTEXT = False
-ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND = True
+# W5 (AF #49 M1/W5, I49-B003): the accepted inline-only assumption is amended.
+# Production role bootstraps can legitimately exceed the 4096-byte inline
+# projection bound (V3: Worker bootstrap 4925 bytes). The contract is now:
+# inline when it fits, otherwise a real governed by_ref result whose
+# model-visible representation carries deterministic hydration claims; never
+# semantic truncation. There is no inline-limit increase and no new store.
+ALL_ROLE_BOOTSTRAPS_INLINE_WITHIN_BOUND = False
+ALL_ROLE_BOOTSTRAPS_CONSUMABLE_INLINE_OR_BY_REF = True
+ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND = False  # truthful: superseded by by_ref contract
+
+# A role.bootstrap payload over the inline bound is projected by the MCP
+# transport as a governed by_ref result whose model-visible representation
+# carries deterministic hydration claims (canonical ToolOutputRef identity +
+# result.hydrate instruction). The payload is persisted by canonical Core
+# dispatch before projection; the model consumes it through the existing
+# result.hydrate operation. No new result store or hydration protocol.
+BY_REF_BOOTSTRAP_CONSUMABLE_VIA_RESULT_HYDRATE = True
+MODEL_CAN_DETERMINISTICALLY_HYDRATE_BY_REF = True
+HYDRATION_GUIDANCE_IS_RUNTIME_OWNED = True
+BOOTSTRAP_HYDRATION_REQUIRES_OPERATOR_INTERVENTION = False
 
 # Error helpers — typed semantic identity originates here (AF #46 M1/W2, D3).
 # No new ontology: codes reuse existing canonical result/error contracts

@@ -28,6 +28,20 @@ W3 governed result contract:
 * Large result is by_ref, never silently truncated, never full inline
 * Outcome/completeness explicit, typed errors preserved, no path/secret leakage
 * No durable hydration, no result DB, no new ontology
+
+W5 agent runtime surface repair (AF #49 M1/W5):
+
+* Canonical normal-path handoff/task lifecycle operations (handoff.write,
+  handoff.open, task.start, task.return) join the Agent-visible exposure
+  catalog through the same single ``aota.invoke`` transport.
+* EXPOSURE_IS_NOT_AUTHORITY=yes — server-side role/authority validation still
+  decides execution permission; visibility never grants authority.
+* ROLE_SURFACE ⊆ CANONICAL_AGENT_VISIBLE_OPERATION_CATALOG, unknown
+  operations still fail closed with UNKNOWN_OPERATION.
+* Governed by_ref results carry deterministic, bounded, model-visible
+  hydration claims (canonical ToolOutputRef identity + result.hydrate
+  instruction) so the model can consume them through the existing
+  hydration operation without guessing (no new hydration protocol).
 """
 
 from __future__ import annotations
@@ -128,6 +142,13 @@ try:
     _W2_CANONICAL_MAP = load_operation_descriptor_map(discover_canonical_project_root())
     ROLE_BOOTSTRAP_DESCRIPTOR = _W2_CANONICAL_MAP.get("role.bootstrap")
     SKILL_OPEN_DESCRIPTOR = _W2_CANONICAL_MAP.get("skill.open")
+    # W5: canonical normal-path lifecycle descriptors join the exposure catalog.
+    # The canonical operation descriptor/registry remains the single semantic
+    # authority; this map is an exposure-boundary projection only.
+    HANDOFF_WRITE_DESCRIPTOR = _W2_CANONICAL_MAP.get("handoff.write")
+    HANDOFF_OPEN_DESCRIPTOR = _W2_CANONICAL_MAP.get("handoff.open")
+    TASK_START_DESCRIPTOR = _W2_CANONICAL_MAP.get("task.start")
+    TASK_RETURN_DESCRIPTOR = _W2_CANONICAL_MAP.get("task.return")
     # Canonical test.run descriptor from map should match TEST_RUN_DESCRIPTOR
     _CANONICAL_TEST_RUN = _W2_CANONICAL_MAP.get("test.run")
     if _CANONICAL_TEST_RUN is not None and TEST_RUN_DESCRIPTOR is None:
@@ -135,6 +156,10 @@ try:
 except Exception:  # pragma: no cover - fallback for isolated test discovery
     ROLE_BOOTSTRAP_DESCRIPTOR = None  # type: ignore
     SKILL_OPEN_DESCRIPTOR = None  # type: ignore
+    HANDOFF_WRITE_DESCRIPTOR = None  # type: ignore
+    HANDOFF_OPEN_DESCRIPTOR = None  # type: ignore
+    TASK_START_DESCRIPTOR = None  # type: ignore
+    TASK_RETURN_DESCRIPTOR = None  # type: ignore
     _CANONICAL_TEST_RUN = None  # type: ignore
 
 try:  # The MCP SDK is an adapter dependency, never a Core dependency.
@@ -255,6 +280,16 @@ W2_OPERATIONS: tuple[str, ...] = (
     "skill.open",
     "test.run",
 )
+# W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
+# operations are Agent-visible through the same single aota.invoke transport.
+# Exposure is an exposure boundary only; server-side role/authority validation
+# still decides execution permission (EXPOSURE_IS_NOT_AUTHORITY=yes).
+HANDOFF_TASK_OPERATIONS: tuple[str, ...] = (
+    "handoff.write",
+    "handoff.open",
+    "task.start",
+    "task.return",
+)
 # Internal task-main controls must never become canonical Agent-facing operations
 INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.reconcile_worker_completion",
@@ -262,7 +297,7 @@ INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.observe_terminal_completions",
     "task_main.dispatch_ready",
 )
-LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS
+LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
 LOGICAL_CAPABILITY_SURFACE = LOGICAL_OPERATIONS
@@ -316,9 +351,23 @@ if TASK_MAIN_ADVANCE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ADVANCE_DESCRIPTOR.name] = TASK_MAIN_ADVANCE_DESCRIPTOR
 if TASK_MAIN_SUBMIT_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_SUBMIT_DESCRIPTOR.name] = TASK_MAIN_SUBMIT_DESCRIPTOR
+# W5 canonical handoff/task lifecycle descriptors (exposure projection only)
+if HANDOFF_WRITE_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[HANDOFF_WRITE_DESCRIPTOR.name] = HANDOFF_WRITE_DESCRIPTOR
+if HANDOFF_OPEN_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[HANDOFF_OPEN_DESCRIPTOR.name] = HANDOFF_OPEN_DESCRIPTOR
+if TASK_START_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_START_DESCRIPTOR.name] = TASK_START_DESCRIPTOR
+if TASK_RETURN_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_RETURN_DESCRIPTOR.name] = TASK_RETURN_DESCRIPTOR
 SUPPORTED_OPERATIONS: frozenset[str] = frozenset(LOGICAL_OPERATIONS)
 # For backward compatibility, retain WORKSPACE_OPERATIONS alias but expanded set is canonical
 CANONICAL_SUPPORTED_OPERATIONS = SUPPORTED_OPERATIONS
+# W5 exposure/canonical relationship: role surfaces must remain a subset of the
+# canonical Agent-visible catalog; unknown/unregistered operations fail closed.
+CANONICAL_AGENT_VISIBLE_OPERATION_CATALOG: frozenset[str] = SUPPORTED_OPERATIONS
+ROLE_SURFACE_SUBSET_CANONICAL_AGENT_VISIBLE_CATALOG = True
+EXPOSURE_IS_NOT_AUTHORITY = True
 
 
 class McpTransportUnavailable(RuntimeError):
@@ -362,9 +411,48 @@ class McpToolResult(TypedDict, total=False):
     output_byte_length: int
     inline_output: str | None
     output_ref: dict[str, Any] | None
+    # W5 model-visible by_ref hydration contract (present on by_ref results)
+    hydration: dict[str, Any] | None
 
 
 # Trusted binding types canonical in runtime.trusted_runtime_binding (removed from MCP: TRUSTED_BINDING_TYPE_OWNER_IS_MCP=no)
+
+
+def _by_ref_hydration_instruction(output_ref: object) -> dict[str, Any] | None:
+    """Deterministic model-visible hydration claims + instruction for by_ref.
+
+    Reuses the exact existing hydration contract (canonical ToolOutputRef
+    identity + result.hydrate operation); no new ref envelope, no new
+    hydration protocol. The persisted payload was written by canonical Core
+    dispatch, so following these exact claims deterministically hydrates the
+    original payload. Returns None when the canonical claims are incomplete.
+    """
+    if not isinstance(output_ref, dict):
+        return None
+    ref = output_ref.get("ref")
+    digest = output_ref.get("digest")
+    project_id = output_ref.get("project_id")
+    worktree_id = output_ref.get("worktree_id")
+    if not all(isinstance(value, str) and value for value in (ref, digest, project_id, worktree_id)):
+        return None
+    arguments: dict[str, Any] = {
+        "ref": ref,
+        "digest": digest,
+        "project_id": project_id,
+        "worktree_id": worktree_id,
+    }
+    byte_length = output_ref.get("byte_length")
+    if isinstance(byte_length, int) and not isinstance(byte_length, bool) and byte_length >= 0:
+        arguments["byte_length"] = byte_length
+    return {
+        "operation": "result.hydrate",
+        "arguments": arguments,
+        "reason": "result exceeds the bounded inline projection and is stored by reference",
+        "instruction": (
+            "call aota.invoke(operation=\"result.hydrate\", arguments=<arguments>) "
+            "with these exact trusted claims to obtain the bounded payload"
+        ),
+    }
 
 
 def _authority_for(binding: TrustedWorkerBinding, operation: str) -> WorkspaceAuthorityEvidence | None:
@@ -481,7 +569,14 @@ def _governed_projection_to_mcp(operation: str, projection) -> McpToolResult:
         "output_byte_length": projection.output_byte_length,
         "inline_output": projection.inline_output,
         "output_ref": projection.output_ref.to_dict() if projection.output_ref is not None else None,
+        "hydration": None,
     }
+    if projection.output_mode == "by_ref":
+        # W5: by_ref results must be deterministically consumable from the
+        # model-visible representation alone (no guessed operation names, no
+        # operator intervention). Claims reuse the canonical ToolOutputRef
+        # identity and the existing result.hydrate operation.
+        result["hydration"] = _by_ref_hydration_instruction(result.get("output_ref"))
     if projection.output_mode == "inline" and projection.is_success:
         # Small bounded inline: populate payload as parsed JSON of inline_output
         # (payload was sanitized before projection, so no canonical_path leakage)
@@ -899,7 +994,7 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
                         "digest": mcp_result.get("output_digest"),
                     }
                     summary = {k: v for k, v in summary.items() if v is not None}
-                    text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+                    text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
             else:
                 # by_ref or failure: bounded summary/ref metadata, never eager payload
                 summary = {
@@ -937,14 +1032,18 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
                         ref = mcp_result.get("output_ref")
                         if isinstance(ref, dict):
                             summary["output_ref"] = {
-                                "ref": ref.get("ref"),
-                                "digest": ref.get("digest"),
-                                "byte_length": ref.get("byte_length"),
+                                key: ref.get(key)
+                                for key in ("ref", "digest", "project_id", "worktree_id", "byte_length")
+                                if ref.get(key) is not None
                             }
+                        # W5: model-visible by_ref hydration path (I49-B003).
+                        hydration = mcp_result.get("hydration")
+                        if isinstance(hydration, dict):
+                            summary["hydration"] = hydration
                 except Exception:
                     pass
                 summary = {k: v for k, v in summary.items() if v is not None}
-                text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+                text = json.dumps(summary, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
         except Exception:
             text = json.dumps({"ok": bool(mcp_result.get("ok"))})
         try:
@@ -989,10 +1088,14 @@ __all__ = [
     "WORKSPACE_OPERATIONS",
     "M2_OPERATIONS",
     "TASK_MAIN_OPERATIONS",
+    "HANDOFF_TASK_OPERATIONS",
     "INTERNAL_TASK_MAIN_OPERATIONS",
     "BOUNDED_MCP_OPERATIONS",
     "LOGICAL_CAPABILITY_SURFACE",
     "SUPPORTED_OPERATIONS",
+    "CANONICAL_AGENT_VISIBLE_OPERATION_CATALOG",
+    "ROLE_SURFACE_SUBSET_CANONICAL_AGENT_VISIBLE_CATALOG",
+    "EXPOSURE_IS_NOT_AUTHORITY",
     "MCP_TRANSPORT_TOOL_COUNT",
     "MCP_RESULT_IS_AUTHORITY",
     "NEW_AUTHORITY_PLANE_REQUIRED",

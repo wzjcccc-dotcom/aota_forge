@@ -56,6 +56,12 @@ HERMES_PROFILE_IS_AUTHORITY_SOURCE = False
 # Role discrimination moved to runtime
 ROLE_DISCRIMINATION_OWNER = "AF_RUNTIME_COMPOSITION"
 
+# W5 (AF #49 M1/W5): role tool surfaces remain a subset of the canonical
+# Agent-visible operation catalog. Exposure is not authority; unknown or
+# unregistered operations still fail closed here.
+ROLE_SURFACE_SUBSET_CANONICAL_AGENT_VISIBLE_OPERATION_CATALOG = True
+UNKNOWN_OPERATION_FAIL_CLOSED = True
+
 # Envelope transport (mechanical)
 PRE_RESOLVED_BINDING_ENV = "AOTA_PRE_RESOLVED_BINDING"
 PRE_RESOLVED_BINDING_VERSION = 1
@@ -182,8 +188,11 @@ class TrustedWorkerBinding:
             raise TrustedBindingError("typed ToolRoleSurface is required")
         if self.tool_surface.work_role != self.handoff.work_role:
             raise TrustedBindingError("tool surface role does not match TaskHandoff role")
-        # Surface must be subset of supported catalog (MCP transport set or Core set)
-        # We check against core_ingress + mcp superset to keep single truth.
+        # Surface must be subset of the canonical Agent-visible operation
+        # catalog (MCP transport exposure boundary or Core set).
+        # W5 (AF #49 M1/W5): the catalog now includes the canonical normal-path
+        # handoff/task lifecycle operations; subset validation is preserved and
+        # unknown/unregistered operations still fail closed.
         try:
             from aota_forge.mcp_transport import SUPPORTED_OPERATIONS as _MCP_OPS  # type: ignore
 
@@ -203,6 +212,10 @@ class TrustedWorkerBinding:
                 "task_main.recover_coordinator",
                 "task_main.advance_once",
                 "task_main.submit_work_projection",
+                "handoff.write",
+                "handoff.open",
+                "task.start",
+                "task.return",
                 "git.status",
                 "git.diff",
             }

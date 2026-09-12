@@ -376,9 +376,19 @@ def test_source_visible_without_submit_work_projection(tmp_path: Path) -> None:
 def test_role_bootstrap_is_not_dynamic_work_source_delivery(tmp_path: Path) -> None:
     live = _live()
     binding, _root = _make_task_main_binding_for_view(tmp_path, live)
-    boot = _SharedAotaMcpAdapter(binding).invoke("role.bootstrap", {})
+    adapter = _SharedAotaMcpAdapter(binding)
+    boot = adapter.invoke("role.bootstrap", {})
     assert boot["ok"] is True, boot
-    payload = boot["payload"]
+    # W5: over-bound bootstrap is a governed by_ref result; consume it via its
+    # model-visible hydration claims (existing result.hydrate).
+    if boot["output_mode"] == "inline":
+        payload = boot["payload"]
+    else:
+        hydration = boot["hydration"]
+        assert hydration["operation"] == "result.hydrate"
+        hydrated = adapter.invoke("result.hydrate", dict(hydration["arguments"]))
+        assert hydrated["ok"] is True, hydrated
+        payload = json.loads(hydrated["payload"]["content"])
     assert "work_context" not in payload
     serialized = json.dumps(payload)
     assert MARKER_ALPHA not in serialized

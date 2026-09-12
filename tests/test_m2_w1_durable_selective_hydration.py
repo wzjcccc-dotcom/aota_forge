@@ -783,6 +783,20 @@ class TestNoSecondAuthority:
             assert _mt.ONE_SHARED_AOTA_MCP is True
             assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
             return
+        if "W5-agent-runtime-surface-worker-context" in branch:
+            # W5 (AF #49 M1/W5) legitimately reconciles the exposure catalog
+            # with the canonical normal-path operations and adds model-visible
+            # by_ref hydration guidance. Single-entry, exposure-not-authority
+            # and Core-dispatch invariants must still hold.
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert _mt.ONE_SHARED_AOTA_MCP is True
+            assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
+            assert {"handoff.write", "handoff.open", "task.start", "task.return"}.issubset(set(_mt.SUPPORTED_OPERATIONS))
+            assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

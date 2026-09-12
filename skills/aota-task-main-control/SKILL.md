@@ -21,13 +21,19 @@ tags: [aota, task-main, control, milestone]
 
 `aota.invoke(operation="task_main.advance_once", arguments={})`. One bounded iteration; AF decides transition. Observe `next_action`: `DISPATCHED_WORK`, `WAITING_FOR_WORKERS`, `RECONCILED`, `INTEGRATED_REVIEW_REQUIRED`, `DISPATCHED_REVIEW`, `REPAIR_REQUIRED`, `BLOCKED`, `MILESTONE_CLOSURE_READY`, `USER_GATE_REQUIRED`, `SESSION_RECOVERY_REQUIRED`, etc. Never call internal reconcile/dispatch. Never override `next_action`.
 
-## Work projection (normal pre-dispatch semantic action)
+## Normal work path (source → handoff → task.start)
 
-If a ready Work lacks a projection, `activate`/`recover`/`advance` returns `projection_required` with `work_item_id` plus bounded `governed_work_semantics` (objective plus semantic context from canonical Plan authority). Read that context, reason about bounded execution semantics, then call once:
+`activate`/`recover`/`advance` return the authoritative bounded Work source in `work_context` (`work_item_id`, `plan_ref`, `plan_digest`, `milestone_id`, source text or trusted by-ref identity). Read it, reason, then:
 
-`aota.invoke(operation="task_main.submit_work_projection", arguments={"work_item_id": "...", "objective": "...", "bounded_scope": "...", "validation_expectations": [...], "semantic_stop_expectations": [...]})`
+1. `aota.invoke(operation="handoff.write", arguments={"mode": "work_item", "payload": {"objective": "...", "bounded_scope": "...", "validation_expectations": [...], "semantic_stop_expectations": [...]}})`
 
-Exact contract is in `role.bootstrap` `OPERATION_GUIDANCE` (eager, no `skill.open` needed). `work_item_id` is correlation only, not authority. Model text is not authority and cannot expand scope. Then call `advance_once`. Do not guess arguments from errors. Do not read `operations.yaml` from workspace. Do not read GitHub Issue body. Do not open schema MCP resources. Do not use `skill.open` before ordinary projection submission.
+AF fills the trusted Plan/Milestone/Work/source envelope; model refs are correlation only. The semantic payload is stored verbatim.
+
+2. `aota.invoke(operation="task.start", arguments={"role": "coder|analyst|reviewer|project-steward", "handoff_ref": "<ref from handoff.write>"})`
+
+AF verifies the durable handoff is grounded to the current authoritative Work source before dispatch. A `by_ref` result carries `hydration` claims for `aota.invoke(operation="result.hydrate", arguments={...})`.
+
+`task_main.submit_work_projection` is internal compatibility only: not the normal path, not Plan authority, cannot bypass trusted Work-source grounding. Exact contracts are in `role.bootstrap` `OPERATION_GUIDANCE`. Do not guess arguments from errors. Do not read `operations.yaml`. Do not read the GitHub Issue body. Do not open schema MCP resources.
 
 ## Normal reasoning
 

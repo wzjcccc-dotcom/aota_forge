@@ -799,9 +799,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # M3/W1 writer: task_main.submit_work_projection joins eager (canonical writer).
     # W3 rebalance: task-main gets broad authorized project search/read + bounded
     # restricted terminal (inspection + git_inspection) per role×family.
+    # W5 (AF #49 M1/W5, I49-B001): the canonical normal path handoff.write,
+    # handoff.open and task.start join the task-main model-visible surface.
+    # Visibility is not authority: server-side role/grounding validation still
+    # decides execution (Worker task.start remains denied).
     tool_surface = create_role_tool_surface(
         "task-main",
-        eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"),
+        eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection", "handoff.write", "handoff.open", "task.start"),
         progressive=("result.hydrate", "restricted_shell.run"),
     )
     # W3 broad read: task-main may perform small targeted project search/read

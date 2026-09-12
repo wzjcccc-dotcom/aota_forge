@@ -273,11 +273,15 @@ class TestTier2BootstrapParity:
         out = handle_role_bootstrap(_B(), {})
         assert "OPERATION_GUIDANCE" in out
         assert "task_main.submit_work_projection" in out["OPERATION_GUIDANCE"]
-        # TOOL_SURFACE preserved (existing shape, 4 controls).
+        # TOOL_SURFACE preserved (this synthetic binding carries the existing
+        # 4-control surface; W5 production surfaces add the normal-path ops).
         eager_names = sorted(e.get("capability_name") for e in out["TOOL_SURFACE"]["eager"])
         assert eager_names == sorted(["task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"])
-        # Size within 4096.
-        assert len(json.dumps(out).encode("utf-8")) <= 4096
+        # W5 amended contract: inline when it fits, otherwise the MCP transport
+        # projects a real governed by_ref result with hydration claims (no
+        # semantic truncation, no inline-limit increase; bounded by the
+        # existing durable payload bound).
+        assert len(json.dumps(out).encode("utf-8")) <= 64 * 1024
 
     def test_no_duplicate_schema_authority(self) -> None:
         import aota_forge.work_plane.task_main_descriptors as dmod
@@ -425,8 +429,17 @@ class TestTier4ProcessBoundary:
 
         adapter = _SharedAotaMcpAdapter(binding)
         rb = adapter.invoke("role.bootstrap", {})
-        assert rb["ok"] is True and rb["output_mode"] == "inline"
-        boot = rb["payload"]
+        assert rb["ok"] is True
+        if rb["output_mode"] == "inline":
+            boot = rb["payload"]
+        else:
+            # W5: an over-bound bootstrap is consumed through its model-visible
+            # hydration claims (existing result.hydrate; no guessing).
+            hydration = rb["hydration"]
+            assert hydration["operation"] == "result.hydrate"
+            hb = adapter.invoke("result.hydrate", dict(hydration["arguments"]))
+            assert hb["ok"] is True, hb
+            boot = json.loads(hb["payload"]["content"])
         assert "OPERATION_GUIDANCE" in boot
         guid = boot["OPERATION_GUIDANCE"]["task_main.submit_work_projection"]
         assert sorted(guid["required"].keys()) == ["bounded_scope", "objective", "semantic_stop_expectations", "validation_expectations", "work_item_id"]
@@ -505,8 +518,17 @@ class TestI46B002Regression:
         binding, _ = _make_task_main_binding_for_view(tmp_path, live)
         from aota_forge.mcp_transport import _SharedAotaMcpAdapter
 
-        rb = _SharedAotaMcpAdapter(binding).invoke("role.bootstrap", {})
-        boot = rb["payload"]
+        adapter = _SharedAotaMcpAdapter(binding)
+        rb = adapter.invoke("role.bootstrap", {})
+        if rb["output_mode"] == "inline":
+            boot = rb["payload"]
+        else:
+            # W5: an over-bound bootstrap is consumed through its model-visible
+            # hydration claims (existing result.hydrate; no guessing).
+            hydration = rb["hydration"]
+            hb = adapter.invoke("result.hydrate", dict(hydration["arguments"]))
+            assert hb["ok"] is True, hb
+            boot = json.loads(hb["payload"]["content"])
         assert "OPERATION_GUIDANCE" in boot
         req = boot["OPERATION_GUIDANCE"]["task_main.submit_work_projection"]["required"]
         assert set(req.keys()) == {"work_item_id", "objective", "bounded_scope", "validation_expectations", "semantic_stop_expectations"}

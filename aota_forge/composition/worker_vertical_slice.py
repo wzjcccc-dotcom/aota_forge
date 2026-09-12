@@ -369,22 +369,26 @@ def build_worker_binding(
     # steward: search/read eager (no write), hydrate progressive
     # task-main never reaches here (denied above); steward/task-main default below.
     # W2 extension preserved: test.run visibility per-role least-privilege.
-    eager_ops: tuple[str, ...] = ("workspace.search", "workspace.read", "workspace.write")
+    # W5 (AF #49 M1/W5, I49-B001): the canonical Worker lifecycle operations
+    # (handoff.open, handoff.write, task.return) join each one-shot role's
+    # model-visible surface. Exposure is not authority: server-side role/mode
+    # and parent-boundary validation still decide execution.
+    eager_ops: tuple[str, ...] = ("workspace.search", "workspace.read", "workspace.write", "handoff.open", "handoff.write", "task.return")
     progressive_ops: tuple[str, ...] = ("result.hydrate",)
     if role_str == "coder":
-        eager_ops = ("workspace.search", "workspace.read", "workspace.write", "test.run")
+        eager_ops = ("workspace.search", "workspace.read", "workspace.write", "test.run", "handoff.open", "handoff.write", "task.return")
         progressive_ops = ("result.hydrate", "restricted_shell.run")
     elif role_str == "analyst":
-        eager_ops = ("workspace.search", "workspace.read")
+        eager_ops = ("workspace.search", "workspace.read", "handoff.open", "handoff.write", "task.return")
         progressive_ops = ("workspace.write", "result.hydrate", "restricted_shell.run")
     elif role_str == "reviewer":
         # M2/W2 + M3/W1 reviewer independent validation: test.run is eager visible
         # but server authorization stays conditional (granted below only
         # when review evidence requires it). No workspace.write (forbidden).
-        eager_ops = ("workspace.search", "workspace.read", "test.run")
+        eager_ops = ("workspace.search", "workspace.read", "test.run", "handoff.open", "handoff.write", "task.return")
         progressive_ops = ("result.hydrate",)
     elif role_str in ("project-steward", "task-main"):
-        eager_ops = ("workspace.search", "workspace.read")
+        eager_ops = ("workspace.search", "workspace.read", "handoff.open", "handoff.write", "task.return")
         progressive_ops = ("result.hydrate",)
     else:
         progressive_ops = ("result.hydrate",)

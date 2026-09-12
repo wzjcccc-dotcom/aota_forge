@@ -52,6 +52,8 @@ from aota_forge.work_plane.af_roles import (
 )
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.role_bootstrap import (
+    ALL_ROLE_BOOTSTRAPS_CONSUMABLE_INLINE_OR_BY_REF,
+    ALL_ROLE_BOOTSTRAPS_INLINE_WITHIN_BOUND,
     ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND,
     BOOTSTRAP_NORMAL_PATH_USABLE_WITHOUT_SKILL_NAVIGATION,
     EAGER_SKILL_CONTENT_IS_USABLE_GUIDANCE,
@@ -135,13 +137,38 @@ def _bootstrap_for(role: AgentWorkRole, tmp_path: Path) -> dict:
 
 class TestABoundNoTruncation:
     @pytest.mark.parametrize("role", ["task-main", "analyst", "coder", "reviewer", "project-steward"])
-    def test_all_bootstraps_within_bound(self, tmp_path: Path, role: str) -> None:
+    def test_all_bootstraps_consumable_inline_or_by_ref(self, tmp_path: Path, role: str) -> None:
         res = _bootstrap_for(AgentWorkRole(role), tmp_path)
-        assert ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND is True
-        total = len(json.dumps(res).encode("utf-8"))
-        assert total <= 4096, f"{role} bootstrap {total} exceeds 4096"
+        # W5 (AF #49 M1/W5, I49-B003) amended contract: no semantic truncation.
+        # A bootstrap over the inline bound is a real governed by_ref result
+        # with deterministic model-visible hydration claims (no inline-limit
+        # increase, no result loss); consumed via existing result.hydrate.
+        assert ALL_ROLE_BOOTSTRAPS_CONSUMABLE_INLINE_OR_BY_REF is True
+        assert ALL_ROLE_BOOTSTRAPS_INLINE_WITHIN_BOUND is False
+        assert ALL_ROLE_BOOTSTRAPS_WITHIN_BOUND is False  # truthful supersession
         assert SEMANTIC_TRUNCATION_FOR_BOOTSTRAP is False
         assert EAGER_SKILL_CONTENT_IS_USABLE_GUIDANCE is True
+        # Prove model-visible consumption through the real transport projection.
+        if role == "task-main":
+            adapter = _SharedAotaMcpAdapter(_task_main_fake_binding(tmp_path))
+        else:
+            adapter = _SharedAotaMcpAdapter(
+                build_worker_binding(
+                    root=tmp_path, project_id="aota_forge", worktree_id=f"wt-{role[:2]}",
+                    canonical_task_id=f"t-{role[:2]}", handoff=_handoff(AgentWorkRole(role)),
+                )
+            )
+        rb = adapter.invoke("role.bootstrap", {})
+        assert rb["ok"] is True
+        if rb["output_mode"] == "inline":
+            payload = rb["payload"]
+        else:
+            hydration = rb["hydration"]
+            assert hydration["operation"] == "result.hydrate"
+            hy = adapter.invoke("result.hydrate", dict(hydration["arguments"]))
+            assert hy["ok"] is True, hy
+            payload = json.loads(hy["payload"]["content"])
+        assert payload["BASE_SKILLS"] == res["BASE_SKILLS"]
 
     @pytest.mark.parametrize("role", ["task-main", "analyst", "coder", "reviewer", "project-steward"])
     def test_no_semantic_truncation(self, tmp_path: Path, role: str) -> None:
@@ -254,8 +281,17 @@ class TestHIJProgressiveOneCall:
         )
         adapter = _SharedAotaMcpAdapter(b)
         rb = adapter.invoke("role.bootstrap", {})
-        assert rb["ok"] is True and rb["output_mode"] == "inline"
-        prog = (rb.get("payload") or {}).get("PROGRESSIVE_SKILLS", [])
+        assert rb["ok"] is True
+        payload = rb.get("payload")
+        if rb["output_mode"] == "by_ref":
+            # W5: consume the governed by_ref bootstrap via its model-visible
+            # hydration claims (existing result.hydrate, no guessing).
+            hydration = rb["hydration"]
+            assert hydration["operation"] == "result.hydrate"
+            hy = adapter.invoke("result.hydrate", dict(hydration["arguments"]))
+            assert hy["ok"] is True, hy
+            payload = json.loads(hy["payload"]["content"])
+        prog = (payload or {}).get("PROGRESSIVE_SKILLS", [])
         assert len(prog) >= 1
         for p in prog:
             so = adapter.invoke("skill.open", {"ref": p["ref"]})

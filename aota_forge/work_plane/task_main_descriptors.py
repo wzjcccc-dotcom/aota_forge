@@ -29,6 +29,18 @@ TASK_MAIN_RECOVER_DESCRIPTOR.validate()
 TASK_MAIN_ADVANCE_DESCRIPTOR.validate()
 TASK_MAIN_SUBMIT_DESCRIPTOR.validate()
 
+# W5 (AF #49 M1/W5, I49-B001): canonical normal-path lifecycle descriptors,
+# loaded from the same single authority (.aota/contracts/operations.yaml).
+HANDOFF_WRITE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("handoff.write")
+HANDOFF_OPEN_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("handoff.open")
+TASK_START_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task.start")
+TASK_RETURN_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task.return")
+
+HANDOFF_WRITE_DESCRIPTOR.validate()
+HANDOFF_OPEN_DESCRIPTOR.validate()
+TASK_START_DESCRIPTOR.validate()
+TASK_RETURN_DESCRIPTOR.validate()
+
 TASK_MAIN_DESCRIPTORS: tuple[OperationContractDescriptor, ...] = (
     TASK_MAIN_ACTIVATE_DESCRIPTOR,
     TASK_MAIN_RECOVER_DESCRIPTOR,
@@ -36,17 +48,28 @@ TASK_MAIN_DESCRIPTORS: tuple[OperationContractDescriptor, ...] = (
     TASK_MAIN_SUBMIT_DESCRIPTOR,
 )
 
+# W5 guidance disposition freeze (submit_work_projection stays importable and
+# visible for compatibility; it is not the Agent normal path or authority).
+SUBMIT_WORK_PROJECTION_REMOVED = False
+SUBMIT_WORK_PROJECTION_INTERNAL_COMPATIBILITY_ONLY = True
+SUBMIT_WORK_PROJECTION_AGENT_NORMAL_PATH = False
+TASK_MAIN_NORMAL_PATH = "authoritative_work_source>handoff.write(work_item)>task.start"
+
 # ---------------------------------------------------------------------------
-# M3/W1-R1 model-visible operation guidance (F1).
+# M3/W1-R1 model-visible operation guidance (F1); W5 normal-path convergence.
 #
 # Single schema authority remains .aota/contracts/operations.yaml via loader
 # (OPERATION_DESCRIPTOR_AUTHORITY_COUNT=1). This function deterministically
-# derives a compact model-usable projection from the canonical descriptor;
+# derives a compact model-usable projection from the canonical descriptors;
 # it never hardcodes a second independent schema. Required names/types come
 # from descriptor.inputs; type+bound suffixes come from Core constants.
-# Usage/example are curated guidance, not schema authority. Submit-only to
-# stay within the 4096 inline bound; other controls take empty args (see
-# eager Skill guidance which already covers activate/recover/advance).
+# Usage/example are curated guidance, not schema authority.
+#
+# W5 (AF #49 M1/W5): normal guidance is now
+#   authoritative Work source -> LLM reasoning -> handoff.write(work_item)
+#   -> task.start
+# task_main.submit_work_projection is retained for compatibility only and is
+# explicitly marked as not the Agent normal path (no authority change).
 # ---------------------------------------------------------------------------
 
 def _submit_bound_suffix(field_name: str, primitive: str) -> str:
@@ -74,31 +97,74 @@ def _submit_bound_suffix(field_name: str, primitive: str) -> str:
     return primitive
 
 
-_SUBMIT_NOTE = "text!=authority;projection!=plan authority;no expansion"
+_SUBMIT_NOTE = "compatibility only; not agent normal path; cannot bypass Work-source grounding"
 _SUBMIT_EXAMPLE = {
     "work_item_id": "W1",
     "objective": "Goal X",
-    "bounded_scope": "Implement X in src/x.py,validate.",
+    "bounded_scope": "Implement X in src/x.py",
     "validation_expectations": ["X ok"],
     "semantic_stop_expectations": ["stop if unclear"],
 }
 
+# W5 (AF #49 M1/W5): compact normal-path guidance. Names/types come from the
+# canonical descriptors; usage and examples are curated guidance. The
+# authoritative Work source arrives in activate/recover/advance work_context;
+# the model reasons, writes a work_item handoff, then starts the target role.
+# submit_work_projection stays compatibility-only and explicitly not the
+# Agent normal path. Guidance stays compact to bound the payload; a bootstrap
+# over the inline projection bound is delivered as a governed by_ref result.
+_NORMAL_PATH_FLOW = "work_context -> reasoning -> handoff.write(mode=work_item) -> task.start"
+_HANDOFF_WRITE_NOTE = "normal step 1; mode=work_item; trusted envelope filled by AF"
+_HANDOFF_WRITE_EXAMPLE = {
+    "mode": "work_item",
+    "payload": {"objective": "Goal", "bounded_scope": "Scope"},
+}
+_TASK_START_NOTE = "normal step 2; AF verifies durable Work-source grounding"
+_TASK_START_EXAMPLE = {"role": "coder", "handoff_ref": "<ref from handoff.write>"}
+
+
+def _required_types(descriptor: OperationContractDescriptor) -> dict[str, str]:
+    """Deterministic required-name -> type projection from the descriptor."""
+    required: dict[str, str] = {}
+    for spec in descriptor.inputs:
+        if not spec.type.endswith("?"):
+            required[spec.name] = spec.type
+    return required
+
 
 def build_task_main_operation_guidance() -> dict[str, dict[str, object]]:
-    """Deterministic compact model-visible guidance for submit (F1, eager).
+    """Deterministic compact model-visible guidance (W5 normal path first).
 
-    Required names/types are read from the canonical descriptor; bounds from
-    Core constants. No second schema authority is created.
+    Required names/types are read from the canonical descriptors; usage and
+    examples are curated guidance. No second schema authority is created.
+    ``task_main.submit_work_projection`` is retained for compatibility and is
+    explicitly marked as not the Agent normal path.
     """
-    required: dict[str, str] = {}
+    submit_required: dict[str, str] = {}
     for spec in TASK_MAIN_SUBMIT_DESCRIPTOR.inputs:
-        required[spec.name] = _submit_bound_suffix(spec.name, spec.type)
+        submit_required[spec.name] = _submit_bound_suffix(spec.name, spec.type)
     return {
+        "normal_path": {
+            "flow": _NORMAL_PATH_FLOW,
+            "steps": ["handoff.write", "task.start"],
+        },
+        "handoff.write": {
+            "required": _required_types(HANDOFF_WRITE_DESCRIPTOR),
+            "note": _HANDOFF_WRITE_NOTE,
+            "example": dict(_HANDOFF_WRITE_EXAMPLE),
+        },
+        "task.start": {
+            "required": _required_types(TASK_START_DESCRIPTOR),
+            "note": _TASK_START_NOTE,
+            "example": dict(_TASK_START_EXAMPLE),
+        },
         "task_main.submit_work_projection": {
-            "required": required,
+            "required": submit_required,
             "note": _SUBMIT_NOTE,
+            "compatibility_only": True,
+            "agent_normal_path": False,
             "example": dict(_SUBMIT_EXAMPLE),
-        }
+        },
     }
 
 

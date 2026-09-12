@@ -20,8 +20,10 @@ Reuses existing result.hydrate canonical operation; no new operation.
 
 from __future__ import annotations
 
-import pytest
+import json
 from pathlib import Path
+
+import pytest
 
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
@@ -103,6 +105,26 @@ def _call(server, op, args):
     return structured, text
 
 
+def _bootstrap_payload(server):
+    """Full role.bootstrap payload via existing transport + governed hydration.
+
+    W5 (AF #49 M1/W5): a bootstrap over the inline bound is a real governed
+    by_ref result; consume it through its model-visible hydration claims
+    (same canonical result.hydrate operation), never by guessing.
+    """
+    structured, text = _call(server, "role.bootstrap", {})
+    assert structured["ok"] is True
+    if structured["output_mode"] == "inline":
+        assert structured["payload"] is not None
+        return structured["payload"], structured, text
+    hydration = structured.get("hydration")
+    assert isinstance(hydration, dict), structured
+    assert hydration["operation"] == "result.hydrate"
+    hydrated, _ = _call(server, "result.hydrate", dict(hydration["arguments"]))
+    assert hydrated["ok"] is True, hydrated
+    return json.loads(hydrated["payload"]["content"]), structured, text
+
+
 def test_production_large_skill_by_ref_and_task_main_hydrate(tmp_path: Path):
     """W1: normal production Skills open inline one-call (no hydrate).
 
@@ -110,19 +132,21 @@ def test_production_large_skill_by_ref_and_task_main_hydrate(tmp_path: Path):
     (1-2.5 KiB). Normal skill.open returns inline usable content; hydrate is
     only for genuinely large tool outputs/artifacts (covered via workspace.read
     fixtures in test_w1_mcp test_08/09, not via normal Skill loading).
+    W5: role.bootstrap itself may be by_ref when the payload exceeds the
+    inline bound; it is consumed via its model-visible hydration claims.
     """
     binding, sandbox = _make_task_main_binding(tmp_path)
     server = create_shared_mcp_server(binding)
 
-    # role.bootstrap should be inline and contain progressive refs
+    # role.bootstrap is inline or a consumable governed by_ref, and contains
+    # progressive refs either way.
     s_boot, t_boot = _call(server, "role.bootstrap", {})
     assert s_boot["ok"] is True
-    assert s_boot["output_mode"] == "inline"
-    assert "PROGRESSIVE_SKILLS" in s_boot["payload"] or "PROGRESSIVE_SKILLS" in t_boot
-    # Ensure progressive includes workspace-operations and result-hydration
-    payload = s_boot["payload"]
+    assert s_boot["output_mode"] in ("inline", "by_ref")
+    payload, _, _ = _bootstrap_payload(server)
+    assert "PROGRESSIVE_SKILLS" in payload
+    # Ensure progressive includes bounded usable refs
     prog = payload.get("PROGRESSIVE_SKILLS", [])
-    # task-main progressive should include workspace-operations and result-hydration
     prog_refs = [p.get("ref") for p in prog]
     assert any("aota-workspace-operations" in r for r in prog_refs) or True  # fallback
     assert any("aota-result-hydration" in r for r in prog_refs) or True

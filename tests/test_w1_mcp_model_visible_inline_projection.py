@@ -166,32 +166,41 @@ def test_01_generic_inline_model_visible_serialization(tmp_path: Path):
     assert text == structured["inline_output"]
 
 
-# 2. role.bootstrap inline semantic visibility
+# 2. role.bootstrap model-visible semantic visibility (inline or governed by_ref)
 def test_02_role_bootstrap_inline_semantic_visibility(tmp_path: Path):
     for role in ["coder", "task-main", "analyst", "reviewer", "project-steward"]:
         server, _ = _make_binding(tmp_path, role=role)
         structured, text = _call(server, "role.bootstrap", {})
         assert structured["ok"] is True
-        assert structured["output_mode"] == "inline"
-        payload = structured["payload"]
+        # W5 (AF #49 M1/W5): a bootstrap over the inline bound is a real
+        # governed by_ref result whose model-visible representation carries
+        # deterministic hydration claims (existing result.hydrate operation).
+        assert structured["output_mode"] in ("inline", "by_ref")
+        if structured["output_mode"] == "inline":
+            payload = structured["payload"]
+            assert structured["inline_output"] is not None
+        else:
+            hydration = structured["hydration"]
+            assert isinstance(hydration, dict)
+            assert hydration["operation"] == "result.hydrate"
+            assert structured["output_ref"]["ref"] == hydration["arguments"]["ref"]
+            assert structured["output_ref"]["digest"] == hydration["arguments"]["digest"]
+            assert "hydration" in text
+            hydrated, _ = _call(server, "result.hydrate", dict(hydration["arguments"]))
+            assert hydrated["ok"] is True, hydrated
+            payload = json.loads(hydrated["payload"]["content"])
         assert isinstance(payload, dict)
         assert "ROLE" in payload
         assert "SOUL" in payload
         assert "BASE_SKILLS" in payload
         assert "PROGRESSIVE_SKILLS" in payload
         assert "TOOL_SURFACE" in payload
-        # structured preserved
-        assert structured["inline_output"] is not None
-        # TextContent contains semantic
+        # TextContent carries model-visible semantics (inline payload or
+        # bounded by_ref summary + hydration claims); never the full raw
+        # oversized payload.
         assert text is not None
-        assert payload["ROLE"] in text
-        assert "SOUL" in text
-        assert "BASE_SKILLS" in text
-        assert "PROGRESSIVE_SKILLS" in text
-        assert "TOOL_SURFACE" in text
-        # Not only digest summary
-        assert "ROLE" in text and "SOUL" in text
-        # Bounded
+        assert payload["ROLE"] in text or structured["output_mode"] == "by_ref"
+        # Bounded model-visible transport text
         assert len(text.encode("utf-8")) <= TOOL_INLINE_OUTPUT_MAX_BYTES
         # UTF8 safe
         text.encode("utf-8")
@@ -200,7 +209,11 @@ def test_02_role_bootstrap_inline_semantic_visibility(tmp_path: Path):
         assert text == text2
         # Verify structured vs text same semantic
         parsed = json.loads(text)
-        assert parsed["ROLE"] == payload["ROLE"]
+        if structured["output_mode"] == "inline":
+            assert parsed["ROLE"] == payload["ROLE"]
+        else:
+            assert parsed["output_mode"] == "by_ref"
+            assert parsed["hydration"]["operation"] == "result.hydrate"
 
 
 # 3. skill.open inline semantic visibility - small fixture + oversized by_ref
@@ -321,11 +334,17 @@ def test_04_structured_content_preserved(tmp_path: Path):
     # Ensure text is governed projection not raw
     assert structured["inline_output"] is not None
     assert text == structured["inline_output"]
-    # Also for role.bootstrap
+    # Also for role.bootstrap (W5: inline or governed by_ref; model-visible
+    # text is the governed inline JSON or the bounded by_ref summary).
     structured2, text2 = _call(server, "role.bootstrap", {})
-    assert structured2["payload"]["ROLE"] in ["coder", "analyst", "reviewer", "project-steward", "task-main"] or True
     assert structured2["output_digest"] is not None
-    assert text2 == structured2["inline_output"]
+    if structured2["output_mode"] == "inline":
+        assert structured2["payload"]["ROLE"] in ["coder", "analyst", "reviewer", "project-steward", "task-main"] or True
+        assert text2 == structured2["inline_output"]
+    else:
+        assert structured2["inline_output"] is None
+        assert text2 == json.dumps(json.loads(text2), separators=(",", ":"), ensure_ascii=False, sort_keys=True)
+        assert json.loads(text2)["hydration"]["operation"] == "result.hydrate"
 
 
 # 5. deterministic serialization
@@ -349,10 +368,16 @@ def test_05_deterministic_serialization(tmp_path: Path):
 # 6. byte bound
 def test_06_byte_bound(tmp_path: Path):
     server, _ = _make_binding(tmp_path, role="coder")
-    # role.bootstrap should be within 4096
+    # role.bootstrap model-visible text is always bounded; an over-inline-bound
+    # bootstrap is a governed by_ref result with matching hydration claims.
     structured, text = _call(server, "role.bootstrap", {})
     assert len(text.encode("utf-8")) <= TOOL_INLINE_OUTPUT_MAX_BYTES
-    assert structured["output_byte_length"] <= TOOL_INLINE_OUTPUT_MAX_BYTES
+    if structured["output_mode"] == "inline":
+        assert structured["output_byte_length"] <= TOOL_INLINE_OUTPUT_MAX_BYTES
+    else:
+        assert structured["output_byte_length"] > TOOL_INLINE_OUTPUT_MAX_BYTES
+        assert structured["output_ref"]["byte_length"] == structured["output_byte_length"]
+        assert structured["hydration"]["arguments"]["byte_length"] == structured["output_byte_length"]
     # workspace.read inline also bounded
     (tmp_path / "small.txt").write_text("x"*100, encoding="utf-8")
     s2, t2 = _call(server, "workspace.read", {"path": "small.txt"})
@@ -434,10 +459,18 @@ def test_10_digest_semantics_unchanged(tmp_path: Path):
     if "digest" in text.lower():
         # text is payload JSON, may contain digest field for some ops like skill.open, but not for workspace.read
         pass
-    # For role.bootstrap, verify digest matches inline_output bytes
+    # For role.bootstrap: inline digest covers the model-visible inline JSON;
+    # W5 by_ref digest covers the persisted payload and round-trips verbatim.
     structured2, text2 = _call(server, "role.bootstrap", {})
-    expected_bytes2 = text2.encode("utf-8")
-    assert structured2["output_digest"] == hashlib.sha256(expected_bytes2).hexdigest()
+    if structured2["output_mode"] == "inline":
+        expected_bytes2 = text2.encode("utf-8")
+        assert structured2["output_digest"] == hashlib.sha256(expected_bytes2).hexdigest()
+    else:
+        assert structured2["output_ref"]["digest"] == structured2["output_digest"]
+        hydrated2, _ = _call(server, "result.hydrate", dict(structured2["hydration"]["arguments"]))
+        assert hydrated2["ok"] is True
+        assert hydrated2["payload"]["digest"] == structured2["output_digest"]
+        assert len(hydrated2["payload"]["content"].encode("utf-8")) == structured2["output_byte_length"]
 
 
 # 11. MCP public tool count remains 1

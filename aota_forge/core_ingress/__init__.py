@@ -1254,7 +1254,13 @@ def dispatch_tool_operation(
                 return ToolResponse.failure(
                     {"code": _map_role_bootstrap_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
                 )
-            return ToolResponse.success(payload)
+            response = ToolResponse.success(payload)
+            # W5 (AF #49 M1/W5, I49-B003): a bootstrap over the inline bound is
+            # projected by the transport as by_ref; the Core-owned durability
+            # seam must persist it first or the model-visible hydration claims
+            # would be unresolvable. MCP never persists (decision stays here).
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "skill.open":
             from aota_forge.work_plane.role_bootstrap import handle_skill_open
@@ -1267,7 +1273,9 @@ def dispatch_tool_operation(
                 return ToolResponse.failure(
                     {"code": _map_skill_open_exception(exc), "message": str(exc)[:512] or "governed operation failed"}
                 )
-            return ToolResponse.success(payload)
+            response = ToolResponse.success(payload)
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
             return _dispatch_task_main(operation, binding, validated)
@@ -1341,7 +1349,7 @@ def dispatch_tool_operation(
                 code = getattr(exc, "code", None)
                 if isinstance(code, str) and code:
                     return ToolResponse.failure({"code": code, "message": msg[:512]})
-                if "AUTHORITY_DENIED" in msg or "requires caller" in msg:
+                if "AUTHORITY_DENIED" in msg or "requires caller" in msg or "requires one-shot" in msg:
                     return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": msg[:512]})
                 if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
                     return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
@@ -1355,7 +1363,9 @@ def dispatch_tool_operation(
                 if isinstance(code, str) and code:
                     return ToolResponse.failure({"code": code, "message": str(exc)[:512]})
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
-            return ToolResponse.success(ref.to_dict())
+            response = ToolResponse.success(ref.to_dict())
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "handoff.open":
             sandbox = _require_sandbox(binding)
@@ -1383,7 +1393,9 @@ def dispatch_tool_operation(
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
             except Exception as exc:
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
-            return ToolResponse.success(result)
+            response = ToolResponse.success(result)
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "task.start":
             sandbox = _require_sandbox(binding)
@@ -1469,7 +1481,9 @@ def dispatch_tool_operation(
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
             except Exception as exc:
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
-            return ToolResponse.success(result)
+            response = ToolResponse.success(result)
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "task.return":
             sandbox = _require_sandbox(binding)
@@ -1553,7 +1567,9 @@ def dispatch_tool_operation(
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
             except Exception as exc:
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
-            return ToolResponse.success(result)
+            response = ToolResponse.success(result)
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation in ("git.status", "git.diff"):
             authority = _authority_for(binding.git_authorities, operation)

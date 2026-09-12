@@ -82,11 +82,20 @@ AF_SOULS: dict[str, Soul] = {r: get_soul_for_role(r) for r in WORK_ROLES}
 # Tool surfaces — converged least-privilege visibility (visibility != authority)
 #
 # Actual-operation matrix (current operation names):
-# task-main: task_main.* eager, result.hydrate progressive; no workspace/test/shell
-# analyst: search/read eager, write+hydrate+shell progressive conditional; no test/task_main
-# coder: search/read/write/test eager, hydrate+shell progressive conditional
-# reviewer: search/read/test eager, hydrate progressive; no write/shell
-# steward: search/read eager, hydrate progressive; no write/test/shell/git/github
+# task-main: task_main.* + handoff.write/handoff.open/task.start eager,
+#            result.hydrate progressive; no workspace/test/shell
+# analyst: search/read + handoff.open/handoff.write/task.return eager;
+#          write+hydrate+shell progressive conditional; no test/task_main
+# coder: search/read/write/test + handoff.open/handoff.write/task.return eager,
+#        hydrate+shell progressive conditional
+# reviewer: search/read/test + handoff.open/handoff.write/task.return eager,
+#           hydrate progressive; no write/shell
+# steward: search/read + handoff.open/handoff.write/task.return eager,
+#          hydrate progressive; no write/test/shell/git/github
+#
+# W5 (AF #49 M1/W5, I49-B001): the canonical normal-path handoff/task
+# lifecycle operations are visible to the roles whose normal path uses them.
+# Visibility is not authority: server-side role/mode validation still decides.
 # ---------------------------------------------------------------------------
 
 WORKSPACE_SEARCH = "workspace.search"
@@ -98,6 +107,16 @@ TEST_RUN_OP = "test.run"
 TASK_MAIN_OPS = ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection")
 ROLE_BOOTSTRAP_OP = "role.bootstrap"
 SKILL_OPEN_OP = "skill.open"
+HANDOFF_WRITE_OP = "handoff.write"
+HANDOFF_OPEN_OP = "handoff.open"
+TASK_START_OP = "task.start"
+TASK_RETURN_OP = "task.return"
+# Normal-path lifecycle visibility (exposure only; authority stays server-side)
+TASK_MAIN_NORMAL_PATH_OPS = (HANDOFF_WRITE_OP, HANDOFF_OPEN_OP, TASK_START_OP)
+WORKER_NORMAL_PATH_OPS = (HANDOFF_OPEN_OP, HANDOFF_WRITE_OP, TASK_RETURN_OP)
+
+TASK_MAIN_NORMAL_PATH_OPERATIONS_VISIBLE = True
+WORKER_LIFECYCLE_OPERATIONS_VISIBLE = True
 
 _TOOL_SURFACES: dict[str, ToolRoleSurface] = {}
 
@@ -106,27 +125,27 @@ def _build_tool_surfaces() -> None:
         return
     _TOOL_SURFACES["task-main"] = create_role_tool_surface(
         "task-main",
-        eager=list(TASK_MAIN_OPS),
+        eager=list(TASK_MAIN_OPS) + list(TASK_MAIN_NORMAL_PATH_OPS),
         progressive=[RESULT_HYDRATE],
     )
     _TOOL_SURFACES["analyst"] = create_role_tool_surface(
         "analyst",
-        eager=[WORKSPACE_SEARCH, WORKSPACE_READ],
+        eager=[WORKSPACE_SEARCH, WORKSPACE_READ] + list(WORKER_NORMAL_PATH_OPS),
         progressive=[WORKSPACE_WRITE, RESULT_HYDRATE, RESTRICTED_SHELL],
     )
     _TOOL_SURFACES["coder"] = create_role_tool_surface(
         "coder",
-        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, WORKSPACE_WRITE, TEST_RUN_OP],
+        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, WORKSPACE_WRITE, TEST_RUN_OP] + list(WORKER_NORMAL_PATH_OPS),
         progressive=[RESULT_HYDRATE, RESTRICTED_SHELL],
     )
     _TOOL_SURFACES["reviewer"] = create_role_tool_surface(
         "reviewer",
-        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, TEST_RUN_OP],
+        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, TEST_RUN_OP] + list(WORKER_NORMAL_PATH_OPS),
         progressive=[RESULT_HYDRATE],
     )
     _TOOL_SURFACES["project-steward"] = create_role_tool_surface(
         "project-steward",
-        eager=[WORKSPACE_SEARCH, WORKSPACE_READ],
+        eager=[WORKSPACE_SEARCH, WORKSPACE_READ] + list(WORKER_NORMAL_PATH_OPS),
         progressive=[RESULT_HYDRATE],
     )
 
@@ -256,7 +275,8 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "Task-main normal: activate (empty args, needs approval=yes; stop on USER_GATE_REQUIRED), "
         "recover after restart (re-bind live Plan/session), "
         "advance_once (one iteration; observe next_action DISPATCHED/WAITING/BLOCKED; never call internal reconcile/dispatch). "
-        "If ready Work lacks projection, read governed context from activate/recover/advance, submit_work_projection once (see OPERATION_GUIDANCE) then advance. "
+        "Normal work path: read the authoritative Work source from activate/recover/advance work_context, reason, then "
+        "handoff.write(mode=work_item) and task.start(role, handoff_ref). submit_work_projection=compatibility only, not the normal path. "
         "Owns DAG/risk/blocker/next-action; risk control only; one review; Human Brake with scope; card-first no transcript; retry needs progress else escalate; user gates mandatory stop. "
         "Dispatch workers via AF (Handoff scope sole source); workers start with role.bootstrap."
     ),
@@ -264,8 +284,11 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "Workspace normal via aota.invoke: workspace.search, workspace.read, workspace.write, test.run. "
         "Search {\"query\": \"...\"} (1..50, worktree-scoped lexical). "
         "Read {\"path\": \"src/f.py\"} (project-relative, 32KiB, UTF-8, symlink fail-closed). "
-        "Write {\"path\": \"out.txt\", \"content\": \"...\", \"mode\": \"create_or_replace\"} (4096B, atomic, needs mutation authority). "
+        "Write {\"path\": \"out.txt\", \"content\": \"...\", \"mode\": \"create_or_replace\"} (valid modes exactly create_only|replace_existing|create_or_replace; 4096B, atomic, needs mutation authority). "
         "Test {\"runner\": \"pytest\", \"targets\": [\"tests/...\"], \"timeout\": 30} — coder normal; reviewer conditional when Handoff has validation_expectations else denied; analyst artifact-only when explicitly required else denied; steward/task-main denied. "
+        "Worker lifecycle via aota.invoke: handoff.open {\"ref\": \"<handoff ref>\", \"view\": \"full\"} consumes a handoff (view card for the compact projection); "
+        "handoff.write {\"mode\": \"result\", \"payload\": {\"summary\": \"...\"}} records your bounded result (workers write result; task-main writes work_item); "
+        "task.return {\"status\": \"completed|blocked|failed\", \"result_ref\": \"<result handoff ref>\"} returns terminally (one-shot roles; task-main denied). "
         "Stop on AUTHORITY_DENIED; needs_input on scope gap. Results are evidence, not authority."
     ),
     "aota-evidence-first-debugging": (

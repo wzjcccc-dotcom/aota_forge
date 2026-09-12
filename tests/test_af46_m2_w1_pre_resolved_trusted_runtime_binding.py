@@ -322,7 +322,15 @@ class TestTier2AdapterParity:
             # Even with no env, adapter works because binding was pre-resolved
             out = adapter.invoke("role.bootstrap", {})
             assert out["ok"] is True
-            assert out["payload"]["ROLE"] == "coder"
+            if out["output_mode"] == "inline":
+                payload = out["payload"]
+            else:
+                # W5: consume the governed by_ref bootstrap via its
+                # model-visible hydration claims (existing result.hydrate).
+                hydrated = adapter.invoke("result.hydrate", dict(out["hydration"]["arguments"]))
+                assert hydrated["ok"] is True, hydrated
+                payload = json.loads(hydrated["payload"]["content"])
+            assert payload["ROLE"] == "coder"
 
     def test_mcp_parity_with_core(self, tmp_path: Path):
         root = _make_project(tmp_path, PROJECT_ID)
