@@ -189,6 +189,7 @@ def _collect_parent_consumption(session_id: str) -> dict[str, Any]:
         "envelope_message_id": None,
         "ack_message_id": None,
         "ack_identity": None,
+        "ack_template_message_id": None,
         "total_messages": 0,
         "error": None,
     }
@@ -217,13 +218,20 @@ def _collect_parent_consumption(session_id: str) -> dict[str, Any]:
         if out["envelope_message_id"] is None and "AOTA_WORKER_COMPLETION_V1" in text:
             out["envelope_message_id"] = mid
         match = ack_re.search(text)
-        if match and out["ack_message_id"] is None:
+        if not match:
+            continue
+        identity = {
+            "canonical_task_id": match.group(1),
+            "card_digest": match.group(2),
+            "role": role,
+        }
+        if role == "assistant" and out["ack_message_id"] is None:
+            # The REAL parent model's identity-bound ACK reply.
             out["ack_message_id"] = mid
-            out["ack_identity"] = {
-                "canonical_task_id": match.group(1),
-                "card_digest": match.group(2),
-                "role": role,
-            }
+            out["ack_identity"] = identity
+        elif out["ack_template_message_id"] is None:
+            # The instructed response template inside the delivered envelope.
+            out["ack_template_message_id"] = mid
     return out
 
 
@@ -393,7 +401,7 @@ def main(argv: list[str]) -> int:
         envelope_first = (
             parent.get("envelope_message_id") is not None
             and parent.get("ack_message_id") is not None
-            and parent["envelope_message_id"] <= parent["ack_message_id"]
+            and parent["envelope_message_id"] < parent["ack_message_id"]
         )
         reentry_same_session = bool(recording.calls) and all(
             call["session_ref"] == session_id for call in recording.calls
