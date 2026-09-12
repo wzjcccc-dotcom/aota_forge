@@ -15,6 +15,29 @@ exit 130 interrupted.  A missing exact session fails closed in Hermes itself
 (``Session not found`` + exit 1); this adapter additionally pre-checks the
 durable session identity read-only and refuses to launch anything else.
 
+AF #49 M1/W7 (I49-B005) — transport modes.  Two supported exact-session
+continuation invocations target the SAME exact session identity:
+
+- ``chat_quiet``      — the W6-accepted ``chat -Q --resume`` transport.
+- ``oneshot_resume``  — ``hermes -z <PAYLOAD> --resume <EXACT_ID>
+  [--usage-file <PATH>]``.  Verified against installed Hermes v0.21.1:
+  ``run_oneshot`` loads the exact session's transcript, runs exactly one
+  turn, and writes ``session_id``/``completed`` to the usage report.  The
+  oneshot path resolves the model-visible tool surface from the production
+  platform toolsets + MCP servers WITHOUT applying ``agent.disabled_toolsets``;
+  the chat path applies that subtraction (the canonical task-main profile's
+  list includes ``all``), which zeroes the AF MCP surface for the resumed
+  turn.  ``oneshot_resume`` exists so the exact-session phase-2 continuation
+  preserves the production AF tool surface.  Neither mode ever produces
+  ``--resume latest``, ``-c <name>``, ``--create-if-missing``, or an implicit
+  new conversation.
+
+W7 also exposes a read-only durable session observation
+(``observe_persisted_session_tool_surface``) so the production launcher can
+fail closed BEFORE a productive phase-2 continuation when the phase-1 session
+is known to have no usable production AF tool surface.  Observation only —
+this module never writes session state.
+
 Authority boundaries (W2, NOT W3):
 
 - ``EXACT_SESSION_REENTRY=yes`` / ``SILENT_NEW_SESSION_FALLBACK=no``:
@@ -38,6 +61,7 @@ Authority boundaries (W2, NOT W3):
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -79,6 +103,27 @@ _FORBIDDEN_ARGV_TOKENS = (
     "--oneshot",
     "--usage-file",
 )
+_ONESHOT_FORBIDDEN_ARGV_TOKENS = (
+    "--create-if-missing",
+    "-c",
+    "--continue",
+)
+
+# AF #49 M1/W7 — exact-session continuation transports (same session identity).
+TRANSPORT_CHAT_QUIET = "chat_quiet"
+TRANSPORT_ONESHOT_RESUME = "oneshot_resume"
+EXACT_SESSION_TRANSPORTS = (TRANSPORT_CHAT_QUIET, TRANSPORT_ONESHOT_RESUME)
+
+# The oneshot payload is delivered as one argv element; Linux allows 128 KiB
+# per element, so the seam's existing 64 KiB payload bound is portable here.
+MAX_ONESHOT_ARGV_PAYLOAD_BYTES = 64 * 1024
+
+# Production AF tool-surface markers visible in Hermes session metadata.
+# Hermes may defer the raw MCP catalog behind the tool_search bridge, so the
+# semantic invariant is "an AOTA invoke path is reachable", not one exact name.
+AOTA_MCP_TOOL_NAME_PREFIX = "mcp__aota__"
+AOTA_BRIDGE_TOOL_NAMES = frozenset({"tool_search", "tool_describe", "tool_call"})
+
 _PID_HOLDER_RE = re.compile(r"^pid=(\d+):")
 
 # Machine-readable sentinel from agent/turn_facade_lease.py surfaced through
@@ -170,6 +215,139 @@ def build_exact_reentry_argv(
     return argv
 
 
+def build_exact_oneshot_resume_argv(
+    hermes_bin: str,
+    session_id: str,
+    payload_text: str,
+    *,
+    profile: str | None = None,
+    usage_file_path: str | None = None,
+) -> list[str]:
+    """Compose the W7 tool-surface-preserving exact-session continuation argv.
+
+    Shape (verified against installed Hermes 0.21.1 ``run_oneshot`` +
+    top-level ``-z/--oneshot PROMPT`` + ``--resume`` + ``--usage-file``):
+
+        hermes [-p <profile>] -z <PAYLOAD> --resume <EXACT_SESSION_ID> [--usage-file <PATH>]
+
+    The exact-session identity and the fail-closed shape guards are identical
+    to :func:`build_exact_reentry_argv`; only the invocation mode differs.
+    The payload is a bounded operator/runtime prompt (never model-supplied),
+    delivered as one argv element so no shell interpretation is possible.
+    """
+    if not isinstance(hermes_bin, str) or not hermes_bin.strip() or any(ch.isspace() for ch in hermes_bin):
+        raise HermesSessionReentryError("hermes binary reference is invalid")
+    validate_exact_session_id(session_id)
+    if not isinstance(payload_text, str) or not payload_text.strip():
+        raise HermesSessionReentryError("oneshot continuation payload must be a non-empty string")
+    if "\x00" in payload_text:
+        raise HermesSessionReentryError("oneshot continuation payload must not contain NUL")
+    if len(payload_text.encode("utf-8")) > MAX_ONESHOT_ARGV_PAYLOAD_BYTES:
+        raise HermesSessionReentryError("oneshot continuation payload exceeds the bounded argv seam")
+    if profile is not None and (not isinstance(profile, str) or not profile.strip() or any(ch.isspace() for ch in profile)):
+        raise HermesSessionReentryError("profile reference is invalid")
+    if usage_file_path is not None and (
+        not isinstance(usage_file_path, str)
+        or not usage_file_path.strip()
+        or any(ch.isspace() for ch in usage_file_path)
+    ):
+        raise HermesSessionReentryError("oneshot usage file path is invalid")
+    argv: list[str] = [hermes_bin]
+    if profile is not None:
+        argv.extend(["-p", profile])
+    argv.extend(["-z", payload_text, "--resume", session_id])
+    if usage_file_path is not None:
+        argv.extend(["--usage-file", usage_file_path])
+    # Only the flags the builder itself owns are scanned: the payload is one
+    # opaque argv element (no shell), so it can never become a soft-resume flag.
+    structural = list(argv[:3])
+    if any(token in structural for token in _ONESHOT_FORBIDDEN_ARGV_TOKENS):
+        raise HermesSessionReentryError("forbidden soft-resume token leaked into the oneshot continuation argv")
+    if argv[argv.index("--resume") + 1] != session_id:
+        raise HermesSessionReentryError("exact continuation requires the exact session id after --resume")
+    return argv
+
+
+def production_aota_tool_surface_present(tool_names: Any) -> bool:
+    """Mechanical capability check: is an AOTA invoke path visible in a tool list?
+
+    Accepts the raw MCP tool names (``mcp__aota__*``) and the Hermes
+    tool_search bridge that fronts a deferred MCP catalog.  This is a
+    presence check only; it never judges model semantics or Work validity.
+    """
+    if not isinstance(tool_names, (list, tuple, set, frozenset)):
+        return False
+    for name in tool_names:
+        if not isinstance(name, str) or not name:
+            continue
+        if name.startswith(AOTA_MCP_TOOL_NAME_PREFIX) or name in AOTA_BRIDGE_TOOL_NAMES:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class PersistedSessionToolSurface:
+    """Read-only observation of a Hermes session's persisted tool-name pin."""
+
+    observed: bool  # True only when the durable session row + pin were readable
+    tool_names: tuple[str, ...] | None
+    detail: str | None
+
+
+def observe_persisted_session_tool_surface(
+    session_id: str,
+    *,
+    hermes_home: str | os.PathLike[str] | None = None,
+    state_db_path: str | os.PathLike[str] | None = None,
+) -> PersistedSessionToolSurface:
+    """Read-only observation of ``sessions.tool_names`` for one exact session.
+
+    This is supported session-metadata observation, never repair: the durable
+    store is opened ``mode=ro`` and no row/value is ever written.  A missing
+    store/row/pin is reported as ``observed=False`` so the production caller
+    can fail closed mechanically.
+    """
+    try:
+        validate_exact_session_id(session_id)
+    except HermesSessionReentryError:
+        return PersistedSessionToolSurface(False, None, "session id is not an exact mechanical identity")
+    if state_db_path is None:
+        home: Path | None = Path(hermes_home) if hermes_home is not None else None
+        if home is None:
+            env_home = os.environ.get("HERMES_HOME", "").strip()
+            if env_home:
+                home = Path(env_home)
+        if home is None:
+            return PersistedSessionToolSurface(False, None, "Hermes home is not resolvable for tool-surface observation")
+        state_db_path = home / "state.db"
+    db_path = Path(state_db_path)
+    if not db_path.is_file():
+        return PersistedSessionToolSurface(False, None, "Hermes session store is absent")
+    try:
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0)
+    except sqlite3.Error as exc:
+        return PersistedSessionToolSurface(False, None, f"session store unreadable: {type(exc).__name__}")
+    try:
+        connection.text_factory = lambda b: b.decode("utf-8", "replace")
+        row = connection.execute("SELECT tool_names FROM sessions WHERE id = ? LIMIT 1", (session_id,)).fetchone()
+        if row is None:
+            return PersistedSessionToolSurface(False, None, "exact session id is not present in the durable session store")
+        raw = row[0]
+        if raw is None:
+            return PersistedSessionToolSurface(False, None, "session tool pin is not persisted for the exact session")
+        try:
+            names = json.loads(raw)
+        except (TypeError, ValueError):
+            return PersistedSessionToolSurface(False, None, "session tool pin is not mechanical JSON")
+        if not isinstance(names, list) or any(not isinstance(item, str) or not item.strip() for item in names):
+            return PersistedSessionToolSurface(False, None, "session tool pin is not a mechanical name list")
+        return PersistedSessionToolSurface(True, tuple(names), None)
+    except sqlite3.Error as exc:
+        return PersistedSessionToolSurface(False, None, f"session store query failed: {type(exc).__name__}")
+    finally:
+        connection.close()
+
+
 @dataclass(frozen=True)
 class _SessionPrecheck:
     exists: bool | None  # None = undecidable from durable evidence
@@ -192,6 +370,7 @@ class HermesExactSessionReentry:
         max_payload_bytes: int = MAX_REENTRY_PAYLOAD_BYTES,
         output_limit_bytes: int = REENTRY_OUTPUT_LIMIT_BYTES,
         popen_factory: Callable[..., Any] | None = None,
+        transport: str = TRANSPORT_CHAT_QUIET,
     ) -> None:
         if not str(hermes_bin).strip():
             raise HermesSessionReentryError("hermes binary reference is required")
@@ -201,6 +380,11 @@ class HermesExactSessionReentry:
             raise HermesSessionReentryError("output_limit_bytes must be a positive integer")
         if timeout_seconds <= 0 or timeout_seconds > MAX_REENTRY_TIMEOUT_SECONDS:
             raise HermesSessionReentryError("re-entry timeout_seconds is outside the bounded range")
+        if transport not in EXACT_SESSION_TRANSPORTS:
+            raise HermesSessionReentryError(
+                f"transport must be one of {EXACT_SESSION_TRANSPORTS!r}, got {transport!r}"
+            )
+        self._transport = transport
         self._hermes_bin = str(hermes_bin)
         self._profile = profile
         self._hermes_home = Path(hermes_home) if hermes_home is not None else None
@@ -356,22 +540,41 @@ class HermesExactSessionReentry:
             )
 
         spool = self._resolve_spool_root()
-        query_path = spool / f"reentry-{uuid.uuid4().hex}.query"
+        query_path: Path | None = None
+        usage_path: Path | None = None
+        usage_session_id: str | None = None
+        usage_completed: bool | None = None
         try:
-            fd = os.open(query_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
-            argv = build_exact_reentry_argv(
-                self._hermes_bin, session_id, str(query_path), profile=self._profile
-            )
+            if self._transport == TRANSPORT_ONESHOT_RESUME:
+                usage_path = spool / f"reentry-{uuid.uuid4().hex}.usage.json"
+                argv = build_exact_oneshot_resume_argv(
+                    self._hermes_bin,
+                    session_id,
+                    payload_text,
+                    profile=self._profile,
+                    usage_file_path=str(usage_path),
+                )
+            else:
+                query_path = spool / f"reentry-{uuid.uuid4().hex}.query"
+                fd = os.open(query_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(encoded)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                argv = build_exact_reentry_argv(
+                    self._hermes_bin, session_id, str(query_path), profile=self._profile
+                )
             stdout, stderr, exit_code, timed_out = self._run(argv, timeout)
+            if self._transport == TRANSPORT_ONESHOT_RESUME and usage_path is not None and exit_code == 0:
+                usage_session_id, usage_completed = self._read_oneshot_usage(usage_path)
         finally:
-            try:
-                query_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            for artifact in (query_path, usage_path):
+                if artifact is None:
+                    continue
+                try:
+                    artifact.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         if timed_out:
             # Our injected-turn process gave up waiting; the origin session
@@ -389,6 +592,24 @@ class HermesExactSessionReentry:
         resolved = _SESSION_ID_LINE_RE.search(stderr or "")
         resolved_id = resolved.group(1) if resolved is not None else None
         if exit_code == 0:
+            if self._transport == TRANSPORT_ONESHOT_RESUME:
+                # The oneshot transport proves completion through the usage
+                # report; a missing/incomplete report is a mechanical failure
+                # and never claims a delivered turn.
+                if not usage_session_id or usage_completed is not True:
+                    return self._result(
+                        session_id,
+                        OUTCOME_FAILED,
+                        error_code=ERROR_REENTRY_FAILED,
+                        error_message=(
+                            "oneshot exact-session continuation returned no mechanical completion evidence "
+                            "(usage report missing or incomplete)"
+                        ),
+                        exact_session_found=True,
+                        exit_code=exit_code,
+                        stderr_excerpt=_clip(stderr, self._output_limit_bytes),
+                    )
+                resolved_id = usage_session_id
             return self._result(
                 session_id,
                 OUTCOME_COMPLETED,
@@ -410,7 +631,7 @@ class HermesExactSessionReentry:
                 exit_code=130,
                 stderr_excerpt=_clip(stderr, self._output_limit_bytes),
             )
-        if any(token in lowered for token in _SESSION_NOT_FOUND_TOKENS):
+        if any(token in lowered for token in _SESSION_NOT_FOUND_TOKENS) or "session not found" in lowered.lower():
             # Raced deletion between the durable pre-check and the CLI load.
             return self._result(
                 session_id,
@@ -502,6 +723,23 @@ class HermesExactSessionReentry:
         stderr_text = captured["stderr"].decode("utf-8", errors="replace")
         return stdout_text, stderr_text, exit_code if isinstance(exit_code, int) else -1, timed_out
 
+    def _read_oneshot_usage(self, usage_path: Path) -> tuple[str | None, bool | None]:
+        """Read the bounded mechanical usage report of a ``-z`` continuation turn.
+
+        Returns ``(session_id, completed)``; any unreadable/malformed report is
+        ``(None, None)`` and the caller fails the attempt closed.
+        """
+        try:
+            report = json.loads(usage_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None, None
+        if not isinstance(report, dict):
+            return None, None
+        session_id = report.get("session_id")
+        session_id = session_id.strip() if isinstance(session_id, str) and session_id.strip() else None
+        completed = report.get("completed")
+        return session_id, (completed if isinstance(completed, bool) else None)
+
     def _result(self, session_id: str, outcome: str, **kwargs: Any) -> HermesReentryResult:
         return HermesReentryResult(
             outcome=outcome,
@@ -541,15 +779,25 @@ def _clip(text: str | None, limit: int) -> str | None:
 
 
 __all__ = [
+    "AOTA_BRIDGE_TOOL_NAMES",
+    "AOTA_MCP_TOOL_NAME_PREFIX",
+    "EXACT_SESSION_TRANSPORTS",
+    "MAX_ONESHOT_ARGV_PAYLOAD_BYTES",
     "MAX_REENTRY_PAYLOAD_BYTES",
     "OUTCOME_COMPLETED",
     "OUTCOME_FAILED",
     "OUTCOME_NOT_FOUND",
     "OUTCOME_RETRYABLE",
     "OUTCOME_UNKNOWN",
+    "TRANSPORT_CHAT_QUIET",
+    "TRANSPORT_ONESHOT_RESUME",
     "HermesExactSessionReentry",
     "HermesReentryResult",
     "HermesSessionReentryError",
+    "PersistedSessionToolSurface",
+    "build_exact_oneshot_resume_argv",
     "build_exact_reentry_argv",
+    "observe_persisted_session_tool_surface",
+    "production_aota_tool_surface_present",
     "validate_exact_session_id",
 ]

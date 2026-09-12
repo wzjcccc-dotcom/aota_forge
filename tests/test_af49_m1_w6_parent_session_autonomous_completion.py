@@ -678,6 +678,28 @@ class TestTwoPhaseSessionBinding:
             lambda *, ctx, timeout_seconds: RecordingReentry(),
         )
 
+        # W7 adds a read-only production tool-surface gate; this test's phase-1
+        # "session" is a test double, so the durable observation and the AF MCP
+        # surface probe are stubbed with production-like values (the gate's own
+        # behavior is covered by the AF #49 M1/W7 test file).
+        from aota_forge.adapters.hermes.session_reentry import (
+            PersistedSessionToolSurface,
+        )
+        from aota_forge.composition.task_main_daily_launcher import AfMcpSurfaceProbe
+
+        monkeypatch.setattr(
+            launcher,
+            "_observe_exact_session_tool_surface",
+            lambda *, session_id: PersistedSessionToolSurface(
+                True, ("tool_search", "tool_describe", "tool_call"), None
+            ),
+        )
+        monkeypatch.setattr(
+            launcher,
+            "_probe_af_mcp_tool_surface",
+            lambda *, ctx, env=None: AfMcpSurfaceProbe(True, ("aota.invoke",), None),
+        )
+
         ctx, session_id = launcher.launch(
             worktree_root=root,
             project_id=PROJECT_ID,

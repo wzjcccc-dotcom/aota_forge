@@ -94,6 +94,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -428,6 +429,118 @@ AUTONOMOUS_COMPLETION_OWNER_PATH = (
     " -> aota_forge/composition/execution.py:run_bounded_completion_continuation"
 )
 
+# ---------------------------------------------------------------------------
+# AF #49 M1/W7 — production tool-surface continuity (I49-B005)
+# ---------------------------------------------------------------------------
+# The production task-main session must keep the AF tool-surface path across
+# the exact-session continuation.  The W7 repair:
+#
+#   - continues the exact session through the oneshot-resume invocation
+#     (``hermes -z <payload> --resume <exact id>``), which resolves the
+#     production platform toolsets + MCP servers without the chat path's
+#     ``agent.disabled_toolsets`` subtraction (canonical task-main profile
+#     disables ``all`` for the chat surface);
+#   - mechanically probes the production AF MCP child (same trusted binding
+#     envelope) and fails closed BEFORE binding the trusted origin /
+#     productive phase-2 when the required AF surface is unavailable;
+#   - observes the durable session tool-name pin read-only and fails closed
+#     only when Hermes has persisted a definitively unusable pin (a missing
+#     pin is the normal fresh-session persistence behavior).
+#
+# This is invocation/observation only: no Hermes profile/source mutation, no
+# session-database write, no replacement session, no new session identity.
+
+PRODUCTION_EXACT_SESSION_TRANSPORT = "oneshot_resume"
+TASK_MAIN_TOOL_SURFACE_OBSERVATION_PATH = (
+    "aota_forge/adapters/hermes/session_reentry.py:observe_persisted_session_tool_surface"
+)
+TASK_MAIN_PHASE1_TOOL_SURFACE_GATE = True
+TASK_MAIN_PHASE2_TOOL_SURFACE_GATE = True
+TASK_MAIN_TOOL_SURFACE_FAIL_CLOSED = True
+TASK_MAIN_SESSION_DB_MUTATION = False
+TASK_MAIN_PROFILE_HAND_EDIT_REQUIRED = False
+
+# Deterministic AF-side production surface probe.  The phase guard spawns the
+# real production aota MCP child with the exact trusted binding envelope the
+# Hermes session uses and mechanically lists its tools over stdio.  This is
+# "AF-side fail-closed verification that required production tools exist":
+# it does not depend on Hermes persisting a session tool pin (Hermes 0.21.1
+# does not pin a fresh single-turn session), and it never writes session state.
+AOTA_MCP_INVOKE_TOOL_NAME = "aota.invoke"
+AF_MCP_SURFACE_PROBE_TIMEOUT_SECONDS = 30.0
+AF_MCP_SURFACE_PROBE_MODULE = "aota_forge.composition.worker_vertical_slice"
+
+
+@dataclass(frozen=True)
+class AfMcpSurfaceProbe:
+    """Mechanical result of the bounded AF MCP child surface listing."""
+
+    ok: bool
+    tool_names: tuple[str, ...]
+    detail: str | None
+
+
+def probe_production_af_mcp_surface(
+    *,
+    env: Mapping[str, str],
+    timeout_seconds: float = AF_MCP_SURFACE_PROBE_TIMEOUT_SECONDS,
+) -> AfMcpSurfaceProbe:
+    """Spawn the production AF MCP child and list its exposed tools (bounded).
+
+    Uses the exact trusted binding environment supplied by ``build_env`` (the
+    pre-resolved envelope + bootstrap locators).  Read-only with respect to
+    durable state: the child only constructs the trusted binding and lists
+    tools.  Any failure (missing client, child startup, timeout) is reported
+    as ``ok=False`` so the caller can fail closed.
+    """
+    try:
+        import asyncio
+
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+    except Exception as exc:  # noqa: BLE001 - optional transport dependency
+        return AfMcpSurfaceProbe(False, (), f"mcp client unavailable: {type(exc).__name__}")
+
+    child_env = dict(os.environ)
+    for key, value in env.items():
+        if isinstance(key, str) and isinstance(value, str):
+            child_env[key] = value
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", AF_MCP_SURFACE_PROBE_MODULE, "--mcp-server"],
+        env=child_env,
+    )
+
+    async def _list_tools() -> tuple[str, ...]:
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                listing = await session.list_tools()
+                return tuple(tool.name for tool in listing.tools)
+
+    try:
+        names = asyncio.run(asyncio.wait_for(_list_tools(), timeout=timeout_seconds))
+    except Exception as exc:  # noqa: BLE001 - bounded probe, fail closed
+        return AfMcpSurfaceProbe(False, (), f"AF MCP child probe failed: {type(exc).__name__}: {exc}")
+    return AfMcpSurfaceProbe(True, tuple(names), None)
+
+
+def _resolve_task_main_hermes_home() -> Path:
+    """Resolve the Hermes task-main profile home (same inputs as the W6 seam).
+
+    ``HERMES_HOME`` (an explicit Hermes home) and ``AOTA_HERMES_HOME_HOST``
+    are operator/runtime-owned environment inputs; the default remains
+    ``~/.hermes/profiles/aota-task-main``.
+    """
+    hermes_home_env = os.environ.get("HERMES_HOME", "").strip()
+    if hermes_home_env:
+        return Path(hermes_home_env) / "profiles" / "aota-task-main"
+    alt = os.environ.get("AOTA_HERMES_HOME_HOST", "").strip()
+    if alt:
+        return Path(alt) / "profiles" / "aota-task-main"
+    return Path.home() / ".hermes" / "profiles" / "aota-task-main"
+
+
 
 def _new_unbound_origin_session_ref() -> str:
     """Mint the explicit pre-session placeholder for the phase-1 window.
@@ -443,6 +556,19 @@ class TaskMainSessionContinuationError(RuntimeError):
     """Typed fail-closed error: exact task-main session continuation failed."""
 
     code = "TASK_MAIN_SESSION_CONTINUATION_FAILED"
+
+
+class TaskMainToolSurfaceUnavailable(RuntimeError):
+    """Typed fail-closed error: required production AF tool surface unavailable.
+
+    Raised by the W7 phase gates when the durable task-main session metadata
+    shows that the required production AF tool surface is absent/empty, or
+    when that surface cannot be established mechanically.  The launch stops
+    before the trusted origin bind / productive phase-2 continuation; the
+    placeholder origin can therefore never become durable truth.
+    """
+
+    code = "TASK_MAIN_TOOL_SURFACE_UNAVAILABLE"
 
 
 @dataclass(frozen=True)
@@ -908,6 +1034,11 @@ class DailyTaskMainLauncher:
                 "refusing to bind a placeholder/foreign identity as the trusted origin"
             )
 
+        # ---- W7 PHASE-1 GATE: production AF tool surface must be observable ----
+        # Runs BEFORE the trusted origin bind: an unobservable/unusable surface
+        # stops the launch while the origin is still the unbound placeholder.
+        self._require_task_main_tool_surface(ctx=ctx_pending, session_id=session_id, phase="phase1", env=env)
+
         # ---- PHASE 2: bind real origin + continue the exact same session ----
         ctx = self.prepare(
             worktree_root=Path(worktree_root).resolve(),
@@ -935,6 +1066,9 @@ class DailyTaskMainLauncher:
                 "no replacement task-main session was spawned"
             )
 
+        # ---- W7 PHASE-2 GATE: exact resume kept the production AF surface ----
+        self._require_task_main_tool_surface(ctx=ctx, session_id=session_id, phase="phase2")
+
         # ---- runtime-owned bounded completion continuation (I49-B004) ----
         self._run_autonomous_completion_continuation(
             ctx=ctx,
@@ -947,28 +1081,112 @@ class DailyTaskMainLauncher:
     def _build_exact_session_reentry(self, *, ctx: DailyLaunchContext, timeout_seconds: float):
         """Trusted exact-session reentry builder (single production seam).
 
+        W7 uses the tool-surface-preserving oneshot-resume transport so the
+        resumed exact session resolves the production AF surface (the W6
+        chat-quiet path applies the canonical profile's ``disabled_toolsets``
+        subtraction, which zeroes the AF MCP surface for this profile).
         Tests/component proofs may override this method to inject a scripted
         exact-session seam; the production construction is unchanged.
         """
-        from aota_forge.adapters.hermes.session_reentry import HermesExactSessionReentry
+        from aota_forge.adapters.hermes.session_reentry import (
+            TRANSPORT_ONESHOT_RESUME,
+            HermesExactSessionReentry,
+        )
 
         hermes_bin = ctx.hermes_bin
-        hermes_home_env = os.environ.get("HERMES_HOME", "").strip()
-        if hermes_home_env:
-            hermes_home = Path(hermes_home_env) / "profiles" / "aota-task-main"
-        else:
-            alt = os.environ.get("AOTA_HERMES_HOME_HOST", "").strip()
-            if alt:
-                hermes_home = Path(alt) / "profiles" / "aota-task-main"
-            else:
-                hermes_home = Path.home() / ".hermes" / "profiles" / "aota-task-main"
+        hermes_home = _resolve_task_main_hermes_home()
         return HermesExactSessionReentry(
             hermes_bin,
             hermes_home=hermes_home,
             profile="aota-task-main",
             spool_root=Path(tempfile.gettempdir()) / "aota-task-main-launch-spool",
             timeout_seconds=timeout_seconds,
+            transport=TRANSPORT_ONESHOT_RESUME,
         )
+
+    def _observe_exact_session_tool_surface(self, *, session_id: str):
+        """Read-only observation of the durable session tool-name pin.
+
+        Supported session-metadata observation only: no session-database
+        mutation, no session-row fabrication, no profile hand-edit.
+        """
+        from aota_forge.adapters.hermes.session_reentry import (
+            observe_persisted_session_tool_surface,
+        )
+
+        return observe_persisted_session_tool_surface(
+            session_id,
+            hermes_home=_resolve_task_main_hermes_home(),
+        )
+
+    def _probe_af_mcp_tool_surface(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        env: Mapping[str, str] | None = None,
+    ) -> AfMcpSurfaceProbe:
+        """Spawn the production AF MCP child and list its exposed tools.
+
+        The child receives the same trusted binding environment the Hermes
+        session uses (pre-resolved envelope + bootstrap locators).  Read-only.
+        """
+        child_env = dict(env) if env is not None else self.build_env(ctx)
+        return probe_production_af_mcp_surface(env=child_env)
+
+    def _require_task_main_tool_surface(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        phase: str,
+        env: Mapping[str, str] | None = None,
+    ) -> tuple[str, ...]:
+        """Fail closed unless the required production AF tool surface is available.
+
+        Two mechanical checks, in order:
+
+        1. deterministic AF MCP surface probe — spawn the production aota MCP
+           child with the trusted binding env and list its tools; the single
+           ``aota.invoke`` entry must be present.  This is the authoritative
+           capability check and does not depend on Hermes pin persistence.
+        2. read-only session pin observation — when Hermes *has* persisted a
+           tool pin for the exact session, it must be non-empty and carry the
+           AOTA invoke capability.  A missing pin is the normal Hermes 0.21.1
+           fresh-first-turn state (the row is created after the prompt/tool
+           persist), so absence is not evidence of an unusable surface; the
+           AF MCP probe and the real continuation turn carry that guarantee.
+
+        Never a model-semantics judgement; never a session-store write.
+        """
+        from aota_forge.adapters.hermes.session_reentry import (
+            production_aota_tool_surface_present,
+        )
+
+        probe = self._probe_af_mcp_tool_surface(ctx=ctx, env=env)
+        if not probe.ok:
+            raise TaskMainToolSurfaceUnavailable(
+                f"{phase}: required task-main production AF tool surface probe failed: "
+                f"{probe.detail}; refusing productive continuation"
+            )
+        if AOTA_MCP_INVOKE_TOOL_NAME not in probe.tool_names:
+            raise TaskMainToolSurfaceUnavailable(
+                f"{phase}: AF MCP production surface lacks {AOTA_MCP_INVOKE_TOOL_NAME!r}: "
+                f"{list(probe.tool_names)}; refusing productive continuation"
+            )
+        observation = self._observe_exact_session_tool_surface(session_id=session_id)
+        if observation.observed:
+            names = tuple(observation.tool_names or ())
+            if not names:
+                raise TaskMainToolSurfaceUnavailable(
+                    f"{phase}: task-main session {session_id!r} persisted an empty tool surface; "
+                    "refusing productive continuation"
+                )
+            if not production_aota_tool_surface_present(names):
+                raise TaskMainToolSurfaceUnavailable(
+                    f"{phase}: task-main session {session_id!r} tool surface lacks the AOTA invoke "
+                    f"capability: {list(names)}; refusing productive continuation"
+                )
+        return probe.tool_names
 
     def _continue_exact_session(
         self,
@@ -1161,8 +1379,21 @@ __all__ = [
     "REAL_SESSION_BINDING_PATH",
     "EXACT_SESSION_CONTINUATION_PATH",
     "AUTONOMOUS_COMPLETION_OWNER_PATH",
+    "PRODUCTION_EXACT_SESSION_TRANSPORT",
+    "TASK_MAIN_TOOL_SURFACE_OBSERVATION_PATH",
+    "TASK_MAIN_PHASE1_TOOL_SURFACE_GATE",
+    "TASK_MAIN_PHASE2_TOOL_SURFACE_GATE",
+    "TASK_MAIN_TOOL_SURFACE_FAIL_CLOSED",
+    "TASK_MAIN_SESSION_DB_MUTATION",
+    "TASK_MAIN_PROFILE_HAND_EDIT_REQUIRED",
+    "AOTA_MCP_INVOKE_TOOL_NAME",
+    "AF_MCP_SURFACE_PROBE_TIMEOUT_SECONDS",
+    "AfMcpSurfaceProbe",
+    "probe_production_af_mcp_surface",
     "TaskMainSessionContinuationError",
+    "TaskMainToolSurfaceUnavailable",
     "_new_unbound_origin_session_ref",
+    "_resolve_task_main_hermes_home",
     "_read_operator_startup_prompt",
     "_resolve_task_main_startup_prompt",
     "materialize_operator_startup_from_seed",
