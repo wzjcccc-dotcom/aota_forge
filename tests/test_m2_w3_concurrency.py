@@ -97,7 +97,13 @@ class TestAdmissionEnforcement:
         coordinator.admit_dispatch(make_package("u-1"), target_executor_id=FAKE_EXECUTOR_ID)
 
         class Unreachable(DurableWorldAdapter):
+            # AF #50 M1/W1: an unreachable executor makes BOTH the status
+            # observation and the authoritative result path unreliable; the
+            # durable record must stay conservatively UNKNOWN and count active.
             def status(self, canonical_task_id, adapter_handle):
+                raise RuntimeError("unreachable during recovery")
+
+            def result(self, canonical_task_id, adapter_handle):
                 raise RuntimeError("unreachable during recovery")
 
         dispatcher_b = build_dispatcher(store, Unreachable())

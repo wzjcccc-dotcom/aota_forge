@@ -93,7 +93,7 @@ from aota_forge.core.execution.durable_state import (
 )
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.results import CanonicalResult
-from aota_forge.core.execution.state import CanonicalTaskState
+from aota_forge.core.execution.state import CanonicalTaskState, parse_state
 from aota_forge.core.result_governance import ResultGovernanceProjection
 from aota_forge.work_plane.result_card import project_worker_result_card
 from aota_forge.work_plane.roles import parse_agent_work_role
@@ -146,6 +146,19 @@ SEMANTIC_RESULT_NOT_PROVEN_MESSAGE = (
     "worker process terminated successfully but no governed task.return with a "
     "valid result handoff was proven for this exact execution"
 )
+
+# AF #50 M1/W1 (I40-B005) authoritative timeout terminal truth boundary (frozen):
+# an untrustworthy status observation that maps to UNKNOWN must remain UNKNOWN,
+# while an authoritative terminal execution result observed through the EXISTING
+# result path (ExecutionDispatcher.observe_result -> HermesAdapter.result ->
+# CanonicalResult.timeout) may terminalize the durable record as FAILED. The raw
+# status vocabulary stays fail-closed: HERMES_STATUS_MAP["timeout"] remains
+# CanonicalTaskState.UNKNOWN and is never globally flipped.
+UNTRUSTWORTHY_OBSERVATION_TIMEOUT_IS_UNKNOWN = True
+AUTHORITATIVE_EXECUTION_TIMEOUT_IS_TERMINAL = True
+HERMES_STATUS_MAP_GLOBAL_FLIP = False
+RUNTIME_AUTO_RETRY_ON_TIMEOUT = False
+COMPLETION_CONTINUATION_BUDGET_IS_ROOT_CAUSE = False
 
 # Bounded mechanical defaults (M2/W3 §24). Source review found no better AF
 # policy seam; these mirror the Hermes runtime's bounded lease posture (claim
@@ -563,8 +576,13 @@ class DurableCompletionCoordinator:
             self._cas_persist_unknown(task_id)
             return RECOVER_UNKNOWN_PERSISTED
         if state == CanonicalTaskState.UNKNOWN:
-            self._cas_persist_unknown(task_id)
-            return RECOVER_UNKNOWN_PERSISTED
+            # AF #50 M1/W1 (I40-B005): an UNKNOWN observation may hide an
+            # authoritative terminal execution result (Hermes raw "timeout"
+            # maps to UNKNOWN at the observation layer). Consult the EXISTING
+            # authoritative result path before persisting uncertainty. Only a
+            # terminal result may terminalize; unavailable/failed/uncertain
+            # result observations leave the record nonterminal.
+            return self._recover_unknown_via_authoritative_result(task_id)
         if not state.is_terminal:
             # Persist the nonterminal observation directly (no second adapter
             # observation, no gate bypass window): RUNNING/QUEUED/...
@@ -573,6 +591,59 @@ class DurableCompletionCoordinator:
         if state.is_terminal:
             return self._persist_terminal_truth(task_id, observed_state=state)
         return RECOVER_UNRECOVERABLE
+
+    def _recover_unknown_via_authoritative_result(self, task_id: str) -> str:
+        """Consult the authoritative result path for an UNKNOWN observation.
+
+        AF #50 M1/W1 (I40-B005): completion reconciliation must be able to
+        distinguish an authoritative terminal execution result from an
+        untrustworthy observation. The authoritative result path is the
+        EXISTING executor-neutral seam (``ExecutionDispatcher.observe_result``
+        → ``HermesAdapter.result`` → ``CanonicalResult``); the raw status
+        vocabulary is unchanged and HERMES_STATUS_MAP is never globally
+        flipped.
+
+        Fail-closed rules (frozen):
+        - result unavailable / fetch failure / parse failure / transport
+          uncertainty / unknown host status / still-running result → the
+          observation stays UNKNOWN (retryable uncertainty, never a false
+          terminal);
+        - only a terminal canonical result observed from the authoritative
+          result path may terminalize the durable record;
+        - a terminal COMPLETED result still passes the existing W9
+          semantic-return gate through ``_persist_terminal_truth``.
+        """
+        try:
+            result = self._dispatcher.observe_result(task_id)
+        except DispatchOutcomeUnresolvedError:
+            self._cas_persist_unknown(task_id)
+            return RECOVER_PREPARED_UNRESOLVED_UNKNOWN
+        except AdapterProtocolError:
+            # Protocol/binding integrity violation: fail closed WITHOUT
+            # fabricating a state change (durable conservative truth kept).
+            return RECOVER_PROTOCOL_ERROR_PRESERVED
+        except Exception:  # noqa: BLE001 - uncertainty, never a fabrication
+            self._cas_persist_unknown(task_id)
+            return RECOVER_UNKNOWN_PERSISTED
+        if result is None or not result.canonical_task_state:
+            self._cas_persist_unknown(task_id)
+            return RECOVER_UNKNOWN_PERSISTED
+        try:
+            result_state = parse_state(result.canonical_task_state)
+        except (TypeError, ValueError):
+            # Malformed authoritative result: uncertainty, never a terminal.
+            self._cas_persist_unknown(task_id)
+            return RECOVER_UNKNOWN_PERSISTED
+        if not result_state.is_terminal:
+            # Result unavailable / still running / unknown host status:
+            # preserve conservative UNKNOWN; no terminal is fabricated.
+            self._cas_persist_unknown(task_id)
+            return RECOVER_UNKNOWN_PERSISTED
+        # Authoritative terminal result: terminalize through the SAME
+        # terminal-truth gate (W9 semantic-success gate applies to COMPLETED).
+        return self._persist_terminal_truth(
+            task_id, observed_state=result_state, authoritative_result=result
+        )
 
     def _resolve_semantic_return_evidence_safe(
         self, task_id: str
@@ -601,7 +672,13 @@ class DurableCompletionCoordinator:
             return None
         return evidence
 
-    def _persist_terminal_truth(self, task_id: str, *, observed_state: CanonicalTaskState) -> str:
+    def _persist_terminal_truth(
+        self,
+        task_id: str,
+        *,
+        observed_state: CanonicalTaskState,
+        authoritative_result: CanonicalResult | None = None,
+    ) -> str:
         """Terminal observation: govern semantic truth, then persist CARD truth.
 
         AF #49 M1/W9: when the adapter observes terminal success
@@ -612,6 +689,14 @@ class DurableCompletionCoordinator:
         representation) in the SAME first persist; terminal truth is never
         mutated post-hoc. Non-success terminal observations (mechanical
         failures/timeouts/cancellations) are preserved unchanged.
+
+        AF #50 M1/W1 (I40-B005): ``authoritative_result`` may carry a terminal
+        result already observed through the pure authoritative result seam
+        (:meth:`ExecutionDispatcher.observe_result`). The result is persisted
+        exactly once through the existing reconciled-terminal-result seam and
+        the W9 semantic-success gate above still runs BEFORE any success
+        becomes sticky. When omitted, the existing dispatcher result seam is
+        used unchanged.
 
         The existing dispatcher result seam performs the CanonicalResult
         validation and persists terminal truth (W1 CAS). No delivery attempt
@@ -642,12 +727,20 @@ class DurableCompletionCoordinator:
                     ),
                     semantic_evidence=semantic_evidence,
                 )
-        try:
-            result = self._dispatcher.result(task_id)
-        except Exception:  # noqa: BLE001 - honest uncertainty, never a fabrication
-            self._cas_persist_unknown(task_id)
-            return RECOVER_UNKNOWN_PERSISTED
-        if not result.canonical_task_state or not CanonicalTaskState(result.canonical_task_state).is_terminal:
+        if authoritative_result is not None:
+            result = authoritative_result
+            try:
+                self._dispatcher.persist_reconciled_terminal_result(task_id, result)
+            except Exception:  # noqa: BLE001 - honest uncertainty, never a fabrication
+                self._cas_persist_unknown(task_id)
+                return RECOVER_UNKNOWN_PERSISTED
+        else:
+            try:
+                result = self._dispatcher.result(task_id)
+            except Exception:  # noqa: BLE001 - honest uncertainty, never a fabrication
+                self._cas_persist_unknown(task_id)
+                return RECOVER_UNKNOWN_PERSISTED
+        if not result.canonical_task_state or not parse_state(result.canonical_task_state).is_terminal:
             self._cas_persist_unknown(task_id)
             return RECOVER_UNKNOWN_PERSISTED
         self._attach_card(result, task_id, semantic_evidence=semantic_evidence)
@@ -1059,9 +1152,11 @@ __all__ = [
     "ACK_AFTER_RECONCILIATION_ONLY",
     "ACK_IDENTITY_BOUND",
     "AF_DURABLE_RECORD_IS_CANONICAL_RUNTIME_TRUTH",
+    "AUTHORITATIVE_EXECUTION_TIMEOUT_IS_TERMINAL",
     "AdmissionDecision",
     "BOUNDED_CONCURRENCY_IMPLEMENTED",
     "COMPLETION_ACK_TOKEN",
+    "COMPLETION_CONTINUATION_BUDGET_IS_ROOT_CAUSE",
     "COMPLETION_ENVELOPE_HEADER",
     "CARD_PERSISTED_BEFORE_DELIVERY",
     "CompletionAdmissionScopeError",
@@ -1089,6 +1184,7 @@ __all__ = [
     "FABRICATED_COMPLETION_ON_UNRESOLVED",
     "HERMES_LEDGER_IS_AF_AUTHORITY",
     "HERMES_LOCATOR_IS_AF_AUTHORITY",
+    "HERMES_STATUS_MAP_GLOBAL_FLIP",
     "MAX_DELIVERIES_PER_PASS",
     "POST_ACK_REDELIVERY",
     "PREPARED_UNRESOLVED_COUNTS_ACTIVE",
@@ -1102,6 +1198,7 @@ __all__ = [
     "RECOVER_UNKNOWN_PERSISTED",
     "RECOVER_UNRECOVERABLE",
     "RECOVERY_PASS_IMPLEMENTED",
+    "RUNTIME_AUTO_RETRY_ON_TIMEOUT",
     "RecoveryReport",
     "SEMANTIC_RESULT_NOT_PROVEN",
     "SEMANTIC_RESULT_NOT_PROVEN_MESSAGE",
@@ -1112,6 +1209,7 @@ __all__ = [
     "TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF",
     "TERMINAL_RESULT_PERSISTED_BEFORE_DELIVERY",
     "UNKNOWN_COUNTS_ACTIVE",
+    "UNTRUSTWORTHY_OBSERVATION_TIMEOUT_IS_UNKNOWN",
     "build_completion_envelope",
     "governance_projection_for_result",
     "parse_completion_ack",

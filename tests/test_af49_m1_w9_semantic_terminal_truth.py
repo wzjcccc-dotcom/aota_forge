@@ -163,11 +163,13 @@ class FakeHermesHostClient:
         status: str = "done",
         exit_code: int = 0,
         read_failure: bool = False,
+        fetch_result_raises: bool = False,
         handle_task_map: dict | None = None,
     ) -> None:
         self.status = status
         self.exit_code = exit_code
         self.read_failure = read_failure
+        self.fetch_result_raises = fetch_result_raises
         self.dispatch_calls = 0
         self._handle_task_map = dict(handle_task_map or {})
 
@@ -187,6 +189,10 @@ class FakeHermesHostClient:
         return {"status": self.status, "details": ""}
 
     def fetch_result(self, adapter_handle):
+        if self.fetch_result_raises:
+            # AF #50 M1/W1: an untrustworthy result observation (fetch
+            # failure) must never be treated as an authoritative terminal.
+            raise RuntimeError("transient result fetch failure")
         response = {
             "status": self.status,
             "exit_code": self.exit_code,
@@ -629,7 +635,12 @@ class TestMechanicalFailuresPreserved:
 
     def test_timeout_observation_stays_nonterminal_not_semantic_failure(self, tmp_path: Path) -> None:
         world = _make_world(tmp_path, "timeout")
-        host = FakeHermesHostClient(status="timeout", exit_code=None)
+        # AF #50 M1/W1 (I40-B005) distinction: a raw timeout STATUS observation
+        # remains untrustworthy UNKNOWN, and when the authoritative result path
+        # is unavailable (fetch failure) it must stay nonterminal rather than
+        # collapse into a semantic-return failure. An authoritative timeout
+        # RESULT envelope is separately proven to terminalize FAILED.
+        host = FakeHermesHostClient(status="timeout", exit_code=None, fetch_result_raises=True)
         dispatcher, store = _build_dispatcher(world, host, world.exec_path)
         provider = WorktreeSemanticReturnEvidenceProvider(world.sandbox)
         coordinator = _build_coordinator(dispatcher, store, provider=provider)
@@ -639,7 +650,8 @@ class TestMechanicalFailuresPreserved:
         coordinator.recover_once()
         record = store.get(task_id)
         # Existing governance maps timeout to nonterminal UNKNOWN (truthful
-        # uncertainty); it is not collapsed into a semantic-return failure.
+        # uncertainty) when no authoritative terminal result is observable; it
+        # is not collapsed into a semantic-return failure.
         assert record.canonical_task_state == CanonicalTaskState.UNKNOWN
         assert record.terminal_result is None
         assert record.worker_result_card is None

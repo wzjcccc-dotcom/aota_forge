@@ -941,6 +941,35 @@ class ExecutionDispatcher:
         """
         return self._observe_adapter_state(canonical_task_id)
 
+    def observe_result(self, canonical_task_id: str) -> CanonicalResult:
+        """Mechanical authoritative result observation that NEVER persists.
+
+        AF #50 M1/W1 (I40-B005): symmetric to :meth:`observe_status`, the
+        parent-side completion coordinator must be able to consult the
+        EXISTING authoritative result path (``HermesAdapter.result`` →
+        ``CanonicalResult``) when a status observation remains nonterminal,
+        so an authoritative terminal execution result (e.g. Hermes raw
+        ``timeout`` → ``EXECUTION_TIMEOUT``) can be distinguished from
+        untrustworthy observation uncertainty BEFORE any terminal truth is
+        persisted. This seam applies the same identity validation as
+        :meth:`result` but writes nothing: no route mutation, no durable
+        terminal-result attachment, no state change. It carries no semantic
+        policy; the caller owns any terminalization decision.
+        """
+        route = self._get_internal_route(canonical_task_id)
+        adapter = route._adapter
+        canonical_res = adapter.result(canonical_task_id, route.adapter_handle)
+        self._validate_response_task_id(canonical_res, canonical_task_id, "observe_result")
+        if canonical_res.executor_id != route.executor_id:
+            raise AdapterProtocolError(
+                f"result response executor_id {canonical_res.executor_id!r} does not "
+                f"match route executor {route.executor_id!r}"
+            )
+        self._validated_response_state(
+            route, canonical_res.canonical_task_state, "observe_result"
+        )
+        return canonical_res
+
     def reconcile_status(self, canonical_task_id: str) -> CanonicalTaskState:
         """Reconcile task state from adapter status query.
 
