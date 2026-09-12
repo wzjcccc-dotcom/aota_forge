@@ -57,7 +57,11 @@ from aota_forge.core.execution.dispatcher import (
     ExecutionDispatcher,
     IdempotencyConflictError,
 )
-from aota_forge.core.execution.durable_state import ExecutionStateStore
+from aota_forge.core.execution.durable_state import (
+    ExecutionStateStore,
+    UnboundOriginSessionError,
+    is_placeholder_origin_session_ref,
+)
 from aota_forge.runtime.completion import (
     AdmissionDecision,
     DurableCompletionCoordinator,
@@ -1711,6 +1715,14 @@ def activate_milestone(
     session_ref = _require_non_empty_str(
         origin_task_main_session_ref, "origin_task_main_session_ref"
     )
+    # AF #49 M1/W6: a coordinator may never durably bind the pre-session
+    # placeholder as the parent origin; activation fails closed until the real
+    # exact task-main session identity is bound (phase 2 of the launch).
+    if is_placeholder_origin_session_ref(session_ref):
+        raise UnboundOriginSessionError(
+            "task-main coordinator activation refused: the origin session is still "
+            "the pre-session placeholder; bind the real exact task-main session first"
+        )
     _require_durable_dispatcher(execution_dispatcher)
     if completion_coordinator is not None and not isinstance(
         completion_coordinator, DurableCompletionCoordinator

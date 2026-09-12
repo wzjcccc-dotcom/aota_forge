@@ -1438,6 +1438,19 @@ def dispatch_tool_operation(
                         "test doubles are never a silent production fallback",
                     }
                 )
+            # AF #49 M1/W6 (I49-B002): before the real exact task-main session
+            # identity is bound, child dispatch fails closed mechanically. The
+            # dispatcher also enforces this at the durable-record boundary;
+            # this is the typed model-visible projection of the same gate.
+            if getattr(trusted_dispatcher, "origin_session_is_placeholder", False):
+                return ToolResponse.failure(
+                    {
+                        "code": "UNBOUND_ORIGIN_SESSION",
+                        "message": "task.start refused: the trusted task-main origin session is "
+                        "still the pre-session placeholder; the real exact session identity "
+                        "must be bound first (no durable child execution was created)",
+                    }
+                )
             # AF #49 M1/W4: a task-main task.start may consume only a durable
             # work_item handoff whose trusted grounding matches the current
             # authorized Plan/Milestone/Work/source identity. Mechanical
@@ -1480,6 +1493,11 @@ def dispatch_tool_operation(
                     return ToolResponse.failure({"code": "INVALID_ROLE", "message": msg[:512]})
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
             except Exception as exc:
+                # AF #49 M1/W6: preserve typed core/runtime codes (e.g.
+                # UNBOUND_ORIGIN_SESSION) on the model-visible failure path.
+                typed_code = getattr(exc, "code", None)
+                if isinstance(typed_code, str) and typed_code:
+                    return ToolResponse.failure({"code": typed_code, "message": str(exc)[:512]})
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
             response = ToolResponse.success(result)
             _persist_governed_if_needed(binding, response, operation)

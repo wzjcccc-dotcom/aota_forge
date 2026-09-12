@@ -37,9 +37,12 @@ never a construction/factory input and never model/Worker supplied.
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from aota_forge.adapters.hermes.delivery import HermesCompletionDeliveryTransport
 from aota_forge.adapters.hermes.executor import HermesAdapter
@@ -50,7 +53,14 @@ from aota_forge.adapters.hermes.session_reentry import (
 )
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
-from aota_forge.core.execution.durable_state import ExecutionStateStore, OriginSessionRef
+from aota_forge.core.execution.durable_state import (
+    DeliveryState,
+    ExecutionStateStore,
+    FileBackedExecutionStateStore,
+    OriginSessionRef,
+    UnboundOriginSessionError,
+    is_bound_origin_session_ref,
+)
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import ExecutorRegistry
 from aota_forge.core.execution.roles import RoleMapping
@@ -345,3 +355,212 @@ def bind_production_execution_dispatcher(**kwargs: Any) -> ExecutionDispatcher:
     dispatcher = create_production_execution_dispatcher(**kwargs)
     bind_execution_dispatcher(dispatcher)
     return dispatcher
+
+
+# ---------------------------------------------------------------------------
+# AF #49 M1/W6 (I49-B004) — runtime-owned bounded completion continuation
+# ---------------------------------------------------------------------------
+# The production lifecycle owner that consumes durable Worker terminal evidence
+# after the parent task-main turn has ended, WITHOUT a model call, a manual
+# advance_once, or an operator script. It reuses the EXISTING primitives
+# (production dispatcher / DurableCompletionCoordinator / exact-session
+# transport) over the durable stores, so a fresh process reconstructs the same
+# truth. It is a bounded one-shot lifecycle continuation over the CURRENT
+# relevant execution(s) of one exact parent session — never a generic
+# scheduler, event bus, workflow engine, or always-on daemon.
+
+PRODUCTION_COMPLETION_RUNTIME_OWNER = (
+    "aota_forge/composition/execution.py:run_bounded_completion_continuation"
+)
+AUTONOMOUS_COMPLETION_TRIGGER_PATH = PRODUCTION_COMPLETION_RUNTIME_OWNER
+MODEL_CALL_REQUIRED_FOR_COMPLETION_TRIGGER = False
+OPERATOR_POLLING_REQUIRED = False
+MANUAL_ADVANCE_ONCE_REQUIRED = False
+NEW_GENERIC_BACKGROUND_SCHEDULER_CREATED = False
+NEW_GENERIC_EVENT_BUS_CREATED = False
+COMPLETION_CONTINUATION_BOUNDED = True
+COMPLETION_CONTINUATION_SCANS_FOREVER = False
+COMPLETION_CONTINUATION_REUSES_EXISTING_PRIMITIVES = True
+DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS = 900.0
+DEFAULT_COMPLETION_CONTINUATION_POLL_SECONDS = 5.0
+MAX_COMPLETION_CONTINUATION_ITERATIONS = 512
+
+COMPLETION_CONTINUATION_STOP_NO_RELEVANT = "no_relevant_active_execution"
+COMPLETION_CONTINUATION_STOP_LIFECYCLE_TIMEOUT = "lifecycle_timeout"
+COMPLETION_CONTINUATION_STOP_ITERATION_BUDGET = "iteration_budget_exhausted"
+
+
+class CompletionContinuationError(Exception):
+    """Bounded configuration error for the runtime completion continuation."""
+
+    code = "COMPLETION_CONTINUATION_ERROR"
+
+
+@dataclass(frozen=True)
+class CompletionContinuationReport:
+    """Mechanical evidence of one bounded runtime completion continuation."""
+
+    relevant_origin_session_ref: str
+    iterations: int
+    stop_reason: str
+    recovery_passes: tuple[Mapping[str, int], ...] = ()
+    delivery_outcomes: tuple[str, ...] = ()
+    durable_records: int = 0
+    relevant_records_remaining: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "relevant_origin_session_ref": self.relevant_origin_session_ref,
+            "iterations": self.iterations,
+            "stop_reason": self.stop_reason,
+            "recovery_passes": [dict(item) for item in self.recovery_passes],
+            "delivery_outcomes": list(self.delivery_outcomes),
+            "durable_records": self.durable_records,
+            "relevant_records_remaining": self.relevant_records_remaining,
+        }
+
+
+def _relevant_records(
+    store: ExecutionStateStore, relevant_origin_session_ref: str
+) -> list[Any]:
+    """Durable records that belong to this exact parent-session lifecycle.
+
+    Bounded relevance, not a global scan-for-anything: only records whose
+    durable trusted origin IS this exact real session and that still need
+    lifecycle attention (nonterminal, or terminal but not yet acknowledged/
+    dropped) are relevant. Placeholder/foreign/missing origins are NEVER
+    relevant here.
+    """
+    relevant: list[Any] = []
+    for record in store.list_all():
+        origin = record.origin_session_ref
+        if origin is None or origin.value != relevant_origin_session_ref:
+            continue
+        if not record.canonical_task_state.is_terminal:
+            relevant.append(record)
+            continue
+        if record.delivery_state in (DeliveryState.PENDING, DeliveryState.CLAIMED):
+            relevant.append(record)
+    return relevant
+
+
+def run_bounded_completion_continuation(
+    *,
+    execution_store_path: str | PathLike[str],
+    worktree_root: str | PathLike[str],
+    runtime_config: Any | None = None,
+    relevant_origin_session_ref: str,
+    timeout_seconds: float = DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_COMPLETION_CONTINUATION_POLL_SECONDS,
+    max_iterations: int = MAX_COMPLETION_CONTINUATION_ITERATIONS,
+    host_client: Any | None = None,
+    host_client_factory: Callable[..., Any] | None = None,
+    transport: Any | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    now_fn: Callable[[], float] = time.monotonic,
+) -> CompletionContinuationReport:
+    """One bounded production completion continuation for the current lifecycle.
+
+    Contract (AF #49 M1/W6):
+
+    - the caller supplies only the trusted exact parent session identity and
+      durable store locations (never model/Worker input);
+    - when no relevant active/pending execution exists, NO watcher is started
+      and the continuation returns immediately;
+    - otherwise it alternates the existing ``recover_once()`` (parent-side
+      ExecutionDispatcher reconciliation into durable terminal truth +
+      deterministic WorkerResultCard) and ``deliver_pending_once()`` (exact
+      trusted parent session re-entry through the wired transport) until the
+      relevant lifecycle needs no further attention, the bounded lifecycle
+      timeout expires, or the bounded iteration budget is exhausted;
+    - it never fabricates completion truth, never spawns a replacement parent
+      session, and never becomes a forever scan.
+    """
+    if not isinstance(relevant_origin_session_ref, str) or not relevant_origin_session_ref.strip():
+        raise CompletionContinuationError("relevant_origin_session_ref must be a non-empty string")
+    if not is_bound_origin_session_ref(relevant_origin_session_ref):
+        # The pre-session placeholder is not a lifecycle owner target.
+        raise UnboundOriginSessionError(
+            "completion continuation requires a bound real exact parent session identity; "
+            "the pre-session placeholder is not durable completion authority"
+        )
+    if not (isinstance(timeout_seconds, (int, float)) and not isinstance(timeout_seconds, bool) and timeout_seconds > 0):
+        raise CompletionContinuationError("timeout_seconds must be positive")
+    if not (
+        isinstance(poll_interval_seconds, (int, float))
+        and not isinstance(poll_interval_seconds, bool)
+        and poll_interval_seconds > 0
+    ):
+        raise CompletionContinuationError("poll_interval_seconds must be positive")
+    if type(max_iterations) is not int or max_iterations < 1:
+        raise CompletionContinuationError("max_iterations must be an int >= 1")
+
+    session_ref = relevant_origin_session_ref.strip()
+    config = _resolve_operator_runtime_config(runtime_config)
+    store = FileBackedExecutionStateStore(Path(execution_store_path))
+
+    initial_relevant = _relevant_records(store, session_ref)
+    if not initial_relevant:
+        # NO_RELEVANT_ACTIVE_EXECUTION -> no watcher/continuation required.
+        return CompletionContinuationReport(
+            relevant_origin_session_ref=session_ref,
+            iterations=0,
+            stop_reason=COMPLETION_CONTINUATION_STOP_NO_RELEVANT,
+            durable_records=len(store.list_all()),
+            relevant_records_remaining=0,
+        )
+
+    dispatcher_kwargs: dict[str, Any] = {
+        "default_cwd": worktree_root,
+        "runtime_config": config,
+        "state_store": store,
+    }
+    if host_client is not None:
+        dispatcher_kwargs["host_client"] = host_client
+    if host_client_factory is not None:
+        dispatcher_kwargs["host_client_factory"] = host_client_factory
+    dispatcher = create_production_execution_dispatcher(**dispatcher_kwargs)
+    effective_transport = (
+        transport
+        if transport is not None
+        else create_hermes_completion_delivery_transport(runtime_config=config)
+    )
+    coordinator = create_durable_completion_coordinator(
+        dispatcher=dispatcher,
+        state_store=store,
+        runtime_config=config,
+        transport=effective_transport,
+    )
+
+    deadline = now_fn() + float(timeout_seconds)
+    iterations = 0
+    recovery_passes: list[Mapping[str, int]] = []
+    delivery_outcomes: list[str] = []
+    stop_reason = COMPLETION_CONTINUATION_STOP_ITERATION_BUDGET
+    while True:
+        iterations += 1
+        recovery = coordinator.recover_once()
+        delivery = coordinator.deliver_pending_once()
+        recovery_passes.append(dict(recovery.summary()))
+        delivery_outcomes.extend(str(outcome) for outcome in delivery.outcomes.values())
+        remaining = _relevant_records(store, session_ref)
+        if not remaining:
+            stop_reason = COMPLETION_CONTINUATION_STOP_NO_RELEVANT
+            break
+        if iterations >= max_iterations:
+            stop_reason = COMPLETION_CONTINUATION_STOP_ITERATION_BUDGET
+            break
+        if now_fn() >= deadline:
+            stop_reason = COMPLETION_CONTINUATION_STOP_LIFECYCLE_TIMEOUT
+            break
+        sleep_fn(float(poll_interval_seconds))
+
+    return CompletionContinuationReport(
+        relevant_origin_session_ref=session_ref,
+        iterations=iterations,
+        stop_reason=stop_reason,
+        recovery_passes=tuple(recovery_passes),
+        delivery_outcomes=tuple(delivery_outcomes),
+        durable_records=len(store.list_all()),
+        relevant_records_remaining=len(_relevant_records(store, session_ref)),
+    )

@@ -830,8 +830,23 @@ def advance_milestone_once(
             receipt=outcome.receipt,
         )
 
+    # ---- AF #49 M1/W6: unbound origin must never create child execution ----
+    # Mechanical defense-in-depth projection of the ExecutionDispatcher gate:
+    # while the trusted task-main origin is the pre-session placeholder, the
+    # progression path refuses child dispatch instead of relying on the
+    # dispatcher exception alone. No durable record is created either way.
+    _origin_unbound = bool(getattr(execution_dispatcher, "origin_session_is_placeholder", False))
+
     # ---- integrated review required but not yet reconciled: should dispatch reviewer ----
     if _is_integrated_review_required(state) and reviewer_handoff_resolver is not None:
+        if _origin_unbound:
+            return RunnerOutcome(
+                disposition=DISPOSITION_BLOCKED,
+                coordinator_id=coordinator_id,
+                coordinator_revision=state.coordinator_revision,
+                integrated_review_required=True,
+                reasons=("UNBOUND_ORIGIN_SESSION: real task-main session identity is not bound yet",),
+            )
         # Check if reviewer already dispatched (execution record exists)
         _ = any(
             rec.canonical_task_id not in state.reconciled_completions
@@ -920,6 +935,18 @@ def advance_milestone_once(
         coordinator_store, coordinator_id, execution_dispatcher, completion_coordinator, state.project_id, state.executor_id
     )
     ready = handle.ready_work_items(live_plan_view=live_plan_view)
+    if ready and _origin_unbound:
+        return RunnerOutcome(
+            disposition=DISPOSITION_BLOCKED,
+            coordinator_id=coordinator_id,
+            coordinator_revision=state.coordinator_revision,
+            ready=tuple(ready),
+            blocked=tuple(ready),
+            reasons=(
+                "UNBOUND_ORIGIN_SESSION: real exact task-main session identity is not bound yet; "
+                "refusing child dispatch",
+            ),
+        )
     # Also direct evaluate for parity
     # ready = evaluate_ready_work_items(graph=_graph_for(state), wi_status=dict(state.wi_status), gate_blocked=False)
     if ready:

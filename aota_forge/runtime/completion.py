@@ -80,6 +80,7 @@ from aota_forge.core.execution.durable_state import (
     ExecutionStateStore,
     StaleExecutionRevisionError,
     card_digest_for,
+    is_placeholder_origin_session_ref,
 )
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.results import CanonicalResult
@@ -287,6 +288,7 @@ DELIVER_RELEASED_ACK_NOT_PROVEN = "released_ack_not_proven"
 DELIVER_RELEASED_TRANSPORT_ERROR = "released_transport_error"
 DELIVER_DROPPED_SESSION_MISSING = "dropped_session_missing"
 DELIVER_DROPPED_ORIGIN_MISSING = "dropped_origin_missing"
+DELIVER_DROPPED_UNBOUND_ORIGIN = "dropped_unbound_origin"
 DELIVER_DROPPED_ATTEMPT_CAP = "dropped_attempt_cap_exhausted"
 DELIVER_CLAIM_RACE_LOST = "claim_race_lost"
 DELIVER_TRUTH_NOT_DURABLE = "skipped_truth_not_durable"
@@ -678,6 +680,13 @@ class DurableCompletionCoordinator:
             # DELIVERY only; terminal result + CARD stay durable and ACK stays
             # false (§26); the execution record is never deleted.
             return self._release_or_drop(claimed, DeliveryState.DROPPED, DELIVER_DROPPED_ORIGIN_MISSING)
+        if is_placeholder_origin_session_ref(origin):
+            # AF #49 M1/W6: the pre-session placeholder is never a legitimate
+            # completion delivery target. Fail closed with terminal truth
+            # retained; no fabricated session, no attempt to resume it.
+            return self._release_or_drop(
+                claimed, DeliveryState.DROPPED, DELIVER_DROPPED_UNBOUND_ORIGIN
+            )
         assert self._transport is not None
         try:
             envelope = build_completion_envelope(claimed)
@@ -853,6 +862,7 @@ __all__ = [
     "DELIVER_DROPPED_ATTEMPT_CAP",
     "DELIVER_DROPPED_ORIGIN_MISSING",
     "DELIVER_DROPPED_SESSION_MISSING",
+    "DELIVER_DROPPED_UNBOUND_ORIGIN",
     "DELIVER_RELEASED_ACK_NOT_PROVEN",
     "DELIVER_RELEASED_RETRYABLE",
     "DELIVER_RELEASED_TRANSPORT_ERROR",

@@ -91,6 +91,15 @@ DELIVERY_COORDINATOR_IMPLEMENTED_IN_W1 = False
 ADMISSION_SCOPE_IS_AUTHORITY = False
 ADMISSION_SCOPE_MODEL_SETTABLE = False
 ADMISSION_SCOPE_REWRITABLE = False
+# AF #49 M1/W6 parent-session identity boundary: the pre-session bootstrap
+# placeholder form is a mechanical implementation detail of the launch window,
+# never durable completion authority and never eligible to enter a durable
+# child execution record.
+UNBOUND_ORIGIN_CAN_CREATE_CHILD_EXECUTION = False
+PENDING_PLACEHOLDER_IS_DURABLE_COMPLETION_AUTHORITY = False
+PENDING_PLACEHOLDER_MAY_ENTER_DURABLE_CHILD_RECORD = False
+ORIGIN_SESSION_BIND_ONCE = True
+MUTABLE_ORIGIN_REWRITE = False
 
 # ---------------------------------------------------------------------------
 # Bounded vocabularies
@@ -213,6 +222,53 @@ class OriginSessionRef:
         if isinstance(val, str) and type(val) is str:
             return cls(value=val)
         raise TypeError(f"Cannot construct OriginSessionRef from {type(val).__name__}")
+
+
+# AF #49 M1/W6 two-phase task-main session binding: the ONLY canonical
+# pre-session placeholder representation. It is minted mechanically by the
+# launcher for the phase-1 bootstrap window and is classified here (single
+# mechanical authority) as UNBOUND: it may never become durable completion
+# authority and may never enter a durable child execution record.
+UNBOUND_ORIGIN_SESSION_REF_PREFIX = "pending-"
+
+
+def origin_session_ref_text(value: "OriginSessionRef | str | None") -> str | None:
+    """Mechanical text projection of an origin binding (None stays None)."""
+    if value is None:
+        return None
+    if isinstance(value, OriginSessionRef):
+        return value.value
+    if isinstance(value, str) and type(value) is str:
+        return value
+    return None
+
+
+def is_placeholder_origin_session_ref(value: "OriginSessionRef | str | None") -> bool:
+    """True only for the pre-session bootstrap placeholder form (``pending-*``).
+
+    This is a mechanical classification, not semantic interpretation: a bound
+    exact session identity never starts with the placeholder prefix, and a
+    missing/foreign value is NOT relabeled here (delivery/dispatch fail closed
+    for those through their own existing boundaries).
+    """
+    text = origin_session_ref_text(value)
+    if text is None:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    return stripped.startswith(UNBOUND_ORIGIN_SESSION_REF_PREFIX)
+
+
+def is_bound_origin_session_ref(value: "OriginSessionRef | str | None") -> bool:
+    """True for a real, exact, non-placeholder origin session identity."""
+    text = origin_session_ref_text(value)
+    if text is None:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    return not stripped.startswith(UNBOUND_ORIGIN_SESSION_REF_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +704,13 @@ class DurableExecutionRecord:
                 raise ValueError("origin_session_ref is already durably bound; rewrites rejected")
             if ref is None:
                 raise ValueError("origin_session_ref update must be a non-empty opaque value")
+            if is_placeholder_origin_session_ref(ref):
+                # AF #49 M1/W6: the pre-session placeholder is never durable
+                # completion authority and never a bindable origin identity.
+                raise ValueError(
+                    "origin_session_ref must be a bound exact session identity; "
+                    "the pre-session placeholder is not durable origin authority"
+                )
             merged["origin_session_ref"] = ref
 
         # CARD payload + digest pair.
@@ -738,12 +801,29 @@ EXECUTION_RECORD_NOT_FOUND = "EXECUTION_RECORD_NOT_FOUND"
 STALE_EXECUTION_REVISION = "STALE_EXECUTION_REVISION"
 EXECUTION_PERSISTENCE_FAILURE = "EXECUTION_PERSISTENCE_FAILURE"
 EXECUTION_IDEMPOTENCY_CONFLICT = "EXECUTION_IDEMPOTENCY_CONFLICT"
+UNBOUND_ORIGIN_SESSION = "UNBOUND_ORIGIN_SESSION"
 
 
 class ExecutionStateError(Exception):
     """Base error for the durable execution state seam."""
 
     code: str = "EXECUTION_STATE_ERROR"
+
+
+class UnboundOriginSessionError(ExecutionStateError):
+    """Fail-closed refusal: the parent origin session is not really bound yet.
+
+    AF #49 M1/W6: raised when a durable child execution record / durable
+    origin binding would be created from the pre-session ``pending-*``
+    placeholder. The transport/runtime fails closed mechanically; no
+    fabricated identity, no in-memory fallback, no mutable rewrite.
+    """
+
+    code = UNBOUND_ORIGIN_SESSION
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(f"{self.code}: {message}")
 
 
 class ExecutionRecordNotFoundError(ExecutionStateError):
@@ -1173,11 +1253,20 @@ __all__ = [
     "ADMISSION_SCOPE_IS_AUTHORITY",
     "ADMISSION_SCOPE_MODEL_SETTABLE",
     "ADMISSION_SCOPE_REWRITABLE",
+    "UNBOUND_ORIGIN_CAN_CREATE_CHILD_EXECUTION",
+    "PENDING_PLACEHOLDER_IS_DURABLE_COMPLETION_AUTHORITY",
+    "PENDING_PLACEHOLDER_MAY_ENTER_DURABLE_CHILD_RECORD",
+    "ORIGIN_SESSION_BIND_ONCE",
+    "MUTABLE_ORIGIN_REWRITE",
     # Vocabularies
     "ExecutionPhase",
     "DeliveryState",
     "parse_delivery_state",
     "OriginSessionRef",
+    "UNBOUND_ORIGIN_SESSION_REF_PREFIX",
+    "origin_session_ref_text",
+    "is_placeholder_origin_session_ref",
+    "is_bound_origin_session_ref",
     "card_digest_for",
     # Record
     "DurableExecutionRecord",
@@ -1187,7 +1276,9 @@ __all__ = [
     "STALE_EXECUTION_REVISION",
     "EXECUTION_PERSISTENCE_FAILURE",
     "EXECUTION_IDEMPOTENCY_CONFLICT",
+    "UNBOUND_ORIGIN_SESSION",
     "ExecutionStateError",
+    "UnboundOriginSessionError",
     "ExecutionRecordNotFoundError",
     "StaleExecutionRevisionError",
     "ExecutionPersistenceFailureError",

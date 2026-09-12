@@ -109,6 +109,19 @@ OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS = False
 TASK_MAIN_RESTART_REQUIRES_OPERATOR_WORK_SEMANTICS_REINJECTION = False
 WORK_PROJECTION_SOURCE_AFTER = "task-main-owned-durable-coordinator"
 
+# AF #49 M1/W6 parent-session identity boundary (I49-B002). The trusted
+# task-main dispatcher is constructed from the bootstrap origin exactly as
+# before; the mechanical unbound-origin gate lives in the ExecutionDispatcher
+# and the task-main coordinator activation seam, so a pre-session placeholder
+# can never create a durable child execution record or a placeholder-bound
+# coordinator. The bootstrap origin itself remains bind-once and immutable.
+ORIGIN_SESSION_BIND_ONCE = True
+MUTABLE_ORIGIN_REWRITE = False
+UNBOUND_ORIGIN_CAN_CREATE_CHILD_EXECUTION = False
+PENDING_PLACEHOLDER_IS_DURABLE_COMPLETION_AUTHORITY = False
+PENDING_PLACEHOLDER_MAY_ENTER_DURABLE_CHILD_RECORD = False
+TASK_MAIN_SESSION_BINDING_IS_REAL_EXACT_IDENTITY = True
+
 
 def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
     """Generic trusted project evidence via canonical resolver.

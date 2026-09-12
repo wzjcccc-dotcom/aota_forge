@@ -33,7 +33,9 @@ from aota_forge.core.execution.durable_state import (
     ExecutionRecordNotFoundError,
     ExecutionStateStore,
     OriginSessionRef,
+    UnboundOriginSessionError,
     card_digest_for,
+    is_placeholder_origin_session_ref,
 )
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import (
@@ -289,6 +291,14 @@ class ExecutionDispatcher:
         self.state_store: ExecutionStateStore | None = state_store
         # Trusted-runtime supplied; opaque; never model-self-asserted.
         self.origin_session_ref: OriginSessionRef | None = OriginSessionRef.from_value(origin_session_ref)
+        # AF #49 M1/W6: mechanical classification of the runtime origin
+        # binding state. A pre-session placeholder (``pending-*``) is UNBOUND:
+        # durable child execution creation fails closed until the real exact
+        # task-main session identity is bound (two-phase launch). No mutable
+        # origin rewrite exists; the placeholder never becomes durable truth.
+        self._origin_session_is_placeholder = is_placeholder_origin_session_ref(
+            self.origin_session_ref
+        )
         # M2/W3: server-side trusted resolver deriving the concurrency-accounting
         # scope from the runtime binding for each package. The package, model,
         # and TaskHandoff never carry it; the resolver is composition-owned.
@@ -299,6 +309,16 @@ class ExecutionDispatcher:
         self._idempotency_index: dict[str, tuple[str, str, DispatchResult]] = {}
         # Cached dispatch results for replay
         self._dispatch_results: dict[str, DispatchResult] = {}
+
+    @property
+    def origin_session_is_placeholder(self) -> bool:
+        """True when this runtime's origin binding is still the unbound placeholder.
+
+        Mechanical, non-authoritative classification consumed by the canonical
+        ingress and task-main progression to project a typed fail-closed
+        refusal instead of attempting a durable child dispatch.
+        """
+        return self._origin_session_is_placeholder
 
     def _get_internal_route(self, canonical_task_id: str) -> RouteRecord:
         """Lookup the mutable route used only by Core lifecycle operations.
@@ -373,6 +393,13 @@ class ExecutionDispatcher:
         ref = OriginSessionRef.from_value(origin_session_ref)
         if ref is None:
             raise ValueError("origin_session_ref must be a non-empty opaque value")
+        if is_placeholder_origin_session_ref(ref):
+            # AF #49 M1/W6: the pre-session placeholder is never a bindable
+            # durable origin identity; binding fails closed.
+            raise UnboundOriginSessionError(
+                "origin_session_ref must be a bound exact session identity; "
+                "the pre-session placeholder is not durable origin authority"
+            )
         record = self.state_store.get(canonical_task_id)
         if record is None:
             raise ExecutionRecordNotFoundError(f"execution record not found: {canonical_task_id}")
@@ -494,6 +521,18 @@ class ExecutionDispatcher:
         if not isinstance(package, ExecutionPackage):
             raise TypeError(
                 f"package must be an ExecutionPackage, got {type(package).__name__}"
+            )
+
+        # AF #49 M1/W6 (I49-B002): an unbound/bootstrap placeholder origin may
+        # never create a durable child execution record. This is the mechanical
+        # server/runtime fail-closed gate (no model cooperation required): the
+        # refusal happens BEFORE any durable PREPARED identity or physical
+        # dispatch, so no origin-less/placeholder-bound completion can exist.
+        if self.state_store is not None and self._origin_session_is_placeholder:
+            raise UnboundOriginSessionError(
+                f"refusing child dispatch for {package.canonical_task_id!r}: the trusted "
+                f"task-main origin session is still the pre-session placeholder; bind the "
+                f"real exact session identity first (two-phase launch)"
             )
 
         idem_key = package.idempotency_key

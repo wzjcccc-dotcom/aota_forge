@@ -107,6 +107,10 @@ from aota_forge.composition.task_main_host_bootstrap import (
     BOOTSTRAP_RELPATH,
     write_bootstrap_file,
 )
+from aota_forge.core.execution.durable_state import (
+    UNBOUND_ORIGIN_SESSION_REF_PREFIX,
+    is_bound_origin_session_ref,
+)
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import portable_plan_digest
 from aota_forge.runtime.config import RuntimeConfig, load_runtime_config
@@ -381,6 +385,64 @@ def materialize_operator_startup_from_seed(
     except Exception:
         pass
     return op.resolve()
+
+
+# ---------------------------------------------------------------------------
+# AF #49 M1/W6 — two-phase task-main session binding (I49-B002)
+# ---------------------------------------------------------------------------
+# PHASE 1 mints an explicit unbound placeholder and establishes the real exact
+# Hermes task-main session identity with a bounded mechanical bootstrap prompt
+# only. PHASE 2 rewrites the trusted bootstrap with the real exact identity and
+# continues the SAME session through the accepted exact-session reentry seam
+# with the operator-owned startup prompt. Child dispatch is mechanically
+# refused while the origin is unbound (ExecutionDispatcher + coordinator
+# activation gates), so the placeholder can never become durable truth.
+
+PHASE1_SESSION_BOOTSTRAP_PROMPT = (
+    "AF runtime phase-1 session bootstrap only. Reply with exactly "
+    "AF_TASK_MAIN_SESSION_READY. Do not call any tools. Do not execute work."
+)
+TWO_PHASE_SESSION_BINDING = True
+SESSION_BOUND_BEFORE_CHILD_DISPATCH = True
+SESSION_BEFORE_BIND_IS_REAL_EXACT_ID = True
+EXACT_SESSION_CONTINUATION_REUSED = True
+MODEL_SUPPLIES_ORIGIN_SESSION = False
+WORKER_SUPPLIES_ORIGIN_SESSION = False
+MODEL_CAN_OVERRIDE_ORIGIN_SESSION = False
+WORKER_CAN_OVERRIDE_ORIGIN_SESSION = False
+MODEL_POLLING_REQUIRED = False
+OPERATOR_POLLING_REQUIRED = False
+MANUAL_ADVANCE_ONCE_REQUIRED_FOR_COMPLETION = False
+TWO_PHASE_LAUNCH_PATH = (
+    "aota_forge/composition/task_main_daily_launcher.py:DailyTaskMainLauncher.launch"
+)
+REAL_SESSION_BINDING_PATH = (
+    "aota_forge/composition/task_main_daily_launcher.py:DailyTaskMainLauncher.prepare"
+    "(origin_task_main_session_ref=real_session_id)"
+)
+EXACT_SESSION_CONTINUATION_PATH = (
+    "aota_forge/composition/task_main_daily_launcher.py:DailyTaskMainLauncher._continue_exact_session"
+)
+AUTONOMOUS_COMPLETION_OWNER_PATH = (
+    "aota_forge/composition/task_main_daily_launcher.py:DailyTaskMainLauncher.launch"
+    " -> aota_forge/composition/execution.py:run_bounded_completion_continuation"
+)
+
+
+def _new_unbound_origin_session_ref() -> str:
+    """Mint the explicit pre-session placeholder for the phase-1 window.
+
+    Canonical mechanical representation only (single prefix authority); this
+    value is never durable completion authority and never eligible to enter a
+    durable child execution record or coordinator activation.
+    """
+    return f"{UNBOUND_ORIGIN_SESSION_REF_PREFIX}{int(time.time())}-{os.getpid()}"
+
+
+class TaskMainSessionContinuationError(RuntimeError):
+    """Typed fail-closed error: exact task-main session continuation failed."""
+
+    code = "TASK_MAIN_SESSION_CONTINUATION_FAILED"
 
 
 @dataclass(frozen=True)
@@ -775,34 +837,53 @@ class DailyTaskMainLauncher:
         initial_prompt: str | None = None,
         timeout_seconds: int = 120,
         trace_path: Path | None = None,
+        completion_timeout_seconds: float | None = None,
     ) -> tuple[DailyLaunchContext, str]:
-        """Create or refresh bootstrap, build env, and launch Hermes aota-task-main.
+        """Two-phase production task-main launch (AF #49 M1/W6).
 
-        Returns (ctx, session_id). The origin session handshake is encapsulated
-        here so the operator does not manually perform internal steps:
+        PHASE 1 — session identity establishment only:
+          materialize the trusted bootstrap with an explicit UNBOUND origin
+          (pre-session placeholder), launch Hermes ``aota-task-main`` with the
+          bounded mechanical bootstrap prompt, and obtain the real exact
+          Hermes task-main session identity. While the placeholder is bound,
+          the runtime fails closed for child dispatch / coordinator activation.
+
+        PHASE 2 — trusted binding + exact-session continuation:
+          rewrite the trusted bootstrap with the real exact session identity,
+          then continue the SAME session through the existing
+          ``HermesExactSessionReentry`` seam with the operator-owned startup
+          prompt. Dispatch is now allowed and every durable child execution
+          record carries the exact real origin.
+
+        COMPLETION CONTINUATION — runtime-owned bounded lifecycle continuation:
+          after the parent turn ends, the launcher (production lifecycle
+          owner) performs the bounded receipt observation → parent-side
+          reconciliation → deterministic CARD → exact-session delivery
+          continuation for the currently relevant execution(s). No model call,
+          no operator polling, no manual ``advance_once``.
+
+        Returns (ctx, session_id). No replacement task-main session is ever
+        spawned as the normal repair:
 
           OPERATOR_MANUAL_SESSION_BOOTSTRAP_REQUIRED=no
         """
+        # Operator startup surface resolution happens before any launch: the
+        # effective file is required (fail closed, no silent seed fallback) and
+        # is delivered in PHASE 2, after the real origin binding exists.
+        startup_prompt = _resolve_task_main_startup_prompt(initial_prompt)
+
+        # ---- PHASE 1: unbound bootstrap + session identity establishment ----
         ctx_pending = self.prepare(
             worktree_root=worktree_root,
             project_id=project_id,
             worktree_id=worktree_id,
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
+            origin_task_main_session_ref=_new_unbound_origin_session_ref(),
         )
         env = self.build_env(ctx_pending, trace_path=trace_path)
         hermes_env = {**os.environ, **env}
         hermes_bin = ctx_pending.hermes_bin
-
-        # M1/W1 operator startup surface (after trusted bootstrap, before Hermes launch):
-        #   live Plan authority resolution → normalize/projection → approval truth validation
-        #   → RuntimeConfig resolution → trusted task-main bootstrap → startup prompt resolution
-        #   → Hermes task-main launch/resume
-        # Effective operator prompt (~/.config/aota-forge/task-main-startup.md) is required;
-        # missing effective file => fail closed / preflight not ready, never silent fallback to
-        # the AF source seed (prompts/task-main-startup.default.md). The seed is only for
-        # explicit materialization (install/setup, tests).
-        initial_prompt = _resolve_task_main_startup_prompt(initial_prompt)
 
         with tempfile.TemporaryDirectory(prefix="aota-task-main-launch-") as td:
             usage_path = Path(td) / "usage.json"
@@ -811,7 +892,7 @@ class DailyTaskMainLauncher:
                 cmd.extend(["--provider", ctx_pending.runtime_config.provider])
             if ctx_pending.runtime_config.model:
                 cmd.extend(["-m", ctx_pending.runtime_config.model])
-            cmd.extend(["--usage-file", str(usage_path), "-z", initial_prompt])
+            cmd.extend(["--usage-file", str(usage_path), "-z", PHASE1_SESSION_BOOTSTRAP_PROMPT])
 
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=hermes_env)
             if not usage_path.is_file():
@@ -821,6 +902,13 @@ class DailyTaskMainLauncher:
             if not session_id or not data.get("completed"):
                 raise RuntimeError(f"hermes session not completed: {data}")
 
+        if not is_bound_origin_session_ref(session_id):
+            raise TaskMainSessionContinuationError(
+                f"hermes returned a non-exact task-main session identity ({session_id!r}); "
+                "refusing to bind a placeholder/foreign identity as the trusted origin"
+            )
+
+        # ---- PHASE 2: bind real origin + continue the exact same session ----
         ctx = self.prepare(
             worktree_root=Path(worktree_root).resolve(),
             project_id=project_id,
@@ -830,7 +918,137 @@ class DailyTaskMainLauncher:
             origin_task_main_session_ref=session_id,
             coordinator_id=ctx_pending.live_plan_view.milestone_id and f"{project_id}:{ctx_pending.live_plan_view.milestone_id}" or None,
         )
+        continuation = self._continue_exact_session(
+            ctx=ctx,
+            session_id=session_id,
+            payload=startup_prompt,
+            timeout_seconds=timeout_seconds,
+            trace_path=trace_path,
+        )
+        from aota_forge.adapters.hermes.session_reentry import OUTCOME_COMPLETED
+
+        if continuation.outcome != OUTCOME_COMPLETED:
+            raise TaskMainSessionContinuationError(
+                f"exact-session continuation into {session_id!r} did not complete "
+                f"(outcome={continuation.outcome!r}, "
+                f"error={continuation.error_code or continuation.error_message!r}); "
+                "no replacement task-main session was spawned"
+            )
+
+        # ---- runtime-owned bounded completion continuation (I49-B004) ----
+        self._run_autonomous_completion_continuation(
+            ctx=ctx,
+            session_id=session_id,
+            timeout_seconds=completion_timeout_seconds,
+            trace_path=trace_path,
+        )
         return ctx, session_id
+
+    def _build_exact_session_reentry(self, *, ctx: DailyLaunchContext, timeout_seconds: float):
+        """Trusted exact-session reentry builder (single production seam).
+
+        Tests/component proofs may override this method to inject a scripted
+        exact-session seam; the production construction is unchanged.
+        """
+        from aota_forge.adapters.hermes.session_reentry import HermesExactSessionReentry
+
+        hermes_bin = ctx.hermes_bin
+        hermes_home_env = os.environ.get("HERMES_HOME", "").strip()
+        if hermes_home_env:
+            hermes_home = Path(hermes_home_env) / "profiles" / "aota-task-main"
+        else:
+            alt = os.environ.get("AOTA_HERMES_HOME_HOST", "").strip()
+            if alt:
+                hermes_home = Path(alt) / "profiles" / "aota-task-main"
+            else:
+                hermes_home = Path.home() / ".hermes" / "profiles" / "aota-task-main"
+        return HermesExactSessionReentry(
+            hermes_bin,
+            hermes_home=hermes_home,
+            profile="aota-task-main",
+            spool_root=Path(tempfile.gettempdir()) / "aota-task-main-launch-spool",
+            timeout_seconds=timeout_seconds,
+        )
+
+    def _continue_exact_session(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        payload: str,
+        timeout_seconds: float = 120,
+        trace_path: Path | None = None,
+    ):
+        """Continue the EXACT task-main session with trusted binding present.
+
+        Reuses ``HermesExactSessionReentry`` exactly as accepted; the payload is
+        the operator-owned startup prompt (or explicit operator override). The
+        pre-resolved binding envelope for the updated bootstrap is exported for
+        the duration of the turn so the resumed session's MCP child rebuilds
+        the SAME trusted binding (real origin). Never spawns a replacement.
+        """
+        env = self.build_env(ctx, trace_path=trace_path)
+        old_env: dict[str, str | None] = {}
+        for k, v in env.items():
+            old_env[k] = os.environ.get(k)
+            os.environ[k] = v
+        try:
+            reentry = self._build_exact_session_reentry(ctx=ctx, timeout_seconds=timeout_seconds)
+            return reentry.reenter(session_id, payload)
+        finally:
+            for k, old in old_env.items():
+                if old is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = old
+
+    def _run_autonomous_completion_continuation(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        timeout_seconds: float | None = None,
+        trace_path: Path | None = None,
+    ):
+        """Runtime-owned bounded completion continuation (AF #49 M1/W6).
+
+        The launcher is the production lifecycle owner for the currently-active
+        execution(s) of the exact session it launched: after the parent turn
+        ends it performs the bounded receipt observation → parent-side
+        reconciliation → deterministic CARD → exact-session delivery
+        continuation over the durable stores. A fresh process reconstructs the
+        same truth; no model call and no operator action participates. When no
+        relevant active/pending execution exists, this is a bounded no-op.
+        """
+        from aota_forge.composition.execution import (
+            DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS,
+            run_bounded_completion_continuation,
+        )
+
+        effective_timeout = (
+            DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else float(timeout_seconds)
+        )
+        env = self.build_env(ctx, trace_path=trace_path)
+        old_env: dict[str, str | None] = {}
+        for k, v in env.items():
+            old_env[k] = os.environ.get(k)
+            os.environ[k] = v
+        try:
+            return run_bounded_completion_continuation(
+                execution_store_path=ctx.execution_store_path,
+                worktree_root=ctx.worktree_root,
+                runtime_config=ctx.runtime_config,
+                relevant_origin_session_ref=session_id,
+                timeout_seconds=effective_timeout,
+            )
+        finally:
+            for k, old in old_env.items():
+                if old is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = old
 
     def resume(
         self,
@@ -854,39 +1072,13 @@ class DailyTaskMainLauncher:
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
         )
-        env = self.build_env(ctx, trace_path=trace_path)
-        old_env: dict[str, str | None] = {}
-        for k, v in env.items():
-            old_env[k] = os.environ.get(k)
-            os.environ[k] = v
-        try:
-            from aota_forge.adapters.hermes.session_reentry import HermesExactSessionReentry
-
-            hermes_bin = ctx.hermes_bin
-            hermes_home_env = os.environ.get("HERMES_HOME", "").strip()
-            if hermes_home_env:
-                hermes_home = Path(hermes_home_env) / "profiles" / "aota-task-main"
-            else:
-                alt = os.environ.get("AOTA_HERMES_HOME_HOST", "").strip()
-                if alt:
-                    hermes_home = Path(alt) / "profiles" / "aota-task-main"
-                else:
-                    hermes_home = Path.home() / ".hermes" / "profiles" / "aota-task-main"
-            reentry = HermesExactSessionReentry(
-                hermes_bin,
-                hermes_home=hermes_home,
-                profile="aota-task-main",
-                spool_root=Path(tempfile.gettempdir()) / "aota-task-main-launch-spool",
-                timeout_seconds=timeout_seconds,
-            )
-            result = reentry.reenter(session_id, payload)
-            return result
-        finally:
-            for k, old in old_env.items():
-                if old is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = old
+        return self._continue_exact_session(
+            ctx=ctx,
+            session_id=session_id,
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+            trace_path=trace_path,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -953,6 +1145,24 @@ __all__ = [
     "AF_ROLE_AUTHORITY_FROM_STARTUP_PROMPT",
     "PLAN_AUTHORITY_FROM_STARTUP_PROMPT",
     "SOURCE_SEED_SILENT_RUNTIME_FALLBACK",
+    "PHASE1_SESSION_BOOTSTRAP_PROMPT",
+    "TWO_PHASE_SESSION_BINDING",
+    "SESSION_BOUND_BEFORE_CHILD_DISPATCH",
+    "SESSION_BEFORE_BIND_IS_REAL_EXACT_ID",
+    "EXACT_SESSION_CONTINUATION_REUSED",
+    "MODEL_SUPPLIES_ORIGIN_SESSION",
+    "WORKER_SUPPLIES_ORIGIN_SESSION",
+    "MODEL_CAN_OVERRIDE_ORIGIN_SESSION",
+    "WORKER_CAN_OVERRIDE_ORIGIN_SESSION",
+    "MODEL_POLLING_REQUIRED",
+    "OPERATOR_POLLING_REQUIRED",
+    "MANUAL_ADVANCE_ONCE_REQUIRED_FOR_COMPLETION",
+    "TWO_PHASE_LAUNCH_PATH",
+    "REAL_SESSION_BINDING_PATH",
+    "EXACT_SESSION_CONTINUATION_PATH",
+    "AUTONOMOUS_COMPLETION_OWNER_PATH",
+    "TaskMainSessionContinuationError",
+    "_new_unbound_origin_session_ref",
     "_read_operator_startup_prompt",
     "_resolve_task_main_startup_prompt",
     "materialize_operator_startup_from_seed",

@@ -41,7 +41,10 @@ import uuid
 from typing import Any, Mapping, MutableMapping
 
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
-from aota_forge.core.execution.durable_state import ExecutionStateStore
+from aota_forge.core.execution.durable_state import (
+    ExecutionStateStore,
+    UnboundOriginSessionError,
+)
 from aota_forge.core.execution.results import CanonicalResult
 from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
@@ -341,6 +344,11 @@ def task_start(
     # Dispatch — this is the existing execution.task_start seam reused
     try:
         result = disp.dispatch(package)
+    except UnboundOriginSessionError:
+        # AF #49 M1/W6: typed fail-closed transport/lifecycle refusal is
+        # preserved so the canonical ingress projects UNBOUND_ORIGIN_SESSION
+        # instead of a generic dispatch rejection. No record was created.
+        raise
     except Exception as exc:
         # Wrap with typed code preservation
         code = getattr(exc, "code", "DISPATCH_REJECTED")
