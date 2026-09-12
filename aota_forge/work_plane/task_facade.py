@@ -57,6 +57,14 @@ TASK_RETURN_IS_NOT_EXECUTION_TASK_RESULT = True
 TASK_RETURN_REUSES_EXISTING_COMPLETION_FINALIZATION_WAKEUP_SEAMS = True
 PARENT_WAKEUP_REENTRY_REUSED = True
 
+# AF #49 M1/W8 (I49-B006): trusted internal dispatch metadata key.
+# task.start resolution (canonical durable grounded work_item handoff) is
+# propagated to the Worker env resolver through this bounded internal
+# working_context record. It is trusted server-side metadata produced by the
+# grounded handoff open, never model-authored binding identity, and it does
+# not expand the public agent-facing task.start contract.
+TRUSTED_WORK_HANDOFF_CONTEXT_KEY = "trusted_work_handoff"
+
 WORKER_RESULT_FULL_WRITE_COUNT_NORMAL = 1
 WORKER_AUTHORS_RESULT_CARD = False
 RESULT_CARD_DETERMINISTIC = True
@@ -283,6 +291,62 @@ def _load_work_item_task_handoff(
     return _ground(handoff)
 
 
+def load_trusted_work_item_task_handoff(
+    *,
+    opened: Mapping[str, Any],
+    sandbox: WorktreeSandboxBoundary,
+) -> TaskHandoff:
+    """Derive the trusted TaskHandoff from an already-opened durable work_item handoff.
+
+    AF #49 M1/W8 (I49-B006): single shared derivation used by both ``task.start``
+    and the governed Worker env resolver, so the Worker binding is derived from
+    the exact same canonical durable grounded handoff identity that task.start
+    resolved (never a second semantics source).
+    """
+    if not isinstance(opened, Mapping):
+        raise ValueError("opened durable handoff must be a mapping")
+    if opened.get("mode") != "work_item":
+        raise ValueError(f"trusted Work handoff mode must be work_item, got {opened.get('mode')!r}")
+    envelope = opened.get("envelope")
+    semantic = opened.get("semantic")
+    if not isinstance(envelope, Mapping) or not isinstance(semantic, Mapping):
+        raise ValueError("opened durable handoff is missing envelope/semantic")
+    return _load_work_item_task_handoff(semantic, sandbox, envelope)
+
+
+def _propagate_trusted_work_handoff(
+    package: Any,
+    *,
+    opened: Mapping[str, Any],
+) -> Any:
+    """Propagate the trusted durable handoff identity into internal dispatch metadata.
+
+    AF #49 M1/W8 (I49-B006): the reference/digest are authoritative output of
+    the grounded ``handoff_open`` above (never model input). They travel to the
+    governed Worker env resolver, which re-opens and re-validates the same
+    durable handoff before any physical Worker launch.
+    """
+    ref = opened.get("ref")
+    digest = opened.get("digest")
+    if not isinstance(digest, str) or not digest.strip():
+        raise ValueError("task.start durable handoff digest missing after trusted open")
+    digest = digest.strip().lower()
+    if not isinstance(ref, str) or not ref.strip():
+        # Deterministic canonical ref form from the trusted open identity
+        # (handoff:<mode>:<digest> is understood by the durable store).
+        mode = opened.get("mode")
+        if not isinstance(mode, str) or not mode.strip():
+            raise ValueError("task.start durable handoff ref missing after trusted open")
+        ref = f"handoff:{mode.strip()}:{digest}"
+    working_context = dict(package.working_context)
+    working_context[TRUSTED_WORK_HANDOFF_CONTEXT_KEY] = {
+        "ref": ref.strip(),
+        "digest": digest,
+        "mode": "work_item",
+    }
+    return dataclasses.replace(package, working_context=working_context)
+
+
 def task_start(
     *,
     role: str,
@@ -326,7 +390,7 @@ def task_start(
     # envelope identity (from handoff.write grounding) is authority for the
     # Worker compilation refs; semantic payload stays LLM-owned.
     try:
-        task_handoff = _load_work_item_task_handoff(semantic, sandbox, envelope)  # type: ignore
+        task_handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
     except Exception as exc:
         raise ValueError(f"handoff semantic cannot be resolved to TaskHandoff: {exc}") from exc
     # Compile/reuse existing execution-start inputs
@@ -341,6 +405,11 @@ def task_start(
     # Use sandbox project_id as binding project
     binding = TrustedExecutionBinding(canonical_task_id=canonical_task_id, project_id=sandbox.project_id)
     package = compile_handoff_to_execution_package(task_handoff, binding)
+    # AF #49 M1/W8 (I49-B006): propagate the trusted durable handoff identity
+    # produced by this grounded resolution into the internal dispatch metadata;
+    # the governed Worker env resolver resolves the same canonical durable
+    # handoff instead of the legacy coordinator/operator projection artifacts.
+    package = _propagate_trusted_work_handoff(package, opened=opened)
     # Dispatch — this is the existing execution.task_start seam reused
     try:
         result = disp.dispatch(package)
@@ -567,9 +636,11 @@ __all__ = [
     "TASK_RETURN_SEMANTIC_RETURN_WITHOUT_PARENT_STORE",
     "WORKER_PARENT_STORE_PATH_EXPOSED",
     "PARENT_TERMINAL_TRUTH_OWNER",
+    "TRUSTED_WORK_HANDOFF_CONTEXT_KEY",
     "CompletionSink",
     "ProductionDispatcherUnavailableError",
     "ProductionExecutionStoreUnavailableError",
+    "load_trusted_work_item_task_handoff",
     "task_start",
     "task_return",
     "get_completion",

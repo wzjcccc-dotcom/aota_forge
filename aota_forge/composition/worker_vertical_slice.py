@@ -592,18 +592,21 @@ def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
             if proj_ref is not None and proj_ref.ref != binding.project_id:
                 raise TrustedBindingError("SESSION_METADATA_MISMATCH: handoff project_ref contradicts binding project")
             try:
-                parts = binding.canonical_task_id.rsplit(":", 3)
-                if len(parts) == 4:
-                    _cid_milestone, _cid_work = parts[1], parts[2]
-                    _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
-                    _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
-                    if _h_mid is not None and _h_mid != _cid_milestone:
+                cid = binding.canonical_task_id
+                _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
+                _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
+                # AF #49 M1/W8: every accepted canonical dispatch identity
+                # embeds the governed milestone/work identity as an adjacent
+                # colon-delimited pair:
+                #   <project>:<milestone>:<work-item>:attempt-<n>
+                #   <project>:<milestone>:<work-item>:<artifact>:<attempt>
+                # A canonical task identity that does not carry the handoff's
+                # trusted milestone/work identity fails closed.
+                if _h_mid is not None and _h_wi is not None:
+                    if f":{_h_mid}:{_h_wi}:" not in f":{cid}:":
                         raise TrustedBindingError(
-                            f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} milestone {_cid_milestone!r} contradicts handoff milestone {_h_mid!r}"
-                        )
-                    if _h_wi is not None and _h_wi != _cid_work:
-                        raise TrustedBindingError(
-                            f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} work {_cid_work!r} contradicts handoff work {_h_wi!r}"
+                            f"SESSION_METADATA_MISMATCH: canonical_task {cid!r} does not carry "
+                            f"handoff milestone/work identity {_h_mid!r}/{_h_wi!r}"
                         )
             except TrustedBindingError:
                 raise

@@ -44,7 +44,13 @@ RECEIPT_POLL_SECONDS = 0.02
 _TRUNCATION_MARKER = "\n...[output truncated]"
 _USAGE_FILE_MAX_BYTES = 64 * 1024
 _WORKING_DIRECTORY_KEYS = ("cwd", "working_directory", "working_dir", "repo_path", "repo_root", "dir")
-_SEMANTIC_CONTEXT_KEYS = frozenset({"bounded_scope", "handoff_digest", "task_kind", "work_role", "refs"})
+# AF #49 M1/W8 (I49-B006): ``trusted_work_handoff`` is trusted internal
+# dispatch metadata produced by grounded task.start (never model-authored
+# binding authority); it is accepted here so the governed Worker binding
+# contract stays explicitly selected in the dispatch payload.
+_SEMANTIC_CONTEXT_KEYS = frozenset(
+    {"bounded_scope", "handoff_digest", "task_kind", "work_role", "refs", "trusted_work_handoff"}
+)
 # M1/W2 Worker/task-main runtime binding discrimination (AF #45, I40-B003/F2).
 #
 # Authority-bearing environment classification (AUTHORITY_ENV_ALLOWLIST_EXPLICIT=yes).
@@ -137,6 +143,29 @@ class HermesHostClientError(Exception):
         super().__init__(message)
         self.message = message
         self.code = code
+
+
+def _payload_declares_governed_worker_binding(payload: Mapping[str, Any]) -> bool:
+    """True when the dispatch payload selected the governed AF Worker binding contract.
+
+    AF #49 M1/W8 (I49-B006): explicit, payload-local selection marker produced
+    only by grounded ``task.start`` (trusted internal metadata). Generic
+    host-client callers that never set it are unaffected.
+    """
+    try:
+        context = payload.get("context")
+        if not isinstance(context, Mapping):
+            return False
+        working = context.get("working_context")
+        if not isinstance(working, Mapping):
+            return False
+        record = working.get("trusted_work_handoff")
+        if not isinstance(record, Mapping):
+            return False
+        ref = record.get("ref")
+        return isinstance(ref, str) and bool(ref.strip())
+    except Exception:
+        return False
 
 
 class HermesHostClient:
@@ -498,11 +527,25 @@ class HermesHostClient:
         except HermesHostClientError:
             raise
         except Exception as exc:
+            # Preserve a typed fail-closed identity when the resolver supplies
+            # one (AF #49 M1/W8); otherwise keep the bounded generic code.
+            typed_code = getattr(exc, "code", None)
+            code = typed_code if isinstance(typed_code, str) and typed_code else "PACKAGE_INVALID"
             raise HermesHostClientError(
-                f"PACKAGE_INVALID: trusted worker env resolver failed: {type(exc).__name__}",
-                "PACKAGE_INVALID",
+                f"{code}: trusted worker env resolver failed: {type(exc).__name__}",
+                code,
             ) from exc
         if overlay is None:
+            if _payload_declares_governed_worker_binding(payload):
+                # AF #49 M1/W8 (I49-B006) invariant: when the governed AF
+                # Worker binding contract is selected, an unresolvable binding
+                # is a typed fail-closed dispatch rejection. A bindingless
+                # physical Worker launch is never permitted.
+                raise HermesHostClientError(
+                    "DISPATCH_REJECTED: governed AF Worker dispatch requires a trusted "
+                    "Worker binding; resolver returned no binding (no bindingless dispatch)",
+                    "DISPATCH_REJECTED",
+                )
             return {}
         if not isinstance(overlay, Mapping):
             raise HermesHostClientError(
