@@ -55,9 +55,26 @@ MAX_LOGICAL_REF_LENGTH: int = 512
 MAX_PART_LENGTH: int = 128
 MAX_PARTS: int = 64
 
-# part charset: start alnum, then alnum . _ -
-_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# part charset: start alnum or underscore, then alnum . _ -
+# AF #50 M1/W2 (I40-B006): valid generic project-relative segments may begin
+# with "_" (__init__.py, __main__.py, _private.py, src/_internal/module.py).
+# This is generic path compatibility, never a Python/Calculator-specific
+# exception. Leading-dot semantics are NOT broadened: "." stays outside the
+# first-character class, ".", "..", traversal, absolute, empty, oversized and
+# whitespace segments are additionally rejected by explicit guards below
+# (defense in depth, not regex alone).
+_PART_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# Explicit shared-grammar policy markers (AF #50 M1/W2, I40-B006).
+UNDERSCORE_LEADING_SEGMENTS_ALLOWED: bool = True
+LEADING_DOT_SEGMENT_ALLOWED: bool = False
+LEADING_DOT_PATH_POLICY: str = "unchanged_fail_closed"
+HIDDEN_DOT_PATH_POLICY_CHANGE: bool = False
+WRITE_ONLY_UNDERSCORE_EXCEPTION_ALLOWED: bool = False
+PYTHON_SPECIFIC_EXCEPTION_ALLOWED: bool = False
+CALCULATOR_SPECIFIC_EXCEPTION_ALLOWED: bool = False
+B006_SHARED_RESOURCE_GRAMMAR_REPAIR: bool = True
 
 # ---------------------------------------------------------------------------
 # Authority markers — explicit for tests and downstream seam
@@ -435,6 +452,14 @@ __all__ = [
     "WorktreeResourceContainmentError",
     "WorktreeResourceSymlinkError",
     "MAX_LOGICAL_REF_LENGTH",
+    "UNDERSCORE_LEADING_SEGMENTS_ALLOWED",
+    "LEADING_DOT_SEGMENT_ALLOWED",
+    "LEADING_DOT_PATH_POLICY",
+    "HIDDEN_DOT_PATH_POLICY_CHANGE",
+    "WRITE_ONLY_UNDERSCORE_EXCEPTION_ALLOWED",
+    "PYTHON_SPECIFIC_EXCEPTION_ALLOWED",
+    "CALCULATOR_SPECIFIC_EXCEPTION_ALLOWED",
+    "B006_SHARED_RESOURCE_GRAMMAR_REPAIR",
     "RESOURCE_RESOLUTION_IS_OPERATION_AUTHORITY",
     "RESOURCE_RESOLUTION_IS_MUTATION_AUTHORITY",
     "RESOURCE_TYPE_IS_OPERATION_AUTHORITY",
