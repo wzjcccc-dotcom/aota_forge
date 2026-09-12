@@ -54,6 +54,9 @@ from aota_forge.adapters.hermes.session_reentry import (
     observe_persisted_session_tool_surface,
     production_aota_tool_surface_present,
 )
+from aota_forge.composition.worker_startup_guidance import (
+    build_worker_model_prompt_composer,
+)
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import (
@@ -194,11 +197,20 @@ def create_production_execution_dispatcher(
         concurrency_limit=config.concurrency,
     )
 
+    # AF #49 M1/W11 (I49-B003): AF runtime composition installs the governed
+    # Worker model-prompt composer.  For governed Worker roles the real
+    # model-facing instruction becomes
+    #   canonical startup guidance + deterministic separator + package.instruction
+    # downstream of execution-package identity; any inability to obtain trusted
+    # startup guidance fails closed here, before any physical Worker spawn.
+    # Non-Worker/generic dispatch is unchanged (the composer returns the exact
+    # instruction unchanged for non-Worker runtime bindings).
     adapter = HermesAdapter(
         host_client=client,
         capabilities=caps,
         role_mapping=role_mapping,
         runtime_config=config,
+        model_prompt_composer=build_worker_model_prompt_composer(runtime_config=config),
     )
     registry = ExecutorRegistry()
     registry.register(adapter)

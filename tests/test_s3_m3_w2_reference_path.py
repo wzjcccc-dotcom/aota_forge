@@ -609,9 +609,10 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     """Instructions travel as one argv element; nothing is shell-interpreted.
 
     W4 sync (§24): the real property is list-form argv with per-flag bounded
-    values, not a fixed argument index. The probe launcher echoes every argv
-    element on its own line, so the assertion below checks structure rather
-    than position.
+    values, not a fixed argument index. The probe launcher emits every argv
+    element NUL-terminated (AF #49 M1/W11: the model prompt is now multi-line
+    canonical startup guidance + bounded instruction), so the assertion below
+    checks structure rather than position.
     """
     sentinel = tmp_path / "shell-pwned"
     injection = (
@@ -619,7 +620,7 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     )
     echo_launcher = tmp_path / "joint-w2-arg-echo.sh"
     echo_launcher.write_text(
-        '#!/bin/sh\nprintf \'%s\\n\' "$0"\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n'
+        '#!/bin/sh\nprintf \'%s\\0\' "$0"\nfor arg in "$@"; do printf \'%s\\0\' "$arg"; done\n'
     )
     echo_launcher.chmod(0o755)
 
@@ -640,11 +641,22 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
     result = query_result(task_id)
     assert result["data"]["ok"] is True
     stdout = result["data"]["stdout_summary"] or ""
-    argv = stdout.splitlines()
+    argv = [element for element in stdout.split("\0") if element != ""]
 
-    # the instruction arrives as exactly ONE verbatim argv element, attached to -z
-    assert argv.count(injection) == 1, "instruction must arrive as a single argv element"
-    assert argv[argv.index("-z") + 1] == injection, "instruction must follow -z as one element"
+    # AF #49 M1/W11: the production AF composition prepends the canonical
+    # Worker startup guidance to the exact bounded instruction. The whole model
+    # prompt still arrives as exactly ONE argv element, attached to -z, and the
+    # injected instruction text still appears verbatim exactly once.
+    from aota_forge.composition.worker_startup_guidance import (
+        load_worker_startup_guidance,
+    )
+
+    model_prompt = argv[argv.index("-z") + 1]
+    assert model_prompt.startswith(load_worker_startup_guidance())
+    assert model_prompt.endswith(injection), "instruction must remain verbatim in the prompt"
+    assert sum(arg.count(injection) for arg in argv) == 1, (
+        "instruction must arrive exactly once across the bounded argv"
+    )
 
     # flags and values are separately bounded elements (operator config pins)
     assert argv[0] == str(echo_launcher)
@@ -657,7 +669,7 @@ def test_argument_construction_avoids_shell_evaluation(joint_ingress, tmp_path) 
         assert flag in argv, f"missing bounded flag element {flag}"
         assert argv[argv.index(flag) + 1] == value
     assert not any(
-        line != injection and ("$(touch" in line or "`touch" in line or "; touch" in line)
+        line != model_prompt and ("$(touch" in line or "`touch" in line or "; touch" in line)
         for line in argv
     ), "shell metacharacters must never be split/merged into other argv elements"
     assert not sentinel.exists(), "SHELL_INJECTION: shell metacharacters must never be evaluated"

@@ -25,7 +25,7 @@ Core Invariants:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol, runtime_checkable
 
 from aota_forge.core.contracts.canonical import canonicalize
@@ -54,6 +54,13 @@ from aota_forge.core.execution.state import (
 
 HERMES_EXECUTOR_ID: str = "hermes"
 HERMES_ADAPTER_KIND: str = "hermes_host_adapter"
+
+# Optional AF-runtime-composition hook: a mechanically narrow transform of the
+# model-facing instruction AFTER the canonical package translation and BEFORE
+# the host dispatch/launch.  Default None preserves existing generic behavior;
+# the adapter never owns AF startup policy (AF composition installs it).
+MODEL_PROMPT_COMPOSER_DEFAULT = None
+MODEL_PROMPT_COMPOSER_FAILURE_CODE = "WORKER_STARTUP_GUIDANCE_UNAVAILABLE"
 
 # Deterministic canonical role -> Hermes profile mapping
 HERMES_ROLE_MAPPING: dict[str, str] = {
@@ -593,11 +600,15 @@ class HermesAdapter(ExecutorAdapter):
         capabilities: ExecutorCapabilities | None = None,
         role_mapping: RoleMapping | None = None,
         runtime_config: Any | None = None,
+        model_prompt_composer: Callable[[ExecutionPackage], str] | None = MODEL_PROMPT_COMPOSER_DEFAULT,
     ) -> None:
         self._host_client = host_client
         self._capabilities = capabilities or default_hermes_capabilities()
         self._role_mapping = role_mapping or HERMES_ROLE_MAPPING_CONTRACT
         self._runtime_config = runtime_config
+        if model_prompt_composer is not None and not callable(model_prompt_composer):
+            raise TypeError("model_prompt_composer must be callable or None")
+        self._model_prompt_composer = model_prompt_composer
         self._dispatch_replays: dict[str, tuple[str, DispatchResult]] = {}
         self._cancel_replays: dict[tuple[str, str], CancelResult] = {}
         self._resume_replays: dict[str, tuple[str, str, str, ResumeResult]] = {}
@@ -778,6 +789,39 @@ class HermesAdapter(ExecutorAdapter):
             return ValidationResult(valid=False, errors=tuple(errors))
         return ValidationResult(valid=True, errors=())
 
+    def _compose_model_facing_instruction(
+        self,
+        package: ExecutionPackage,
+        payload: dict[str, Any],
+    ) -> None:
+        """Apply the optional AF-installed model-prompt composer (fail-closed).
+
+        Mechanical application only: the composer policy is owned by AF runtime
+        composition.  Any composer failure MUST reject dispatch before the host
+        client is called, so a governed Worker is never spawned without its
+        model-facing startup context.
+        """
+        composer = self._model_prompt_composer
+        if composer is None:
+            return
+        try:
+            composed = composer(package)
+        except Exception as exc:
+            code = getattr(exc, "code", None)
+            if not isinstance(code, str) or not code:
+                code = MODEL_PROMPT_COMPOSER_FAILURE_CODE
+            raise HermesAdapterError(
+                f"{code}: model-facing prompt composition failed: {type(exc).__name__}",
+                code=code,
+            ) from exc
+        if not isinstance(composed, str) or not composed.strip():
+            raise HermesAdapterError(
+                f"{MODEL_PROMPT_COMPOSER_FAILURE_CODE}: composer produced an empty "
+                "model-facing instruction",
+                code=MODEL_PROMPT_COMPOSER_FAILURE_CODE,
+            )
+        payload["instruction"] = composed
+
     def dispatch(self, package: ExecutionPackage) -> DispatchResult:
         """Dispatch execution package to Hermes host via injected host protocol."""
         val = self.validate_package(package)
@@ -807,6 +851,7 @@ class HermesAdapter(ExecutorAdapter):
             )
 
         payload = canonical_to_hermes_payload(package, self._role_mapping, self._runtime_config)
+        self._compose_model_facing_instruction(package, payload)
 
         try:
             host_resp = self._host_client.dispatch(payload)
