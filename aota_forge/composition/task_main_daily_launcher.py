@@ -101,6 +101,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from aota_forge.adapters.hermes.session_reentry import (
+    PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT,
+)
 from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter, PlanAuthoritySnapshot
 from aota_forge.composition.task_main_host_bootstrap import (
     BOOTSTRAP_ENV_ROOT,
@@ -450,7 +453,7 @@ AUTONOMOUS_COMPLETION_OWNER_PATH = (
 # This is invocation/observation only: no Hermes profile/source mutation, no
 # session-database write, no replacement session, no new session identity.
 
-PRODUCTION_EXACT_SESSION_TRANSPORT = "oneshot_resume"
+PRODUCTION_EXACT_SESSION_TRANSPORT = PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT
 TASK_MAIN_TOOL_SURFACE_OBSERVATION_PATH = (
     "aota_forge/adapters/hermes/session_reentry.py:observe_persisted_session_tool_surface"
 )
@@ -1089,7 +1092,6 @@ class DailyTaskMainLauncher:
         exact-session seam; the production construction is unchanged.
         """
         from aota_forge.adapters.hermes.session_reentry import (
-            TRANSPORT_ONESHOT_RESUME,
             HermesExactSessionReentry,
         )
 
@@ -1101,7 +1103,7 @@ class DailyTaskMainLauncher:
             profile="aota-task-main",
             spool_root=Path(tempfile.gettempdir()) / "aota-task-main-launch-spool",
             timeout_seconds=timeout_seconds,
-            transport=TRANSPORT_ONESHOT_RESUME,
+            transport=PRODUCTION_EXACT_SESSION_TRANSPORT,
         )
 
     def _observe_exact_session_tool_surface(self, *, session_id: str):

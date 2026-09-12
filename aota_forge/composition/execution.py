@@ -49,7 +49,10 @@ from aota_forge.adapters.hermes.executor import HermesAdapter
 from aota_forge.adapters.hermes.host_client import HermesHostClient
 from aota_forge.adapters.hermes.session_reentry import (
     DEFAULT_REENTRY_TIMEOUT_SECONDS,
+    PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT,
     HermesExactSessionReentry,
+    observe_persisted_session_tool_surface,
+    production_aota_tool_surface_present,
 )
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
@@ -292,6 +295,8 @@ def create_hermes_completion_delivery_transport(
     state_db_path: str | PathLike[str] | None = None,
     spool_root: str | PathLike[str] | None = None,
     timeout_seconds: float | None = None,
+    transport: str = PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT,
+    surface_checker: Callable[[str], bool] | None = None,
 ) -> HermesCompletionDeliveryTransport:
     """Production Hermes completion transport over the accepted W2 exact-session seam.
 
@@ -309,17 +314,34 @@ def create_hermes_completion_delivery_transport(
         effective_home = Path(hermes_home)
     else:
         effective_home = _resolve_task_main_hermes_home(task_main_profile)
+    effective_state_db = Path(state_db_path) if state_db_path is not None else None
     reentry = HermesExactSessionReentry(
         config.executable,
         hermes_home=effective_home,
         profile=task_main_profile,
-        state_db_path=Path(state_db_path) if state_db_path is not None else None,
+        state_db_path=effective_state_db,
         spool_root=Path(spool_root) if spool_root is not None else None,
         timeout_seconds=(
             DEFAULT_REENTRY_TIMEOUT_SECONDS if timeout_seconds is None else float(timeout_seconds)
         ),
+        transport=transport,
     )
-    return HermesCompletionDeliveryTransport(reentry)
+
+    def _effective_surface_check(session_id: str) -> bool:
+        if surface_checker is not None and not surface_checker(session_id):
+            return False
+        observation = observe_persisted_session_tool_surface(
+            session_id,
+            hermes_home=effective_home,
+            state_db_path=effective_state_db,
+        )
+        if observation.observed:
+            names = tuple(observation.tool_names or ())
+            if not names or not production_aota_tool_surface_present(names):
+                return False
+        return True
+
+    return HermesCompletionDeliveryTransport(reentry, surface_checker=_effective_surface_check)
 
 
 def prune_reconciled_hermes_receipts(

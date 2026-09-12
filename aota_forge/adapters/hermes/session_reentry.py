@@ -114,6 +114,10 @@ TRANSPORT_CHAT_QUIET = "chat_quiet"
 TRANSPORT_ONESHOT_RESUME = "oneshot_resume"
 EXACT_SESSION_TRANSPORTS = (TRANSPORT_CHAT_QUIET, TRANSPORT_ONESHOT_RESUME)
 
+# AF #49 M1/W10 — single canonical production exact-session reentry policy.
+# Both launcher phase-2 continuation and completion delivery resolve this policy.
+PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT = TRANSPORT_ONESHOT_RESUME
+
 # The oneshot payload is delivered as one argv element; Linux allows 128 KiB
 # per element, so the seam's existing 64 KiB payload bound is portable here.
 MAX_ONESHOT_ARGV_PAYLOAD_BYTES = 64 * 1024
@@ -789,6 +793,7 @@ __all__ = [
     "OUTCOME_NOT_FOUND",
     "OUTCOME_RETRYABLE",
     "OUTCOME_UNKNOWN",
+    "PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT",
     "TRANSPORT_CHAT_QUIET",
     "TRANSPORT_ONESHOT_RESUME",
     "HermesExactSessionReentry",

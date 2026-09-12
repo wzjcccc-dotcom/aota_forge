@@ -22,6 +22,8 @@ Mechanical outcome mapping (transport evidence, never AF truth):
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from aota_forge.adapters.hermes.session_reentry import (
     OUTCOME_COMPLETED,
     OUTCOME_FAILED,
@@ -29,6 +31,7 @@ from aota_forge.adapters.hermes.session_reentry import (
     OUTCOME_RETRYABLE,
     OUTCOME_UNKNOWN,
     HermesExactSessionReentry,
+    HermesSessionReentryError,
 )
 from aota_forge.runtime.completion import (
     DeliveryAttemptEvidence,
@@ -47,13 +50,19 @@ _HERMES_OUTCOME_MAP: dict[str, DeliveryTransportOutcome] = {
 class HermesCompletionDeliveryTransport:
     """One bounded exact-session delivery attempt per ``deliver()`` call."""
 
-    def __init__(self, reentry: HermesExactSessionReentry) -> None:
+    def __init__(
+        self,
+        reentry: HermesExactSessionReentry,
+        *,
+        surface_checker: Callable[[str], bool] | None = None,
+    ) -> None:
         if not isinstance(reentry, HermesExactSessionReentry):
             raise TypeError(
                 "HermesCompletionDeliveryTransport requires the accepted W2 "
                 f"HermesExactSessionReentry adapter, got {type(reentry).__name__}"
             )
         self._reentry = reentry
+        self._surface_checker = surface_checker
 
     def deliver(self, *, session_ref: str, envelope: str) -> DeliveryAttemptEvidence:
         """Attempt one exact-session re-entry with the bounded completion envelope.
@@ -62,7 +71,31 @@ class HermesCompletionDeliveryTransport:
         only target the exact id, never ``latest``/named/create-if-missing,
         and never launches an alternative session on a miss (fail closed).
         """
-        result = self._reentry.reenter(session_ref, envelope)
+        if self._surface_checker is not None:
+            try:
+                surface_ok = self._surface_checker(session_ref)
+            except Exception as exc:
+                return DeliveryAttemptEvidence(
+                    outcome=DeliveryTransportOutcome.FAILED,
+                    detail=f"TOOL_SURFACE_PRECHECK_FAILED: {type(exc).__name__}: {exc}",
+                )
+            if not surface_ok:
+                return DeliveryAttemptEvidence(
+                    outcome=DeliveryTransportOutcome.FAILED,
+                    detail="TOOL_SURFACE_PRECHECK_FAILED",
+                )
+        try:
+            result = self._reentry.reenter(session_ref, envelope)
+        except HermesSessionReentryError as exc:
+            return DeliveryAttemptEvidence(
+                outcome=DeliveryTransportOutcome.FAILED,
+                detail=str(exc),
+            )
+        except Exception as exc:
+            return DeliveryAttemptEvidence(
+                outcome=DeliveryTransportOutcome.FAILED,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
         outcome = _HERMES_OUTCOME_MAP.get(result.outcome, DeliveryTransportOutcome.UNKNOWN)
         return DeliveryAttemptEvidence(
             outcome=outcome,
