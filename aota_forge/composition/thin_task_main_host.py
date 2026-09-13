@@ -71,7 +71,11 @@ from aota_forge.core.execution.durable_state import (
 from aota_forge.core.ingress import bind_execution_dispatcher
 from aota_forge.mcp_transport import create_aota_invoke_dispatch
 from aota_forge.runtime.completion import DurableCompletionCoordinator
-from aota_forge.runtime.config import RuntimeConfig, load_runtime_config
+from aota_forge.runtime.config import (
+    TASK_MAIN_RUNTIME_PATH_THIN,
+    RuntimeConfig,
+    load_runtime_config,
+)
 from aota_forge.runtime.trusted_runtime_binding import (
     TrustedBindingError,
     TrustedWorkerBinding,
@@ -427,6 +431,8 @@ def compose_thin_task_main_host(
         # The thin seam: no TrustedTaskMainRuntimeContext => M2/W1 generic thin
         # task lifecycle; no legacy workflow object is required or passed.
         trusted_task_main_context=None,
+        # AF #53 M3/W1 explicit trusted classification (mechanical marker).
+        task_main_runtime_path=TASK_MAIN_RUNTIME_PATH_THIN,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 

@@ -41,7 +41,11 @@ from aota_forge.runtime.trusted_runtime_binding import (
     load_binding_from_envelope,
     verify_envelope,
 )
-from aota_forge.runtime.config import RuntimeBinding, RuntimeConfig
+from aota_forge.runtime.config import (
+    TASK_MAIN_RUNTIME_PATH_THIN,
+    RuntimeBinding,
+    RuntimeConfig,
+)
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
 from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
@@ -565,7 +569,17 @@ def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
         if is_task_main:
             ctx = binding.trusted_task_main_context
             if ctx is None:
-                raise TrustedBindingError("SESSION_METADATA_MISMATCH: task-main binding without context")
+                # AF #53 M3/W1: an explicitly thin trusted task-main binding
+                # carries no legacy workflow context; it requires no
+                # MilestonePlanView/control service/origin-in-context. It must
+                # be mechanically classified thin (never a legacy binding that
+                # merely lost its context).
+                if getattr(binding, "task_main_runtime_path", "legacy") != TASK_MAIN_RUNTIME_PATH_THIN:
+                    raise TrustedBindingError(
+                        "SESSION_METADATA_MISMATCH: task-main binding without context "
+                        "is not classified thin"
+                    )
+                return
             try:
                 live = ctx.live_plan_view
                 _ = (live.milestone_id, live.plan_authority)

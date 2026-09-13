@@ -64,6 +64,9 @@ Required invariants enforced here:
   RUNTIME_CONFIG_AUTHORITY=operator_owned
   OPERATOR_MANUAL_INTERNAL_OBJECT_ASSEMBLY_REQUIRED=no
   OPERATOR_MANUAL_SESSION_BOOTSTRAP_REQUIRED=no
+  RUNTIME_PATH_SELECTION=operator_owned_runtime_config
+  RUNTIME_PATH_DEFAULT=legacy
+  THIN_PATH_SELECTION_MODEL_FACING=no
   PLAN_AUTHORITY_OPERATOR_SELECTABLE=yes
   PLAN_AUTHORITY_HARDCODED_TO_ISSUE_37=no
   ENTRY_BASE_FROM_PLAN_AUTHORITY=yes
@@ -110,6 +113,14 @@ from aota_forge.composition.task_main_host_bootstrap import (
     BOOTSTRAP_EXPLICIT_ENV,
     BOOTSTRAP_RELPATH,
     write_bootstrap_file,
+)
+from aota_forge.composition.task_main_runtime_selection import (
+    DEFAULT_TASK_MAIN_RUNTIME_PATH,
+    THIN_BOOTSTRAP_RELPATH,
+    TASK_MAIN_RUNTIME_PATH_THIN,
+    materialize_thin_task_main_bootstrap,
+    read_existing_thin_origin_session_ref,
+    select_task_main_runtime_path,
 )
 from aota_forge.core.execution.durable_state import (
     UNBOUND_ORIGIN_SESSION_REF_PREFIX,
@@ -661,19 +672,27 @@ class DailyTaskMainLaunchConfig:
 
 @dataclass(frozen=True)
 class DailyLaunchContext:
-    """Trusted operator input + derived live Plan views (no internal assembly required)."""
+    """Trusted operator input + derived live Plan views (no internal assembly required).
+
+    ``runtime_path`` is the trusted operator-selected production task-main
+    composition path (``legacy`` compatibility path or ``thin`` production
+    candidate). The thin candidate carries no live Plan view / coordinator
+    store (M3/W1), so those fields are optional; the legacy path keeps the
+    existing values unchanged.
+    """
 
     worktree_root: Path
     project_id: str
     worktree_id: str
     runtime_config_path: Path
-    coordinator_store_path: Path
+    coordinator_store_path: Path | None
     execution_store_path: Path
-    live_plan_view: MilestonePlanView
+    live_plan_view: MilestonePlanView | None
     next_milestone_view: MilestonePlanView | None
-    plan_snapshot: PlanAuthoritySnapshot
+    plan_snapshot: PlanAuthoritySnapshot | None
     runtime_config: RuntimeConfig
     hermes_bin: str
+    runtime_path: str = DEFAULT_TASK_MAIN_RUNTIME_PATH
 
 
 class DailyTaskMainLauncher:
@@ -846,6 +865,68 @@ class DailyTaskMainLauncher:
             raise RuntimeError(f"runtime config missing: {runtime_config_path}")
         runtime_config = load_runtime_config(config_path=str(runtime_config_path))
 
+        # AF #53 M3/W1: trusted operator/runtime selection of the production
+        # task-main composition path. Deployment mechanic only; the model,
+        # handoff content, Plan prose, startup prompt and aota.invoke arguments
+        # can never select or override it.
+        runtime_path = select_task_main_runtime_path(runtime_config)
+
+        if runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
+            # Thin production candidate: trusted operator bootstrap only. No
+            # Plan read/interpretation, no MilestonePlanView, no coordinator
+            # store, no TaskMainControlService, no review/READY state.
+            hermes_bin = self._resolve_hermes_bin(runtime_config)
+
+            if origin_task_main_session_ref is None or not origin_task_main_session_ref.strip():
+                existing = read_existing_thin_origin_session_ref(
+                    worktree_root / THIN_BOOTSTRAP_RELPATH
+                )
+                origin_task_main_session_ref = (
+                    existing if existing is not None
+                    else f"pending-{int(time.time())}-{os.getpid()}"
+                )
+            if len(origin_task_main_session_ref) > 512 or not origin_task_main_session_ref.strip():
+                raise ValueError("origin_task_main_session_ref invalid")
+
+            execution_store_path = worktree_root / ".aota" / "execution.json"
+            execution_store_path.parent.mkdir(parents=True, exist_ok=True)
+            if not execution_store_path.exists():
+                execution_store_path.write_text("{}", encoding="utf-8")
+                try:
+                    execution_store_path.chmod(0o600)
+                except Exception:
+                    pass
+
+            bootstrap_path = materialize_thin_task_main_bootstrap(
+                worktree_root=worktree_root,
+                project_id=project_id,
+                worktree_id=worktree_id,
+                runtime_config_path=runtime_config_path,
+                origin_task_main_session_ref=origin_task_main_session_ref,
+                execution_store_path=execution_store_path,
+            )
+            try:
+                mode = bootstrap_path.stat().st_mode
+                if mode & 0o777 != 0o600:
+                    bootstrap_path.chmod(0o600)
+            except Exception:
+                pass
+
+            return DailyLaunchContext(
+                worktree_root=worktree_root,
+                project_id=project_id,
+                worktree_id=worktree_id,
+                runtime_config_path=runtime_config_path,
+                coordinator_store_path=None,
+                execution_store_path=execution_store_path,
+                live_plan_view=None,
+                next_milestone_view=None,
+                plan_snapshot=None,
+                runtime_config=runtime_config,
+                hermes_bin=hermes_bin,
+                runtime_path=runtime_path,
+            )
+
         adapter = plan_adapter or self._plan_adapter
         if adapter is None:
             raise RuntimeError(
@@ -924,6 +1005,7 @@ class DailyTaskMainLauncher:
             plan_snapshot=snapshot,
             runtime_config=runtime_config,
             hermes_bin=hermes_bin,
+            runtime_path=runtime_path,
         )
 
     def refresh(
@@ -963,7 +1045,12 @@ class DailyTaskMainLauncher:
         from aota_forge.runtime.trusted_runtime_binding import create_task_main_envelope, PRE_RESOLVED_BINDING_ENV
 
         repo_root = str(Path(__file__).resolve().parents[2])
-        bootstrap_path = ctx.worktree_root / BOOTSTRAP_RELPATH
+        bootstrap_relpath = (
+            THIN_BOOTSTRAP_RELPATH
+            if ctx.runtime_path == TASK_MAIN_RUNTIME_PATH_THIN
+            else BOOTSTRAP_RELPATH
+        )
+        bootstrap_path = ctx.worktree_root / bootstrap_relpath
         trace_str = str(trace_path.resolve()) if trace_path is not None else ""
 
         # Pre-resolved envelope: AF composition builds envelope before MCP
@@ -1078,6 +1165,13 @@ class DailyTaskMainLauncher:
         self._require_task_main_tool_surface(ctx=ctx_pending, session_id=session_id, phase="phase1", env=env)
 
         # ---- PHASE 2: bind real origin + continue the exact same session ----
+        coordinator_id: str | None = None
+        if (
+            ctx_pending.runtime_path != TASK_MAIN_RUNTIME_PATH_THIN
+            and ctx_pending.live_plan_view is not None
+        ):
+            milestone_id = ctx_pending.live_plan_view.milestone_id
+            coordinator_id = f"{project_id}:{milestone_id}" if milestone_id else None
         ctx = self.prepare(
             worktree_root=Path(worktree_root).resolve(),
             project_id=project_id,
@@ -1085,7 +1179,7 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
-            coordinator_id=ctx_pending.live_plan_view.milestone_id and f"{project_id}:{ctx_pending.live_plan_view.milestone_id}" or None,
+            coordinator_id=coordinator_id,
         )
         continuation = self._continue_exact_session(
             ctx=ctx,

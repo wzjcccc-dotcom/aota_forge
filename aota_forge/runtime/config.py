@@ -99,6 +99,22 @@ MIN_WORKER_EXECUTION_TIMEOUT_SECONDS = 1
 MAX_WORKER_EXECUTION_TIMEOUT_SECONDS = 3600
 DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS = 900
 
+# Task-main production composition path (AF #53 M3/W1, operator-owned).
+# Bounded trusted deployment setting in the SAME RuntimeConfig authority:
+# the operator chooses which production task-main composition path runs
+# (existing legacy compatibility path vs the accepted M2 thin candidate).
+# It is a deployment mechanic, never a workflow strategy and never a
+# model-facing argument. Strict exact values only: no fuzzy aliases and no
+# silent legacy fallback. The default preserves current production behavior
+# until M3/W2 fresh production dogfood passes (M3/W3 owns any cutover).
+TASK_MAIN_RUNTIME_PATH_LEGACY = "legacy"
+TASK_MAIN_RUNTIME_PATH_THIN = "thin"
+SUPPORTED_TASK_MAIN_RUNTIME_PATHS: tuple[str, ...] = (
+    TASK_MAIN_RUNTIME_PATH_LEGACY,
+    TASK_MAIN_RUNTIME_PATH_THIN,
+)
+DEFAULT_TASK_MAIN_RUNTIME_PATH = TASK_MAIN_RUNTIME_PATH_LEGACY
+
 
 class RuntimeConfigError(ForgeError):
     """Operator runtime configuration is invalid, unsafe or unreadable."""
@@ -193,6 +209,27 @@ def _validate_worker_execution_timeout_seconds(value: Any) -> int:
             "worker_execution_timeout_seconds must be between "
             f"{MIN_WORKER_EXECUTION_TIMEOUT_SECONDS} and {MAX_WORKER_EXECUTION_TIMEOUT_SECONDS}, "
             f"got {value!r}"
+        )
+    return value
+
+
+def _validate_task_main_runtime_path(value: Any) -> str:
+    """Bounded trusted task-main runtime path selector, fail-closed.
+
+    Exact membership only: unsupported values (including aliases, different
+    casing or surrounding whitespace) fail closed. There is no silent
+    fallback to ``legacy``; the operator either selects a supported path or
+    the config is invalid. Never model-supplied.
+    """
+    if not isinstance(value, str) or type(value) is not str:
+        raise RuntimeConfigError(
+            f"runtime_path must be a string, got {type(value).__name__}"
+        )
+    if value not in SUPPORTED_TASK_MAIN_RUNTIME_PATHS:
+        raise RuntimeConfigError(
+            "runtime_path must be exactly one of "
+            f"{list(SUPPORTED_TASK_MAIN_RUNTIME_PATHS)}, got {value!r} "
+            "(no fuzzy alias, no silent fallback)"
         )
     return value
 
@@ -339,12 +376,14 @@ class RuntimeConfig:
     model: str | None
     bindings: tuple[RuntimeBinding, ...]
     worker_execution_timeout_seconds: int = DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS
+    runtime_path: str = DEFAULT_TASK_MAIN_RUNTIME_PATH
 
     def __post_init__(self) -> None:
         _validate_executor(self.executor)
         _validate_executable(self.executable)
         _validate_concurrency(self.concurrency)
         _validate_worker_execution_timeout_seconds(self.worker_execution_timeout_seconds)
+        _validate_task_main_runtime_path(self.runtime_path)
         if self.provider is not None:
             _validate_provider(self.provider, "provider")
         if self.model is not None:
@@ -427,6 +466,7 @@ class RuntimeConfig:
             "model": self.model,
             "bindings": [b.to_dict() for b in sorted(self.bindings, key=lambda x: x.work_role)],
             "worker_execution_timeout_seconds": self.worker_execution_timeout_seconds,
+            "runtime_path": self.runtime_path,
         }
 
 
@@ -570,6 +610,7 @@ def load_runtime_config(
         "toolsets",
         "bindings",
         "worker_execution_timeout_seconds",
+        "runtime_path",
     }
     unknown_top = set(data.keys()) - allowed_top
     if unknown_top:
@@ -589,6 +630,9 @@ def load_runtime_config(
     model = _validate_model(data["model"], "model")
     worker_execution_timeout_seconds = _validate_worker_execution_timeout_seconds(
         data.get("worker_execution_timeout_seconds", DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS)
+    )
+    runtime_path = _validate_task_main_runtime_path(
+        data.get("runtime_path", DEFAULT_TASK_MAIN_RUNTIME_PATH)
     )
     default_toolsets = data.get("toolsets")
     if default_toolsets is not None and not isinstance(default_toolsets, (list, tuple)):
@@ -612,6 +656,7 @@ def load_runtime_config(
         model=model,
         bindings=bindings,
         worker_execution_timeout_seconds=worker_execution_timeout_seconds,
+        runtime_path=runtime_path,
     )
 
 

@@ -49,6 +49,7 @@ from aota_forge.runtime.trusted_runtime_binding import (
     create_task_main_envelope,
     verify_envelope,
 )
+from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_THIN
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.handoff_runtime import (
     WorkSemanticProjection,
@@ -445,6 +446,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     data = _load_bootstrap_dict()
     if data is None:
         return None
+    # AF #53 M3/W1: an explicitly thin operator bootstrap is never a legacy
+    # bootstrap. The trusted runtime path selector must route it to the thin
+    # composition; this compatibility builder refuses it fail-closed.
+    if str(data.get("runtime_path", "legacy") or "legacy") == TASK_MAIN_RUNTIME_PATH_THIN:
+        raise TrustedBindingError(
+            "thin task-main bootstrap cannot be built by the legacy host builder"
+        )
     # Trust-boundary validation (W3) — fail closed on tamper / scope mismatch
     _validate_bootstrap_trust_boundary(data, bootstrap_path)
     # Validate required keys — all are operator-controlled, not model supplied

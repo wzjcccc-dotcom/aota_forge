@@ -30,6 +30,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from aota_forge.core.context import TrustedContext
+from aota_forge.runtime.config import (
+    SUPPORTED_TASK_MAIN_RUNTIME_PATHS,
+    TASK_MAIN_RUNTIME_PATH_LEGACY,
+    TASK_MAIN_RUNTIME_PATH_THIN,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.tool_surface import ToolRoleSurface
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
@@ -156,6 +161,12 @@ class TrustedWorkerBinding:
     restricted_shell_authority: Any | None = None
     test_execution_authority: Any | None = None
     trusted_task_main_context: Any | None = None
+    # AF #53 M3/W1 trusted classification of the task-main production
+    # composition path this binding was minted for. Mechanical carrier
+    # metadata only (it decides no policy); it lets the MCP child classify an
+    # explicitly thin trusted task-main binding (no legacy context required)
+    # without guessing. Worker bindings keep the legacy default.
+    task_main_runtime_path: str = TASK_MAIN_RUNTIME_PATH_LEGACY
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -276,6 +287,25 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("task-main context requires tool_surface work_role task-main")
             if not hasattr(ctx.control_service, "activate_milestone"):
                 raise TrustedBindingError("task-main context control_service missing activate_milestone")
+        # AF #53 M3/W1: explicit trusted task-main runtime path classification.
+        if self.task_main_runtime_path not in SUPPORTED_TASK_MAIN_RUNTIME_PATHS:
+            raise TrustedBindingError(
+                "task_main_runtime_path must be one of "
+                f"{list(SUPPORTED_TASK_MAIN_RUNTIME_PATHS)}, got {self.task_main_runtime_path!r}"
+            )
+        if self.task_main_runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
+            if self.trusted_task_main_context is not None:
+                raise TrustedBindingError(
+                    "thin task-main runtime path must not carry a legacy task-main context"
+                )
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError(
+                    "thin task-main runtime path requires handoff work_role task-main"
+                )
+            if self.tool_surface.work_role.value != "task-main":
+                raise TrustedBindingError(
+                    "thin task-main runtime path requires tool_surface work_role task-main"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +530,24 @@ def load_binding_from_envelope(envelope_path: Path | str) -> TrustedWorkerBindin
         live_digest = hashlib.sha256(json.dumps(live_content, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         if live_digest != payload["bootstrap_digest"]:
             raise TrustedBindingError("live bootstrap tampered after envelope creation")
+        # AF #53 M3/W1: explicit trusted runtime-path marker routes to the
+        # accepted M2 thin composition (legacy-free executed path). Unknown
+        # values fail closed; absence keeps the existing legacy compatibility
+        # behavior unchanged.
+        runtime_path = str(live_content.get("runtime_path", TASK_MAIN_RUNTIME_PATH_LEGACY) or TASK_MAIN_RUNTIME_PATH_LEGACY)
+        if runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
+            from aota_forge.composition.task_main_runtime_selection import (  # type: ignore
+                build_thin_task_main_binding_from_envelope_bootstrap,
+            )
+
+            return build_thin_task_main_binding_from_envelope_bootstrap(
+                live_content,
+                envelope_worktree_root=payload.get("worktree_root"),
+            )
+        if runtime_path != TASK_MAIN_RUNTIME_PATH_LEGACY:
+            raise TrustedBindingError(
+                f"task-main bootstrap runtime_path invalid: {runtime_path!r}"
+            )
         # Now delegate to existing builder via env indirection (explicit path)
         import os
 
