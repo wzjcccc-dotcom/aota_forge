@@ -1646,6 +1646,11 @@ def dispatch_tool_operation(
                     caller_role=caller_role,
                     sandbox=sandbox,
                     dispatcher=trusted_dispatcher,
+                    # AF #53 M3/W2-R2 (I53-B002): trusted mechanical runtime path
+                    # classification (never model input). Thin work-item grounding
+                    # requires an explicit semantic work_role; the legacy
+                    # compatibility path keeps its historical coder default.
+                    thin_task_lifecycle=thin_binding,
                 )
             except ValueError as exc:
                 msg = str(exc)

@@ -111,6 +111,19 @@ ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH = True
 # legacy workflow state; this module stays a legacy-free thin seam.
 THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE = False
 
+# AF #53 M3/W2-R2 (I53-B002) work-item role grounding contract:
+# * thin path: the durable work_item handoff MUST carry an explicit semantic
+#   work_role; a missing/invalid role fails closed (typed, before any
+#   dispatch). The Control Plane never selects the child role
+#   (CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH=no) because the task-main
+#   LLM owns the semantic choice.
+# * legacy compatibility path: the historical missing-work_role -> coder
+#   default is preserved unchanged for existing non-thin runtime bindings.
+THIN_WORK_ITEM_ROLE_EXPLICIT = True
+THIN_PATH_MISSING_WORK_ROLE_FAILS_CLOSED = True
+CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH = False
+LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT = "coder"
+
 
 class RoleHandoffMismatchError(ValueError):
     """Typed fail-closed error: requested role != grounded handoff work_role.
@@ -253,6 +266,8 @@ def _load_work_item_task_handoff(
     semantic: Mapping[str, Any],
     sandbox: WorktreeSandboxBoundary | None = None,
     envelope: Mapping[str, Any] | None = None,
+    *,
+    require_explicit_work_role: bool = False,
 ) -> TaskHandoff:
     trusted_plan_ref, trusted_plan_digest, trusted_mid, trusted_wid = _trusted_envelope_identity(envelope)
 
@@ -283,9 +298,11 @@ def _load_work_item_task_handoff(
     # Fallback: synthesize from generic semantic (objective/scope etc.)
     # Use WorkSemanticProjection path: build TaskHandoff via handoff_runtime resolver
     from aota_forge.work_plane.handoff_runtime import (
+        WorkScopeInsufficientError,
         WorkSemanticProjection,
         resolve_bounded_work_handoff,
     )
+    from aota_forge.work_plane.handoff_store import WORK_ITEM_HANDOFF_ROLE_FIELD
 
     # Extract required semantic fields with fallbacks
     objective = semantic.get("objective") or semantic.get("summary") or semantic.get("work_done") or "task objective"
@@ -328,10 +345,19 @@ def _load_work_item_task_handoff(
             if v:
                 mid = v
                 break
-    # Derive work_role from semantic's work_role or default coder
-    wk_role = semantic.get("work_role")
+    # AF #53 M3/W2-R2 (I53-B002): thin work-item grounding requires the LLM's
+    # explicit semantic work_role. The thin runtime never silently chooses a
+    # child role (missing role -> typed fail-closed, zero dispatch); only the
+    # legacy compatibility path keeps the historical coder default.
+    wk_role = semantic.get(WORK_ITEM_HANDOFF_ROLE_FIELD)
     if not isinstance(wk_role, str) or not wk_role.strip():
-        wk_role = "coder"
+        if require_explicit_work_role:
+            raise WorkScopeInsufficientError(
+                f"thin work_item handoff requires an explicit semantic "
+                f"{WORK_ITEM_HANDOFF_ROLE_FIELD!r}; the Control Plane does not "
+                f"choose the child role (missing role fails closed before dispatch)"
+            )
+        wk_role = LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT
     # Build handoff via resolver (reuse)
     handoff = resolve_bounded_work_handoff(
         work_item_id=wid,
@@ -348,8 +374,12 @@ def _load_work_item_task_handoff(
 
             parsed = parse_agent_work_role(wk_role)
             handoff = dataclasses.replace(handoff, work_role=parsed)
-        except Exception:
-            pass
+        except Exception as exc:
+            if require_explicit_work_role:
+                raise WorkScopeInsufficientError(
+                    f"thin work_item handoff carries an invalid semantic "
+                    f"{WORK_ITEM_HANDOFF_ROLE_FIELD} {wk_role!r}: {exc}"
+                ) from exc
     return _ground(handoff)
 
 
@@ -357,6 +387,7 @@ def load_trusted_work_item_task_handoff(
     *,
     opened: Mapping[str, Any],
     sandbox: WorktreeSandboxBoundary,
+    require_explicit_work_role: bool = False,
 ) -> TaskHandoff:
     """Derive the trusted TaskHandoff from an already-opened durable work_item handoff.
 
@@ -364,6 +395,11 @@ def load_trusted_work_item_task_handoff(
     and the governed Worker env resolver, so the Worker binding is derived from
     the exact same canonical durable grounded handoff identity that task.start
     resolved (never a second semantics source).
+
+    AF #53 M3/W2-R2 (I53-B002): ``require_explicit_work_role=yes`` is the thin
+    runtime path requirement (typed fail-closed when the durable work_item
+    handoff omits/invalidates the semantic ``work_role``). The default keeps
+    the legacy compatibility derivation unchanged.
     """
     if not isinstance(opened, Mapping):
         raise ValueError("opened durable handoff must be a mapping")
@@ -373,7 +409,11 @@ def load_trusted_work_item_task_handoff(
     semantic = opened.get("semantic")
     if not isinstance(envelope, Mapping) or not isinstance(semantic, Mapping):
         raise ValueError("opened durable handoff is missing envelope/semantic")
-    return _load_work_item_task_handoff(semantic, sandbox, envelope)
+    load_kwargs: dict[str, Any] = {}
+    if require_explicit_work_role:
+        # Thin runtime path only; the legacy call shape stays byte-identical.
+        load_kwargs["require_explicit_work_role"] = True
+    return _load_work_item_task_handoff(semantic, sandbox, envelope, **load_kwargs)
 
 
 def _propagate_trusted_work_handoff(
@@ -416,6 +456,7 @@ def task_start(
     caller_role: str,
     sandbox: WorktreeSandboxBoundary,
     dispatcher: ExecutionDispatcher | None = None,
+    thin_task_lifecycle: bool = False,
 ) -> dict[str, Any]:
     """Agent-facing task.start — validates and reuses execution.task_start seam.
 
@@ -424,6 +465,11 @@ def task_start(
     handoff_ref must be durable work_item handoff, digest-bound, project/worktree bound.
     dispatcher must be the trusted production ExecutionDispatcher (or an explicit
     test/component double injected by the caller); absent -> typed fail-closed.
+    thin_task_lifecycle is the trusted mechanical runtime-path classification
+    supplied by the canonical ingress (``is_thin_task_lifecycle_binding``); on
+    the thin path the durable work_item handoff must carry an explicit semantic
+    work_role and a missing/invalid role fails closed before dispatch. It never
+    changes the agent-facing operation contract (role, handoff_ref).
 
     Returns {task_id, status, handoff_digest}
     """
@@ -452,8 +498,19 @@ def task_start(
     # envelope identity (from handoff.write grounding) is authority for the
     # Worker compilation refs; semantic payload stays LLM-owned.
     try:
-        task_handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
+        load_kwargs: dict[str, Any] = {"opened": opened, "sandbox": sandbox}
+        if thin_task_lifecycle:
+            # Only the thin runtime path supplies the explicit-role requirement;
+            # the legacy compatibility call shape stays byte-identical for
+            # existing legacy doubles/clients.
+            load_kwargs["require_explicit_work_role"] = True
+        task_handoff = load_trusted_work_item_task_handoff(**load_kwargs)
     except Exception as exc:
+        # Preserve typed fail-closed identity (e.g. WORK_SCOPE_INSUFFICIENT for
+        # a thin work_item handoff missing/invalid work_role) so the canonical
+        # ingress projects the typed code instead of a generic failure.
+        if isinstance(getattr(exc, "code", None), str) and exc.code:
+            raise
         raise ValueError(f"handoff semantic cannot be resolved to TaskHandoff: {exc}") from exc
     # AF #53 M2/W1 F2: requested role must equal the grounded durable handoff
     # work_role. Mechanical integrity validation ONLY (no workflow position,
@@ -706,6 +763,10 @@ __all__ = [
     "ROLE_HANDOFF_MISMATCH_CODE",
     "ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH",
     "THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE",
+    "THIN_WORK_ITEM_ROLE_EXPLICIT",
+    "THIN_PATH_MISSING_WORK_ROLE_FAILS_CLOSED",
+    "CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH",
+    "LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT",
     "WORKER_RESULT_FULL_WRITE_COUNT_NORMAL",
     "WORKER_AUTHORS_RESULT_CARD",
     "RESULT_CARD_DETERMINISTIC",

@@ -10,6 +10,9 @@ TOOL_SCHEMA_SECOND_AUTHORITY=no
 from __future__ import annotations
 
 from aota_forge.core.contracts.descriptor import OperationContractDescriptor
+# AF #53 M3/W2-R2 (I53-B002): canonical work-item semantic role field owned by
+# the durable handoff store; never re-hardcoded as an independent string here.
+from aota_forge.work_plane.handoff_store import WORK_ITEM_HANDOFF_ROLE_FIELD
 
 
 def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
@@ -122,6 +125,35 @@ _HANDOFF_WRITE_EXAMPLE = {
 _TASK_START_NOTE = "normal step 2; AF verifies durable Work-source grounding"
 _TASK_START_EXAMPLE = {"role": "coder", "handoff_ref": "<ref from handoff.write>"}
 
+# AF #53 M3/W2-R2 (I53-B002): thin model-visible work-item role grounding.
+# The task-main LLM owns the child-role choice; the thin contract makes it
+# expressible as payload.work_role at handoff.write and requires exact equality
+# with the subsequent task.start.role. Example uses reviewer but the mechanism
+# is generic for every permitted child role (coder|analyst|reviewer|
+# project-steward) per canonical role policy.
+_THIN_NORMAL_PATH_FLOW = (
+    "choose child role -> handoff.write(mode=work_item, payload.work_role=<role>) "
+    "-> task.start(role=<same role>, handoff_ref=<ref>)"
+)
+_THIN_HANDOFF_WRITE_NOTE = (
+    "normal step 1; mode=work_item; payload.work_role = target child role "
+    "(coder|analyst|reviewer|project-steward); payload.work_role MUST equal the "
+    "subsequent task.start.role; trusted envelope filled by AF"
+)
+_THIN_HANDOFF_WRITE_EXAMPLE = {
+    "mode": "work_item",
+    "payload": {
+        "work_role": "reviewer",
+        "objective": "Review W1 result",
+        "bounded_scope": "Read and validate W1",
+    },
+}
+_THIN_TASK_START_NOTE = (
+    "normal step 2; role MUST equal the grounded durable handoff payload.work_role; "
+    "AF verifies durable Work-source grounding"
+)
+_THIN_TASK_START_EXAMPLE = {"role": "reviewer", "handoff_ref": "<ref from handoff.write>"}
+
 
 def _required_types(descriptor: OperationContractDescriptor) -> dict[str, str]:
     """Deterministic required-name -> type projection from the descriptor."""
@@ -169,28 +201,35 @@ def build_task_main_operation_guidance() -> dict[str, dict[str, object]]:
 
 
 def build_thin_task_main_operation_guidance() -> dict[str, dict[str, object]]:
-    """Compact thin-host normal-path guidance (AF #53 M2/W2).
+    """Compact thin-host normal-path guidance (AF #53 M2/W2; #53 M3/W2-R2).
 
     The thin task-main host exposes only the generic common operations plus
     ``task.start``; no legacy ``task_main.*`` compatibility entry is included,
     because those operations are not part of the thin normal path. Required
     names/types still derive from the same canonical descriptors; no second
     schema authority is created.
+
+    I53-B002 repair: the work_item handoff carries the LLM-chosen child role in
+    ``payload.work_role`` (canonical field owned by the durable handoff store)
+    and that value MUST equal the subsequent ``task.start.role``. The example
+    uses reviewer; the same mechanism supports every permitted child role.
     """
     return {
         "normal_path": {
-            "flow": _NORMAL_PATH_FLOW,
+            "flow": _THIN_NORMAL_PATH_FLOW,
             "steps": ["handoff.write", "task.start"],
         },
         "handoff.write": {
             "required": _required_types(HANDOFF_WRITE_DESCRIPTOR),
-            "note": _HANDOFF_WRITE_NOTE,
-            "example": dict(_HANDOFF_WRITE_EXAMPLE),
+            "note": _THIN_HANDOFF_WRITE_NOTE,
+            "work_item_role_field": WORK_ITEM_HANDOFF_ROLE_FIELD,
+            "role_equality": f"payload.{WORK_ITEM_HANDOFF_ROLE_FIELD} MUST equal task.start.role",
+            "example": dict(_THIN_HANDOFF_WRITE_EXAMPLE),
         },
         "task.start": {
             "required": _required_types(TASK_START_DESCRIPTOR),
-            "note": _TASK_START_NOTE,
-            "example": dict(_TASK_START_EXAMPLE),
+            "note": _THIN_TASK_START_NOTE,
+            "example": dict(_THIN_TASK_START_EXAMPLE),
         },
     }
 

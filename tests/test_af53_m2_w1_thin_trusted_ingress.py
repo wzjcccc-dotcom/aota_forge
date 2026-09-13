@@ -635,26 +635,31 @@ class TestT3RoleHandoffConsistency:
         assert len(recording.packages) == dispatched_before
         assert len(dispatcher.state_store.list_all()) == records_before
 
-    def test_handoff_without_work_role_never_substitutes_requested_role(
+    def test_handoff_without_work_role_fails_closed_on_thin_path(
         self, tmp_path: Path
     ) -> None:
-        # A durable handoff omitting work_role resolves through the existing
-        # canonical default (coder); the requested role may not silently
-        # replace it in either direction.
+        # AF #53 M3/W2-R2 (I53-B002): a thin durable handoff omitting work_role
+        # is a typed fail-closed mechanical error before any dispatch. The thin
+        # Control Plane never silently substitutes the coder default, and the
+        # requested role may not replace a missing role in either direction.
         sandbox = _sandbox(tmp_path / "t3-default")
         dispatcher, recording = _dispatcher()
         bind_execution_dispatcher(dispatcher)
         binding = _thin_main_binding(sandbox)
         ref = _work_item_handoff(sandbox, role=None, work_item_id="W1")
 
-        coder_pass = _start_via_ingress(binding, ref.ref, "coder")
-        assert coder_pass.ok, coder_pass.error
-        assert recording.packages[-1].working_context["work_role"] == "coder"
+        coder_fail = _start_via_ingress(binding, ref.ref, "coder")
+        assert coder_fail.ok is False
+        assert coder_fail.error["code"] == "WORK_SCOPE_INSUFFICIENT"
+        assert recording.packages == []
+        assert dispatcher.state_store.list_all() == []
 
         reviewer_ref = _work_item_handoff(sandbox, role=None, work_item_id="W2")
         reviewer_fail = _start_via_ingress(binding, reviewer_ref.ref, "reviewer")
         assert reviewer_fail.ok is False
-        assert reviewer_fail.error["code"] == "ROLE_HANDOFF_MISMATCH"
+        assert reviewer_fail.error["code"] == "WORK_SCOPE_INSUFFICIENT"
+        assert recording.packages == []
+        assert dispatcher.state_store.list_all() == []
 
 
 # ---------------------------------------------------------------------------

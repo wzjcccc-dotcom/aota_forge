@@ -257,7 +257,11 @@ class TestTaskStart:
         # Use core_ingress binding construction
         surf = create_role_tool_surface("task-main", eager=("workspace.search","workspace.read"), progressive=())
         # Need to create a minimal TrustedWorkerBinding alternative: directly use CanonicalDispatchBinding
-        sem = {"objective": "obj", "bounded_scope": "scope", "validation_expectations": ["v"], "semantic_stop_expectations": ["s"]}
+        # AF #53 M3/W2-R2 (I53-B002): a context-less binding classifies as the
+        # thin task lifecycle, whose work_item grounding requires the explicit
+        # semantic work_role (the historical coder default remains only on the
+        # legacy context-bearing compatibility path).
+        sem = {"objective": "obj", "bounded_scope": "scope", "validation_expectations": ["v"], "semantic_stop_expectations": ["s"], "work_role": "coder"}
         ref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
         binding = CanonicalDispatchBinding(
             canonical_task_id="task-main-1",

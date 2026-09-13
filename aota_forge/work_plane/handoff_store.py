@@ -119,6 +119,16 @@ HANDOFF_DURABLE = True
 HANDOFF_TAMPER_FAIL_CLOSED = True
 CROSS_PROJECT_HANDOFF_FAIL_CLOSED = True
 
+# AF #53 M3/W2-R2 (I53-B002): canonical work-item semantic role field. The
+# durable semantic contract already recognizes the field
+# (ALLOWED_SEMANTIC_FIELDS); the thin task-main runtime requires it explicitly
+# so the model-visible child-role choice is expressible and grounding never
+# silently defaults to the Control Plane choosing a child role. This is
+# semantic payload mechanics, not workflow strategy.
+WORK_ITEM_HANDOFF_ROLE_FIELD: str = "work_role"
+WORK_ITEM_HANDOFF_ROLE_REQUIRED_ON_THIN_PATH: bool = True
+assert WORK_ITEM_HANDOFF_ROLE_FIELD in ALLOWED_SEMANTIC_FIELDS
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -696,6 +706,8 @@ __all__ = [
     "HANDOFF_DURABLE",
     "HANDOFF_TAMPER_FAIL_CLOSED",
     "CROSS_PROJECT_HANDOFF_FAIL_CLOSED",
+    "WORK_ITEM_HANDOFF_ROLE_FIELD",
+    "WORK_ITEM_HANDOFF_ROLE_REQUIRED_ON_THIN_PATH",
     "HandoffEnvelope",
     "HandoffRef",
     "handoff_write",

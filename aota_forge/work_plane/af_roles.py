@@ -343,14 +343,15 @@ THIN_TASK_MAIN_EAGER_GUIDANCE = (
     "strategy, sequencing, delegation, review strategy, repair strategy and Milestone "
     "judgment. Read project/Plan context on demand via workspace.search / workspace.read; "
     "search or open relevant context only when needed. Write the semantic handoff for a "
-    "child task with handoff.write(mode=work_item) and re-read it with handoff.open; start "
-    "any permitted child role (coder|analyst|reviewer|project-steward) via "
-    "task.start(role, handoff_ref); observe child results through the factual "
-    "completion/result surfaces and reason about the next action yourself. The Control "
-    "Plane enforces authority and records mechanical facts only: it does not prescribe "
-    "review frequency or order, Work sequence, repair strategy or Milestone advancement. "
-    "Stop with needs_input when trusted evidence is insufficient; never invent authority, "
-    "project scope or session identity."
+    "child task with handoff.write(mode=work_item, payload.work_role=<target child role>); "
+    "payload.work_role must equal the task.start role you pass next. Re-read the handoff "
+    "with handoff.open; start any permitted child role "
+    "(coder|analyst|reviewer|project-steward) via task.start(role, handoff_ref); observe "
+    "child results through the factual completion/result surfaces and reason about the "
+    "next action yourself. The Control Plane enforces authority and records mechanical "
+    "facts only: it does not prescribe review frequency or order, Work sequence, repair "
+    "strategy or Milestone advancement. Stop with needs_input when trusted evidence is "
+    "insufficient; never invent authority, project scope or session identity."
 )
 
 

@@ -190,6 +190,16 @@ REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE = True
 ROLE_HANDOFF_MISMATCH_CODE = "ROLE_HANDOFF_MISMATCH"
 ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH = True
 
+# I53-B002 repair (M3/W2-R2): thin work-item role grounding is explicit. The
+# task-main LLM owns the child-role choice and expresses it as
+# payload.work_role at handoff.write; the thin runtime never silently selects
+# a child role (missing/invalid role fails closed before dispatch). Only the
+# non-thin legacy compatibility path keeps its historical coder default.
+THIN_WORK_ITEM_ROLE_EXPLICIT = True
+THIN_MISSING_WORK_ROLE_FAILS_CLOSED = True
+CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH = False
+LEGACY_MISSING_WORK_ROLE_CODER_DEFAULT_PRESERVED = True
+
 # ---------------------------------------------------------------------------
 # Thin task-main host composition seam (AF #53 M2/W2)
 # ---------------------------------------------------------------------------
@@ -513,6 +523,10 @@ __all__ = [
     "REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE",
     "ROLE_HANDOFF_MISMATCH_CODE",
     "ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH",
+    "THIN_WORK_ITEM_ROLE_EXPLICIT",
+    "THIN_MISSING_WORK_ROLE_FAILS_CLOSED",
+    "CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH",
+    "LEGACY_MISSING_WORK_ROLE_CODER_DEFAULT_PRESERVED",
     # Thin task-main host composition seam (M2/W2)
     "THIN_HOST_COMPOSITION_OWNER",
     "THIN_HOST_COMPOSITION_KIND",

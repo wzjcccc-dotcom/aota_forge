@@ -1052,6 +1052,17 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
                         err = mcp_result.get("error") or {}
                         if isinstance(err, dict) and "code" in err:
                             summary["error_code"] = err.get("code")
+                        # AF #53 M3/W2-R2 (I53-B002): preserve the already-
+                        # bounded/sanitized typed error message in the model-
+                        # visible failure summary. The error envelope was
+                        # bounded by sanitize+governed projection; re-bound and
+                        # path-redact here. Never a raw exception/traceback.
+                        if isinstance(err, dict):
+                            raw_message = err.get("message")
+                            if isinstance(raw_message, str):
+                                bounded = _bounded_failure_message(raw_message)
+                                if bounded:
+                                    summary["error_message"] = bounded
                     if output_mode == "by_ref":
                         ref = mcp_result.get("output_ref")
                         if isinstance(ref, dict):
