@@ -18,7 +18,11 @@ operator channel:
 There is no source-owned deployment default: the production source never
 infers a provider, model, profile, or executable. `operator_runtime_config`
 fields are `executor`, `executable`, `concurrency` (default 1, bounded),
-`provider`, `model`, optional `toolsets`, and per-role `bindings`.
+`provider`, `model`, optional `toolsets`, per-role `bindings`, and
+`worker_execution_timeout_seconds` (optional, positive integer, bounded
+1..3600 seconds, default 900). The worker execution timeout is the single
+trusted Worker lifetime policy: it drives both the production Hermes host
+lifetime and the advertised executor `max_timeout_seconds` (AF #51 M1/W2).
 
 ```text
 RUNTIME_CONFIG_AUTHORITY=operator_owned

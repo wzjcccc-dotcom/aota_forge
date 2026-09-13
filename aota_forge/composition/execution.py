@@ -73,6 +73,7 @@ from aota_forge.core.execution.roles import RoleMapping
 from aota_forge.core.ingress import bind_execution_dispatcher
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.config import (
+    DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS,
     RuntimeConfig,
     load_runtime_config,
     resolve_binding_for_canonical_role,
@@ -88,11 +89,15 @@ def _production_capabilities(
     supported_canonical_roles: tuple[str, ...] = ("coder",),
     *,
     concurrency_limit: int = 1,
+    max_timeout_seconds: int = DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS,
 ) -> ExecutorCapabilities:
     # Production Hermes slice: async, process isolation. M2/W3 advertises the
     # operator-configured concurrency bound mechanically; admission ENFORCEMENT
     # is the W3 durable coordinator (RuntimeConfig -> bounds, ExecutionStateStore
     # -> durable active-set, W3 -> enforcement), not this capability vector.
+    # AF #51 M1/W2 (I40-B008): the advertised Worker lifetime bound is the same
+    # trusted RuntimeConfig value that drives the Hermes host lifetime — no
+    # independent source-hardcoded 300s ceiling remains.
     return ExecutorCapabilities(
         executor_id="hermes",
         adapter_kind="hermes_host_adapter",
@@ -105,7 +110,7 @@ def _production_capabilities(
         supported_isolation_modes=("process",),
         supports_working_directory=True,
         supports_artifact_transport=False,
-        max_timeout_seconds=300,
+        max_timeout_seconds=max_timeout_seconds,
         concurrency_limit=concurrency_limit,
     )
 
@@ -183,9 +188,20 @@ def create_production_execution_dispatcher(
     config = _resolve_operator_runtime_config(runtime_config)
 
     effective_launcher = str(launcher_path) if launcher_path is not None else config.executable
-    client = host_client if host_client is not None else host_client_factory(
-        effective_launcher, default_cwd=default_cwd
-    )
+    # AF #51 M1/W2 (I40-B008): the trusted operator RuntimeConfig Worker
+    # execution lifetime drives the production Hermes host lifetime. The
+    # default production factory receives it explicitly; explicitly injected
+    # custom clients/factories (test/component seams) own their own lifetime.
+    if host_client is not None:
+        client = host_client
+    elif host_client_factory is HermesHostClient:
+        client = host_client_factory(
+            effective_launcher,
+            default_cwd=default_cwd,
+            timeout_seconds=config.worker_execution_timeout_seconds,
+        )
+    else:
+        client = host_client_factory(effective_launcher, default_cwd=default_cwd)
 
     # Role->profile mapping derives exclusively from operator config bindings.
     # Worker bindings carry the shared AOTA MCP toolset pin enforced by
@@ -195,6 +211,7 @@ def create_production_execution_dispatcher(
     caps = _production_capabilities(
         tuple(sorted(effective_mapping.keys())),
         concurrency_limit=config.concurrency,
+        max_timeout_seconds=config.worker_execution_timeout_seconds,
     )
 
     # AF #49 M1/W11 (I49-B003): AF runtime composition installs the governed

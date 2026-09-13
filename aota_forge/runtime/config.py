@@ -86,6 +86,19 @@ _CANONICAL_TO_WORK_ROLE: dict[str, str] = {
 MIN_CONCURRENCY = 1
 MAX_CONCURRENCY = 32
 
+# Worker total execution lifetime policy (operator-owned, bounded, AF #51 M1/W2).
+# I40-B008 repair: the production Worker lifetime used to be a fixed 300s
+# source constant, which terminated valid real multi-turn Worker execution
+# (the accepted diagnostic W1 run needed ~370s). Exactly one trusted bounded
+# value in this RuntimeConfig contract drives both the Hermes host lifetime
+# and the advertised executor capability; production composition reads only
+# ``RuntimeConfig.worker_execution_timeout_seconds``. The default applies only
+# when the operator omits the key (explicit contract default, never inferred
+# from model/profile). Bounds: positive integer, at most 3600s (1 hour).
+MIN_WORKER_EXECUTION_TIMEOUT_SECONDS = 1
+MAX_WORKER_EXECUTION_TIMEOUT_SECONDS = 3600
+DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS = 900
+
 
 class RuntimeConfigError(ForgeError):
     """Operator runtime configuration is invalid, unsafe or unreadable."""
@@ -161,6 +174,26 @@ def _validate_concurrency(value: Any, field: str = "concurrency") -> int:
         raise RuntimeConfigError(f"{field} must be an integer, got {type(value).__name__}")
     if value < MIN_CONCURRENCY or value > MAX_CONCURRENCY:
         raise RuntimeConfigError(f"{field} must be between {MIN_CONCURRENCY} and {MAX_CONCURRENCY}, got {value!r}")
+    return value
+
+
+def _validate_worker_execution_timeout_seconds(value: Any) -> int:
+    """Bounded trusted Worker execution lifetime (seconds), fail-closed.
+
+    ``type(value) is int`` rejects bool, floats, strings and null. The value
+    is positive and bounded; the operator owns it, never the model, the
+    TaskHandoff, or a per-dispatch semantic override.
+    """
+    if type(value) is not int:
+        raise RuntimeConfigError(
+            f"worker_execution_timeout_seconds must be an integer, got {type(value).__name__}"
+        )
+    if value < MIN_WORKER_EXECUTION_TIMEOUT_SECONDS or value > MAX_WORKER_EXECUTION_TIMEOUT_SECONDS:
+        raise RuntimeConfigError(
+            "worker_execution_timeout_seconds must be between "
+            f"{MIN_WORKER_EXECUTION_TIMEOUT_SECONDS} and {MAX_WORKER_EXECUTION_TIMEOUT_SECONDS}, "
+            f"got {value!r}"
+        )
     return value
 
 
@@ -305,11 +338,13 @@ class RuntimeConfig:
     provider: str | None
     model: str | None
     bindings: tuple[RuntimeBinding, ...]
+    worker_execution_timeout_seconds: int = DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         _validate_executor(self.executor)
         _validate_executable(self.executable)
         _validate_concurrency(self.concurrency)
+        _validate_worker_execution_timeout_seconds(self.worker_execution_timeout_seconds)
         if self.provider is not None:
             _validate_provider(self.provider, "provider")
         if self.model is not None:
@@ -391,6 +426,7 @@ class RuntimeConfig:
             "provider": self.provider,
             "model": self.model,
             "bindings": [b.to_dict() for b in sorted(self.bindings, key=lambda x: x.work_role)],
+            "worker_execution_timeout_seconds": self.worker_execution_timeout_seconds,
         }
 
 
@@ -525,7 +561,16 @@ def load_runtime_config(
         raise RuntimeConfigError("runtime config must be a JSON object")
 
     # Fail-closed on unknown top-level keys
-    allowed_top = {"executor", "executable", "concurrency", "provider", "model", "toolsets", "bindings"}
+    allowed_top = {
+        "executor",
+        "executable",
+        "concurrency",
+        "provider",
+        "model",
+        "toolsets",
+        "bindings",
+        "worker_execution_timeout_seconds",
+    }
     unknown_top = set(data.keys()) - allowed_top
     if unknown_top:
         raise RuntimeConfigError(f"unknown runtime config keys: {sorted(unknown_top)}")
@@ -542,6 +587,9 @@ def load_runtime_config(
     concurrency = _validate_concurrency(data.get("concurrency", 1))
     provider = _validate_provider(data["provider"], "provider")
     model = _validate_model(data["model"], "model")
+    worker_execution_timeout_seconds = _validate_worker_execution_timeout_seconds(
+        data.get("worker_execution_timeout_seconds", DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS)
+    )
     default_toolsets = data.get("toolsets")
     if default_toolsets is not None and not isinstance(default_toolsets, (list, tuple)):
         raise RuntimeConfigError("toolsets must be a list of strings or absent")
@@ -563,6 +611,7 @@ def load_runtime_config(
         provider=provider,
         model=model,
         bindings=bindings,
+        worker_execution_timeout_seconds=worker_execution_timeout_seconds,
     )
 
 
