@@ -295,32 +295,22 @@ def build_worker_binding(
             sandbox = bind_worktree_sandbox(synth_ev, worktree_id, root)
         else:
             raise TrustedBindingError(f"missing canonical project evidence: {exc}") from exc
-    # Generic: policy scope is a non-authoritative label derived from the
-    # TaskHandoff bounded_scope (M3/W1 scope contract: the handoff digest is
-    # the authority binding; the policy scope string is context only and must
-    # never silently mutate authoritative scope). The authoritative scope
-    # (handoff.bounded_scope) is preserved exactly in the handoff object and
-    # in the policy content below; only the scope *label* is sanitized to the
-    # intentional AgentsPolicyCandidate logical-scope grammar, and the label
-    # is disambiguated with a handoff-digest prefix so distinct scopes never
-    # collide to the same label.
+    # I51-B001 repair: the AGENTS policy applicability scope is a distinct
+    # semantic domain from the Worker Work execution scope. The
+    # WorkSemanticProjection bounded_scope text is free engineering semantics
+    # (e.g. "src/pkg/__init__.py", "--json") and must never be
+    # tokenized/parsed into the narrow AGENTS logical-scope grammar. The
+    # authoritative Work scope is preserved exactly in the handoff object and
+    # in the policy content below; the synthetic policy scope label is derived
+    # mechanically from trusted handoff identity (digest prefix), so it is
+    # deterministic, grammar-safe, non-authoritative, and not model-controlled.
     # No hard-coded fixture scope.
     raw_scope = str(handoff.bounded_scope) if hasattr(handoff, "bounded_scope") and handoff.bounded_scope else "bounded-scope"
-    # Sanitize to valid AgentsPolicyCandidate scope charset (alnum, ., _, -, /)
-    import re
-    # Extract alnum components and rejoin with "/"
-    parts = re.findall(r"[A-Za-z0-9._-]+", raw_scope)
-    if not parts:
-        handoff_scope = "bounded-scope"
-    else:
-        # Limit components and total length to stay within MAX_SCOPE_LENGTH (256)
-        handoff_scope = "/".join(parts[:8])
-        if len(handoff_scope) > 200:
-            handoff_scope = handoff_scope[:200]
     try:
         _digest_prefix = handoff.compute_handoff_digest()[:12]
     except Exception:
         _digest_prefix = "nodigest"
+    handoff_scope = f"work/{_digest_prefix}"
     # Derive policy_id deterministically from handoff digest + work item
     # (digest prefix prevents lossy-label collisions between distinct scopes).
     try:
