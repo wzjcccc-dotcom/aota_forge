@@ -433,6 +433,40 @@ AUTONOMOUS_COMPLETION_OWNER_PATH = (
 )
 
 # ---------------------------------------------------------------------------
+# AF #51 M1/W3 (I40-B007 progression convergence) — runtime-owned bounded
+# productive continuation after a completion delivery.
+# ---------------------------------------------------------------------------
+# The runtime-owned completion continuation delivers a Worker completion CARD
+# into the exact parent session and the Agent acknowledges it. The accepted
+# completion delivery turn is an ACK-only reconciliation turn; without a
+# further turn the Agent has no opportunity to reconcile the completion into
+# the milestone coordinator and dispatch the next governed Work Item
+# (the #40 diagnostic proved: "no autonomous progression turn exists after
+# the first completion ACK" — the operator had to invoke resume() manually).
+#
+# W3 convergence: when (and only when) a bounded completion pass actually
+# delivered an acknowledged completion, the launcher — still inside the one
+# operator launch — continues the SAME exact session with the operator-owned
+# production startup prompt so the task-main Agent can continue its normal
+# cycle (e.g. task_main.advance_once -> next Work Item dispatch). This is a
+# bounded runtime-owned lifecycle continuation, never an operator wakeup:
+#
+#   PRODUCTIVE_CONTINUATION_MODEL_OWNS_SEMANTICS=yes
+#   PRODUCTIVE_CONTINUATION_IS_MANUAL_WAKEUP=no
+#   PRODUCTIVE_CONTINUATION_BOUNDED=yes
+#   PRODUCTIVE_CONTINUATION_CALLS_SEMANTIC_CONTROLS=no
+#   PRODUCTIVE_CONTINUATION_TURNS_PER_LAUNCH<=bound
+#
+# The launcher performs no semantic decision: it never calls advance_once,
+# never touches the coordinator store, and stops as soon as a completion pass
+# delivers nothing new or the explicit bound is reached.
+PRODUCTIVE_CONTINUATION_MODEL_OWNS_SEMANTICS = True
+PRODUCTIVE_CONTINUATION_IS_MANUAL_WAKEUP = False
+PRODUCTIVE_CONTINUATION_BOUNDED = True
+PRODUCTIVE_CONTINUATION_CALLS_SEMANTIC_CONTROLS = False
+DEFAULT_MAX_PRODUCTIVE_CONTINUATIONS = 3
+
+# ---------------------------------------------------------------------------
 # AF #49 M1/W7 — production tool-surface continuity (I49-B005)
 # ---------------------------------------------------------------------------
 # The production task-main session must keep the AF tool-surface path across
@@ -967,6 +1001,7 @@ class DailyTaskMainLauncher:
         timeout_seconds: int = 120,
         trace_path: Path | None = None,
         completion_timeout_seconds: float | None = None,
+        max_productive_continuations: int = DEFAULT_MAX_PRODUCTIVE_CONTINUATIONS,
     ) -> tuple[DailyLaunchContext, str]:
         """Two-phase production task-main launch (AF #49 M1/W6).
 
@@ -1073,10 +1108,25 @@ class DailyTaskMainLauncher:
         self._require_task_main_tool_surface(ctx=ctx, session_id=session_id, phase="phase2")
 
         # ---- runtime-owned bounded completion continuation (I49-B004) ----
-        self._run_autonomous_completion_continuation(
+        continuation = self._run_autonomous_completion_continuation(
             ctx=ctx,
             session_id=session_id,
             timeout_seconds=completion_timeout_seconds,
+            trace_path=trace_path,
+        )
+        # ---- AF #51 M1/W3: runtime-owned bounded productive continuation ----
+        # A delivered+acknowledged completion gives the exact parent session one
+        # bounded productive turn (operator-owned startup prompt) so the Agent
+        # can reconcile and progress the milestone normal cycle. Bounded; no
+        # manual wakeup; the Agent remains the semantic control owner.
+        self._run_bounded_productive_continuations(
+            ctx=ctx,
+            session_id=session_id,
+            continuation=continuation,
+            startup_prompt=startup_prompt,
+            timeout_seconds=timeout_seconds,
+            completion_timeout_seconds=completion_timeout_seconds,
+            max_productive_continuations=max_productive_continuations,
             trace_path=trace_path,
         )
         return ctx, session_id
@@ -1274,6 +1324,66 @@ class DailyTaskMainLauncher:
                 else:
                     os.environ[k] = old
 
+    @staticmethod
+    def _continuation_delivered_completion(continuation: Any) -> bool:
+        """True only when the completion pass actually delivered an ACKed CARD.
+
+        A pass that found nothing relevant, only released a retryable attempt,
+        dropped a hard-missing session, or failed its ACK identity is NOT a
+        reason to grant the session a productive turn.
+        """
+        from aota_forge.runtime.completion import DELIVER_ACKNOWLEDGED
+
+        outcomes = getattr(continuation, "delivery_outcomes", None) or ()
+        return any(str(outcome) == DELIVER_ACKNOWLEDGED for outcome in outcomes)
+
+    def _run_bounded_productive_continuations(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        continuation: Any,
+        startup_prompt: str,
+        timeout_seconds: float,
+        completion_timeout_seconds: float | None,
+        max_productive_continuations: int,
+        trace_path: Path | None,
+    ) -> int:
+        """AF #51 M1/W3: bounded runtime-owned productive continuation.
+
+        When a runtime-owned completion pass delivered an acknowledged
+        completion into the exact parent session, continue that SAME session
+        with the operator-owned startup prompt so the task-main Agent can
+        continue its normal cycle (reconcile completion -> next Work Item).
+        Never calls advance_once or mutates coordinator state; never spawns a
+        replacement session; bounded by ``max_productive_continuations`` and
+        by the runtime-owned completion pass (a pass without a delivered
+        acknowledged completion ends the loop).
+        """
+        if type(max_productive_continuations) is not int or max_productive_continuations < 0:
+            raise ValueError(
+                "max_productive_continuations must be an int >= 0, "
+                f"got {max_productive_continuations!r}"
+            )
+        turns = 0
+        report = continuation
+        while turns < max_productive_continuations and self._continuation_delivered_completion(report):
+            turns += 1
+            self._continue_exact_session(
+                ctx=ctx,
+                session_id=session_id,
+                payload=startup_prompt,
+                timeout_seconds=timeout_seconds,
+                trace_path=trace_path,
+            )
+            report = self._run_autonomous_completion_continuation(
+                ctx=ctx,
+                session_id=session_id,
+                timeout_seconds=completion_timeout_seconds,
+                trace_path=trace_path,
+            )
+        return turns
+
     def resume(
         self,
         *,
@@ -1381,6 +1491,11 @@ __all__ = [
     "MODEL_POLLING_REQUIRED",
     "OPERATOR_POLLING_REQUIRED",
     "MANUAL_ADVANCE_ONCE_REQUIRED_FOR_COMPLETION",
+    "DEFAULT_MAX_PRODUCTIVE_CONTINUATIONS",
+    "PRODUCTIVE_CONTINUATION_BOUNDED",
+    "PRODUCTIVE_CONTINUATION_CALLS_SEMANTIC_CONTROLS",
+    "PRODUCTIVE_CONTINUATION_IS_MANUAL_WAKEUP",
+    "PRODUCTIVE_CONTINUATION_MODEL_OWNS_SEMANTICS",
     "TWO_PHASE_LAUNCH_PATH",
     "REAL_SESSION_BINDING_PATH",
     "EXACT_SESSION_CONTINUATION_PATH",
