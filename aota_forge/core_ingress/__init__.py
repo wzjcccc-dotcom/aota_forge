@@ -714,6 +714,25 @@ def _task_main_success(binding: CanonicalDispatchBinding, operation: str, payloa
     return response
 
 
+# I40-B009 / #52 M1/W1: the normal integrated-review transition is two-phase.
+# For INTEGRATED_REVIEW_REQUIRED the model-visible result must state the actual
+# next protocol action. The existing disposition-like ``next_action`` contract
+# is preserved; guidance is additive and only present for that disposition.
+_INTEGRATED_REVIEW_NEXT_ACTION_GUIDANCE = (
+    "call task_main.advance_once again to dispatch the governed integrated reviewer"
+)
+
+
+def _advance_next_action_guidance(disposition: Any) -> dict[str, Any]:
+    """Model-visible next-operation guidance for advance_once dispositions."""
+    if disposition == "INTEGRATED_REVIEW_REQUIRED":
+        return {
+            "next_action_guidance": _INTEGRATED_REVIEW_NEXT_ACTION_GUIDANCE,
+            "review_dispatch_mode": "runtime_resolved",
+        }
+    return {}
+
+
 def _map_task_main_exception(exc: Exception) -> str:
     """Typed Core error identity (no transport string classification).
 
@@ -1090,6 +1109,7 @@ def _dispatch_task_main(
                     "integrated_review_required": bool(getattr(outcome, "integrated_review_required", False)),
                     "reasons": list(getattr(outcome, "reasons", [])),
                 }
+                payload.update(_advance_next_action_guidance(payload.get("disposition")))
                 # M3/W1-R1 F2: same shared projector for advance success
                 # (normally empty when dispatched; non-empty when BLOCKED and
                 # projection still required).

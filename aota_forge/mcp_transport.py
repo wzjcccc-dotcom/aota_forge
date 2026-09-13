@@ -1011,6 +1011,8 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
                         for _k in (
                             "disposition",
                             "next_action",
+                            "next_action_guidance",
+                            "review_dispatch_mode",
                             "status",
                             "coordinator_id",
                             "dispatched",

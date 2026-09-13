@@ -275,6 +275,7 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "Task-main normal: activate (empty args, needs approval=yes; stop on USER_GATE_REQUIRED), "
         "recover after restart (re-bind live Plan/session), "
         "advance_once (one iteration; observe next_action DISPATCHED/WAITING/BLOCKED; never call internal reconcile/dispatch). "
+        "All source Work Items complete -> INTEGRATED_REVIEW_REQUIRED is normal: call advance_once again so AF dispatches the governed integrated reviewer; never build a review handoff manually. "
         "Normal work path: read the authoritative Work source from activate/recover/advance work_context, reason, then "
         "handoff.write(mode=work_item) and task.start(role, handoff_ref). submit_work_projection=compatibility only, not the normal path. "
         "Owns DAG/risk/blocker/next-action; risk control only; one review; Human Brake with scope; card-first no transcript; retry needs progress else escalate; user gates mandatory stop. "

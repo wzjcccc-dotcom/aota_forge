@@ -21,6 +21,19 @@ tags: [aota, task-main, control, milestone]
 
 `aota.invoke(operation="task_main.advance_once", arguments={})`. One bounded iteration; AF decides transition. Observe `next_action`: `DISPATCHED_WORK`, `WAITING_FOR_WORKERS`, `RECONCILED`, `INTEGRATED_REVIEW_REQUIRED`, `DISPATCHED_REVIEW`, `REPAIR_REQUIRED`, `BLOCKED`, `MILESTONE_CLOSURE_READY`, `USER_GATE_REQUIRED`, `SESSION_RECOVERY_REQUIRED`, etc. Never call internal reconcile/dispatch. Never override `next_action`.
 
+## Integrated review transition
+
+Work Items progress according to the DAG. When all source Work Items are progression-complete, the milestone enters integrated review.
+
+If `advance_once` returns `INTEGRATED_REVIEW_REQUIRED`, the normal protocol is to call `aota.invoke(operation="task_main.advance_once", arguments={})` again in the same session. AF runtime then resolves the governed reviewer handoff and dispatches the integrated reviewer; the result becomes `DISPATCHED_REVIEW` (or `WAITING_FOR_WORKERS` while the reviewer runs).
+
+Never construct the review handoff manually: no `handoff.write(mode="review")`, no fabricated review Work Item, no `task.start(role="reviewer")` from a source Work handoff. Those paths are not the normal protocol and fail closed.
+
+After reviewer dispatch:
+
+- `DISPATCHED_REVIEW` / integrated-review waiting: reviewer has been dispatched by AF; wait for/reconcile normal reviewer completion.
+- A reconciled review result: reason over review evidence according to the normal milestone workflow.
+
 ## Normal work path (source → handoff → task.start)
 
 `activate`/`recover`/`advance` return the authoritative bounded Work source in `work_context` (`work_item_id`, `plan_ref`, `plan_digest`, `milestone_id`, source text or trusted by-ref identity). Read it, reason, then:

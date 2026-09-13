@@ -1267,7 +1267,10 @@ def reconcile_worker_completion(
         else (f"Work Item {work_item_id} blocked: see progression reasons",)
     )
     if integrated_review_required:
-        reasons = reasons + ("milestone integrated review required; reviewer is not auto-dispatched",)
+        reasons = reasons + (
+            "milestone integrated review is ready; call task_main.advance_once again "
+            "to dispatch the governed integrated reviewer",
+        )
     return ReconciliationOutcome(
         receipt=receipt,
         ack_eligible=True,
