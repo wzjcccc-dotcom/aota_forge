@@ -319,6 +319,45 @@ class TaskMainControlService:
             projection=projection,
         )
 
+    def adopt_normal_path_task_start(
+        self,
+        *,
+        profile: str,
+        coordinator_id: str,
+        live_plan_view: MilestonePlanView,
+        work_item_id: str,
+        canonical_task_id: str,
+        projection: object,
+        handoff_ref: str | None = None,
+        handoff_digest: str | None = None,
+    ):
+        """Mechanically reconcile the normal-path task.start into coordinator state.
+
+        AF #51 M1/W1 (I40-B007). Called by canonical ingress immediately after a
+        successful grounded normal ``handoff.write(mode=work_item) ->
+        task.start``; the exact actual canonical task id is adopted into the
+        existing durable Work projection/binding/ACTIVE state. This is not a
+        model-facing operation and adds no new agent-facing surface.
+        """
+        from aota_forge.runtime.task_main.coordinator import (
+            adopt_normal_path_task_start as _adopt,
+        )
+
+        _require_task_main_profile(profile)
+        if not isinstance(live_plan_view, MilestonePlanView):
+            raise TypeError("live_plan_view must be MilestonePlanView")
+        return _adopt(
+            store=self._coord_store,
+            coordinator_id=coordinator_id,
+            live_plan_view=live_plan_view,
+            work_item_id=work_item_id,
+            canonical_task_id=canonical_task_id,
+            projection=projection,
+            execution_store=self._exec_store,
+            handoff_ref=handoff_ref,
+            handoff_digest=handoff_digest,
+        )
+
     def get_projection_required_context(
         self,
         *,

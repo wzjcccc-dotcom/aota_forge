@@ -736,9 +736,22 @@ class TestNormalPathWithoutSyntheticProjection:
         assert started.ok, started.error
         assert started.payload["handoff_digest"] == written.payload["digest"]
         assert len(env.recording.packages) == 1
-        # Still no synthetic projection step was required.
+        # No synthetic submit_work_projection step was required: the normal
+        # task.start mechanically reconciled the durable projection/binding
+        # for the exact actual execution identity (AF #51 M1/W1, I40-B007).
         reloaded = env.coord_store.get(env.coordinator_id)
-        assert reloaded is not None and dict(reloaded.work_projections) == {}
+        assert reloaded is not None
+        projection_record = dict(reloaded.work_projections)["W1"]
+        assert projection_record["work_item_id"] == "W1"
+        assert projection_record["plan_authority"] == live.plan_authority
+        assert projection_record["plan_digest"] == live.plan_digest
+        assert projection_record["milestone_id"] == live.milestone_id
+        assert projection_record["work_source_digest"] == _source_digest(live, "W1")
+        assert dict(reloaded.wi_status)["W1"] == "ACTIVE"
+        binding = dict(reloaded.bindings)["W1"]
+        assert binding["canonical_task_id"] == started.payload["task_id"]
+        assert binding["handoff_ref"] == written.payload["ref"]
+        assert binding["handoff_digest"] == written.payload["digest"]
 
     def test_normal_path_without_coordinator_state_grounds_current_ready_work(self, tmp_path: Path) -> None:
         live, _ = _live()

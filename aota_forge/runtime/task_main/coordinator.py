@@ -835,79 +835,28 @@ def _require_durable_dispatcher(dispatcher: ExecutionDispatcher) -> ExecutionSta
     return store
 
 
-def commit_task_main_work_projection(
+def _build_bound_work_projection_record(
     *,
-    store: TaskMainCoordinatorStore,
-    coordinator_id: str,
+    state: Any,
     live_plan_view: MilestonePlanView,
     work_item_id: str,
     projection: Any,
-) -> Any:
-    """Task-main-owned bounded Work projection commit (M1/W1-R1, AF #45).
+) -> dict[str, Any]:
+    """Validate one bounded Work projection and build its durable bound record.
 
-    Smallest internal/runtime operation for task-main to commit a bounded Work
-    projection. Called by the task-main semantic/planning layer (which has
-    already reasoned about the current Plan/Milestone/Work); the deterministic
-    runtime validates, binds to trusted identities, persists durably in the
-    existing coordinator store, and never re-interprets Plan prose.
-
-    M3/W1 canonical writer semantics (same function, now also reachable via
-    the canonical model-facing operation task_main.submit_work_projection):
-
-    * work_item_id must be a governed Work Item of the durable coordinator.
-    * live_plan_view must match the durable coordinator binding exactly
-      (stale Plan identity fails closed via PlanDriftError).
-    * projection must be a bounded WorkSemanticProjection (malformed/oversized
-      fails closed via WorkScopeInsufficientError) and must yield a
-      Worker-usable handoff (generic boilerplate or objective-only scope fails
-      closed; no generic fallback is restored).
-    * The bound record persists plan_authority/plan_digest/milestone/project/
-      work identities alongside the projection; a projection for W1 can never
-      be reused as W2 (work_item_ref binding enforced at resolve).
-    * Idempotent retry: a repeated identical submission for the same Work
-      Item returns the current durable state without error and without
-      corrupting state (no duplicate records).
-    * Conflicting write: a repeated submission with different semantics is
-      allowed only while the Work Item is still PENDING (explicit
-      pre-dispatch replacement). Once the Work Item has left PENDING
-      (dispatched/in-flight), a conflicting write fails closed with
-      WorkProjectionConflictError (code PROJECTION_CONFLICT) — never silent
-      last-write-wins.
-    * Stale coordinator: a CAS revision mismatch fails closed with the
-      store's StaleCoordinatorRevisionError, except that an identical retry
-      against a newer revision still returns the current state (idempotent).
-
-    Durable: the bound record survives coordinator reload/restart via the
-    existing FileBackedTaskMainCoordinatorStore; restart never requires
-    operator work_semantics reinjection. No raw LLM transcript is stored.
+    Single shared writer contract reused by ``commit_task_main_work_projection``
+    and ``adopt_normal_path_task_start``: governed semantics gate, typed
+    projection parse, Worker-usability gate, trusted Plan/Milestone/Project/
+    Work identity binding, and authoritative Work source digest binding. No
+    projection is persisted here.
     """
     from aota_forge.work_plane.handoff_runtime import (
-        WorkProjectionConflictError,
         WorkScopeInsufficientError,
         WorkSemanticProjection,
         resolve_bounded_work_handoff,
     )
 
-    if not isinstance(store, TaskMainCoordinatorStore):
-        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
-    if not isinstance(live_plan_view, MilestonePlanView):
-        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
-    coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
-    if not isinstance(work_item_id, str) or type(work_item_id) is not str:
-        raise TypeError(f"work_item_id must be a string, got {type(work_item_id).__name__}")
-    wid = work_item_id.strip()
-    if not wid:
-        raise ValueError("work_item_id must be a non-empty string")
-
-    state = store.get(coordinator_id)
-    if state is None:
-        from aota_forge.runtime.task_main.coordinator_store import CoordinatorNotFoundError
-
-        raise CoordinatorNotFoundError(coordinator_id)
-    # Stale Plan identity fails closed (no silent expansion, no cross-Plan reuse).
-    _check_live_binding(state, live_plan_view)
-    if wid not in set(state.work_items):
-        raise CoordinatorBindingError(f"unknown Work Item {wid!r} for coordinator {coordinator_id!r}")
+    wid = work_item_id
     # M3/W1-R1 F2: missing governed Work semantics fails closed (no heuristic
     # invention). Only enforced when the trusted view carries new authority
     # (non-empty work_semantics); legacy empty views stay permissive for
@@ -922,9 +871,7 @@ def commit_task_main_work_projection(
         except Exception:
             has_view = False
         if not has_view:
-            from aota_forge.work_plane.handoff_runtime import WorkScopeInsufficientError as _WSSIE
-
-            raise _WSSIE(
+            raise WorkScopeInsufficientError(
                 f"missing governed Work semantics for Work Item {wid!r} "
                 f"(Milestone {live_plan_view.milestone_id!r}); refusing heuristic scope"
             )
@@ -987,6 +934,86 @@ def commit_task_main_work_projection(
     if view_carries_authoritative_work_source(live_plan_view):
         _grounding = resolve_trusted_work_grounding(live_plan_view, work_item_id=wid)
         bound["work_source_digest"] = _grounding["work_source_digest"]
+    return bound
+
+
+def commit_task_main_work_projection(
+    *,
+    store: TaskMainCoordinatorStore,
+    coordinator_id: str,
+    live_plan_view: MilestonePlanView,
+    work_item_id: str,
+    projection: Any,
+) -> Any:
+    """Task-main-owned bounded Work projection commit (M1/W1-R1, AF #45).
+
+    Smallest internal/runtime operation for task-main to commit a bounded Work
+    projection. Called by the task-main semantic/planning layer (which has
+    already reasoned about the current Plan/Milestone/Work); the deterministic
+    runtime validates, binds to trusted identities, persists durably in the
+    existing coordinator store, and never re-interprets Plan prose.
+
+    M3/W1 canonical writer semantics (same function, now also reachable via
+    the canonical model-facing operation task_main.submit_work_projection):
+
+    * work_item_id must be a governed Work Item of the durable coordinator.
+    * live_plan_view must match the durable coordinator binding exactly
+      (stale Plan identity fails closed via PlanDriftError).
+    * projection must be a bounded WorkSemanticProjection (malformed/oversized
+      fails closed via WorkScopeInsufficientError) and must yield a
+      Worker-usable handoff (generic boilerplate or objective-only scope fails
+      closed; no generic fallback is restored).
+    * The bound record persists plan_authority/plan_digest/milestone/project/
+      work identities alongside the projection; a projection for W1 can never
+      be reused as W2 (work_item_ref binding enforced at resolve).
+    * Idempotent retry: a repeated identical submission for the same Work
+      Item returns the current durable state without error and without
+      corrupting state (no duplicate records).
+    * Conflicting write: a repeated submission with different semantics is
+      allowed only while the Work Item is still PENDING (explicit
+      pre-dispatch replacement). Once the Work Item has left PENDING
+      (dispatched/in-flight), a conflicting write fails closed with
+      WorkProjectionConflictError (code PROJECTION_CONFLICT) — never silent
+      last-write-wins.
+    * Stale coordinator: a CAS revision mismatch fails closed with the
+      store's StaleCoordinatorRevisionError, except that an identical retry
+      against a newer revision still returns the current state (idempotent).
+
+    Durable: the bound record survives coordinator reload/restart via the
+    existing FileBackedTaskMainCoordinatorStore; restart never requires
+    operator work_semantics reinjection. No raw LLM transcript is stored.
+    """
+    from aota_forge.work_plane.handoff_runtime import (
+        WorkProjectionConflictError,
+        WorkScopeInsufficientError,
+    )
+
+    if not isinstance(store, TaskMainCoordinatorStore):
+        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
+    if not isinstance(work_item_id, str) or type(work_item_id) is not str:
+        raise TypeError(f"work_item_id must be a string, got {type(work_item_id).__name__}")
+    wid = work_item_id.strip()
+    if not wid:
+        raise ValueError("work_item_id must be a non-empty string")
+
+    state = store.get(coordinator_id)
+    if state is None:
+        from aota_forge.runtime.task_main.coordinator_store import CoordinatorNotFoundError
+
+        raise CoordinatorNotFoundError(coordinator_id)
+    # Stale Plan identity fails closed (no silent expansion, no cross-Plan reuse).
+    _check_live_binding(state, live_plan_view)
+    if wid not in set(state.work_items):
+        raise CoordinatorBindingError(f"unknown Work Item {wid!r} for coordinator {coordinator_id!r}")
+    bound = _build_bound_work_projection_record(
+        state=state,
+        live_plan_view=live_plan_view,
+        work_item_id=wid,
+        projection=projection,
+    )
     existing_table = dict(getattr(state, "work_projections", {}) or {})
     existing_record = existing_table.get(wid)
     if isinstance(existing_record, Mapping):
@@ -1063,6 +1090,197 @@ def commit_task_main_work_projection(
                         return fresh
         raise
     return updated
+
+
+# AF #51 M1/W1 (I40-B007) — normal-path durable progression binding.
+# The accepted task-main normal path (authoritative Work -> handoff.write
+# (mode=work_item) -> task.start) must mechanically reconcile the durable
+# coordinator state that task_main.advance_once requires. The exact canonical
+# task identity actually produced by task.start is authoritative; no parallel
+# identity is recomputed.
+NORMAL_TASK_START_PERSISTS_WORK_PROJECTION = True
+NORMAL_TASK_START_PERSISTS_COORDINATOR_BINDING = True
+NORMAL_PATH_BINDING_USES_ACTUAL_TASK_START_CANONICAL_TASK_ID = True
+NORMAL_PATH_ADOPTION_REQUIRES_DURABLE_DISPATCHED_TRUTH = True
+NORMAL_PATH_ADOPTION_WRITES_PROJECTION_STATUS_BINDING_ATOMICALLY = True
+NORMAL_PATH_ADOPTION_INVENTS_SEMANTICS = False
+
+
+def adopt_normal_path_task_start(
+    *,
+    store: TaskMainCoordinatorStore,
+    coordinator_id: str,
+    live_plan_view: MilestonePlanView,
+    work_item_id: str,
+    canonical_task_id: str,
+    projection: Any,
+    execution_store: ExecutionStateStore,
+    handoff_ref: str | None = None,
+    handoff_digest: str | None = None,
+    attempt: int = COORDINATOR_DISPATCH_ATTEMPT,
+) -> TaskMainCoordinatorState:
+    """Bind the actual normal-path task.start execution into coordinator state.
+
+    AF #51 M1/W1 (I40-B007). Called by canonical ingress immediately after a
+    successful grounded normal-path ``handoff.write(mode=work_item) ->
+    task.start``. One store CAS writes the exact bounded Work projection, the
+    Work Item ACTIVE status, and the execution binding carrying the exact
+    ``canonical_task_id`` the normal path actually produced (never a
+    recomputed parallel identity).
+
+    Failure atomicity: the durable execution record must already be DISPATCHED
+    for ``canonical_task_id`` (a failed dispatch can never create a fake
+    binding); a conflicting retry with different semantics or a different
+    execution identity fails closed; an identical retry is idempotent.
+    """
+    from aota_forge.runtime.task_main.coordinator_store import StaleCoordinatorRevisionError
+    from aota_forge.work_plane.handoff_runtime import (
+        WorkProjectionConflictError,
+        WorkScopeInsufficientError,
+    )
+
+    if not isinstance(store, TaskMainCoordinatorStore):
+        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
+    if not isinstance(execution_store, ExecutionStateStore):
+        raise TypeError(
+            f"execution_store must be ExecutionStateStore, got {type(execution_store).__name__}"
+        )
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
+    if not isinstance(work_item_id, str) or type(work_item_id) is not str:
+        raise TypeError(f"work_item_id must be a string, got {type(work_item_id).__name__}")
+    wid = work_item_id.strip()
+    if not wid:
+        raise ValueError("work_item_id must be a non-empty string")
+    canonical_task_id = _require_non_empty_str(canonical_task_id, "canonical_task_id")
+    if type(attempt) is not int or attempt < 1:
+        raise ValueError(f"attempt must be an int >= 1, got {attempt!r}")
+    if handoff_ref is not None:
+        handoff_ref = _require_non_empty_str(handoff_ref, "handoff_ref")
+    if handoff_digest is not None:
+        handoff_digest = _require_non_empty_str(handoff_digest, "handoff_digest")
+
+    state = store.get(coordinator_id)
+    if state is None:
+        raise CoordinatorNotFoundError(coordinator_id)
+    _check_live_binding(state, live_plan_view)
+    if wid not in set(state.work_items):
+        raise CoordinatorBindingError(f"unknown Work Item {wid!r} for coordinator {coordinator_id!r}")
+
+    # FAILED_DISPATCH_MUST_NOT_CREATE_FAKE_EXECUTION_BINDING: ACTIVE/binding
+    # requires durable DISPATCHED execution truth for the exact actual id.
+    _record = execution_store.get(canonical_task_id)
+    if (
+        _record is None
+        or getattr(_record, "adapter_handle", None) is None
+        or getattr(getattr(_record, "execution_phase", None), "value", None) != "DISPATCHED"
+    ):
+        raise CoordinatorBindingError(
+            f"normal-path adoption for {wid!r} requires durable DISPATCHED execution "
+            f"truth for {canonical_task_id!r}; no ACTIVE/binding written"
+        )
+
+    bound = _build_bound_work_projection_record(
+        state=state,
+        live_plan_view=live_plan_view,
+        work_item_id=wid,
+        projection=projection,
+    )
+
+    existing_table = dict(getattr(state, "work_projections", {}) or {})
+    existing_record = existing_table.get(wid)
+    existing_bindings = dict(getattr(state, "bindings", {}) or {})
+    existing_binding = existing_bindings.get(wid)
+    existing_status = dict(getattr(state, "wi_status", {}) or {}).get(wid)
+
+    def _record_matches(record: Any) -> bool:
+        if not isinstance(record, Mapping):
+            return False
+        try:
+            same_projection = dict(record.get("projection", {})) == bound["projection"]
+        except Exception:
+            same_projection = False
+        same_identity = (
+            record.get("plan_authority") == bound["plan_authority"]
+            and record.get("plan_digest") == bound["plan_digest"]
+            and record.get("milestone_id") == bound["milestone_id"]
+            and record.get("project_id") == bound["project_id"]
+            and record.get("work_item_id") == bound["work_item_id"]
+            and record.get("work_source_digest") == bound.get("work_source_digest")
+        )
+        return same_projection and same_identity
+
+    if isinstance(existing_binding, Mapping) and existing_binding:
+        bound_task_id = existing_binding.get("canonical_task_id")
+        if bound_task_id != canonical_task_id:
+            raise WorkProjectionConflictError(
+                f"Work Item {wid!r} already carries execution binding {bound_task_id!r} "
+                f"contradicting normal-path task.start {canonical_task_id!r}; "
+                "refusing to rebind an admitted Work Item"
+            )
+        if not _record_matches(existing_record) or existing_status != WorkItemCoordinatorStatus.ACTIVE.value:
+            raise WorkProjectionConflictError(
+                f"conflicting normal-path retry for {wid!r}: durable projection/status "
+                "does not match the retried semantics"
+            )
+        # Identical retry: idempotent (no mutation, no duplicate binding).
+        return state
+
+    if existing_record is not None and not _record_matches(existing_record):
+        # Conflicting projection: allowed only while still PENDING and unbound
+        # (explicit pre-dispatch replacement); fail closed afterwards.
+        if existing_status != WorkItemCoordinatorStatus.PENDING.value:
+            raise WorkProjectionConflictError(
+                f"conflicting Work projection for {wid!r} after dispatch "
+                f"(status {existing_status!r}); refusing silent overwrite"
+            )
+
+    merged = dict(existing_table)
+    if len(merged) >= 64 and wid not in merged:
+        raise WorkScopeInsufficientError(
+            f"too many durable Work projections ({len(merged)}); refusing {wid!r}"
+        )
+    merged[wid] = bound
+    wi_status = dict(getattr(state, "wi_status", {}) or {})
+    wi_status[wid] = WorkItemCoordinatorStatus.ACTIVE.value
+    bindings = {wi: dict(entry) for wi, entry in existing_bindings.items()}
+    bindings[wid] = {
+        "canonical_task_id": canonical_task_id,
+        "attempt": attempt,
+        "idempotency_key": f"taskmain-normal-path|{canonical_task_id}",
+        "completion_ref": None,
+        "completion_card_digest": None,
+        "handoff_ref": handoff_ref,
+        "handoff_digest": handoff_digest,
+        "result_ref": None,
+        "result_digest": None,
+        "review_state": "PENDING",
+    }
+
+    try:
+        return store.compare_and_swap(
+            coordinator_id,
+            state.coordinator_revision,
+            {"work_projections": merged, "wi_status": wi_status, "bindings": bindings},
+            state.revision_token,
+        )
+    except StaleCoordinatorRevisionError:
+        # A concurrent identical adoption may already be durable: converge on
+        # the exact identity instead of duplicating or failing spuriously.
+        fresh = store.get(coordinator_id)
+        if fresh is not None:
+            fresh_binding = dict(getattr(fresh, "bindings", {}) or {}).get(wid)
+            fresh_record = dict(getattr(fresh, "work_projections", {}) or {}).get(wid)
+            fresh_status = dict(getattr(fresh, "wi_status", {}) or {}).get(wid)
+            if (
+                isinstance(fresh_binding, Mapping)
+                and fresh_binding.get("canonical_task_id") == canonical_task_id
+                and _record_matches(fresh_record)
+                and fresh_status == WorkItemCoordinatorStatus.ACTIVE.value
+            ):
+                return fresh
+        raise
 
 
 def resolve_task_main_work_handoff(
@@ -1920,6 +2138,12 @@ __all__ = [
     "DETERMINISTIC_RUNTIME_REINTERPRETS_PLAN_PROSE",
     "MANUAL_PER_WORK_SCOPE_INJECTION_REQUIRED",
     "NEXT_MILESTONE_GUARD",
+    "NORMAL_PATH_ADOPTION_INVENTS_SEMANTICS",
+    "NORMAL_PATH_ADOPTION_REQUIRES_DURABLE_DISPATCHED_TRUTH",
+    "NORMAL_PATH_ADOPTION_WRITES_PROJECTION_STATUS_BINDING_ATOMICALLY",
+    "NORMAL_PATH_BINDING_USES_ACTUAL_TASK_START_CANONICAL_TASK_ID",
+    "NORMAL_TASK_START_PERSISTS_COORDINATOR_BINDING",
+    "NORMAL_TASK_START_PERSISTS_WORK_PROJECTION",
     "OPERATOR_REFRESH_REQUIRED_BETWEEN_WORK_ITEMS",
     "OPERATOR_WORK_SEMANTICS_REQUIRED_FOR_NORMAL_PATH",
     "PERSISTENCE_REQUIRES_FOREVER_PROCESS",
@@ -1955,6 +2179,7 @@ __all__ = [
     "TaskMainCoordinator",
     "TaskMainCoordinatorError",
     "activate_milestone",
+    "adopt_normal_path_task_start",
     "build_model_visible_work_context",
     "build_work_item_handoff_ref",
     "commit_task_main_work_projection",
