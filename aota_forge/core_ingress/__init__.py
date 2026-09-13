@@ -628,6 +628,86 @@ def _verify_grounded_task_start(
     return None
 
 
+def _prepare_normal_path_adoption(
+    *,
+    binding: CanonicalDispatchBinding,
+    live_plan_view: Any,
+    handoff_ref: str,
+    sandbox: Any,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Prepare the mechanical normal-path durable progression adoption (AF #51 W1).
+
+    I40-B007 repair: builds the bounded Work projection from the exact already
+    grounded handoff the normal ``task.start`` consumes (same durable artifact,
+    same trusted resolver) plus the resolved coordinator identity. Returns
+    ``(failure, context)``; the caller invokes the coordinator adoption only
+    after ``task.start`` actually succeeded, binding the exact canonical task
+    id it produced. No semantic interpretation, no new ontology.
+    """
+    trusted_ctx = getattr(binding, "trusted_task_main_context", None)
+    if trusted_ctx is None:
+        return None, None
+    service = getattr(trusted_ctx, "control_service", None)
+    if service is None or not callable(getattr(service, "adopt_normal_path_task_start", None)):
+        return None, None
+    try:
+        from aota_forge.work_plane.handoff_runtime import WorkSemanticProjection
+        from aota_forge.work_plane.handoff_store import handoff_open
+        from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+
+        opened = handoff_open(handoff_ref, "full", sandbox=sandbox)
+        envelope = opened.get("envelope")
+        if not isinstance(envelope, Mapping):
+            return {
+                "code": "WORK_SOURCE_GROUNDING_MISSING",
+                "message": "normal-path task.start handoff carries no control envelope",
+            }, None
+        work_item_id = envelope.get("work_item_id")
+        if not isinstance(work_item_id, str) or not work_item_id.strip():
+            return {
+                "code": "WORK_SOURCE_GROUNDING_MISSING",
+                "message": "normal-path task.start handoff carries no trusted Work Item id",
+            }, None
+        task_handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
+        # The projection persisted durably is derived from the exact canonical
+        # TaskHandoff task.start compiled (same grounded semantics; no second
+        # semantic payload is invented).
+        projection = WorkSemanticProjection(
+            objective=task_handoff.objective,
+            bounded_scope=task_handoff.bounded_scope,
+            validation_expectations=tuple(task_handoff.validation_expectations),
+            semantic_stop_expectations=tuple(task_handoff.semantic_stop_expectations),
+        )
+    except Exception as exc:
+        typed_code = getattr(exc, "code", None)
+        code = typed_code if isinstance(typed_code, str) and typed_code else "GOVERNED_OPERATION_FAILURE"
+        return {
+            "code": code,
+            "message": f"normal-path progression adoption preparation failed: {exc}"[:512],
+        }, None
+    try:
+        coordinator_id = service.resolve_coordinator_id(
+            project_id=binding.project_id,
+            live_plan_view=live_plan_view,
+            coordinator_id=getattr(trusted_ctx, "coordinator_id", None),
+        )
+    except Exception as exc:
+        typed_code = getattr(exc, "code", None)
+        code = typed_code if isinstance(typed_code, str) and typed_code else "COORDINATOR_BINDING_FAILED"
+        return {
+            "code": code,
+            "message": f"normal-path coordinator identity resolution failed: {exc}"[:512],
+        }, None
+    return None, {
+        "service": service,
+        "coordinator_id": coordinator_id,
+        "work_item_id": work_item_id.strip(),
+        "projection": projection,
+        "handoff_ref": opened.get("ref"),
+        "handoff_digest": opened.get("digest"),
+    }
+
+
 def _task_main_success(binding: CanonicalDispatchBinding, operation: str, payload: dict[str, Any]) -> ToolResponse:
     response = ToolResponse.success(payload)
     _persist_governed_if_needed(binding, response, operation)
@@ -1468,6 +1548,8 @@ def dispatch_tool_operation(
             # identity/digest verification only (no semantic interpretation).
             trusted_ctx = getattr(binding, "trusted_task_main_context", None)
             live_view = getattr(trusted_ctx, "live_plan_view", None)
+            adopt_failure: dict[str, Any] | None = None
+            adopt_context: dict[str, Any] | None = None
             if trusted_ctx is not None and live_view is not None:
                 grounding_error = _verify_grounded_task_start(
                     binding=binding,
@@ -1477,6 +1559,18 @@ def dispatch_tool_operation(
                 )
                 if grounding_error is not None:
                     return ToolResponse.failure(grounding_error)
+                # AF #51 M1/W1 (I40-B007): prepare the mechanical normal-path
+                # durable progression adoption from the same grounded handoff;
+                # the commit below runs only after task.start actually
+                # succeeded, binding the exact canonical task id it produced.
+                adopt_failure, adopt_context = _prepare_normal_path_adoption(
+                    binding=binding,
+                    live_plan_view=live_view,
+                    handoff_ref=handoff_ref,
+                    sandbox=sandbox,
+                )
+                if adopt_failure is not None:
+                    return ToolResponse.failure(adopt_failure)
             try:
                 from aota_forge.work_plane.task_facade import task_start
 
@@ -1510,6 +1604,42 @@ def dispatch_tool_operation(
                 if isinstance(typed_code, str) and typed_code:
                     return ToolResponse.failure({"code": typed_code, "message": str(exc)[:512]})
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            if adopt_context is not None:
+                # AF #51 M1/W1 (I40-B007): mechanically reconcile the ACTUAL
+                # task.start execution identity into the existing durable
+                # coordinator projection/ACTIVE/binding state. The dispatch
+                # already succeeded; no projection/status/binding was written
+                # before it, so a failed task.start can never leave false
+                # ACTIVE/bound state.
+                try:
+                    adopt_context["service"].adopt_normal_path_task_start(
+                        profile="task-main",
+                        coordinator_id=adopt_context["coordinator_id"],
+                        live_plan_view=live_view,
+                        work_item_id=adopt_context["work_item_id"],
+                        canonical_task_id=result.get("task_id"),
+                        projection=adopt_context["projection"],
+                        handoff_ref=adopt_context.get("handoff_ref"),
+                        handoff_digest=adopt_context.get("handoff_digest"),
+                    )
+                except Exception as exc:
+                    from aota_forge.runtime.task_main.coordinator_store import (
+                        CoordinatorNotFoundError,
+                    )
+
+                    if isinstance(exc, CoordinatorNotFoundError):
+                        # No durable coordinator state exists in this
+                        # composition; nothing to reconcile (task.start truth
+                        # remains valid and no false state was written).
+                        pass
+                    else:
+                        typed_code = getattr(exc, "code", None)
+                        code = (
+                            typed_code
+                            if isinstance(typed_code, str) and typed_code
+                            else "PROGRESSION_BINDING_FAILED"
+                        )
+                        return ToolResponse.failure({"code": code, "message": str(exc)[:512]})
             response = ToolResponse.success(result)
             _persist_governed_if_needed(binding, response, operation)
             return response
