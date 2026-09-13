@@ -144,6 +144,7 @@ TASK_START_CONTROL_PLANE_VALIDATES: tuple[str, ...] = (
     "tool_authority",
     "resource_bounds",
     "schema_input_validity",
+    "requested_role_grounded_handoff_consistency",
 )
 
 # Workflow-strategy judgment the Control Plane must NOT perform.
@@ -161,6 +162,33 @@ TASK_START_CONTROL_PLANE_MUST_NOT_VALIDATE: tuple[str, ...] = (
 )
 
 MODEL_AUTHORED_TRUSTED_RUNTIME_BINDING = False
+
+# ---------------------------------------------------------------------------
+# Thin generic task lifecycle seam (AF #53 M2/W1)
+# ---------------------------------------------------------------------------
+#
+# M2/W1 realizes the thin-path runtime seam the M1 contract anticipated: the
+# canonical generic task lifecycle (``task.start`` / ``task.return``) runs on
+# a thin trusted binding that carries no TrustedTaskMainRuntimeContext, and
+# therefore requires no MilestonePlanView, TaskMainControlService, coordinator
+# state, task_main.advance_once, READY calculation or review transition state.
+# The implementation owners below are the real adapted seams.
+
+THIN_TASK_LIFECYCLE_OPERATIONS: tuple[str, ...] = ("task.start", "task.return")
+THIN_TASK_LIFECYCLE_IMPLEMENTATION_OWNERS: tuple[str, ...] = (
+    "aota_forge/core_ingress/__init__.py",
+    "aota_forge/work_plane/task_facade.py",
+)
+THIN_TASK_LIFECYCLE_REQUIRES_TRUSTED_TASK_MAIN_CONTEXT = False
+THIN_NORMAL_TASK_LIFECYCLE_DEPENDS_ON_LEGACY_WORKFLOW_STATE = False
+
+# F2 (accepted M1/RV1 carry-forward; owner M2/W1): the requested child role
+# must equal the grounded durable handoff work_role, generic for every child
+# role. Mismatch is mechanical integrity, fails closed before dispatch, and
+# creates zero child execution.
+REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE = True
+ROLE_HANDOFF_MISMATCH_CODE = "ROLE_HANDOFF_MISMATCH"
+ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH = True
 
 # ---------------------------------------------------------------------------
 # Handoff boundary (AC5)
@@ -444,6 +472,14 @@ __all__ = [
     "TASK_START_CONTROL_PLANE_VALIDATES",
     "TASK_START_CONTROL_PLANE_MUST_NOT_VALIDATE",
     "MODEL_AUTHORED_TRUSTED_RUNTIME_BINDING",
+    # Thin generic task lifecycle seam
+    "THIN_TASK_LIFECYCLE_OPERATIONS",
+    "THIN_TASK_LIFECYCLE_IMPLEMENTATION_OWNERS",
+    "THIN_TASK_LIFECYCLE_REQUIRES_TRUSTED_TASK_MAIN_CONTEXT",
+    "THIN_NORMAL_TASK_LIFECYCLE_DEPENDS_ON_LEGACY_WORKFLOW_STATE",
+    "REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE",
+    "ROLE_HANDOFF_MISMATCH_CODE",
+    "ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH",
     # Handoff
     "HANDOFF_SEMANTIC_ARTIFACT",
     "HANDOFF_IS_AUTHORITY",

@@ -99,6 +99,41 @@ TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF = True
 
 CompletionSink = MutableMapping[str, dict[str, Any]]
 
+# AF #53 M2/W1 F2 (accepted M1/RV1 carry-forward): generic requested-role /
+# grounded-handoff consistency. Mechanical integrity validation only - no
+# workflow position, review strategy, Milestone state or reviewer-specific
+# branch. The comparison happens after the grounded durable handoff is
+# resolved and before execution dispatch / durable execution record creation.
+REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE = True
+ROLE_HANDOFF_MISMATCH_CODE = "ROLE_HANDOFF_MISMATCH"
+ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH = True
+# Generic thin task lifecycle (canonical task.start/task.return) requires no
+# legacy workflow state; this module stays a legacy-free thin seam.
+THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE = False
+
+
+class RoleHandoffMismatchError(ValueError):
+    """Typed fail-closed error: requested role != grounded handoff work_role.
+
+    AF #53 M2/W1 F2: the model-requested child role may not silently
+    substitute a different grounded durable handoff work_role (nor may the
+    handoff role substitute the requested role). This is mechanical integrity
+    validation, not workflow reasoning. Raised after the grounded durable
+    handoff is resolved and before any execution dispatch or durable execution
+    record creation, so a mismatch creates zero child execution.
+    """
+
+    code = ROLE_HANDOFF_MISMATCH_CODE
+
+    def __init__(self, requested_role: str, grounded_role: str) -> None:
+        self.requested_role = requested_role
+        self.grounded_role = grounded_role
+        super().__init__(
+            f"{self.code}: requested role {requested_role!r} != grounded durable "
+            f"handoff work_role {grounded_role!r}; refusing role substitution "
+            f"before execution dispatch"
+        )
+
 
 class ProductionDispatcherUnavailableError(ValueError):
     """Typed fail-closed error: no trusted production ExecutionDispatcher."""
@@ -163,6 +198,23 @@ def _validate_task_return_caller(caller_role: str) -> None:
     allowed = {"coder", "analyst", "reviewer", "project-steward"}
     if caller_role not in allowed:
         raise ValueError(f"task.return caller must be one of {sorted(allowed)}, got {caller_role!r}")
+
+
+def _grounded_handoff_work_role(task_handoff: TaskHandoff) -> str:
+    """Grounded durable handoff work_role as a plain string (mechanical only)."""
+    role = getattr(task_handoff, "work_role", None)
+    value = getattr(role, "value", None)
+    return value if isinstance(value, str) else str(role)
+
+
+def _validate_role_handoff_consistency(requested_role: str, grounded_role: str) -> None:
+    """F2: requested role must equal the grounded durable handoff work_role.
+
+    Generic for every child role (coder / analyst / reviewer /
+    project-steward). Failure is typed and happens before compile/dispatch.
+    """
+    if requested_role != grounded_role:
+        raise RoleHandoffMismatchError(requested_role, grounded_role)
 
 
 def _semantic_ref_value(value: Any) -> str | None:
@@ -403,6 +455,11 @@ def task_start(
         task_handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
     except Exception as exc:
         raise ValueError(f"handoff semantic cannot be resolved to TaskHandoff: {exc}") from exc
+    # AF #53 M2/W1 F2: requested role must equal the grounded durable handoff
+    # work_role. Mechanical integrity validation ONLY (no workflow position,
+    # review strategy or Milestone state) and fail closed before compile or
+    # dispatch, so a mismatch can create zero durable child execution.
+    _validate_role_handoff_consistency(role, _grounded_handoff_work_role(task_handoff))
     # Compile/reuse existing execution-start inputs
     from aota_forge.work_plane.compiler import TrustedExecutionBinding, compile_handoff_to_execution_package
 
@@ -645,6 +702,10 @@ __all__ = [
     "TASK_RETURN_IS_NOT_EXECUTION_TASK_RESULT",
     "TASK_RETURN_REUSES_EXISTING_COMPLETION_FINALIZATION_WAKEUP_SEAMS",
     "PARENT_WAKEUP_REENTRY_REUSED",
+    "REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE",
+    "ROLE_HANDOFF_MISMATCH_CODE",
+    "ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH",
+    "THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE",
     "WORKER_RESULT_FULL_WRITE_COUNT_NORMAL",
     "WORKER_AUTHORS_RESULT_CARD",
     "RESULT_CARD_DETERMINISTIC",
@@ -670,6 +731,7 @@ __all__ = [
     "TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF",
     "TRUSTED_WORK_HANDOFF_CONTEXT_KEY",
     "CompletionSink",
+    "RoleHandoffMismatchError",
     "ProductionDispatcherUnavailableError",
     "ProductionExecutionStoreUnavailableError",
     "load_trusted_work_item_task_handoff",

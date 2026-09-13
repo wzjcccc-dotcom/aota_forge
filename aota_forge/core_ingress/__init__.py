@@ -214,6 +214,47 @@ def _require_sandbox(binding: CanonicalDispatchBinding) -> Any:
     return binding.sandbox
 
 
+# ---------------------------------------------------------------------------
+# AF #53 M2/W1 — generic thin task lifecycle seam.
+#
+# Canonical ``task.start`` / ``task.return`` may run on an explicitly thin
+# trusted binding that carries no TrustedTaskMainRuntimeContext. Under that
+# binding the generic lifecycle uses only trusted mechanics: sandbox /
+# project / worktree boundary, durable grounded handoff integrity, requested
+# role / grounded handoff role consistency, the trusted production
+# ExecutionDispatcher and durable execution state. No MilestonePlanView,
+# TaskMainControlService, coordinator state, task_main.advance_once, READY
+# calculation or review transition state is required or consulted.
+# ---------------------------------------------------------------------------
+
+THIN_TASK_LIFECYCLE_OPERATIONS: tuple[str, ...] = ("task.start", "task.return")
+THIN_TASK_LIFECYCLE_REQUIRES_TRUSTED_TASK_MAIN_CONTEXT = False
+THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE = False
+THIN_TASK_LIFECYCLE_FORBIDDEN_DEPENDENCIES: tuple[str, ...] = (
+    "TrustedTaskMainRuntimeContext",
+    "TaskMainControlService",
+    "MilestonePlanView",
+    "coordinator_state",
+    "task_main.advance_once",
+    "READY calculation",
+    "review transition state",
+)
+
+
+def is_thin_task_lifecycle_binding(binding: CanonicalDispatchBinding) -> bool:
+    """True when a trusted binding carries no legacy task-main workflow context.
+
+    A thin binding is a canonical dispatch binding whose trusted task-main
+    runtime context is absent (``trusted_task_main_context=None``); the
+    canonical generic ``task.start`` / ``task.return`` dispatch then neither
+    requires nor consults the legacy workflow objects. Mechanical
+    classification only - it decides no policy and mints no authority.
+    """
+    if not isinstance(binding, CanonicalDispatchBinding):
+        return False
+    return getattr(binding, "trusted_task_main_context", None) is None
+
+
 def _trusted_production_execution_dispatcher() -> Any | None:
     """Resolve the trusted production ExecutionDispatcher, if one is bound.
 
@@ -1462,7 +1503,7 @@ def dispatch_tool_operation(
                     return ToolResponse.failure({"code": code, "message": msg[:512]})
                 if "AUTHORITY_DENIED" in msg or "requires caller" in msg or "requires one-shot" in msg:
                     return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": msg[:512]})
-                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                if "cross-project" in msg.lower() or "cross-worktree" in msg.lower() or "CROSS_SCOPE" in msg:
                     return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
                 if "tamper" in msg.lower() or "DIGEST_MISMATCH" in msg:
                     return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
@@ -1510,6 +1551,7 @@ def dispatch_tool_operation(
 
         if operation == "task.start":
             sandbox = _require_sandbox(binding)
+            thin_binding = is_thin_task_lifecycle_binding(binding)
             # Caller authority: must be task-main
             caller_role = ""
             try:
@@ -1570,7 +1612,11 @@ def dispatch_tool_operation(
             live_view = getattr(trusted_ctx, "live_plan_view", None)
             adopt_failure: dict[str, Any] | None = None
             adopt_context: dict[str, Any] | None = None
-            if trusted_ctx is not None and live_view is not None:
+            # AF #53 M2/W1: thin trusted bindings never enter the legacy
+            # grounded-work verification / coordinator adoption mechanics. The
+            # generic thin lifecycle proceeds with trusted mechanics only and
+            # performs no workflow-position validation (no READY/review state).
+            if not thin_binding and trusted_ctx is not None and live_view is not None:
                 grounding_error = _verify_grounded_task_start(
                     binding=binding,
                     live_plan_view=live_view,
@@ -1608,7 +1654,7 @@ def dispatch_tool_operation(
                     return ToolResponse.failure({"code": code, "message": msg[:512]})
                 if "AUTHORITY_DENIED" in msg:
                     return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": msg[:512]})
-                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                if "cross-project" in msg.lower() or "cross-worktree" in msg.lower() or "CROSS_SCOPE" in msg:
                     return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
                 if "digest" in msg.lower() and "mismatch" in msg.lower():
                     return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
@@ -1666,6 +1712,7 @@ def dispatch_tool_operation(
 
         if operation == "task.return":
             sandbox = _require_sandbox(binding)
+            thin_binding = is_thin_task_lifecycle_binding(binding)
             # Caller must be one-shot role
             caller_role = ""
             caller_task_id = getattr(binding, "canonical_task_id", "") or ""
@@ -1686,7 +1733,20 @@ def dispatch_tool_operation(
                 except Exception:
                     pass
             if not caller_role:
-                # Fallback to payload? Not ideal
+                if thin_binding:
+                    # AF #53 M2/W1: the thin trusted ingress requires the
+                    # caller role to come from trusted binding evidence; it is
+                    # never silently defaulted for a thin binding.
+                    return ToolResponse.failure(
+                        {
+                            "code": "AUTHORITY_DENIED",
+                            "message": "task.return thin binding carries no trusted caller role evidence",
+                        }
+                    )
+                # Legacy compatibility path only (context-bearing binding):
+                # unavailable role evidence falls back to the historical coder
+                # default; the result-handoff source_role equality check still
+                # fails closed on any actual mismatch.
                 caller_role = "coder"
             if caller_role not in ("coder", "analyst", "reviewer", "project-steward"):
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": f"task.return caller must be one-shot, got {caller_role!r}"})
@@ -1697,6 +1757,16 @@ def dispatch_tool_operation(
             if not isinstance(result_ref, str) or not result_ref.strip():
                 return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "result_ref must be non-empty string"})
             if not caller_task_id:
+                if thin_binding:
+                    # AF #53 M2/W1: the trusted caller canonical task identity
+                    # must come from the binding, never from the artifact being
+                    # validated (no self-authenticating result handoff).
+                    return ToolResponse.failure(
+                        {
+                            "code": "WRONG_TASK",
+                            "message": "task.return thin binding carries no trusted canonical_task_id",
+                        }
+                    )
                 # Try to derive from sandbox? fallback to result_ref's envelope task_id?
                 # For thin facade, require canonical_task_id in binding; if missing, use envelope task_id from result_ref as caller_task_id fallback for test harness
                 try:
@@ -1737,7 +1807,7 @@ def dispatch_tool_operation(
                     return ToolResponse.failure({"code": "WRONG_ROLE", "message": msg[:512]})
                 if "wrong-task" in msg.lower() or "WRONG_TASK" in msg or "task_id" in msg.lower():
                     return ToolResponse.failure({"code": "WRONG_TASK", "message": msg[:512]})
-                if "cross-project" in msg.lower() or "CROSS_SCOPE" in msg:
+                if "cross-project" in msg.lower() or "cross-worktree" in msg.lower() or "CROSS_SCOPE" in msg:
                     return ToolResponse.failure({"code": "CROSS_SCOPE_DENIED", "message": msg[:512]})
                 if "digest" in msg.lower() and "mismatch" in msg.lower():
                     return ToolResponse.failure({"code": "DIGEST_MISMATCH", "message": msg[:512]})
@@ -1809,7 +1879,12 @@ __all__ = [
     "LEAF_PROVIDER_REWRITE_REQUIRED",
     "PROVIDER_BACKED_OPERATIONS",
     "INGRESS_BACKED_OPERATIONS",
+    "THIN_TASK_LIFECYCLE_OPERATIONS",
+    "THIN_TASK_LIFECYCLE_REQUIRES_TRUSTED_TASK_MAIN_CONTEXT",
+    "THIN_TASK_LIFECYCLE_REQUIRES_LEGACY_WORKFLOW_STATE",
+    "THIN_TASK_LIFECYCLE_FORBIDDEN_DEPENDENCIES",
     "CanonicalDispatchBinding",
+    "is_thin_task_lifecycle_binding",
     "list_canonical_operations",
     "resolve_descriptor",
     "validate_operation_input",
