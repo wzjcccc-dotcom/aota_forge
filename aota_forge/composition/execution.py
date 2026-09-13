@@ -168,6 +168,7 @@ def create_production_execution_dispatcher(
     launcher_path: str | PathLike[str] | None = None,
     state_store: ExecutionStateStore | None = None,
     origin_session_ref: OriginSessionRef | str | None = None,
+    worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
 ) -> ExecutionDispatcher:
     """Construct the real production graph without changing Core routing.
 
@@ -176,6 +177,14 @@ def create_production_execution_dispatcher(
     channel; otherwise construction fails closed. The Hermes executable is
     ``launcher_path`` when explicitly provided (bounded override seam), else
     the operator config's validated ``executable``.
+
+    AF #53 M3/W2-R1 (I53-B001): ``worker_env_resolver`` is the trusted
+    server-side Worker binding channel for governed AF Worker dispatch. When
+    supplied to the default production client it becomes the ONLY source of the
+    Worker child environment (the canonical pre-resolved binding envelope);
+    explicitly injected clients/factories own their own launch seam. Absence of
+    a resolver never permits a bindingless governed Worker launch: the host
+    client fails closed before any physical spawn.
 
     M2/W3 durable wiring (explicit dependencies, no implicit globals):
     ``state_store`` connects the W1 canonical durable execution seam (pass a
@@ -186,6 +195,8 @@ def create_production_execution_dispatcher(
     record. There is still exactly ONE dispatcher in this graph.
     """
     config = _resolve_operator_runtime_config(runtime_config)
+    if worker_env_resolver is not None and not callable(worker_env_resolver):
+        raise TypeError("worker_env_resolver must be callable or None")
 
     effective_launcher = str(launcher_path) if launcher_path is not None else config.executable
     # AF #51 M1/W2 (I40-B008): the trusted operator RuntimeConfig Worker
@@ -194,14 +205,19 @@ def create_production_execution_dispatcher(
     # custom clients/factories (test/component seams) own their own lifetime.
     if host_client is not None:
         client = host_client
+        if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
+            client._worker_env_resolver = worker_env_resolver
     elif host_client_factory is HermesHostClient:
         client = host_client_factory(
             effective_launcher,
             default_cwd=default_cwd,
             timeout_seconds=config.worker_execution_timeout_seconds,
+            worker_env_resolver=worker_env_resolver,
         )
     else:
         client = host_client_factory(effective_launcher, default_cwd=default_cwd)
+        if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
+            client._worker_env_resolver = worker_env_resolver
 
     # Role->profile mapping derives exclusively from operator config bindings.
     # Worker bindings carry the shared AOTA MCP toolset pin enforced by

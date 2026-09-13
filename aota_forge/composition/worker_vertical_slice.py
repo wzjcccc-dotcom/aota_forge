@@ -18,7 +18,7 @@ import os
 import sys
 import time
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,7 +67,10 @@ from aota_forge.work_plane.workspace_tools import (
     WORKSPACE_SEARCH_DESCRIPTOR,
     create_workspace_authority,
 )
-from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
+from aota_forge.work_plane.worktree_sandbox import (
+    WorktreeSandboxBoundary,
+    bind_worktree_sandbox,
+)
 from aota_forge.work_plane.restricted_shell import (
     create_restricted_shell_authority,
     RESTRICTED_SHELL_DESCRIPTOR,
@@ -943,6 +946,273 @@ def build_worker_child_environment(
     return dict(child)
 
 
+# ---------------------------------------------------------------------------
+# AF #53 M3/W2-R1 (I53-B001) — neutral governed Worker env resolver factory.
+#
+# One generic mechanic reused by any trusted AF composition that owns a real
+# governed dispatch path (no second protocol, no second envelope format):
+#
+#     trusted dispatch payload ``working_context.trusted_work_handoff``
+#         (produced by grounded canonical ``task.start``)
+#     -> re-open the SAME durable work_item handoff inside the trusted sandbox
+#        (cross-project / cross-worktree / tamper / digest fail closed)
+#     -> canonical TaskHandoff derivation (task_facade)
+#     -> canonical Worker child environment
+#        (``build_worker_child_environment`` -> ``create_worker_envelope``)
+#
+# The Worker binding identity derives only from server-side trusted runtime
+# composition; the model, the handoff prose and the startup prompt never
+# supply it (WORKER_BINDING_SOURCE=trusted_server_side_runtime).
+# ---------------------------------------------------------------------------
+GOVERNED_WORKER_ENV_RESOLVER_OWNER = "aota_forge/composition/worker_vertical_slice.py"
+WORKER_BINDING_SOURCE = "trusted_server_side_runtime"
+
+
+def _governed_worker_binding_unavailable(detail: str) -> TrustedBindingError:
+    """Typed fail-closed Worker binding error (accepted I49-B006 code, no new ontology)."""
+    error = TrustedBindingError(f"WORKER_BINDING_UNAVAILABLE: {detail}")
+    error.code = "WORKER_BINDING_UNAVAILABLE"
+    return error
+
+
+def _normalized_governed_binding_error(exc: Exception) -> TrustedBindingError:
+    """Normalize any resolver failure into the typed binding-unavailable error."""
+    existing = getattr(exc, "code", None)
+    if isinstance(existing, str) and existing:
+        return exc  # type: ignore[return-value]
+    detail = str(exc)
+    prefix = "WORKER_BINDING_UNAVAILABLE: "
+    if detail.startswith(prefix):
+        detail = detail[len(prefix):]
+    return _governed_worker_binding_unavailable(detail)
+
+
+def _extract_governed_handoff_reference(
+    payload: Any,
+) -> tuple[bool, dict[str, str] | None]:
+    """Extract the trusted internal Work handoff record from a dispatch payload.
+
+    Reuses the accepted I49-B006 payload-local contract: the record is trusted
+    server-side metadata produced by grounded ``task.start``. A declared but
+    malformed record fails closed (never a bindingless launch); absence means
+    the dispatch did not select the governed Worker binding contract.
+    """
+    if not isinstance(payload, Mapping):
+        return False, None
+    context = payload.get("context")
+    if not isinstance(context, Mapping):
+        return False, None
+    working = context.get("working_context")
+    if not isinstance(working, Mapping):
+        return False, None
+    from aota_forge.work_plane.task_facade import TRUSTED_WORK_HANDOFF_CONTEXT_KEY
+
+    if TRUSTED_WORK_HANDOFF_CONTEXT_KEY not in working:
+        return False, None
+    record = working.get(TRUSTED_WORK_HANDOFF_CONTEXT_KEY)
+    if not isinstance(record, Mapping):
+        raise _governed_worker_binding_unavailable(
+            "trusted_work_handoff record must be a mapping"
+        )
+    ref = record.get("ref")
+    digest = record.get("digest")
+    mode = record.get("mode")
+    if not isinstance(ref, str) or not ref.strip():
+        raise _governed_worker_binding_unavailable("trusted Work handoff ref missing")
+    if not isinstance(digest, str) or not digest.strip():
+        raise _governed_worker_binding_unavailable("trusted Work handoff digest missing")
+    if not isinstance(mode, str) or mode.strip() != "work_item":
+        raise _governed_worker_binding_unavailable(
+            f"trusted Work handoff mode invalid: {mode!r}"
+        )
+    return True, {"ref": ref.strip(), "digest": digest.strip().lower(), "mode": "work_item"}
+
+
+def _extract_dispatch_work_item(payload: Any) -> str | None:
+    try:
+        if not isinstance(payload, Mapping):
+            return None
+        context = payload.get("context")
+        if not isinstance(context, Mapping):
+            return None
+        working = context.get("working_context")
+        if not isinstance(working, Mapping):
+            return None
+        refs = working.get("refs")
+        if not isinstance(refs, Mapping):
+            return None
+        wi_ref = refs.get("work_item_ref")
+        if isinstance(wi_ref, Mapping):
+            candidate = wi_ref.get("ref")
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    except Exception:
+        return None
+    return None
+
+
+def _extract_dispatch_canonical_task_id(payload: Any) -> str:
+    context = payload.get("context") if isinstance(payload, Mapping) else None
+    if isinstance(context, Mapping):
+        candidate = context.get("canonical_task_id")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    raise _governed_worker_binding_unavailable("dispatch payload carries no canonical_task_id")
+
+
+def _validate_dispatch_handoff_consistency(
+    payload: Any,
+    *,
+    handoff: TaskHandoff,
+    work_item: str | None,
+    canonical_task_id: str,
+) -> None:
+    """Fail closed when trusted dispatch metadata contradicts the grounded handoff.
+
+    Mechanical identity/digest checks only (no workflow semantics): role,
+    handoff digest, Work Item reference and canonical task identity must agree.
+    The resolver never "repairs" conflicting identity by choosing one side.
+    """
+    working = None
+    if isinstance(payload, Mapping):
+        context = payload.get("context")
+        if isinstance(context, Mapping):
+            candidate = context.get("working_context")
+            if isinstance(candidate, Mapping):
+                working = candidate
+    if working is not None:
+        claimed_role = working.get("work_role")
+        if isinstance(claimed_role, str) and claimed_role.strip():
+            actual_role = (
+                handoff.work_role.value
+                if hasattr(handoff.work_role, "value")
+                else str(handoff.work_role)
+            )
+            if claimed_role.strip() != actual_role:
+                raise _governed_worker_binding_unavailable(
+                    f"dispatch role {claimed_role.strip()!r} contradicts grounded "
+                    f"handoff role {actual_role!r}"
+                )
+        claimed_digest = working.get("handoff_digest")
+        if isinstance(claimed_digest, str) and claimed_digest.strip():
+            if claimed_digest.strip().lower() != handoff.handoff_digest.lower():
+                raise _governed_worker_binding_unavailable(
+                    "dispatch handoff digest contradicts the grounded durable handoff"
+                )
+    if work_item is not None:
+        handoff_wi = (
+            handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
+        )
+        if handoff_wi != work_item:
+            raise _governed_worker_binding_unavailable(
+                f"derived Work Item {handoff_wi!r} contradicts dispatch Work Item {work_item!r}"
+            )
+    handoff_mid = handoff.milestone_ref.ref if handoff.milestone_ref is not None else None
+    handoff_wi = handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
+    if (
+        handoff_mid is not None
+        and handoff_wi is not None
+        and f":{handoff_mid}:{handoff_wi}:" not in f":{canonical_task_id}:"
+    ):
+        raise _governed_worker_binding_unavailable(
+            f"canonical_task {canonical_task_id!r} does not carry grounded handoff "
+            f"milestone/Work identity {handoff_mid!r}/{handoff_wi!r}"
+        )
+
+
+def create_governed_worker_env_resolver(
+    *,
+    sandbox: WorktreeSandboxBoundary,
+    runtime_config_path: Path | None = None,
+    repo_root: Path | None = None,
+) -> Callable[[Mapping[str, Any]], Mapping[str, Any] | None]:
+    """Build one governed Worker env resolver over a trusted worktree sandbox.
+
+    Reuses the canonical primitives only (``handoff_open`` +
+    ``load_trusted_work_item_task_handoff`` + ``build_worker_child_environment``
+    + ``create_worker_envelope``). It creates no new binding protocol, no
+    second envelope format and no second Worker bootstrap: the resolver is the
+    thin composition's trusted server-side source for the pre-resolved Worker
+    binding channel consumed by the canonical Worker MCP child.
+    """
+    if not isinstance(sandbox, WorktreeSandboxBoundary):
+        raise _governed_worker_binding_unavailable(
+            "governed Worker env resolver requires a trusted WorktreeSandboxBoundary"
+        )
+    root = Path(sandbox.worktree_root)
+    project_id = sandbox.project_id
+    worktree_id = sandbox.worktree_id
+
+    def _resolver(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        declared, trusted = _extract_governed_handoff_reference(payload)
+        work_item = _extract_dispatch_work_item(payload)
+        if declared and trusted is not None:
+            try:
+                from aota_forge.work_plane.handoff_store import handoff_open
+                from aota_forge.work_plane.task_facade import (
+                    load_trusted_work_item_task_handoff,
+                )
+
+                opened = handoff_open(trusted["ref"], "full", sandbox=sandbox)
+                if opened.get("mode") != "work_item":
+                    raise _governed_worker_binding_unavailable(
+                        f"durable handoff mode is {opened.get('mode')!r}, not work_item"
+                    )
+                opened_digest = opened.get("digest")
+                if (
+                    not isinstance(opened_digest, str)
+                    or opened_digest.strip().lower() != trusted["digest"]
+                ):
+                    raise _governed_worker_binding_unavailable(
+                        "durable handoff digest does not match the trusted dispatch reference"
+                    )
+                handoff = load_trusted_work_item_task_handoff(
+                    opened=opened, sandbox=sandbox
+                )
+                if handoff.project_ref is not None and handoff.project_ref.ref != project_id:
+                    raise _governed_worker_binding_unavailable(
+                        f"grounded handoff project {handoff.project_ref.ref!r} contradicts "
+                        f"trusted binding project {project_id!r}"
+                    )
+                canonical_task_id = _extract_dispatch_canonical_task_id(payload)
+                _validate_dispatch_handoff_consistency(
+                    payload,
+                    handoff=handoff,
+                    work_item=work_item,
+                    canonical_task_id=canonical_task_id,
+                )
+                return build_worker_child_environment(
+                    root=root,
+                    project_id=project_id,
+                    worktree_id=worktree_id,
+                    canonical_task_id=canonical_task_id,
+                    handoff=handoff,
+                    repo_root=repo_root,
+                    runtime_config_path=runtime_config_path,
+                )
+            except TrustedBindingError as exc:
+                raise _normalized_governed_binding_error(exc) from exc
+            except Exception as exc:
+                inner = getattr(exc, "code", None)
+                detail = (
+                    f"{inner}: {exc}"
+                    if isinstance(inner, str) and inner
+                    else f"{type(exc).__name__}: {exc}"
+                )
+                raise _governed_worker_binding_unavailable(detail) from exc
+        if not declared:
+            if work_item is None:
+                # Not a governed Work dispatch: preserves legitimate generic
+                # host-client usage without an AF Worker binding contract.
+                return None
+            raise _governed_worker_binding_unavailable(
+                "dispatch carries a Work Item identity without the governed trusted handoff record"
+            )
+        raise _governed_worker_binding_unavailable("trusted Work handoff record unusable")
+
+    return _resolver
+
+
 async def _serve_mcp_child() -> None:
     """Run the actual W2 server used by Hermes, with server-side binding."""
     from aota_forge import mcp_transport
@@ -1173,7 +1443,11 @@ __all__ = [
     "MCP_REPO_ROOT_ENV",
     "MCP_SERVER_MODULE",
     "REAL_HERMES_VERSION",
+    "GOVERNED_WORKER_ENV_RESOLVER_OWNER",
+    "WORKER_BINDING_SOURCE",
     "WorkerSliceResult",
     "build_worker_binding",
+    "build_worker_child_environment",
+    "create_governed_worker_env_resolver",
     "run_one_shot_worker",
 ]

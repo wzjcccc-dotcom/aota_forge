@@ -520,7 +520,19 @@ class HermesHostClient:
         envelope absent but old keys present, they are still validated but
         production will fail closed at MCP (no envelope) per poisoning proof.
         """
+        governed = _payload_declares_governed_worker_binding(payload)
         if self._worker_env_resolver is None:
+            if governed:
+                # AF #53 M3/W2-R1 (I53-B001): a governed AF Worker payload
+                # without a trusted resolver must fail closed BEFORE any
+                # physical spawn. A bindingless Worker launch was the second
+                # integrity defect; it is never a valid governed outcome.
+                raise HermesHostClientError(
+                    "DISPATCH_REJECTED: governed AF Worker dispatch requires a "
+                    "trusted Worker env resolver; bindingless physical Worker "
+                    "launch is forbidden",
+                    "DISPATCH_REJECTED",
+                )
             return {}
         try:
             overlay = self._worker_env_resolver(payload)
@@ -536,7 +548,7 @@ class HermesHostClient:
                 code,
             ) from exc
         if overlay is None:
-            if _payload_declares_governed_worker_binding(payload):
+            if governed:
                 # AF #49 M1/W8 (I49-B006) invariant: when the governed AF
                 # Worker binding contract is selected, an unresolvable binding
                 # is a typed fail-closed dispatch rejection. A bindingless
@@ -589,6 +601,17 @@ class HermesHostClient:
                     "PACKAGE_INVALID",
                 )
             cleaned[key] = value
+        if governed and PRE_RESOLVED_BINDING_ENV not in cleaned:
+            # AF #53 M3/W2-R1 (I53-B001): a governed AF Worker payload whose
+            # resolver supplied no canonical pre-resolved binding envelope is
+            # "no valid trusted child env": fail closed before physical spawn
+            # (never a bindingless launch).
+            raise HermesHostClientError(
+                "DISPATCH_REJECTED: governed AF Worker dispatch requires the "
+                "canonical pre-resolved Worker binding envelope; resolver "
+                "supplied no trusted child environment",
+                "DISPATCH_REJECTED",
+            )
         # M2/W1 envelope verification: if pre-resolved locator present, verify
         # file exists, digest-bound. Host representation is irrelevant.
         envelope_path = cleaned.get(PRE_RESOLVED_BINDING_ENV)

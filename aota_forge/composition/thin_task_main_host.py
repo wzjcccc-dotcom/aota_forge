@@ -60,6 +60,9 @@ from aota_forge.composition.execution import (
     create_production_execution_dispatcher,
 )
 from aota_forge.composition.project_binding import resolve_trusted_project_evidence
+from aota_forge.composition.worker_vertical_slice import (
+    create_governed_worker_env_resolver,
+)
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import (
@@ -378,11 +381,23 @@ def compose_thin_task_main_host(
         execution_store if execution_store is not None else _default_execution_store(root)
     )
 
+    # AF #53 M3/W2-R1 (I53-B001): the thin production dispatcher is composed
+    # with the canonical governed Worker env resolver (trusted server-side
+    # runtime source). The physically spawned Worker therefore receives the
+    # canonical pre-resolved binding envelope built from the SAME grounded
+    # durable handoff that ``task.start`` resolved. Without a valid resolver a
+    # governed Worker dispatch fails closed before any physical spawn.
+    worker_env_resolver = create_governed_worker_env_resolver(
+        sandbox=sandbox,
+        runtime_config_path=config_path,
+    )
+
     dispatcher_kwargs: dict[str, Any] = {
         "default_cwd": root,
         "runtime_config": runtime_config,
         "state_store": store,
         "origin_session_ref": OriginSessionRef(value=origin),
+        "worker_env_resolver": worker_env_resolver,
     }
     if host_client is not None:
         dispatcher_kwargs["host_client"] = host_client
