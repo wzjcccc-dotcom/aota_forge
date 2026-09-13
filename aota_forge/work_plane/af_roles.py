@@ -323,6 +323,42 @@ def curated_eager_guidance(skill_id: str) -> str:
     except KeyError:
         raise KeyError(f"no curated eager guidance for {skill_id!r}")
 
+# ---------------------------------------------------------------------------
+# AF #53 M2/W2: thin task-main eager guidance.
+#
+# The legacy task-main eager guidance above prescribes the frozen coordinator
+# cycle (activate/recover/advance_once, integrated-review transition). The
+# thin task-main host has no legacy workflow operations on its surface, so its
+# advisory guidance describes capability and operating behavior only: the
+# task-main LLM owns workflow strategy, review frequency/order, repair
+# strategy and Milestone judgment. This text is guidance, never authority
+# (SKILL_IS_AUTHORITY=no), and encodes no mechanical workflow sequence.
+# ---------------------------------------------------------------------------
+
+THIN_TASK_MAIN_GUIDANCE_IS_ADVISORY = True
+THIN_TASK_MAIN_GUIDANCE_IS_WORKFLOW_PRESCRIPTIVE = False
+
+THIN_TASK_MAIN_EAGER_GUIDANCE = (
+    "Task-main operating guidance (thin host): you own plan interpretation, workflow "
+    "strategy, sequencing, delegation, review strategy, repair strategy and Milestone "
+    "judgment. Read project/Plan context on demand via workspace.search / workspace.read; "
+    "search or open relevant context only when needed. Write the semantic handoff for a "
+    "child task with handoff.write(mode=work_item) and re-read it with handoff.open; start "
+    "any permitted child role (coder|analyst|reviewer|project-steward) via "
+    "task.start(role, handoff_ref); observe child results through the factual "
+    "completion/result surfaces and reason about the next action yourself. The Control "
+    "Plane enforces authority and records mechanical facts only: it does not prescribe "
+    "review frequency or order, Work sequence, repair strategy or Milestone advancement. "
+    "Stop with needs_input when trusted evidence is insufficient; never invent authority, "
+    "project scope or session identity."
+)
+
+
+def thin_task_main_eager_guidance() -> str:
+    """Advisory thin task-main operating guidance (capability, not workflow)."""
+    return THIN_TASK_MAIN_EAGER_GUIDANCE
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 

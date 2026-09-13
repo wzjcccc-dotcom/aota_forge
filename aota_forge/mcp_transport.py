@@ -314,6 +314,10 @@ TRANSPORT_OPERATION_IDENTITY_SEPARATED = True
 TOOL_VISIBILITY_IS_AUTHORITY = False
 SINGLE_ENTRY_TRANSPORT = True
 MCP_TRANSPORT_TOOL_COUNT = 1
+# AF #53 M2/W2: the public ``create_aota_invoke_dispatch`` factory exposes the
+# same canonical single-entry callable the MCP server uses; it creates no
+# second transport, tool or dispatch plane.
+AOTA_INVOKE_DISPATCH_FACTORY_IS_CANONICAL_SINGLE_ENTRY = True
 NEW_OPERATION_AUTHORITY_REGISTRY_CREATED = False
 DEFAULT_REGISTRY_MIGRATION_REQUIRED = False
 
@@ -928,6 +932,24 @@ class _SharedAotaMcpAdapter:
             return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
         return _governed_from_response(self.binding, operation, tool_response)
 
+def create_aota_invoke_dispatch(trusted_binding: TrustedWorkerBinding):
+    """Public factory binding the canonical single-entry ``aota.invoke`` path.
+
+    AF #53 M2/W2: trusted runtime composition (e.g. the thin task-main host)
+    may bind the SAME canonical callable the MCP server exposes, without
+    constructing a transport server and without duplicating operation
+    resolution, typed validation, provider selection or result projection.
+    Mechanical exposure only: no new tool, no second dispatch plane, no
+    authority. The returned callable is exactly
+    ``_SharedAotaMcpAdapter(trusted_binding).invoke``.
+
+    AOTA_INVOKE_DISPATCH_IS_CANONICAL_SINGLE_ENTRY=yes.
+    """
+    if not isinstance(trusted_binding, TrustedWorkerBinding):
+        raise TrustedBindingError("trusted server-side binding is required")
+    return _SharedAotaMcpAdapter(trusted_binding).invoke
+
+
 def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
     """Create one shared standard MCP server with exactly one Agent-facing tool.
 
@@ -1115,6 +1137,7 @@ __all__ = [
     "TRANSPORT_OPERATION_IDENTITY_SEPARATED",
     "TOOL_VISIBILITY_IS_AUTHORITY",
     "SINGLE_ENTRY_TRANSPORT",
+    "AOTA_INVOKE_DISPATCH_FACTORY_IS_CANONICAL_SINGLE_ENTRY",
     "DEFAULT_REGISTRY_MIGRATION_REQUIRED",
     "NEW_OPERATION_AUTHORITY_REGISTRY_CREATED",
     "TASK_MAIN_CONTROL_IMPLEMENTED_IN_W3",
@@ -1128,6 +1151,7 @@ __all__ = [
     "TrustedBindingError",
     "TrustedWorkerBinding",
     "TrustedTaskMainRuntimeContext",
+    "create_aota_invoke_dispatch",
     "create_shared_mcp_server",
     "run_shared_mcp_server",
 ]

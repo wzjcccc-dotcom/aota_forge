@@ -191,6 +191,39 @@ ROLE_HANDOFF_MISMATCH_CODE = "ROLE_HANDOFF_MISMATCH"
 ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH = True
 
 # ---------------------------------------------------------------------------
+# Thin task-main host composition seam (AF #53 M2/W2)
+# ---------------------------------------------------------------------------
+#
+# M2/W2 realizes the side-by-side thin task-main host composition the M1
+# contract anticipated: trusted project binding + existing canonical
+# RuntimeConfig + trusted production dispatcher + canonical aota.invoke +
+# thin task lifecycle + task-main Role/Skill/tool guidance + existing
+# completion delivery/reentry foundation, and never the legacy workflow
+# coordinator as the normal-path brain. Selection between legacy and thin is
+# a trusted/internal runtime composition choice, not a model-facing argument.
+# The legacy host path and production default remain untouched.
+
+THIN_HOST_COMPOSITION_OWNER = "aota_forge/composition/thin_task_main_host.py"
+THIN_HOST_COMPOSITION_KIND = "trusted_internal_composition"
+THIN_HOST_PRODUCTION_DEFAULT = False
+THIN_HOST_SIDE_BY_SIDE = True
+MODEL_AUTHORED_THIN_HOST_BINDING = False
+THIN_HOST_REQUIRES_LEGACY_WORKFLOW_BRAIN = False
+THIN_HOST_REQUIRES_TASK_MAIN_CONTROL_SERVICE = False
+THIN_HOST_REQUIRES_MILESTONE_PLAN_VIEW = False
+THIN_HOST_REQUIRES_COORDINATOR = False
+THIN_HOST_REQUIRES_ADVANCE_ONCE = False
+THIN_HOST_WORKFLOW_SPECIAL_OPERATIONS: tuple[str, ...] = (
+    "task.observe",
+    "task.advance",
+    "task.review",
+    "task.repair",
+    "workflow.next",
+)
+COMPLETION_DELIVERY_IS_FACTUAL_SIGNAL = True
+COMPLETION_DELIVERY_IS_WORKFLOW_DECISION = False
+
+# ---------------------------------------------------------------------------
 # Handoff boundary (AC5)
 # ---------------------------------------------------------------------------
 
@@ -480,6 +513,20 @@ __all__ = [
     "REQUESTED_ROLE_MUST_EQUAL_GROUNDED_HANDOFF_ROLE",
     "ROLE_HANDOFF_MISMATCH_CODE",
     "ROLE_HANDOFF_MISMATCH_FAILS_BEFORE_DISPATCH",
+    # Thin task-main host composition seam (M2/W2)
+    "THIN_HOST_COMPOSITION_OWNER",
+    "THIN_HOST_COMPOSITION_KIND",
+    "THIN_HOST_PRODUCTION_DEFAULT",
+    "THIN_HOST_SIDE_BY_SIDE",
+    "MODEL_AUTHORED_THIN_HOST_BINDING",
+    "THIN_HOST_REQUIRES_LEGACY_WORKFLOW_BRAIN",
+    "THIN_HOST_REQUIRES_TASK_MAIN_CONTROL_SERVICE",
+    "THIN_HOST_REQUIRES_MILESTONE_PLAN_VIEW",
+    "THIN_HOST_REQUIRES_COORDINATOR",
+    "THIN_HOST_REQUIRES_ADVANCE_ONCE",
+    "THIN_HOST_WORKFLOW_SPECIAL_OPERATIONS",
+    "COMPLETION_DELIVERY_IS_FACTUAL_SIGNAL",
+    "COMPLETION_DELIVERY_IS_WORKFLOW_DECISION",
     # Handoff
     "HANDOFF_SEMANTIC_ARTIFACT",
     "HANDOFF_IS_AUTHORITY",

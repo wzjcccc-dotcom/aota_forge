@@ -168,6 +168,33 @@ def build_task_main_operation_guidance() -> dict[str, dict[str, object]]:
     }
 
 
+def build_thin_task_main_operation_guidance() -> dict[str, dict[str, object]]:
+    """Compact thin-host normal-path guidance (AF #53 M2/W2).
+
+    The thin task-main host exposes only the generic common operations plus
+    ``task.start``; no legacy ``task_main.*`` compatibility entry is included,
+    because those operations are not part of the thin normal path. Required
+    names/types still derive from the same canonical descriptors; no second
+    schema authority is created.
+    """
+    return {
+        "normal_path": {
+            "flow": _NORMAL_PATH_FLOW,
+            "steps": ["handoff.write", "task.start"],
+        },
+        "handoff.write": {
+            "required": _required_types(HANDOFF_WRITE_DESCRIPTOR),
+            "note": _HANDOFF_WRITE_NOTE,
+            "example": dict(_HANDOFF_WRITE_EXAMPLE),
+        },
+        "task.start": {
+            "required": _required_types(TASK_START_DESCRIPTOR),
+            "note": _TASK_START_NOTE,
+            "example": dict(_TASK_START_EXAMPLE),
+        },
+    }
+
+
 def task_main_submit_required_fields() -> tuple[str, ...]:
     """Required field names for submit, derived from canonical descriptor."""
     return tuple(spec.name for spec in TASK_MAIN_SUBMIT_DESCRIPTOR.inputs)

@@ -222,12 +222,25 @@ class TestCDEUsableEager:
             assert kw in low, f"steward eager missing {kw!r}"
 
     def test_task_main_has_orchestration_no_implementation(self, tmp_path: Path) -> None:
-        res = _bootstrap_for(AgentWorkRole.TASK_MAIN, tmp_path)
+        # AF #53 M2/W2: legacy task-main eager guidance is tied to the
+        # context-bearing legacy host binding; a thin (context-free) task-main
+        # binding receives capability guidance instead. This test keeps the
+        # legacy expectation on a context-bearing binding and additionally
+        # guards the thin guidance against legacy workflow leakage.
+        legacy_binding = _task_main_fake_binding(tmp_path)
+        legacy_binding.trusted_task_main_context = object()
+        res = handle_role_bootstrap(legacy_binding, {})
         text = " ".join(e["materialized"] for e in res["BASE_SKILLS"])
         for kw in ("activate", "recover", "advance", "DAG", "Human Brake", "USER_GATE"):
             assert kw in text, f"task-main eager missing {kw!r}"
         # Must not become coder: no product implementation workflow eager
         assert "write_scope" not in text or "workspace.write" not in text or "SPEC-driven" not in text
+
+        thin = handle_role_bootstrap(_task_main_fake_binding(tmp_path), {})
+        thin_text = " ".join(e["materialized"] for e in thin["BASE_SKILLS"])
+        for kw in ("activate", "advance_once", "DAG", "Human Brake", "INTEGRATED_REVIEW_REQUIRED"):
+            assert kw not in thin_text, f"thin task-main eager leaks legacy machinery {kw!r}"
+        assert "task.start" in thin_text and "handoff.write" in thin_text
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,7 @@ from aota_forge.work_plane.af_roles import (
     get_soul_for_role,
     get_tool_surface_for_role,
     progressive_skill_metadata,
+    thin_task_main_eager_guidance,
 )
 from aota_forge.work_plane.skill import compute_skill_digest
 
@@ -265,6 +266,15 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
         raise RoleBootstrapError(f"handoff work_role invalid {work_role!r}", code="AUTHORITY_DENIED")
     role_str = work_role.value
 
+    # AF #53 M2/W2: a thin task-main binding (no TrustedTaskMainRuntimeContext)
+    # carries no legacy workflow operations on its surface, so its eager
+    # guidance is capability/operating behavior only - never the frozen
+    # coordinator cycle. The legacy context-bearing binding is unchanged.
+    thin_task_main_binding = (
+        role_str == "task-main"
+        and getattr(binding, "trusted_task_main_context", None) is None
+    )
+
     # SOUL from AF exclusive source
     soul = get_soul_for_role(work_role)
 
@@ -356,8 +366,13 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     # Each eager Skill contributes complete usable guidance sufficient for normal
     # work without skill.open. Bounded via curation (not blind cut); all role
     # bootstraps fit inline 4096. is_truncated is always False; total == content.
-    def _base_skill_entry_curated(skill_id: str) -> dict[str, Any]:
-        curated = curated_eager_guidance(skill_id)
+    def _base_skill_entry_curated(skill_id: str, *, materialized_override: str | None = None) -> dict[str, Any]:
+        if materialized_override is not None:
+            curated = materialized_override
+        elif thin_task_main_binding and skill_id == "aota-task-main-control":
+            curated = thin_task_main_eager_guidance()
+        else:
+            curated = curated_eager_guidance(skill_id)
         if not curated or not curated.strip():
             raise RoleBootstrapError(f"curated eager guidance empty for {skill_id!r}", code="GOVERNED_OPERATION_FAILURE")
         curated_bytes = len(curated.encode("utf-8"))
@@ -528,9 +543,16 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     # only; other roles keep the existing compatible shape.
     if role_str == "task-main":
         try:
-            from aota_forge.work_plane.task_main_descriptors import build_task_main_operation_guidance
+            from aota_forge.work_plane.task_main_descriptors import (
+                build_task_main_operation_guidance,
+                build_thin_task_main_operation_guidance,
+            )
 
-            result["OPERATION_GUIDANCE"] = build_task_main_operation_guidance()
+            result["OPERATION_GUIDANCE"] = (
+                build_thin_task_main_operation_guidance()
+                if thin_task_main_binding
+                else build_task_main_operation_guidance()
+            )
         except Exception:
             pass
     # Attach degraded only if non-empty to keep bounded
