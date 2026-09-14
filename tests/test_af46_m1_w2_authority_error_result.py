@@ -341,6 +341,9 @@ class TestW2ArchitectureOwnership:
             "task_main.activate_milestone", "task_main.recover_coordinator",
             "task_main.advance_once", "task_main.submit_work_projection",
             "git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push",
+            # AF #54 M5/W2: the four Plan-bound GitHub governance operations.
+            "github.issue.read", "github.issue.comments.read",
+            "github.issue.update", "github.issue.comment.update",
             "handoff.write", "handoff.open", "task.start", "task.return",
         }
         import aota_forge.mcp_transport as mt

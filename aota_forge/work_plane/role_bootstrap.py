@@ -561,6 +561,12 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
         "SKILL_IS_AUTHORITY": False,
         "TOOL_VISIBILITY_IS_AUTHORITY": False,
     }
+    # AF #54 M5/W2: the trusted bound-Plan identity grounded at launch is a
+    # mechanical orientation fact (GitHub operations ground their target from
+    # the trusted binding itself, never from a model echo of it).
+    plan_binding = getattr(binding, "plan_binding", None)
+    if plan_binding is not None:
+        result["CURRENT_EXECUTION_CONTEXT"]["plan_ref"] = str(getattr(plan_binding, "plan_ref", "") or "")
     # M3/W1-R1 F1: eager model-visible writer contract, derived from the
     # single canonical descriptor authority (no second schema). Task-main
     # only; other roles keep the existing compatible shape.

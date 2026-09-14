@@ -304,8 +304,14 @@ INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
 GIT_READ_OPERATIONS: tuple[str, ...] = ("git.status", "git.diff")
 GIT_LIFECYCLE_OPERATIONS: tuple[str, ...] = ("git.checkpoint", "git.integrate", "git.push")
 GIT_OPERATIONS: tuple[str, ...] = GIT_READ_OPERATIONS + GIT_LIFECYCLE_OPERATIONS
+# AF #54 M5/W2: the four canonical Plan-bound GitHub governance operations
+# ride the same single-entry transport. Raw gh / generic github.api remain
+# unreachable to the model; authority is server-side evidence only.
+GITHUB_READ_OPERATIONS: tuple[str, ...] = ("github.issue.read", "github.issue.comments.read")
+GITHUB_MUTATION_OPERATIONS: tuple[str, ...] = ("github.issue.update", "github.issue.comment.update")
+GITHUB_OPERATIONS: tuple[str, ...] = GITHUB_READ_OPERATIONS + GITHUB_MUTATION_OPERATIONS
 LOGICAL_OPERATIONS: tuple[str, ...] = (
-    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS
+    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS
 )
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
@@ -827,6 +833,8 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         restricted_shell_authority=getattr(binding, "restricted_shell_authority", None),
         test_execution_authority=getattr(binding, "test_execution_authority", None),
         git_authorities=tuple(getattr(binding, "git_authorities", ()) or ()),
+        github_authorities=tuple(getattr(binding, "github_authorities", ()) or ()),
+        plan_binding=getattr(binding, "plan_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
         allowed_operations=allowed,
     )

@@ -166,6 +166,15 @@ class TrustedWorkerBinding:
     # already-authoritative runtime-minted evidence: it decides no policy and
     # is never minted from model input. Worker compositions mint none.
     git_authorities: tuple[Any, ...] = ()
+    # AF #54 M5/W2: bounded trusted GitHub governance operation authorities
+    # (Plan-bound reads + task-main mutations). Thin carriers of
+    # runtime-minted evidence, like git_authorities; workers mint none.
+    github_authorities: tuple[Any, ...] = ()
+    # AF #54 M5/W2: trusted bound-Plan GitHub identity grounded at launch by
+    # the operator/runtime (plan_ref "owner/repo#number"). Mechanical carrier
+    # only: it decides no policy; GitHub authorities minted from it are the
+    # authority. Workers keep None.
+    plan_binding: Any | None = None
     trusted_task_main_context: Any | None = None
     # AF #53 M3/W1 trusted classification of the task-main production
     # composition path this binding was minted for. Mechanical carrier
@@ -197,6 +206,17 @@ class TrustedWorkerBinding:
         except Exception:
             _GitEv = None  # type: ignore
             _GIT_OPS = ("git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push")  # type: ignore
+        try:
+            from aota_forge.work_plane.github_tools import GitHubOperationAuthorityEvidence as _GitHubEv  # type: ignore
+            from aota_forge.work_plane.github_tools import ALL_GITHUB_OPERATIONS as _GITHUB_OPS  # type: ignore
+        except Exception:
+            _GitHubEv = None  # type: ignore
+            _GITHUB_OPS = (
+                "github.issue.read",
+                "github.issue.comments.read",
+                "github.issue.update",
+                "github.issue.comment.update",
+            )  # type: ignore
 
         if not isinstance(self.canonical_task_id, str) or not _SAFE_ID.fullmatch(self.canonical_task_id):
             raise TrustedBindingError("canonical_task_id must be a bounded trusted identifier")
@@ -251,6 +271,10 @@ class TrustedWorkerBinding:
                 "git.checkpoint",
                 "git.integrate",
                 "git.push",
+                "github.issue.read",
+                "github.issue.comments.read",
+                "github.issue.update",
+                "github.issue.comment.update",
             }
         surface_names = set(self.tool_surface.all_capability_names())
         if not surface_names.issubset(allowed):
@@ -322,6 +346,39 @@ class TrustedWorkerBinding:
             if op_name in ("git.checkpoint", "git.integrate", "git.push"):
                 if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
                     raise TrustedBindingError(f"git lifecycle mutation authority {op_name!r} requires task-main role binding")
+        # AF #54 M5/W2: bounded GitHub governance authority validation
+        # (mechanical match; role/target gates live in the evidence itself).
+        if not isinstance(self.github_authorities, tuple):
+            raise TrustedBindingError("github_authorities must be tuple")
+        if len(self.github_authorities) > 4:
+            raise TrustedBindingError("github authorities at most 4")
+        github_names: set[str] = set()
+        for authority in self.github_authorities:
+            if _GitHubEv is not None and not isinstance(authority, _GitHubEv):
+                raise TrustedBindingError(f"github authority must be GitHubOperationAuthorityEvidence, got {type(authority).__name__}")
+            if authority.sandbox != self.sandbox or authority.handoff != self.handoff:
+                raise TrustedBindingError("github authority does not match trusted binding")
+            gh_name = authority.operation.name
+            if gh_name not in _GITHUB_OPS:
+                raise TrustedBindingError(f"github authority operation must be a canonical github operation, got {gh_name!r}")
+            if gh_name in github_names:
+                raise TrustedBindingError(f"duplicate github authority for {gh_name!r}")
+            github_names.add(gh_name)
+            if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
+                raise TrustedBindingError(f"github governance authority {gh_name!r} requires task-main role binding")
+        # AF #54 M5/W2: trusted bound-Plan GitHub identity (mechanical only).
+        if self.plan_binding is not None:
+            try:
+                from aota_forge.work_plane.github_tools import TrustedPlanGitHubBinding  # type: ignore
+            except Exception:
+                TrustedPlanGitHubBinding = None  # type: ignore
+            if TrustedPlanGitHubBinding is not None and not isinstance(self.plan_binding, TrustedPlanGitHubBinding):
+                raise TrustedBindingError(f"plan_binding must be TrustedPlanGitHubBinding, got {type(self.plan_binding).__name__}")
+            plan_ref = getattr(self.plan_binding, "plan_ref", None)
+            if not isinstance(plan_ref, str) or not plan_ref.strip():
+                raise TrustedBindingError("plan_binding carries no plan_ref")
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError("plan_binding may only be carried by a task-main binding")
         if self.trusted_task_main_context is not None:
             if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
                 raise TrustedBindingError(f"trusted_task_main_context must be TrustedTaskMainRuntimeContext, got {type(self.trusted_task_main_context).__name__}")

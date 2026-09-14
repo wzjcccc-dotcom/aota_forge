@@ -93,6 +93,10 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "git.checkpoint",
     "git.integrate",
     "git.push",
+    "github.issue.read",
+    "github.issue.comments.read",
+    "github.issue.update",
+    "github.issue.comment.update",
     "handoff.write",
     "handoff.open",
     "task.start",
@@ -196,6 +200,10 @@ class CanonicalDispatchBinding:
     restricted_shell_authority: Any | None = None
     test_execution_authority: Any | None = None
     git_authorities: tuple[Any, ...] = ()
+    # AF #54 M5/W2: bounded trusted GitHub governance authorities + the
+    # trusted bound-Plan identity carrier (mechanical, runtime-minted).
+    github_authorities: tuple[Any, ...] = ()
+    plan_binding: Any | None = None
     trusted_task_main_context: Any | None = None
     allowed_operations: frozenset[str] = frozenset()
 
@@ -1941,7 +1949,27 @@ def _dispatch_tool_operation_inner(
             from aota_forge.work_plane.git_tools import BoundedGitToolProvider
 
             provider = BoundedGitToolProvider(authority)
-            return provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+            response = provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+            # Large bounded reads/mutation results flow through the SAME
+            # governed durability seam as every other provider result.
+            _persist_governed_if_needed(binding, response, operation)
+            return response
+
+        if operation in ("github.issue.read", "github.issue.comments.read", "github.issue.update", "github.issue.comment.update"):
+            authority = _authority_for(binding.github_authorities, operation)
+            if authority is None:
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted github governance authority is absent"})
+            try:
+                if authority.operation.contract_hash() != descriptor.contract_hash():
+                    return ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from canonical descriptor"})
+            except Exception:
+                pass
+            from aota_forge.work_plane.github_tools import BoundedGitHubToolProvider
+
+            provider = BoundedGitHubToolProvider(authority)
+            response = provider.invoke(ToolRequest(operation=authority.operation, inputs=validated))
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
     except ForgeError as exc:
         return ToolResponse.failure({"code": exc.code, "message": exc.message})

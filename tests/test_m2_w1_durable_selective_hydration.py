@@ -814,6 +814,10 @@ class TestNoSecondAuthority:
             } <= set(_mt.SUPPORTED_OPERATIONS)
             assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
             assert _mt.GIT_OPERATIONS == ("git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push")
+            assert _mt.GITHUB_OPERATIONS == (
+                "github.issue.read", "github.issue.comments.read",
+                "github.issue.update", "github.issue.comment.update",
+            )
             return
         assert "aota_forge/mcp_transport.py" not in changed
 

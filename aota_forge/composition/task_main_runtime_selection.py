@@ -227,6 +227,7 @@ def materialize_thin_task_main_bootstrap(
     observation_run_ref: str | None = None,
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
+    plan_ref: str | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -303,6 +304,20 @@ def materialize_thin_task_main_bootstrap(
         if len(remote) > 64 or not _SAFE_ID.fullmatch(remote):
             raise TaskMainRuntimeSelectionError("thin bootstrap git remote invalid")
         payload["git_remote"] = remote
+    # AF #54 M5/W2: trusted bound-Plan reference ("owner/repo#number").
+    # Operator/runtime-supplied at launch; the model never re-states owner,
+    # repo or issue per call — GitHub operations mechanically ground from it.
+    if plan_ref is not None and str(plan_ref).strip():
+        candidate_plan = str(plan_ref).strip()
+        if len(candidate_plan) > 256:
+            raise TaskMainRuntimeSelectionError("thin bootstrap plan_ref invalid")
+        try:
+            from aota_forge.work_plane.github_tools import parse_plan_ref
+
+            parse_plan_ref(candidate_plan)
+        except Exception as exc:
+            raise TaskMainRuntimeSelectionError(f"thin bootstrap plan_ref invalid: {exc}") from exc
+        payload["plan_ref"] = candidate_plan
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:
@@ -412,6 +427,7 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         execution_store=execution_store,
         git_integration_branch=str(content.get("git_integration_branch") or "").strip() or None,
         git_remote=str(content.get("git_remote") or "").strip() or None,
+        plan_ref=str(content.get("plan_ref") or "").strip() or None,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

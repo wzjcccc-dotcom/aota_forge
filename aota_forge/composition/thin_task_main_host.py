@@ -86,6 +86,14 @@ from aota_forge.runtime.trusted_runtime_binding import (
     TrustedBindingError,
     TrustedWorkerBinding,
 )
+from aota_forge.work_plane.github_tools import (
+    GITHUB_ISSUE_COMMENT_UPDATE_DESCRIPTOR,
+    GITHUB_ISSUE_COMMENTS_READ_DESCRIPTOR,
+    GITHUB_ISSUE_READ_DESCRIPTOR,
+    GITHUB_ISSUE_UPDATE_DESCRIPTOR,
+    TrustedPlanGitHubBinding,
+    create_github_authority,
+)
 from aota_forge.work_plane.git_tools import (
     GIT_CHECKPOINT_DESCRIPTOR,
     GIT_DIFF_DESCRIPTOR,
@@ -151,10 +159,10 @@ TASK_MAIN_STARTUP_PRELOADS_PLAN = False
 TASK_MAIN_CONTEXT_READ_ON_DEMAND = True
 
 # Task-main visible surface: the generic common operations + ``task.start``
-# + the bounded Git reads (AF #54 M5/W1). No workflow-special tools are added
-# or exposed on the thin normal path. Exposure is visibility only; the
-# lifecycle mutation family below is granted only through trusted
-# GitOperationAuthorityEvidence minted at composition time.
+# + the bounded Git reads (AF #54 M5/W1) + the bound-Plan GitHub reads
+# (AF #54 M5/W2). No workflow-special tools are added or exposed on the thin
+# normal path. Exposure is visibility only; mutation/lifecycle operations are
+# granted only through trusted authority evidence minted at composition time.
 THIN_TASK_MAIN_EAGER_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
@@ -163,6 +171,8 @@ THIN_TASK_MAIN_EAGER_OPERATIONS: tuple[str, ...] = (
     "task.start",
     "git.status",
     "git.diff",
+    "github.issue.read",
+    "github.issue.comments.read",
 )
 THIN_TASK_MAIN_PROGRESSIVE_OPERATIONS: tuple[str, ...] = (
     "result.hydrate",
@@ -170,6 +180,8 @@ THIN_TASK_MAIN_PROGRESSIVE_OPERATIONS: tuple[str, ...] = (
     "git.checkpoint",
     "git.integrate",
     "git.push",
+    "github.issue.update",
+    "github.issue.comment.update",
 )
 WORKFLOW_SPECIAL_OPERATIONS: tuple[str, ...] = (
     "task.observe",
@@ -369,6 +381,10 @@ class ThinTaskMainHost:
     completion_coordinator: DurableCompletionCoordinator
     completion_transport: Any
     aota_invoke: Callable[..., Any]
+    # AF #54 M5/W2: the trusted bound-Plan reference this host was launched
+    # with ("" when no Plan was bound at launch). Mechanical identity fact
+    # for guidance/observation; never authority by itself.
+    plan_ref: str = ""
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -420,6 +436,7 @@ def compose_thin_task_main_host(
     completion_transport: Any | None = None,
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
+    plan_ref: str | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -501,6 +518,19 @@ def compose_thin_task_main_host(
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
     )
+    # AF #54 M5/W2: mechanically ground the trusted bound-Plan GitHub
+    # identity once at launch; GitHub authorities derive only from it. An
+    # unbound launch carries no GitHub authority (fail closed at dispatch).
+    plan_binding: TrustedPlanGitHubBinding | None = None
+    github_authorities: tuple[Any, ...] = ()
+    if plan_ref is not None and str(plan_ref).strip():
+        plan_binding = TrustedPlanGitHubBinding.from_plan_ref(str(plan_ref).strip())
+        github_authorities = (
+            create_github_authority(sandbox, handoff, GITHUB_ISSUE_READ_DESCRIPTOR, plan_binding),
+            create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENTS_READ_DESCRIPTOR, plan_binding),
+            create_github_authority(sandbox, handoff, GITHUB_ISSUE_UPDATE_DESCRIPTOR, plan_binding),
+            create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENT_UPDATE_DESCRIPTOR, plan_binding),
+        )
 
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
@@ -520,6 +550,10 @@ def compose_thin_task_main_host(
         # AF #54 M5/W1: bounded trusted Git authorities (reads always;
         # lifecycle mutation family only when the operator configured it).
         git_authorities=git_authorities,
+        # AF #54 M5/W2: trusted bound-Plan GitHub identity + the four
+        # Plan-bound governance authorities (task-main composition only).
+        github_authorities=github_authorities,
+        plan_binding=plan_binding,
         # The thin seam: no TrustedTaskMainRuntimeContext => M2/W1 generic thin
         # task lifecycle; no legacy workflow object is required or passed.
         trusted_task_main_context=None,
@@ -550,6 +584,7 @@ def compose_thin_task_main_host(
         completion_coordinator=completion_coordinator,
         completion_transport=transport,
         aota_invoke=aota_invoke,
+        plan_ref=plan_binding.plan_ref if plan_binding is not None else "",
     )
 
 

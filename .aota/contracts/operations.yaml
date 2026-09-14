@@ -1013,3 +1013,118 @@ contracts:
   - GIT_NON_FAST_FORWARD
   - GIT_ERROR
   protocol_version: '1.0'
+- name: github.issue.read
+  description: Bounded read of the trusted bound-Plan GitHub Issue (card-first projection; no arbitrary repository target, no generic API)
+  inputs:
+  - name: view
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - GITHUB_PLAN_UNBOUND
+  - GITHUB_READ_FAILED
+  protocol_version: '1.0'
+- name: github.issue.comments.read
+  description: Bounded read of comments on the trusted bound-Plan GitHub Issue (comment_id/author/updated_at/bounded body; semantic naming belongs to task-main, not the Control Plane)
+  inputs:
+  - name: max_comments
+    type: int?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - AUTHORITY_DENIED
+  - GITHUB_PLAN_UNBOUND
+  - GITHUB_READ_FAILED
+  protocol_version: '1.0'
+- name: github.issue.update
+  description: Governed update of the trusted bound-Plan GitHub Issue body/state with observed-revision CAS; supports a full bounded body, a mechanical marker-delimited section upsert (reuses the existing proof-subsection helper so large Plan bodies never need full resubmission), or open/closed state for Plan closure; no arbitrary repository issue editing, no other fields
+  inputs:
+  - name: body
+    type: str?
+  - name: section_marker
+    type: str?
+  - name: section_content
+    type: str?
+  - name: state
+    type: str?
+  - name: expected_updated_at
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: github_governance
+  required_authority: trusted_github_governance
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: true
+  external_authority_precondition: false
+  idempotency: CAS-guarded (STALE refusal on observed-revision mismatch; identical body is a no-op)
+  result_contract: result.github.issue.update.v1
+  errors:
+  - AUTHORITY_DENIED
+  - GITHUB_PLAN_UNBOUND
+  - GITHUB_CAS_CONFLICT
+  - GITHUB_MUTATION_FAILED
+  protocol_version: '1.0'
+- name: github.issue.comment.update
+  description: Governed update of one comment body on the trusted bound-Plan GitHub Issue (membership-verified comment_id, expected-digest/updated_at CAS; semantic comment naming and merge policy belong to task-main)
+  inputs:
+  - name: comment_id
+    type: str
+  - name: body
+    type: str
+  - name: expected_digest
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: github_governance
+  required_authority: trusted_github_governance
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: true
+  external_authority_precondition: false
+  idempotency: CAS-guarded (STALE refusal on digest mismatch; identical body is a no-op)
+  result_contract: result.github.issue.comment.update.v1
+  errors:
+  - AUTHORITY_DENIED
+  - GITHUB_PLAN_UNBOUND
+  - FOREIGN_COMMENT_DENIED
+  - GITHUB_CAS_CONFLICT
+  - GITHUB_MUTATION_FAILED
+  protocol_version: '1.0'

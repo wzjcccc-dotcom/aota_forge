@@ -828,6 +828,7 @@ class DailyTaskMainLauncher:
         work_semantics: Mapping[str, Any] | None = None,
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
+        plan_ref: str | None = None,
     ) -> DailyLaunchContext:
         """Trusted bootstrap materialization (create or refresh).
 
@@ -911,6 +912,7 @@ class DailyTaskMainLauncher:
                 observation_run_ref=os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip() or None,
                 git_integration_branch=git_integration_branch,
                 git_remote=git_remote,
+                plan_ref=plan_ref,
             )
             try:
                 mode = bootstrap_path.stat().st_mode
@@ -1122,6 +1124,7 @@ class DailyTaskMainLauncher:
         max_productive_continuations: int = DEFAULT_MAX_PRODUCTIVE_CONTINUATIONS,
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
+        plan_ref: str | None = None,
     ) -> tuple[DailyLaunchContext, str]:
         """Two-phase production task-main launch (AF #49 M1/W6).
 
@@ -1166,6 +1169,7 @@ class DailyTaskMainLauncher:
             origin_task_main_session_ref=_new_unbound_origin_session_ref(),
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
+            plan_ref=plan_ref,
         )
         env = self.build_env(ctx_pending, trace_path=trace_path)
         hermes_env = {**os.environ, **env}
@@ -1217,6 +1221,7 @@ class DailyTaskMainLauncher:
             coordinator_id=coordinator_id,
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
+            plan_ref=plan_ref,
         )
         continuation = self._continue_exact_session(
             ctx=ctx,
@@ -1559,6 +1564,9 @@ def launch_daily_task_main(
     plan_adapter: PlanAuthorityReadAdapter | None = None,
     hermes_bin: str | None = None,
     initial_prompt: str | None = None,
+    git_integration_branch: str | None = None,
+    git_remote: str | None = None,
+    plan_ref: str | None = None,
 ) -> tuple[DailyLaunchContext, str]:
     """Operator-simple daily launcher entrypoint.
 
@@ -1579,6 +1587,9 @@ def launch_daily_task_main(
         runtime_config_path=Path(runtime_config_path) if runtime_config_path else None,
         plan_adapter=plan_adapter,
         initial_prompt=initial_prompt,
+        git_integration_branch=git_integration_branch,
+        git_remote=git_remote,
+        plan_ref=plan_ref,
     )
 
 
