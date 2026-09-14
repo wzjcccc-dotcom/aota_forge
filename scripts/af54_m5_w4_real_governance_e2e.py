@@ -249,7 +249,9 @@ def main() -> int:
     result["WORKSPACE_SEARCH_INVOKED"] = "yes" if "workspace.search" in ok_ops else "no"
     result["ROLE_BOOTSTRAP_INVOKED"] = "yes" if "role.bootstrap" in ok_ops else "no"
     result["GOVERNANCE_SKILL_OPENED"] = "yes" if any(
-        "governance" in str(getattr(s, "skill_id", "") or "") for s in skill_obs
+        "governance" in str(getattr(getattr(s, "observation", None), "skill_id", "") or "")
+        and str(getattr(getattr(s, "observation", None), "event_type", "") or "") == "execution_materialized"
+        for s in skill_obs
     ) else "no"
     result["SKILL_OPEN_COUNT"] = str(ops.count("skill.open"))
     result["AUTHORITY_DENIED_COUNT"] = str(sum(1 for o in tool_obs if not o.is_success and "AUTHORITY" in str(getattr(o, "error_code", "") or "")))
