@@ -167,6 +167,13 @@ class TrustedWorkerBinding:
     # explicitly thin trusted task-main binding (no legacy context required)
     # without guessing. Worker bindings keep the legacy default.
     task_main_runtime_path: str = TASK_MAIN_RUNTIME_PATH_LEGACY
+    # AF #54 M3/W1 optional bounded observation correlation carriers. They are
+    # mechanical runtime identity facts for passive effectiveness observation
+    # only: never authority, never execution input, never policy. Empty means
+    # unavailable (never invented).
+    session_ref: str = ""
+    parent_session_ref: str = ""
+    run_ref: str = ""
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -306,6 +313,17 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError(
                     "thin task-main runtime path requires tool_surface work_role task-main"
                 )
+        # AF #54 M3/W1 optional observation correlation carriers: bounded,
+        # mechanical, non-authoritative. Empty is the unavailable default.
+        for _label, _value in (
+            ("session_ref", self.session_ref),
+            ("parent_session_ref", self.parent_session_ref),
+            ("run_ref", self.run_ref),
+        ):
+            if not isinstance(_value, str):
+                raise TrustedBindingError(f"{_label} must be a string")
+            if _value and (len(_value) > 512 or "\x00" in _value or not _SAFE_ID.fullmatch(_value)):
+                raise TrustedBindingError(f"{_label} must be a bounded trusted identifier")
 
 
 # ---------------------------------------------------------------------------

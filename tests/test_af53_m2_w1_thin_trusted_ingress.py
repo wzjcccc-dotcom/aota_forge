@@ -1111,22 +1111,31 @@ class TestT9ReviewerNotSpecial:
 
     def test_no_reviewer_specific_branch_in_canonical_thin_dispatch(self) -> None:
         tree = _module_ast(AF_ROOT / "core_ingress" / "__init__.py")
-        dispatch = _function_def(tree, "dispatch_tool_operation")
-        for node in ast.walk(dispatch):
-            if not isinstance(node, ast.Compare):
-                continue
-            operands = [node.left, *node.comparators]
-            for operand in operands:
-                if isinstance(operand, ast.Constant) and operand.value == "reviewer":
-                    raise AssertionError("reviewer-specific branch in canonical thin dispatch")
+        # AF #54 M3/W2: the public dispatch_tool_operation is a passive
+        # observation wrapper; the canonical dispatch body lives in
+        # _dispatch_tool_operation_inner. Walk BOTH so the guard still covers
+        # the real dispatch body (strengthened, not weakened).
+        dispatch_functions = [
+            _function_def(tree, "dispatch_tool_operation"),
+            _function_def(tree, "_dispatch_tool_operation_inner"),
+        ]
+        for dispatch in dispatch_functions:
+            for node in ast.walk(dispatch):
+                if not isinstance(node, ast.Compare):
+                    continue
+                operands = [node.left, *node.comparators]
+                for operand in operands:
+                    if isinstance(operand, ast.Constant) and operand.value == "reviewer":
+                        raise AssertionError("reviewer-specific branch in canonical thin dispatch")
         names: set[str] = set()
-        for node in ast.walk(dispatch):
-            if isinstance(node, ast.Name):
-                names.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                names.add(node.attr)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                names.add(node.name)
+        for dispatch in dispatch_functions:
+            for node in ast.walk(dispatch):
+                if isinstance(node, ast.Name):
+                    names.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    names.add(node.attr)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    names.add(node.name)
         offenders = sorted(name for name in names if REVIEWER_SPECIAL_MACHINERY_RE.search(name))
         assert offenders == [], f"reviewer-special dispatch machinery: {offenders}"
 

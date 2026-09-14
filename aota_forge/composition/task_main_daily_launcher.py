@@ -1075,6 +1075,30 @@ class DailyTaskMainLauncher:
             "AOTA_TASK_MAIN_TRACE": trace_str,
             PRE_RESOLVED_BINDING_ENV: envelope_locator,
         }
+        # AF #54 M3/W2: operator-opt-in passive observation evidence sink.
+        # Mechanically forwarded only when the operator configured a sink;
+        # the bound exact origin session (where available) is exported as a
+        # correlation fact, never as authority or execution input.
+        observation_sink = os.environ.get("AOTA_RUNTIME_OBSERVATION_SINK", "").strip()
+        if observation_sink:
+            env["AOTA_RUNTIME_OBSERVATION_SINK"] = observation_sink
+            run_ref = os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip()
+            if run_ref:
+                env["AOTA_RUNTIME_OBSERVATION_RUN_REF"] = run_ref
+            origin_ref = ""
+            try:
+                if ctx.runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
+                    origin_ref = read_existing_thin_origin_session_ref(bootstrap_path) or ""
+                elif bootstrap_path.is_file():
+                    origin_ref = str(
+                        json.loads(bootstrap_path.read_text(encoding="utf-8")).get(
+                            "origin_task_main_session_ref", ""
+                        )
+                    ).strip()
+            except Exception:
+                origin_ref = ""
+            if origin_ref:
+                env["AOTA_RUNTIME_OBSERVATION_SESSION_REF"] = origin_ref
         return env
 
     def launch(

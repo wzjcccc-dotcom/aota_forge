@@ -452,6 +452,11 @@ def compose_thin_task_main_host(
         trusted_task_main_context=None,
         # AF #53 M3/W1 explicit trusted classification (mechanical marker).
         task_main_runtime_path=TASK_MAIN_RUNTIME_PATH_THIN,
+        # AF #54 M3/W1 passive observation session correlation: the exact
+        # trusted origin session of this thin host. Mechanical carrier for
+        # effectiveness evidence only; it decides no policy and grants no
+        # authority.
+        session_ref=origin,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 

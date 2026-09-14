@@ -723,9 +723,17 @@ class TestLeafReuseAndBoundaries:
         import aota_forge.core_ingress as ci
         import inspect
 
+        # AF #54 M3/W2: dispatch_tool_operation is a passive observation
+        # wrapper; the canonical dispatch body (and its leaf provider reuse)
+        # lives in _dispatch_tool_operation_inner. The guard now inspects both
+        # so the architectural proof still covers the real dispatch body.
         src = inspect.getsource(ci.dispatch_tool_operation)
-        assert "BoundedWorkspaceToolProvider" in src
-        assert "BoundedWorkspaceMutationProvider" in src
+        inner_src = inspect.getsource(ci._dispatch_tool_operation_inner)
+        combined = src + "\n" + inner_src
+        assert "BoundedWorkspaceToolProvider" in combined
+        assert "BoundedWorkspaceMutationProvider" in combined
+        assert "BoundedWorkspaceToolProvider" in inner_src
+        assert "BoundedWorkspaceMutationProvider" in inner_src
 
     def test_result_boundaries_preserved(self, tmp_path: Path):
         # Transport still bounded, explicit outcome/completeness, no raw unbounded.

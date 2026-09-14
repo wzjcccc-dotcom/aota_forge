@@ -30,6 +30,15 @@ Invariants
 * NEW_EXECUTION_EVENT_TYPE_CREATED=no
 * S6_OWNERSHIP_PRESERVED=yes
 
+AF #54 M3/W1 schema evolution (explicit, versioned):
+* TOOL_USAGE_OBSERVATION_CONTRACT_VERSION=s6-af54-m3-v1
+* LEGACY_OBSERVATION_SCHEMA_STILL_VALID=yes — observations without the
+  correlation/timing fields keep their exact legacy canonical identity;
+  enriched fields participate in canonical identity only when present
+* OBSERVATION_CORRELATION_IS_AUTHORITY=no
+* WALL_CLOCK_IS_IDENTITY_SOURCE=no
+* MONOTONIC_DURATION_PREFERRED=yes
+
 S2-local value object — NOT a new ExecutionEventType.
 Reuses S1 ExecutionEvent contract patterns (bounded immutable, deterministic) but does
 not extend ExecutionEventType enum.
@@ -45,7 +54,21 @@ from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
 from aota_forge.core.providers.tool import ToolProvider, ToolRequest, ToolResponse
+from aota_forge.work_plane.observation_correlation import (
+    OBSERVATION_CORRELATION_CONTRACT_VERSION,
+    ToolObservationContext,
+    ToolObservationTiming,
+)
 from aota_forge.work_plane.roles import AgentWorkRole, parse_agent_work_role
+
+# ---------------------------------------------------------------------------
+# Contract version — explicit S6 schema evolution (AF #54 M3/W1)
+# ---------------------------------------------------------------------------
+
+TOOL_USAGE_OBSERVATION_CONTRACT_VERSION: str = OBSERVATION_CORRELATION_CONTRACT_VERSION
+SUPPORTED_TOOL_USAGE_OBSERVATION_CONTRACT_VERSIONS: frozenset[str] = frozenset(
+    {TOOL_USAGE_OBSERVATION_CONTRACT_VERSION}
+)
 
 # ---------------------------------------------------------------------------
 # Public invariant flags
@@ -76,6 +99,12 @@ TOOL_PROVIDER_CONTRACT_CHANGED: bool = False
 TOOL_RESPONSE_CONTRACT_CHANGED: bool = False
 OPERATION_DESCRIPTOR_CONTRACT_CHANGED: bool = False
 
+# AF #54 M3/W1 correlation/timing evolution invariants
+OBSERVATION_CORRELATION_IS_AUTHORITY: bool = False
+WALL_CLOCK_IS_IDENTITY_SOURCE: bool = False
+MONOTONIC_DURATION_PREFERRED: bool = True
+RAW_PROMPT_CAPTURED: bool = False
+
 # ---------------------------------------------------------------------------
 # Bounds
 # ---------------------------------------------------------------------------
@@ -91,6 +120,13 @@ MAX_WORKTREE_ID_LENGTH: int = 128
 MAX_ERROR_CODE_LENGTH: int = 128
 MAX_OUTCOME_CLASS_LENGTH: int = 64
 MAX_SIDE_EFFECT_LENGTH: int = 64
+MAX_SESSION_REF_LENGTH: int = 512
+MAX_PARENT_SESSION_REF_LENGTH: int = 512
+MAX_CANONICAL_TASK_ID_LENGTH: int = 512
+MAX_MILESTONE_REF_LENGTH: int = 256
+MAX_WORK_ITEM_REF_LENGTH: int = 256
+MAX_TIMING_BASIS_LENGTH: int = 32
+MAX_DURATION_NS: int = 7 * 24 * 60 * 60 * 1_000_000_000
 
 _DIGEST_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _OPERATION_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -218,7 +254,54 @@ _ALLOWED_OBSERVATION_FIELDS: frozenset[str] = frozenset({
     "side_effect",
     "project_id",
     "worktree_id",
+    # AF #54 M3/W1 bounded correlation / timing / request identity
+    "session_ref",
+    "parent_session_ref",
+    "canonical_task_id",
+    "milestone_ref",
+    "work_item_ref",
+    "normalized_request_digest",
+    "started_at_utc",
+    "ended_at_utc",
+    "duration_ns",
+    "timing_basis",
+    "observation_contract_version",
 })
+
+# Fields that participate in canonical identity/digest only when present.
+# Adding these as optional preserves legacy observation canonical identity.
+_ENRICHED_OBSERVATION_FIELDS: tuple[str, ...] = (
+    "session_ref",
+    "parent_session_ref",
+    "canonical_task_id",
+    "milestone_ref",
+    "work_item_ref",
+    "normalized_request_digest",
+    "started_at_utc",
+    "ended_at_utc",
+    "duration_ns",
+    "timing_basis",
+)
+
+
+def _validate_optional_utc_iso(value: object, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or type(value) is not str:
+        raise TypeError(f"{label} must be an ISO UTC string or None, got {type(value).__name__}")
+    v = value.strip()
+    if not v:
+        raise ValueError(f"{label} when provided must be non-empty")
+    from datetime import datetime
+
+    candidate = v[:-1] + "+00:00" if v.endswith("Z") else v
+    try:
+        dt = datetime.fromisoformat(candidate)
+    except Exception as exc:
+        raise ValueError(f"{label} invalid ISO datetime: {exc}") from exc
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        raise ValueError(f"{label} must be timezone-aware")
+    return v
 
 # ---------------------------------------------------------------------------
 # ToolUsageObservation — bounded immutable non-authoritative projection
@@ -250,6 +333,19 @@ class ToolUsageObservation:
     result_ref: str | None = None
     project_id: str | None = None
     worktree_id: str | None = None
+    # AF #54 M3/W1 optional bounded production correlation / timing /
+    # request identity. Absent fields keep legacy canonical identity.
+    session_ref: str | None = None
+    parent_session_ref: str | None = None
+    canonical_task_id: str | None = None
+    milestone_ref: str | None = None
+    work_item_ref: str | None = None
+    normalized_request_digest: str | None = None
+    started_at_utc: str | None = None
+    ended_at_utc: str | None = None
+    duration_ns: int | None = None
+    timing_basis: str | None = None
+    observation_contract_version: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "observation_id", _validate_bounded_str(self.observation_id, "observation_id", MAX_OBSERVATION_ID_LENGTH))
@@ -322,6 +418,68 @@ class ToolUsageObservation:
         if self.worktree_id is not None:
             object.__setattr__(self, "worktree_id", _validate_bounded_str(self.worktree_id, "worktree_id", MAX_WORKTREE_ID_LENGTH))
 
+        # AF #54 M3/W1 enriched correlation/timing/request identity (optional)
+        if self.session_ref is not None:
+            object.__setattr__(
+                self, "session_ref", _validate_bounded_str(self.session_ref, "session_ref", MAX_SESSION_REF_LENGTH)
+            )
+        if self.parent_session_ref is not None:
+            object.__setattr__(
+                self,
+                "parent_session_ref",
+                _validate_bounded_str(self.parent_session_ref, "parent_session_ref", MAX_PARENT_SESSION_REF_LENGTH),
+            )
+        if self.canonical_task_id is not None:
+            object.__setattr__(
+                self,
+                "canonical_task_id",
+                _validate_bounded_str(self.canonical_task_id, "canonical_task_id", MAX_CANONICAL_TASK_ID_LENGTH),
+            )
+        if self.milestone_ref is not None:
+            object.__setattr__(
+                self, "milestone_ref", _validate_bounded_str(self.milestone_ref, "milestone_ref", MAX_MILESTONE_REF_LENGTH)
+            )
+        if self.work_item_ref is not None:
+            object.__setattr__(
+                self, "work_item_ref", _validate_bounded_str(self.work_item_ref, "work_item_ref", MAX_WORK_ITEM_REF_LENGTH)
+            )
+        if self.normalized_request_digest is not None:
+            object.__setattr__(
+                self, "normalized_request_digest", _validate_digest(self.normalized_request_digest)
+            )
+        if self.started_at_utc is not None:
+            object.__setattr__(self, "started_at_utc", _validate_optional_utc_iso(self.started_at_utc, "started_at_utc"))
+        if self.ended_at_utc is not None:
+            object.__setattr__(self, "ended_at_utc", _validate_optional_utc_iso(self.ended_at_utc, "ended_at_utc"))
+        if self.duration_ns is not None:
+            if type(self.duration_ns) is not int:
+                raise TypeError(f"duration_ns must be int, got {type(self.duration_ns).__name__}")
+            if self.duration_ns < 0:
+                raise ValueError("duration_ns must be >= 0")
+            if self.duration_ns > MAX_DURATION_NS:
+                raise ValueError("duration_ns exceeds bound")
+        if self.timing_basis is not None:
+            tb = _validate_bounded_str(self.timing_basis, "timing_basis", MAX_TIMING_BASIS_LENGTH)
+            if tb not in ("monotonic", "wall"):
+                raise ValueError("timing_basis must be monotonic|wall")
+            if tb == "monotonic" and self.duration_ns is None:
+                raise ValueError("monotonic timing_basis requires duration_ns")
+            object.__setattr__(self, "timing_basis", tb)
+        if self.observation_contract_version is not None:
+            cv = _validate_bounded_str(self.observation_contract_version, "observation_contract_version", 64)
+            if cv not in SUPPORTED_TOOL_USAGE_OBSERVATION_CONTRACT_VERSIONS:
+                raise ValueError(f"Unsupported observation contract version: {cv!r}")
+            object.__setattr__(self, "observation_contract_version", cv)
+        # Enriched facts carry explicit version semantics: when any enriched
+        # field is present the observation declares the contract version.
+        if self.observation_contract_version is None:
+            for _field in _ENRICHED_OBSERVATION_FIELDS:
+                if getattr(self, _field) is not None:
+                    object.__setattr__(
+                        self, "observation_contract_version", TOOL_USAGE_OBSERVATION_CONTRACT_VERSION
+                    )
+                    break
+
         # Additional invariants: digest vs byte_length coherence not strictly enforced but if one present without other, allow
 
     @property
@@ -353,6 +511,29 @@ class ToolUsageObservation:
             d["project_id"] = self.project_id
         if self.worktree_id is not None:
             d["worktree_id"] = self.worktree_id
+        # AF #54 M3/W1 enriched fields (present-only → legacy identity stable)
+        if self.session_ref is not None:
+            d["session_ref"] = self.session_ref
+        if self.parent_session_ref is not None:
+            d["parent_session_ref"] = self.parent_session_ref
+        if self.canonical_task_id is not None:
+            d["canonical_task_id"] = self.canonical_task_id
+        if self.milestone_ref is not None:
+            d["milestone_ref"] = self.milestone_ref
+        if self.work_item_ref is not None:
+            d["work_item_ref"] = self.work_item_ref
+        if self.normalized_request_digest is not None:
+            d["normalized_request_digest"] = self.normalized_request_digest
+        if self.started_at_utc is not None:
+            d["started_at_utc"] = self.started_at_utc
+        if self.ended_at_utc is not None:
+            d["ended_at_utc"] = self.ended_at_utc
+        if self.duration_ns is not None:
+            d["duration_ns"] = self.duration_ns
+        if self.timing_basis is not None:
+            d["timing_basis"] = self.timing_basis
+        if self.observation_contract_version is not None:
+            d["observation_contract_version"] = self.observation_contract_version
         return canonicalize(d, path="ToolUsageObservation")  # type: ignore[return-value]
 
     def canonical_json(self) -> str:
@@ -390,6 +571,28 @@ class ToolUsageObservation:
             d["project_id"] = self.project_id
         if self.worktree_id is not None:
             d["worktree_id"] = self.worktree_id
+        if self.session_ref is not None:
+            d["session_ref"] = self.session_ref
+        if self.parent_session_ref is not None:
+            d["parent_session_ref"] = self.parent_session_ref
+        if self.canonical_task_id is not None:
+            d["canonical_task_id"] = self.canonical_task_id
+        if self.milestone_ref is not None:
+            d["milestone_ref"] = self.milestone_ref
+        if self.work_item_ref is not None:
+            d["work_item_ref"] = self.work_item_ref
+        if self.normalized_request_digest is not None:
+            d["normalized_request_digest"] = self.normalized_request_digest
+        if self.started_at_utc is not None:
+            d["started_at_utc"] = self.started_at_utc
+        if self.ended_at_utc is not None:
+            d["ended_at_utc"] = self.ended_at_utc
+        if self.duration_ns is not None:
+            d["duration_ns"] = self.duration_ns
+        if self.timing_basis is not None:
+            d["timing_basis"] = self.timing_basis
+        if self.observation_contract_version is not None:
+            d["observation_contract_version"] = self.observation_contract_version
         return d
 
     @classmethod
@@ -420,6 +623,17 @@ class ToolUsageObservation:
             result_ref=data.get("result_ref"),
             project_id=data.get("project_id"),
             worktree_id=data.get("worktree_id"),
+            session_ref=data.get("session_ref"),
+            parent_session_ref=data.get("parent_session_ref"),
+            canonical_task_id=data.get("canonical_task_id"),
+            milestone_ref=data.get("milestone_ref"),
+            work_item_ref=data.get("work_item_ref"),
+            normalized_request_digest=data.get("normalized_request_digest"),
+            started_at_utc=data.get("started_at_utc"),
+            ended_at_utc=data.get("ended_at_utc"),
+            duration_ns=data.get("duration_ns"),
+            timing_basis=data.get("timing_basis"),
+            observation_contract_version=data.get("observation_contract_version"),
         )
 
     def authorize(self, *args: Any, **kwargs: Any) -> None:
@@ -483,6 +697,9 @@ def project_tool_usage_observation(
     work_role: AgentWorkRole | str | None = None,
     project_id: str | None = None,
     worktree_id: str | None = None,
+    correlation: ToolObservationContext | None = None,
+    timing: ToolObservationTiming | None = None,
+    normalized_request_digest: str | None = None,
 ) -> ToolUsageObservation:
     """Project bounded non-authoritative observation after Tool result known.
 
@@ -490,20 +707,79 @@ def project_tool_usage_observation(
     MUST be called only after Tool invocation completes (SUCCESS_OBSERVATION_ONLY_AFTER_RESULT_KNOWN).
 
     Does NOT capture raw inputs/outputs; uses digests/refs/counts.
+
+    AF #54 M3/W1: optional bounded correlation/timing/request identity may be
+    supplied; when absent the legacy canonical observation identity is
+    preserved exactly.
     """
     if not isinstance(request, ToolRequest):
         raise TypeError(f"request must be ToolRequest, got {type(request).__name__}")
     if not isinstance(response, ToolResponse):
         raise TypeError(f"response must be ToolResponse, got {type(response).__name__}")
+    if correlation is not None and not isinstance(correlation, ToolObservationContext):
+        raise TypeError(
+            f"correlation must be ToolObservationContext or None, got {type(correlation).__name__}"
+        )
+    if timing is not None and not isinstance(timing, ToolObservationTiming):
+        raise TypeError(f"timing must be ToolObservationTiming or None, got {type(timing).__name__}")
 
-    operation_name = request.operation.name
-    contract_hash = request.operation.contract_hash()
-    correlation_id = request.correlation_id
+    return project_tool_usage_observation_from_invocation(
+        operation_name=request.operation.name,
+        contract_hash=request.operation.contract_hash(),
+        inputs=dict(request.inputs),
+        response=response,
+        correlation_id=request.correlation_id,
+        observation_id=observation_id,
+        work_role=work_role,
+        project_id=project_id,
+        worktree_id=worktree_id,
+        correlation=correlation,
+        timing=timing,
+        normalized_request_digest=normalized_request_digest,
+    )
+
+
+def project_tool_usage_observation_from_invocation(
+    *,
+    operation_name: str,
+    contract_hash: str,
+    inputs: Mapping[str, Any] | None,
+    response: ToolResponse,
+    correlation_id: str | None = None,
+    observation_id: str | None = None,
+    work_role: AgentWorkRole | str | None = None,
+    project_id: str | None = None,
+    worktree_id: str | None = None,
+    correlation: ToolObservationContext | None = None,
+    timing: ToolObservationTiming | None = None,
+    normalized_request_digest: str | None = None,
+) -> ToolUsageObservation:
+    """Project a bounded observation from an already-dispatched invocation.
+
+    Production seam support: the canonical dispatch wrapper has the operation
+    identity, validated inputs and the real ToolResponse, but no ToolRequest
+    object. Shared projection semantics with the ToolRequest-based projector;
+    raw inputs are never captured (only the caller-supplied bounded digest).
+
+    MUST be called only after the real result/failure is known.
+    """
+    if not isinstance(response, ToolResponse):
+        raise TypeError(f"response must be ToolResponse, got {type(response).__name__}")
+    if not isinstance(operation_name, str) or type(operation_name) is not str:
+        raise TypeError(f"operation_name must be string, got {type(operation_name).__name__}")
+    if not isinstance(contract_hash, str) or type(contract_hash) is not str:
+        raise TypeError(f"contract_hash must be string, got {type(contract_hash).__name__}")
     # bounded correlation already validated via ToolRequest, but re-validate length
     if correlation_id is not None and len(correlation_id) > MAX_CORRELATION_LENGTH:
         raise ValueError("correlation_id exceeds bound")
+    if correlation is not None and not isinstance(correlation, ToolObservationContext):
+        raise TypeError(
+            f"correlation must be ToolObservationContext or None, got {type(correlation).__name__}"
+        )
+    if timing is not None and not isinstance(timing, ToolObservationTiming):
+        raise TypeError(f"timing must be ToolObservationTiming or None, got {type(timing).__name__}")
 
-    # work_role optional parse
+    # work_role optional parse (explicit argument wins over correlation fact)
     wr: AgentWorkRole | None = None
     if work_role is not None:
         if isinstance(work_role, AgentWorkRole):
@@ -512,10 +788,30 @@ def project_tool_usage_observation(
             wr = parse_agent_work_role(work_role)
         else:
             raise TypeError(f"work_role must be AgentWorkRole or string, got {type(work_role).__name__}")
+    if wr is None and correlation is not None and correlation.work_role is not None:
+        wr = correlation.work_role
 
-    # Optional project/worktree bounded if supplied
+    # Optional bounded correlation → observation fields
     pid = _validate_optional_bounded_str(project_id, "project_id", MAX_PROJECT_ID_LENGTH) if project_id is not None else None
     wid = _validate_optional_bounded_str(worktree_id, "worktree_id", MAX_WORKTREE_ID_LENGTH) if worktree_id is not None else None
+    session_ref = parent_session_ref = canonical_task_id = None
+    milestone_ref = work_item_ref = None
+    if correlation is not None:
+        if pid is None:
+            pid = correlation.project_id
+        if wid is None:
+            wid = correlation.worktree_id
+        session_ref = correlation.session_ref
+        parent_session_ref = correlation.parent_session_ref
+        canonical_task_id = correlation.canonical_task_id
+        milestone_ref = correlation.milestone_ref
+        work_item_ref = correlation.work_item_ref
+    if project_id is not None:
+        pid = _validate_optional_bounded_str(project_id, "project_id", MAX_PROJECT_ID_LENGTH)
+    if worktree_id is not None:
+        wid = _validate_optional_bounded_str(worktree_id, "worktree_id", MAX_WORKTREE_ID_LENGTH)
+    if normalized_request_digest is not None:
+        normalized_request_digest = _validate_digest(normalized_request_digest)
 
     is_success = response.ok
     side_effect = _resolve_side_effect(operation_name)
@@ -559,9 +855,13 @@ def project_tool_usage_observation(
         digest = hashlib.sha256(err_bytes).hexdigest()
         result_ref = f"tool_obs:{operation_name}:{digest[:16]}"
 
-    # observation_id deterministic if not supplied
+    # observation_id deterministic if not supplied. The enriched production
+    # path includes the invocation wall start so repeated identical calls are
+    # individually addressable; the legacy path keeps its exact seed.
     if observation_id is None:
         seed = f"{operation_name}:{contract_hash}:{correlation_id or ''}:{digest}:{is_success}"
+        if timing is not None and timing.started_at_utc is not None:
+            seed = seed + f":{timing.started_at_utc}"
         observation_id = "tuo-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     else:
         observation_id = _validate_bounded_str(observation_id, "observation_id", MAX_OBSERVATION_ID_LENGTH)
@@ -581,6 +881,16 @@ def project_tool_usage_observation(
         side_effect=side_effect,
         project_id=pid,
         worktree_id=wid,
+        session_ref=session_ref,
+        parent_session_ref=parent_session_ref,
+        canonical_task_id=canonical_task_id,
+        milestone_ref=milestone_ref,
+        work_item_ref=work_item_ref,
+        normalized_request_digest=normalized_request_digest,
+        started_at_utc=(timing.started_at_utc if timing is not None else None),
+        ended_at_utc=(timing.ended_at_utc if timing is not None else None),
+        duration_ns=(timing.duration_ns if timing is not None else None),
+        timing_basis=(timing.timing_basis if timing is not None else None),
     )
 
 
@@ -690,7 +1000,11 @@ __all__ = [
     "ToolUsageHookError",
     "emit_tool_usage_observation",
     "project_tool_usage_observation",
+    "project_tool_usage_observation_from_invocation",
     "ObservedToolProvider",
+    # version
+    "TOOL_USAGE_OBSERVATION_CONTRACT_VERSION",
+    "SUPPORTED_TOOL_USAGE_OBSERVATION_CONTRACT_VERSIONS",
     # flags
     "TOOL_USAGE_OBSERVATION_IS_AUTHORITY",
     "OBSERVATION_IS_CANONICAL_RESULT",

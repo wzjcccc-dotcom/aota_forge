@@ -351,6 +351,29 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
         recommended_refs=recommended_refs,
     )
 
+    # AF #54 M3/W2: passive production Skill usage observation at the
+    # canonical role.bootstrap Skill lifecycle seam. Selection/delivery truth
+    # derives from the actual S3 resolution + bootstrap projection; observed
+    # use is never claimed here. Fail-isolated: telemetry never changes
+    # bootstrap semantics or authority.
+    try:
+        from aota_forge.work_plane.runtime_observation import (
+            emit_role_bootstrap_skill_observations,
+        )
+
+        emit_role_bootstrap_skill_observations(
+            binding=binding,
+            resolution=resolution,
+            projection=projection,
+            allowed_universe=allowed_universe,
+            pinned_refs=pinned_refs,
+            required_refs=required_refs,
+            role_default_refs=role_default_refs,
+            recommended_refs=recommended_refs,
+        )
+    except BaseException:
+        pass
+
     # Split eager vs progressive components
     base_components = [c for c in projection.components if c.delivery == "eager"]
     prog_components = [c for c in projection.components if c.delivery == "progressive"]
@@ -648,6 +671,15 @@ def handle_skill_open(binding: Any, arguments: dict[str, Any] | None) -> dict[st
     content = opened.content
     if len(content.encode("utf-8")) > 64 * 1024:
         raise SkillOpenError("skill content exceeds bound", code="INVALID_INPUT")
+
+    # AF #54 M3/W2: passive progressive-load Skill observation at the real
+    # skill.open seam. Loaded is not observed-used; no use claim is made.
+    try:
+        from aota_forge.work_plane.runtime_observation import emit_skill_open_observation
+
+        emit_skill_open_observation(binding=binding, ref=ref, entry=entry, role_str=role_str)
+    except BaseException:
+        pass
 
     return {
         "skill_id": opened.skill_id,

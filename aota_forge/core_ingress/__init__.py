@@ -44,6 +44,8 @@ It must not own operation semantic dispatch.
 
 from __future__ import annotations
 
+import hashlib
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -177,6 +179,11 @@ class CanonicalDispatchBinding:
     canonical_task_id: str = ""
     project_id: str = ""
     worktree_id: str = ""
+    # AF #54 M3/W1 optional bounded observation correlation carriers
+    # (mechanical runtime identity only; never authority or execution input).
+    session_ref: str = ""
+    parent_session_ref: str = ""
+    run_ref: str = ""
     trusted_context: Any | None = None
     handoff: Any | None = None
     sandbox: Any | None = None
@@ -1276,6 +1283,97 @@ def dispatch_tool_operation(
     Single orchestration: exact resolution -> typed validation -> Core-owned
     provider/service selection -> existing leaf implementation. Adapters must
     call this instead of duplicating lookup/validation/selection.
+
+    AF #54 M3/W2: this public seam is wrapped by one passive bounded Tool
+    observation per governed invocation, emitted only after the real
+    result/failure is known. Observation failure never changes the Tool
+    result, authority, retry or workflow (telemetry is not authority).
+    """
+    started_monotonic_ns = time.monotonic_ns()
+    from aota_forge.work_plane.observation_correlation import utc_now_iso
+
+    started_at_utc = utc_now_iso()
+    response = _dispatch_tool_operation_inner(operation, arguments, binding)
+    try:
+        _emit_dispatched_operation_observation(
+            operation=operation,
+            arguments=arguments,
+            binding=binding,
+            response=response,
+            started_monotonic_ns=started_monotonic_ns,
+            started_at_utc=started_at_utc,
+        )
+    except BaseException:
+        # Telemetry is passive: observation collection can never break or
+        # rewrite the authorized operation result.
+        pass
+    return response
+
+
+def _emit_dispatched_operation_observation(
+    *,
+    operation: Any,
+    arguments: Any,
+    binding: Any,
+    response: ToolResponse,
+    started_monotonic_ns: int,
+    started_at_utc: str,
+) -> None:
+    """Passive bounded observation for one governed dispatch invocation.
+
+    Builds the M3/W1 correlation/timing/request-identity facts and projects
+    the existing S2 ``ToolUsageObservation`` after the result is known. Never
+    persisted here; delivery is owned by the configured runtime sink.
+    """
+    from aota_forge.work_plane.observation_correlation import (
+        build_tool_timing,
+        compute_normalized_request_digest,
+        context_from_binding,
+        get_runtime_observation_scope,
+        utc_now_iso,
+    )
+    from aota_forge.work_plane.runtime_observation import (
+        emit_tool_observation_passive,
+        ensure_runtime_observation_ready,
+    )
+    from aota_forge.work_plane.tool_usage_observation import (
+        project_tool_usage_observation_from_invocation,
+    )
+
+    ensure_runtime_observation_ready()
+    if not isinstance(operation, str) or type(operation) is not str or not operation.strip():
+        return
+    try:
+        contract_hash = resolve_descriptor(operation).contract_hash()
+    except Exception:
+        contract_hash = hashlib.sha256(f"unresolved-operation:{operation}".encode("utf-8")).hexdigest()
+    context = context_from_binding(binding).merged(get_runtime_observation_scope().as_context())
+    timing = build_tool_timing(
+        started_monotonic_ns=started_monotonic_ns,
+        ended_monotonic_ns=time.monotonic_ns(),
+        started_at_utc=started_at_utc,
+        ended_at_utc=utc_now_iso(),
+    )
+    normalized_request_digest = compute_normalized_request_digest(operation, arguments)
+    observation = project_tool_usage_observation_from_invocation(
+        operation_name=operation,
+        contract_hash=contract_hash,
+        inputs=arguments if isinstance(arguments, Mapping) else None,
+        response=response,
+        correlation=context,
+        timing=timing,
+        normalized_request_digest=normalized_request_digest,
+    )
+    emit_tool_observation_passive(observation)
+
+
+def _dispatch_tool_operation_inner(
+    operation: str, arguments: dict[str, Any] | None, binding: CanonicalDispatchBinding
+) -> ToolResponse:
+    """Canonical dispatch implementation (pre-observation body).
+
+    Contract unchanged from the accepted canonical dispatch: exact
+    resolution -> typed validation -> Core-owned provider/service selection.
     """
     # Resolution (exact, no fuzzy).
     try:
