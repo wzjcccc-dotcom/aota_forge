@@ -1067,7 +1067,10 @@ def test_48_w4_no_production_change_by_default():
     # Verify that work_plane production files are those from convergence base (no new file)
     worktree_root = Path(inspect.getfile(calib)).parent
     # Count telemetry_*.py files should be exactly those from base (calibration, optimization, workflow, query, metrics, etc.)
-    expected = {"telemetry_calibration.py", "telemetry_optimization_findings.py", "telemetry_workflow_calibration.py", "telemetry_query.py", "telemetry_metrics.py", "telemetry_evidence.py", "telemetry_aggregation.py", "telemetry_store.py", "telemetry_adapters.py", "telemetry_projection_core.py", "telemetry_projection_role_tool_skill.py", "telemetry_projection_shell_context.py", "telemetry_projection_review_friction.py"}
+    # AF #54 M3/W3 (approved): adds exactly one bounded run-scoped card
+    # projection module. The guard remains: any OTHER unexpected
+    # telemetry_*.py production file still fails this test.
+    expected = {"telemetry_calibration.py", "telemetry_optimization_findings.py", "telemetry_workflow_calibration.py", "telemetry_query.py", "telemetry_metrics.py", "telemetry_evidence.py", "telemetry_aggregation.py", "telemetry_store.py", "telemetry_adapters.py", "telemetry_projection_core.py", "telemetry_projection_role_tool_skill.py", "telemetry_projection_shell_context.py", "telemetry_projection_review_friction.py", "telemetry_effectiveness_card.py"}
     existing = {p.name for p in worktree_root.glob("telemetry_*.py")}
     assert expected.issubset(existing)
     # No extra telemetry_ file beyond expected should be created by W4 (test-only)
