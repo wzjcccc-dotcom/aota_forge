@@ -327,6 +327,16 @@ class TestW1LifecycleMutationSurface:
         committed = _git(root, "show", "--name-only", "--pretty=", "HEAD").splitlines()
         assert not any(line.startswith(".aota/") for line in committed)
 
+    def test_checkpoint_excludes_runtime_but_keeps_governance_source(self, tmp_path: Path) -> None:
+        from aota_forge.work_plane.git_tools import _is_runtime_excluded_untracked
+
+        assert _is_runtime_excluded_untracked(".aota/observation-evidence-w4A.jsonl")
+        assert _is_runtime_excluded_untracked(".aota/handoffs/h-1.json")
+        assert _is_runtime_excluded_untracked("${AOTA_W3_TOOL_TRACE}") is False
+        assert _is_runtime_excluded_untracked("aota_forge/x.py") is False
+        assert _is_runtime_excluded_untracked(".aota/contracts/new_rule.yaml") is False
+        assert _is_runtime_excluded_untracked(".aota/project.yaml") is False
+
     def test_checkpoint_nothing_to_commit_fails_closed(self, tmp_path: Path) -> None:
         host, _root = self._configured(tmp_path)
         resp = host.invoke("git.checkpoint", {"message": "empty"})

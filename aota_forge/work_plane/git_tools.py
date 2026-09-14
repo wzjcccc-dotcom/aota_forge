@@ -189,8 +189,14 @@ MAX_GIT_COMMIT_MESSAGE_BYTES: int = 2048
 MAX_GIT_SHA_LENGTH: int = 64
 
 # AF runtime state that is mechanically never part of a governed checkpoint
-# commit (per-worktree runtime bookkeeping, not project source). Control-plane
-# constant; the model cannot widen or narrow it.
+# commit. Rule: any UNTRACKED path under .aota/ is runtime bookkeeping
+# (execution store, handoffs, durable payloads, envelopes, observation
+# evidence, bootstraps, stray env-expansion artifacts) EXCEPT the canonical
+# governance source tree .aota/contracts/. Tracked files (including
+# .aota/project.yaml or any tracked .aota/contracts/ file) are unaffected:
+# they enter through normal tracked-change staging, never this exclusion.
+# Control-plane constant; the model cannot widen or narrow it.
+GIT_CHECKPOINT_UNTRACKED_ALLOW_PREFIXES: tuple[str, ...] = (".aota/contracts/", ".aota/project.yaml")
 GIT_CHECKPOINT_RUNTIME_EXCLUSIONS: frozenset[str] = frozenset(
     {
         ".aota/execution.json",
@@ -483,13 +489,13 @@ def _porcelain_parse_nul(raw: str) -> list[tuple[str, str]]:
 
 def _is_runtime_excluded_untracked(path: str) -> bool:
     normalized = path[2:] if path.startswith("./") else path
-    for excl in GIT_CHECKPOINT_RUNTIME_EXCLUSIONS:
-        if excl.endswith("/"):
-            if normalized == excl[:-1] or normalized.startswith(excl):
-                return True
-        elif normalized == excl:
-            return True
-    return False
+    if not normalized.startswith(".aota/"):
+        return False
+    for keep in GIT_CHECKPOINT_UNTRACKED_ALLOW_PREFIXES:
+        if normalized.startswith(keep):
+            return False
+    # every other untracked .aota path is AF runtime bookkeeping
+    return True
 
 
 def _validate_max_entries(value: object) -> int:
