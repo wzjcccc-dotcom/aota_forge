@@ -31,8 +31,11 @@ What this module is and is not:
   composition path runs, never the next Work Item, review timing/count,
   repair action, Milestone transition or child role
   (``RUNTIME_SELECTION_IS_WORKFLOW_STRATEGY=no``);
-* the default remains ``legacy`` until M3/W2 fresh production dogfood passes
-  and M3/W3 owns any cutover (``THIN_PATH_PRODUCTION_DEFAULT=no``);
+* M3/W3 cutover: the absent default is now ``thin``
+  (``THIN_PATH_PRODUCTION_DEFAULT=yes``, ``PRODUCTION_DEFAULT_CUTOVER=yes``)
+  after the M3/W2 fresh production dogfood PASS; explicit trusted
+  ``legacy`` remains an operator override for the frozen compatibility path
+  (``LEGACY_PATH_COMPATIBILITY_ONLY=yes``);
 * it does not create a second RuntimeConfig, a second MCP tool plane, a new
   execution/authority/result/session/workflow engine or a generic plugin
   framework.
@@ -85,11 +88,14 @@ AOTA_INVOKE_CAN_SELECT_RUNTIME_PATH = False
 RUNTIME_SELECTION_IS_DEPLOYMENT_MECHANIC = True
 RUNTIME_SELECTION_IS_WORKFLOW_STRATEGY = False
 
-THIN_PATH_PRODUCTION_DEFAULT = False
-PRODUCTION_DEFAULT_CUTOVER = False
+THIN_PATH_PRODUCTION_DEFAULT = True
+PRODUCTION_DEFAULT_CUTOVER = True
 M3_W1_THIN_IS_DEFAULT = False
+M3_W3_THIN_IS_DEFAULT = True
 
 LEGACY_PRODUCTION_PATH_PRESERVED = True
+LEGACY_PATH_COMPATIBILITY_ONLY = True
+LEGACY_DELETION_PERFORMED = False
 NO_FURTHER_LEGACY_SEMANTIC_EXPANSION = True
 
 SECOND_RUNTIME_CONFIG_CREATED = False
@@ -390,7 +396,10 @@ __all__ = [
     "THIN_PATH_PRODUCTION_DEFAULT",
     "PRODUCTION_DEFAULT_CUTOVER",
     "M3_W1_THIN_IS_DEFAULT",
+    "M3_W3_THIN_IS_DEFAULT",
     "LEGACY_PRODUCTION_PATH_PRESERVED",
+    "LEGACY_PATH_COMPATIBILITY_ONLY",
+    "LEGACY_DELETION_PERFORMED",
     "NO_FURTHER_LEGACY_SEMANTIC_EXPANSION",
     "SECOND_RUNTIME_CONFIG_CREATED",
     "SECOND_MCP_TOOL_PLANE_CREATED",

@@ -9,7 +9,9 @@ Mission proven here:
   compatibility path and the accepted M2 thin production candidate
   (`LEGACY_PRODUCTION_PATH_PRESERVED=yes`,
   `THIN_PRODUCTION_CANDIDATE_ACTIVATABLE=yes`,
-  `DEFAULT_RUNTIME_PATH=legacy`);
+  `DEFAULT_RUNTIME_PATH=legacy` at M3/W1; M3/W3 later cut the default over to
+  `thin` after the accepted M3/W2 dogfood — the default assertions in this
+  suite were updated accordingly);
 * selection is a trusted deployment mechanic in the existing operator
   RuntimeConfig authority, never a model/handoff/startup-prompt/aota.invoke
   argument; unsupported values fail closed with no fuzzy alias and no silent
@@ -32,7 +34,7 @@ PROVES (V0 + deterministic V1 + bounded V2 over real composed components +
 production-wiring preflight):
 
 * side-by-side coexistence of legacy and thin production compositions at one
-  source revision, with legacy as the unchanged production default;
+  source revision (M3/W1 default was legacy; M3/W3 cut the default to thin);
 * trusted selection authority, fail-closed invalid handling, M2 reuse and
   legacy-free thin executed path.
 
@@ -40,11 +42,13 @@ DOES_NOT_PROVE:
 
 * does not prove a real external LLM task-main, real Calculator dogfood,
   real Worker execution or real production cutover (M3/W2 owns fresh
-  production dogfood; M3/W3 owns cutover);
+  production dogfood; M3/W3 owns cutover and owns the dedicated cutover
+  suite `tests/test_af53_m3_w3_cutover_legacy_freeze.py`);
 * does not prove the legacy path's full historical behavior matrix (covered
   by the existing accepted suites, rerun alongside this one);
-* does not claim ``M3_W2_DOGFOOD_PASS``, ``V4`` or production default
-  cutover.
+* does not claim ``M3_W2_DOGFOOD_PASS`` or ``V4``; the M3/W3 production
+  default cutover evidence is owned by
+  ``tests/test_af53_m3_w3_cutover_legacy_freeze.py``.
 
 This suite adds tests only. It introduces no execution engine, authority
 engine, result ontology, session engine, workflow engine, second
@@ -83,6 +87,7 @@ from aota_forge.composition.task_main_runtime_selection import (
     DEFAULT_TASK_MAIN_RUNTIME_PATH,
     HANDOFF_CAN_SELECT_RUNTIME_PATH,
     M3_W1_THIN_IS_DEFAULT,
+    M3_W3_THIN_IS_DEFAULT,
     MODEL_CAN_SELECT_RUNTIME_PATH,
     PRODUCTION_DEFAULT_CUTOVER,
     STARTUP_PROMPT_CAN_SELECT_RUNTIME_PATH,
@@ -237,6 +242,13 @@ def _write_runtime_config(
     return cfg
 
 
+def _write_legacy_runtime_config(tmp_path: Path, executable: Path) -> Path:
+    """Explicit trusted legacy compatibility selection (post-M3/W3 override)."""
+    return _write_runtime_config(
+        tmp_path, executable, name="runtime-legacy.json", runtime_path="legacy"
+    )
+
+
 def _plan_body() -> str:
     return f"""# [PLAN] AF53 M3/W1 fixture
 
@@ -329,34 +341,32 @@ def _foreign_handoff(binding: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# A — default legacy
+# A — default selection (M3/W3 cutover: absent selection resolves thin)
 # ---------------------------------------------------------------------------
 
 
-class TestADefaultLegacy:
-    def test_no_explicit_selection_defaults_to_legacy_composition(
+class TestADefaultSelection:
+    def test_no_explicit_selection_defaults_to_thin_composition(
         self, tmp_path: Path, operator_config_file: Path
     ) -> None:
         cfg = load_runtime_config(config_path=str(operator_config_file))
-        assert cfg.runtime_path == "legacy"
-        assert select_task_main_runtime_path(cfg) == "legacy"
-        assert normalize_task_main_runtime_path(None) == "legacy"
+        assert cfg.runtime_path == "thin"
+        assert select_task_main_runtime_path(cfg) == "thin"
+        assert normalize_task_main_runtime_path(None) == "thin"
 
-        launcher, root, ctx = _prepare_legacy(tmp_path, operator_config_file)
-        assert ctx.runtime_path == "legacy"
-        assert ctx.live_plan_view is not None
-        assert ctx.coordinator_store_path == root / ".aota" / "coordinator.json"
+        launcher, root, ctx = _prepare_thin(tmp_path, operator_config_file)
+        assert ctx.runtime_path == "thin"
+        assert ctx.live_plan_view is None
+        assert ctx.coordinator_store_path is None
 
-        legacy_bootstrap = root / BOOTSTRAP_RELPATH
-        assert legacy_bootstrap.is_file()
-        data = json.loads(legacy_bootstrap.read_text(encoding="utf-8"))
-        assert "live_plan_view" in data
-        assert "runtime_path" not in data
-        assert not (root / THIN_BOOTSTRAP_RELPATH).exists()
+        assert (root / THIN_BOOTSTRAP_RELPATH).is_file()
+        data = json.loads((root / THIN_BOOTSTRAP_RELPATH).read_text(encoding="utf-8"))
+        assert data["runtime_path"] == "thin"
+        assert not (root / BOOTSTRAP_RELPATH).exists()
 
         binding = _load_binding(launcher, ctx)
-        assert binding.task_main_runtime_path == "legacy"
-        assert binding.trusted_task_main_context is not None
+        assert binding.task_main_runtime_path == "thin"
+        assert binding.trusted_task_main_context is None
 
     def test_selector_authority_is_the_operator_runtime_config(
         self, operator_config_file: Path
@@ -619,9 +629,10 @@ class TestEThinFreshProcessLegacyFree:
 
 class TestFLegacyRemainsFunctional:
     def test_legacy_selection_still_builds_legacy_control_service_binding(
-        self, tmp_path: Path, operator_config_file: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
-        launcher, _root, ctx = _prepare_legacy(tmp_path, operator_config_file)
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
+        launcher, _root, ctx = _prepare_legacy(tmp_path, legacy_cfg)
         binding = _load_binding(launcher, ctx)
         assert binding.task_main_runtime_path == "legacy"
         trusted_ctx = binding.trusted_task_main_context
@@ -632,9 +643,10 @@ class TestFLegacyRemainsFunctional:
         assert trusted_ctx.live_plan_view.milestone_id == "M1"
 
     def test_legacy_bootstrap_still_materialized_by_legacy_writer(
-        self, tmp_path: Path, operator_config_file: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
-        _launcher, root, ctx = _prepare_legacy(tmp_path, operator_config_file)
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
+        _launcher, root, ctx = _prepare_legacy(tmp_path, legacy_cfg)
         legacy_bootstrap = root / BOOTSTRAP_RELPATH
         data = json.loads(legacy_bootstrap.read_text(encoding="utf-8"))
         assert data["project_id"] == PROJECT_ID
@@ -650,9 +662,10 @@ class TestFLegacyRemainsFunctional:
 
 class TestGSameCanonicalAgentSurface:
     def test_both_paths_expose_exactly_one_aota_invoke_tool(
-        self, tmp_path: Path, operator_config_file: Path, test_hermes_executable: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
-        legacy_launcher, _root, legacy_ctx = _prepare_legacy(tmp_path, operator_config_file)
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
+        legacy_launcher, _root, legacy_ctx = _prepare_legacy(tmp_path, legacy_cfg)
         legacy_binding = _load_binding(legacy_launcher, legacy_ctx)
 
         thin_cfg = _write_runtime_config(
@@ -676,17 +689,18 @@ class TestGSameCanonicalAgentSurface:
 
 class TestSideBySideIsolation:
     def test_selecting_thin_does_not_mutate_legacy_state_and_vice_versa(
-        self, tmp_path: Path, operator_config_file: Path, test_hermes_executable: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
         root = _make_project_root(tmp_path)
         launcher = DailyTaskMainLauncher(plan_adapter=_plan_adapter())
         legacy_origin = "20260913_af53_m3w1_legacy_session"
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
 
         legacy_ctx = launcher.prepare(
             worktree_root=root,
             project_id=PROJECT_ID,
             worktree_id="wt-side-by-side",
-            runtime_config_path=operator_config_file,
+            runtime_config_path=legacy_cfg,
             plan_adapter=_plan_adapter(),
             origin_task_main_session_ref=legacy_origin,
         )
@@ -718,7 +732,7 @@ class TestSideBySideIsolation:
             worktree_root=root,
             project_id=PROJECT_ID,
             worktree_id="wt-side-by-side",
-            runtime_config_path=operator_config_file,
+            runtime_config_path=legacy_cfg,
             plan_adapter=_plan_adapter(),
             origin_task_main_session_ref=legacy_origin,
         )
@@ -764,9 +778,10 @@ class TestHHardProjectBoundary:
         assert response.get("is_success") is False
 
     def test_legacy_foreign_project_handoff_fails_closed(
-        self, tmp_path: Path, operator_config_file: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
-        launcher, _root, ctx = _prepare_legacy(tmp_path, operator_config_file)
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
+        launcher, _root, ctx = _prepare_legacy(tmp_path, legacy_cfg)
         binding = _load_binding(launcher, ctx)
         foreign = _foreign_handoff(binding)
         dispatch = create_aota_invoke_dispatch(binding)
@@ -800,12 +815,13 @@ class TestHHardProjectBoundary:
 
 class TestIRuntimeConfigReuse:
     def test_both_paths_use_the_shared_operator_runtime_config(
-        self, tmp_path: Path, operator_config_file: Path, test_hermes_executable: Path
+        self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
-        legacy_launcher, _root, legacy_ctx = _prepare_legacy(tmp_path, operator_config_file)
+        legacy_cfg = _write_legacy_runtime_config(tmp_path, test_hermes_executable)
+        legacy_launcher, _root, legacy_ctx = _prepare_legacy(tmp_path, legacy_cfg)
         assert isinstance(legacy_ctx.runtime_config, RuntimeConfig)
         assert legacy_ctx.runtime_config.to_dict() == load_runtime_config(
-            config_path=str(operator_config_file)
+            config_path=str(legacy_cfg)
         ).to_dict()
         legacy_binding = _load_binding(legacy_launcher, legacy_ctx)
         assert legacy_binding.task_main_runtime_path == "legacy"
@@ -946,31 +962,33 @@ class TestJThinProductionPreflight:
 
 
 # ---------------------------------------------------------------------------
-# K — production default not changed
+# K — M3/W3 cutover: production default is now thin
 # ---------------------------------------------------------------------------
 
 
-class TestKDefaultNotChanged:
-    def test_production_default_cutover_is_no(self, operator_config_file: Path) -> None:
-        assert DEFAULT_TASK_MAIN_RUNTIME_PATH == "legacy"
-        assert THIN_PATH_PRODUCTION_DEFAULT is False
+class TestKDefaultCutover:
+    def test_production_default_cutover_is_yes(self, operator_config_file: Path) -> None:
+        assert DEFAULT_TASK_MAIN_RUNTIME_PATH == "thin"
+        assert THIN_PATH_PRODUCTION_DEFAULT is True
         assert M3_W1_THIN_IS_DEFAULT is False
-        assert PRODUCTION_DEFAULT_CUTOVER is False
+        assert M3_W3_THIN_IS_DEFAULT is True
+        assert PRODUCTION_DEFAULT_CUTOVER is True
         cfg = load_runtime_config(config_path=str(operator_config_file))
-        assert select_task_main_runtime_path(cfg) == "legacy"
-        assert normalize_task_main_runtime_path(None) == "legacy"
+        assert select_task_main_runtime_path(cfg) == "thin"
+        assert normalize_task_main_runtime_path(None) == "thin"
 
-    def test_legacy_default_launch_still_requires_plan_adapter(
+    def test_thin_default_launch_requires_no_plan_adapter(
         self, tmp_path: Path, operator_config_file: Path
     ) -> None:
         root = _make_project_root(tmp_path)
         launcher = DailyTaskMainLauncher(plan_adapter=None)
-        with pytest.raises(RuntimeError, match="plan_adapter is required"):
-            launcher.prepare(
-                worktree_root=root,
-                project_id=PROJECT_ID,
-                worktree_id="wt-k",
-                runtime_config_path=operator_config_file,
-                plan_adapter=None,
-                origin_task_main_session_ref="20260913_af53_m3w1_k",
-            )
+        ctx = launcher.prepare(
+            worktree_root=root,
+            project_id=PROJECT_ID,
+            worktree_id="wt-k",
+            runtime_config_path=operator_config_file,
+            plan_adapter=None,
+            origin_task_main_session_ref="20260913_af53_m3w1_k",
+        )
+        assert ctx.runtime_path == "thin"
+        assert not (root / BOOTSTRAP_RELPATH).exists()

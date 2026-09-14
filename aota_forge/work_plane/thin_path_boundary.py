@@ -211,11 +211,14 @@ LEGACY_MISSING_WORK_ROLE_CODER_DEFAULT_PRESERVED = True
 # completion delivery/reentry foundation, and never the legacy workflow
 # coordinator as the normal-path brain. Selection between legacy and thin is
 # a trusted/internal runtime composition choice, not a model-facing argument.
-# The legacy host path and production default remain untouched.
+# M3/W3 cutover: the canonical RuntimeConfig default resolves to thin, so this
+# host composition is now the production default; the legacy host path
+# remains present as an explicit operator-selectable compatibility path.
 
 THIN_HOST_COMPOSITION_OWNER = "aota_forge/composition/thin_task_main_host.py"
 THIN_HOST_COMPOSITION_KIND = "trusted_internal_composition"
-THIN_HOST_PRODUCTION_DEFAULT = False
+THIN_HOST_PRODUCTION_DEFAULT = True
+LEGACY_PATH_COMPATIBILITY_ONLY = True
 THIN_HOST_SIDE_BY_SIDE = True
 MODEL_AUTHORED_THIN_HOST_BINDING = False
 THIN_HOST_REQUIRES_LEGACY_WORKFLOW_BRAIN = False
@@ -531,6 +534,7 @@ __all__ = [
     "THIN_HOST_COMPOSITION_OWNER",
     "THIN_HOST_COMPOSITION_KIND",
     "THIN_HOST_PRODUCTION_DEFAULT",
+    "LEGACY_PATH_COMPATIBILITY_ONLY",
     "THIN_HOST_SIDE_BY_SIDE",
     "MODEL_AUTHORED_THIN_HOST_BINDING",
     "THIN_HOST_REQUIRES_LEGACY_WORKFLOW_BRAIN",

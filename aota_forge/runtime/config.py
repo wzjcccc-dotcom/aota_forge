@@ -99,21 +99,25 @@ MIN_WORKER_EXECUTION_TIMEOUT_SECONDS = 1
 MAX_WORKER_EXECUTION_TIMEOUT_SECONDS = 3600
 DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS = 900
 
-# Task-main production composition path (AF #53 M3/W1, operator-owned).
-# Bounded trusted deployment setting in the SAME RuntimeConfig authority:
-# the operator chooses which production task-main composition path runs
-# (existing legacy compatibility path vs the accepted M2 thin candidate).
-# It is a deployment mechanic, never a workflow strategy and never a
-# model-facing argument. Strict exact values only: no fuzzy aliases and no
-# silent legacy fallback. The default preserves current production behavior
-# until M3/W2 fresh production dogfood passes (M3/W3 owns any cutover).
+# Task-main production composition path (AF #53 M3/W1, operator-owned;
+# M3/W3 cutover). Bounded trusted deployment setting in the SAME
+# RuntimeConfig authority: the operator chooses which production task-main
+# composition path runs (accepted thin production path vs the frozen legacy
+# compatibility path). It is a deployment mechanic, never a workflow strategy
+# and never a model-facing argument. Strict exact values only: no fuzzy
+# aliases and no silent legacy fallback. M3/W3 cutover: the absent/explicit
+# default is now ``thin`` (accepted in M3/W2 fresh production dogfood re-run
+# 20260914_075112_af53m3w2-rerun2-dogfood); explicit ``legacy`` remains an
+# operator override for the frozen compatibility path. This constant is the
+# single default authority (``RUNTIME_DEFAULT_AUTHORITY_COUNT=1``); every
+# other site delegates here.
 TASK_MAIN_RUNTIME_PATH_LEGACY = "legacy"
 TASK_MAIN_RUNTIME_PATH_THIN = "thin"
 SUPPORTED_TASK_MAIN_RUNTIME_PATHS: tuple[str, ...] = (
     TASK_MAIN_RUNTIME_PATH_LEGACY,
     TASK_MAIN_RUNTIME_PATH_THIN,
 )
-DEFAULT_TASK_MAIN_RUNTIME_PATH = TASK_MAIN_RUNTIME_PATH_LEGACY
+DEFAULT_TASK_MAIN_RUNTIME_PATH = TASK_MAIN_RUNTIME_PATH_THIN
 
 
 class RuntimeConfigError(ForgeError):

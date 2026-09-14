@@ -193,6 +193,10 @@ def _runtime_config_json() -> dict:
         "concurrency": 2,
         "provider": "opencode-go",
         "model": "m",
+        # M3/W3 cutover: this suite exercises the legacy launcher/session
+        # continuity path through the launcher, so it explicitly selects the
+        # frozen legacy compatibility path (absent selection resolves thin).
+        "runtime_path": "legacy",
         "bindings": {
             "task-main": {"profile": "aota-task-main"},
             "coder": {"profile": "aota-worker", "toolsets": ["aota"]},

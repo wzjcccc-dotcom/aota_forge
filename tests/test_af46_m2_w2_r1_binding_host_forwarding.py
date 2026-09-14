@@ -302,6 +302,10 @@ class TestTaskMainProcessForwarding:
             execution_store_path=root / ".aota" / "execution.json", live_plan_view=_view(),
             next_milestone_view=None, plan_snapshot=PlanAuthoritySnapshot(body="fixture", revision="r1"),
             runtime_config=load_runtime_config(config_path=str(cfg)), hermes_bin="/bin/false",
+            # M3/W3 cutover: this test exercises the legacy bootstrap
+            # forwarding contract, so the legacy path is explicitly selected
+            # (the absent default now resolves thin).
+            runtime_path="legacy",
         )
         with _EnvGuard():
             env = launcher.build_env(ctx)

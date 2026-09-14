@@ -418,6 +418,10 @@ class TestLauncherConsumption:
             "concurrency": 2,
             "provider": "opencode-go",
             "model": "deepseek-v4-flash",
+            # M3/W3 cutover: this legacy Plan-consumption test drives the
+            # legacy launcher path, so it explicitly selects the frozen legacy
+            # compatibility path (absent selection now resolves thin).
+            "runtime_path": "legacy",
             "bindings": {
                 "task-main": {"profile": TASK_MAIN_PROFILE},
                 "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]},

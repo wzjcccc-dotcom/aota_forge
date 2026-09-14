@@ -1121,7 +1121,10 @@ class TestH10LegacyHostUnaffected:
         assert TaskMainControlService is not None
         assert tpb.frozen_legacy_files_present() is True
         assert thin_host.LEGACY_HOST_PATH_PRESERVED is True
-        assert THIN_HOST_PRODUCTION_DEFAULT is False
+        # M3/W3 cutover: the canonical RuntimeConfig default resolves thin, so
+        # the thin host composition is the production default; the legacy host
+        # path stays available as an explicit compatibility override.
+        assert THIN_HOST_PRODUCTION_DEFAULT is True
 
     def test_legacy_production_selection_is_not_exposed_to_the_model(self) -> None:
         tree = _module_ast(THIN_HOST_MODULE)

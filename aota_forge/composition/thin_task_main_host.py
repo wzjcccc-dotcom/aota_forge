@@ -25,11 +25,14 @@ What this module deliberately does NOT do:
   review-transition state (``THIN_HOST_REQUIRES_*=no``);
 * it does not read a Plan, decide the next Work Item, select a reviewer,
   decide repair or advance a Milestone — those are task-main LLM semantics;
-* it does not change the production default: the legacy host composition
-  remains present and untouched (``LEGACY_HOST_PATH_PRESERVED=yes``,
-  ``THIN_HOST_PRODUCTION_DEFAULT=no``). Selection between legacy and thin is
-  a trusted/internal composition choice owned by runtime construction, never
-  a model-facing argument (``MODEL_AUTHORED_THIN_HOST_BINDING=no``);
+* M3/W3 cutover: this thin host composition is now the production default
+  path (``THIN_HOST_PRODUCTION_DEFAULT=yes``) because the canonical
+  RuntimeConfig default resolves to ``thin``; the legacy host composition
+  remains present and untouched as the explicit operator-selectable
+  compatibility path (``LEGACY_HOST_PATH_PRESERVED=yes``,
+  ``LEGACY_PATH_COMPATIBILITY_ONLY=yes``). Selection between legacy and thin
+  is a trusted/internal composition choice owned by runtime construction,
+  never a model-facing argument (``MODEL_AUTHORED_THIN_HOST_BINDING=no``);
 * it creates no execution engine, authority engine, result ontology, session
   engine, workflow engine or generic plugin framework.
 
@@ -111,9 +114,10 @@ THIN_HOST_COMPOSITION_KIND = "trusted_internal_composition"
 THIN_HOST_ROLE = "task-main"
 
 MODEL_AUTHORED_THIN_HOST_BINDING = False
-THIN_HOST_PRODUCTION_DEFAULT = False
+THIN_HOST_PRODUCTION_DEFAULT = True
 THIN_HOST_SIDE_BY_SIDE = True
 LEGACY_HOST_PATH_PRESERVED = True
+LEGACY_PATH_COMPATIBILITY_ONLY = True
 
 # The legacy workflow brain is not constructed, required, imported-through-
 # execution or passed into the thin task-main binding.
@@ -479,6 +483,7 @@ __all__ = [
     "THIN_HOST_PRODUCTION_DEFAULT",
     "THIN_HOST_SIDE_BY_SIDE",
     "LEGACY_HOST_PATH_PRESERVED",
+    "LEGACY_PATH_COMPATIBILITY_ONLY",
     "THIN_HOST_REQUIRES_TASK_MAIN_CONTROL_SERVICE",
     "THIN_HOST_REQUIRES_MILESTONE_PLAN_VIEW",
     "THIN_HOST_REQUIRES_COORDINATOR",

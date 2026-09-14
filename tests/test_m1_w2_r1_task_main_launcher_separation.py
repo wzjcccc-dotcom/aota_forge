@@ -116,6 +116,10 @@ def _runtime_config_json(path: Path) -> None:
     path.write_text(json.dumps({
         "executor": "hermes", "executable": "/bin/false", "concurrency": 2,
         "provider": "opencode-go", "model": "deepseek-v4-flash",
+        # M3/W3 cutover: this suite exercises the legacy launcher separation
+        # path, so it explicitly selects the frozen legacy compatibility path
+        # (absent selection now resolves thin).
+        "runtime_path": "legacy",
         "bindings": {"task-main": {"profile": "aota-task-main"},
                      "coder": {"profile": "aota-worker", "toolsets": ["aota"]},
                      "analyst": {"profile": "aota-worker", "toolsets": ["aota"]},

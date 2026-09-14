@@ -100,6 +100,10 @@ def _runtime_config_json() -> dict:
         "concurrency": 1,
         "provider": "aota-test-provider",
         "model": "aota-test-model",
+        # M3/W3 cutover: this suite exercises the legacy launcher/coordinator
+        # productive-continuation path, so it explicitly selects the frozen
+        # legacy compatibility path (absent selection now resolves thin).
+        "runtime_path": "legacy",
         "bindings": {
             "analyst": {"profile": "aota-worker", "toolsets": ["aota"]},
             "coder": {"profile": "aota-worker", "toolsets": ["aota"]},
