@@ -1,61 +1,138 @@
 ---
 name: aota-task-main-control
-description: Task-main milestone orchestration — activate, recover, advance via aota.invoke
+description: Task-main thin production usage contract — semantic child dispatch, Plan Work identity, typed-error recovery, bounded delegation
 category: orchestration
-tags: [aota, task-main, control, milestone]
+tags: [aota, task-main, handoff, task.start, work-identity]
 ---
 
-# AOTA Task-Main Control — Normal Cycle
+# AOTA Task-Main Control — Thin Production Normal Path
 
-> `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. How to request controls. AF runtime decides approval, Plan truth, session truth.
+> `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. This Skill is the canonical detailed usage guidance for the thin task-main role. The AF runtime decides authorization; guidance is never authority. Tool visibility is not authority. `ROLE_SKILL_IS_PRIMARY_USAGE_GUIDANCE=yes`.
 
-## Activate
+## Production model (thin, LLM-first)
 
-`aota.invoke(operation="task_main.activate_milestone", arguments={})`. Empty intent only. Succeeds only when trusted live view says approval satisfied. On `USER_GATE_REQUIRED`, stop; do not retry until approval changes. Never supply `live_plan_view`, approval, or project fields.
+You own plan interpretation, workflow strategy, sequencing, delegation,
+review strategy, repair strategy, and Milestone judgment. The Control Plane
+only validates, grounds mechanical identity, and enforces authority; it never
+chooses the next workflow action and prescribes nothing about review
+frequency, Work order, or Milestone advancement.
 
-## Recover
+## Normal path
 
-`aota.invoke(operation="task_main.recover_coordinator", arguments={})`. After restart/re-entry or `SESSION_RECOVERY_REQUIRED`. Server re-binds to current Plan/session/revision. Fail-closed on drift or session loss. Stale observed Plan never replaces live truth.
+Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 
-## Advance
+1. Read Plan/context on demand (`workspace.read` / `workspace.search` for
+   the authoritative Plan, current Milestone, Work Items, and prior results).
+2. Reason about the next semantic action.
+3. Write a bounded semantic handoff:
+   `handoff.write(mode="work_item", payload={...semantic intent...})`.
+4. Start one permitted child role:
+   `task.start(role=<same work_role>, handoff_ref=<ref from handoff.write>)`.
+5. Consume the returned result/completion card (card-first; hydrate a
+   `by_ref` result only through the exact claims attached to it).
+6. Reason again; choose the next action.
 
-`aota.invoke(operation="task_main.advance_once", arguments={})`. One bounded iteration; AF decides transition. Observe `next_action`: `DISPATCHED_WORK`, `WAITING_FOR_WORKERS`, `RECONCILED`, `INTEGRATED_REVIEW_REQUIRED`, `DISPATCHED_REVIEW`, `REPAIR_REQUIRED`, `BLOCKED`, `MILESTONE_CLOSURE_READY`, `USER_GATE_REQUIRED`, `SESSION_RECOVERY_REQUIRED`, etc. Never call internal reconcile/dispatch. Never override `next_action`.
+You may choose coder, reviewer, analyst, or project-steward as child roles,
+subject to actual role policy. The Control Plane never picks the child role.
 
-## Integrated review transition
+## work_item handoff contract (canonical)
 
-Work Items progress according to the DAG. When all source Work Items are progression-complete, the milestone enters integrated review.
+The `work_item` handoff normatively denotes Plan-bound Work. On the thin
+path you MUST supply the semantic identity explicitly; a missing required
+semantic field fails closed at `task.start` with `WORK_SCOPE_INSUFFICIENT`
+(zero child execution) — never a signal to guess a retry.
 
-If `advance_once` returns `INTEGRATED_REVIEW_REQUIRED`, the normal protocol is to call `aota.invoke(operation="task_main.advance_once", arguments={})` again in the same session. AF runtime then resolves the governed reviewer handoff and dispatches the integrated reviewer; the result becomes `DISPATCHED_REVIEW` (or `WAITING_FOR_WORKERS` while the reviewer runs).
+Semantic intent you supply in `payload`:
 
-Never construct the review handoff manually: no `handoff.write(mode="review")`, no fabricated review Work Item, no `task.start(role="reviewer")` from a source Work handoff. Those paths are not the normal protocol and fail closed.
+- `work_role` — the child role you will start (`coder|analyst|reviewer|project-steward`). It MUST equal the subsequent `task.start.role`; a mismatch fails closed with `ROLE_HANDOFF_MISMATCH`.
+- `work_item_ref` — the Plan Work this child serves (e.g. `"W1"`).
+- `milestone_ref` — the Plan Milestone it belongs to (e.g. `"M2"`).
+- `objective` — the bounded executable goal.
+- `bounded_scope` — the sole scope source for the Worker; never widen it by freeform text.
+- optional `validation_expectations` / `semantic_stop_expectations` — what must be verified / when the Worker must stop.
 
-After reviewer dispatch:
+Example:
 
-- `DISPATCHED_REVIEW` / integrated-review waiting: reviewer has been dispatched by AF; wait for/reconcile normal reviewer completion.
-- A reconciled review result: reason over review evidence according to the normal milestone workflow.
+```json
+{"mode": "work_item", "payload": {
+  "work_role": "reviewer",
+  "work_item_ref": "W1",
+  "milestone_ref": "M2",
+  "objective": "Review W1 result against its acceptance",
+  "bounded_scope": "Only W1 changed files and W1 validation evidence",
+  "validation_expectations": ["focused review checks"],
+  "semantic_stop_expectations": ["stop when scope is insufficient; report instead of widening"]
+}}
+```
 
-## Normal work path (source → handoff → task.start)
+Then: `aota.invoke(operation="task.start", arguments={"role": "reviewer", "handoff_ref": "<ref>"})`.
 
-`activate`/`recover`/`advance` return the authoritative bounded Work source in `work_context` (`work_item_id`, `plan_ref`, `plan_digest`, `milestone_id`, source text or trusted by-ref identity). Read it, reason, then:
+The Control Plane supplies mechanics only: artifact/handoff identity,
+project/worktree binding, digests, timestamps, canonical task/attempt
+identity, parent session, timeouts, and Worker runtime/tool authority.
 
-1. `aota.invoke(operation="handoff.write", arguments={"mode": "work_item", "payload": {"objective": "...", "bounded_scope": "...", "validation_expectations": [...], "semantic_stop_expectations": [...]}})`
+## Work identity (yours to supply, never invented for you)
 
-AF fills the trusted Plan/Milestone/Work/source envelope; model refs are correlation only. The semantic payload is stored verbatim.
+- `work_item_ref` and `milestone_ref` come from the current Plan and your own
+  reasoning — never from execution order, and never guessed by the runtime.
+- Semantic Work identity is distinct from every mechanical identity:
+  `work_item_ref` != `canonical_task_id` != `handoff_ref` != attempt id.
+- A reviewer (or second pass) of W1 still references `W1` even though it is a
+  new child execution; do not mint a new W number unless the Plan semantics
+  define one.
+- A second handoff for the same Work reuses that Work's identity.
 
-2. `aota.invoke(operation="task.start", arguments={"role": "coder|analyst|reviewer|project-steward", "handoff_ref": "<ref from handoff.write>"})`
+## Typed-error recovery (bounded)
 
-AF verifies the durable handoff is grounded to the current authoritative Work source before dispatch. A `by_ref` result carries `hydration` claims for `aota.invoke(operation="result.hydrate", arguments={...})`.
+React by inspecting the semantic intent you supplied; never treat a
+fail-closed as a permission hint or probe around it.
 
-`task_main.submit_work_projection` is internal compatibility only: not the normal path, not Plan authority, cannot bypass trusted Work-source grounding. Exact contracts are in `role.bootstrap` `OPERATION_GUIDANCE`. Do not guess arguments from errors. Do not read `operations.yaml`. Do not read the GitHub Issue body. Do not open schema MCP resources.
+```text
+WORK_SCOPE_INSUFFICIENT  -> a required semantic intent is missing/invalid
+  (work_role, work_item_ref, milestone_ref, or bounded semantics). Correct
+  the handoff payload and write a new one; do not retry unchanged.
+ROLE_HANDOFF_MISMATCH    -> task.start.role must equal the grounded handoff
+  payload.work_role. Start the role the handoff names, or rewrite the
+  handoff with the intended work_role. Zero child execution happened.
+AUTHORITY_DENIED         -> do not retry to bypass. Choose an authorized
+  role/tool or stop with a blocker/needs_input.
+INVALID_MODE             -> work_item|milestone for task-main handoff.write;
+  result is worker-only. Correct the mode.
+INVALID_PATH / PATH_ESCAPE / symlink -> correct to project-relative scope;
+  never probe outside the authority you already have.
+UNKNOWN_INPUT / INPUT_TYPE_INVALID -> re-check the operation contract
+  (role.bootstrap OPERATION_GUIDANCE or this Skill), then re-issue;
+  repeated guessing is the failure, not the error.
+UNKNOWN_REF / DIGEST_MISMATCH / CROSS_SCOPE_DENIED -> use the exact ref and
+  digest claims attached to the prior result; hand-copied or stale
+  identity fails closed.
+timeout (test.run / child Worker budget) -> the scope is likely too broad;
+  narrow verification or semantically decompose the work.
+```
 
-## Normal reasoning
+## Delegation and review sizing
 
-Milestone objective, DAG/dependencies (durably projected, not LLM memory), risk (9 dims control depth/escalation, never authority), review gates (one integrated RV), Human Brake (`NEEDS_INPUT`/`CHECKPOINT`/`USER_GATE`/`BLOCKED` with affected/subgraph/milestone scope), result/card reconciliation (card-first, no raw transcript), retry needs progress rationale else escalate, user gates mandatory stop.
+- Give each child one bounded, semantically coherent objective. Prefer the
+  smallest scope that still answers the question.
+- Review scope must be bounded enough to finish inside the trusted Worker
+  budget. If a broad integrated review times out or returns inconclusively,
+  decompose it into semantically coherent bounded reviews (for example per
+  Work Item or per change surface) instead of repeating the same broad task;
+  do not encode a fixed reviewer count.
+- Workers start from their own `role.bootstrap`; your handoff `bounded_scope`
+  is their only scope source.
 
-## Worker dispatch
+## Discipline (preserved)
 
-AF supplies Role, Handoff (`bounded_scope` sole scope source), Tool surface, Skill universe, startup prompt. task-main never expands worker scope via freeform text. Workers start with `role.bootstrap`; open progressive Skill only on `use_when`.
-
-## Stop
-
-Stop at `USER_GATE_REQUIRED`, `PLAN_DRIFT`, `SESSION_RECOVERY_REQUIRED`, or insufficient evidence. Emit `needs_input`, do not guess.
+- Scope discipline: never expand Worker scope through freeform text.
+- Card-first: consume compact result cards; hydrate large results only
+  through attached claims. No raw-transcript digging.
+- Retry only with new progress or evidence; otherwise escalate (needs_input /
+  blocker), including after a fail-closed error.
+- Stop at real gates: user approval, risk/Human-Brake, Plan drift, or
+  insufficient trusted evidence. Emit needs_input rather than guessing.
+- Never fabricate completion: a child is done only when its governed result
+  says so (process exit is not semantic success), and Milestone claims must
+  match durable evidence.
+- Respect authority boundaries: guidance and tool visibility are not
+  authority; never invent authority, scope, identity, or session.

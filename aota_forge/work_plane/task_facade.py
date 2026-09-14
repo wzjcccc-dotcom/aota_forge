@@ -124,6 +124,30 @@ THIN_PATH_MISSING_WORK_ROLE_FAILS_CLOSED = True
 CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH = False
 LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT = "coder"
 
+# AF #54 M2/W1-W2 (G54-01) work-item semantic identity grounding contract:
+# a ``work_item`` handoff normatively denotes Plan-bound Work, so on the thin
+# runtime path the durable semantic payload MUST carry an explicit
+# ``work_item_ref`` and ``milestone_ref`` (the Plan/Work semantic identity is
+# owned by the Plan/task-main, never invented by the Control Plane). Missing
+# refs fail closed (typed WORK_SCOPE_INSUFFICIENT, zero dispatch) instead of
+# being silently grounded to the historical "W1"/"M1" defaults. The legacy
+# compatibility path keeps its historical envelope-or-default behavior
+# unchanged (same bounded-conditional pattern accepted for the missing
+# work_role -> coder default in #53).
+THIN_WORK_ITEM_SEMANTIC_IDENTITY_EXPLICIT = True
+THIN_PATH_MISSING_WORK_IDENTITY_FAILS_CLOSED = True
+CONTROL_PLANE_DEFAULTS_WORK_ITEM_TO_W1_ON_THIN_PATH = False
+CONTROL_PLANE_DEFAULTS_MILESTONE_TO_M1_ON_THIN_PATH = False
+CONTROL_PLANE_INVENTS_SEMANTIC_WORK_IDENTITY = False
+LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM = "W1"
+LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE = "M1"
+# Canonical semantic Work-identity payload fields (semantic payload only;
+# the legacy aliases below are accepted as the same semantic intent).
+WORK_ITEM_HANDOFF_WORK_ITEM_REF_FIELD = "work_item_ref"
+WORK_ITEM_HANDOFF_MILESTONE_REF_FIELD = "milestone_ref"
+_WORK_ITEM_REF_SEMANTIC_KEYS = ("work_item_ref", "work_item_id")
+_MILESTONE_REF_SEMANTIC_KEYS = ("milestone_ref", "milestone_id")
+
 
 class RoleHandoffMismatchError(ValueError):
     """Typed fail-closed error: requested role != grounded handoff work_role.
@@ -268,8 +292,38 @@ def _load_work_item_task_handoff(
     envelope: Mapping[str, Any] | None = None,
     *,
     require_explicit_work_role: bool = False,
+    require_explicit_work_identity: bool = False,
 ) -> TaskHandoff:
     trusted_plan_ref, trusted_plan_digest, trusted_mid, trusted_wid = _trusted_envelope_identity(envelope)
+
+    # AF #54 M2/W2 (G54-01): entry-level thin semantic-identity gate so BOTH
+    # derivation shapes (direct TaskHandoff payload and generic semantic
+    # projection) fail closed identically before any dispatch.
+    if require_explicit_work_identity:
+        from aota_forge.work_plane.handoff_runtime import WorkScopeInsufficientError
+
+        if not trusted_wid and not any(
+            _semantic_ref_value(semantic.get(k)) for k in _WORK_ITEM_REF_SEMANTIC_KEYS
+        ):
+            raise WorkScopeInsufficientError(
+                f"thin work_item handoff omits an explicit semantic "
+                f"{WORK_ITEM_HANDOFF_WORK_ITEM_REF_FIELD!r}; Work identity "
+                f"belongs to the Plan and task-main reasoning, and the "
+                f"Control Plane does not invent a default; re-issue "
+                f"handoff.write with the authoritative work_item_ref of the "
+                f"Plan Work this child serves (do not retry unchanged)"
+            )
+        if not trusted_mid and not any(
+            _semantic_ref_value(semantic.get(k)) for k in _MILESTONE_REF_SEMANTIC_KEYS
+        ):
+            raise WorkScopeInsufficientError(
+                f"thin work_item handoff omits an explicit semantic "
+                f"{WORK_ITEM_HANDOFF_MILESTONE_REF_FIELD!r}; Milestone "
+                f"identity belongs to the Plan and task-main reasoning, and "
+                f"the Control Plane does not invent a default; re-issue "
+                f"handoff.write with the authoritative milestone_ref of the "
+                f"current Plan Milestone (do not retry unchanged)"
+            )
 
     def _ground(handoff: TaskHandoff) -> TaskHandoff:
         updates: dict[str, Any] = {}
@@ -321,10 +375,29 @@ def _load_work_item_task_handoff(
         validation_expectations=tuple(validation_expectations),  # type: ignore
         semantic_stop_expectations=tuple(semantic_stop_expectations),  # type: ignore
     )
-    # Resolve to TaskHandoff — trusted envelope identity first, then semantic
-    # refs, then legacy defaults (never model authority when grounded).
-    wid = trusted_wid or "W1"
-    mid = trusted_mid or "M1"
+    # Resolve to TaskHandoff — trusted envelope identity first, then explicit
+    # semantic refs (the entry-level thin gate above already fail-closed any
+    # thin omission). AF #54 M2/W2 (G54-01): the historical "W1"/"M1" tail is
+    # bounded to the legacy compatibility path only — the Control Plane never
+    # invents semantic Work identity for thin Plan-bound Work.
+    wid: str | None = trusted_wid
+    mid: str | None = trusted_mid
+    if not wid:
+        for k in _WORK_ITEM_REF_SEMANTIC_KEYS:
+            v = _semantic_ref_value(semantic.get(k))
+            if v:
+                wid = v
+                break
+    if not mid:
+        for k in _MILESTONE_REF_SEMANTIC_KEYS:
+            v = _semantic_ref_value(semantic.get(k))
+            if v:
+                mid = v
+                break
+    if not wid:
+        wid = LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM
+    if not mid:
+        mid = LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE
     if sandbox is not None:
         proj_id = sandbox.project_id
         plan_auth = f"plan-{sandbox.project_id}"
@@ -333,18 +406,6 @@ def _load_work_item_task_handoff(
         plan_auth = "plan-test"
     if trusted_plan_ref:
         plan_auth = trusted_plan_ref
-    if not trusted_wid:
-        for k in ("work_item_id", "work_item_ref"):
-            v = _semantic_ref_value(semantic.get(k))
-            if v:
-                wid = v
-                break
-    if not trusted_mid:
-        for k in ("milestone_id", "milestone_ref"):
-            v = _semantic_ref_value(semantic.get(k))
-            if v:
-                mid = v
-                break
     # AF #53 M3/W2-R2 (I53-B002): thin work-item grounding requires the LLM's
     # explicit semantic work_role. The thin runtime never silently chooses a
     # child role (missing role -> typed fail-closed, zero dispatch); only the
@@ -388,6 +449,7 @@ def load_trusted_work_item_task_handoff(
     opened: Mapping[str, Any],
     sandbox: WorktreeSandboxBoundary,
     require_explicit_work_role: bool = False,
+    require_explicit_work_identity: bool = False,
 ) -> TaskHandoff:
     """Derive the trusted TaskHandoff from an already-opened durable work_item handoff.
 
@@ -400,6 +462,12 @@ def load_trusted_work_item_task_handoff(
     runtime path requirement (typed fail-closed when the durable work_item
     handoff omits/invalidates the semantic ``work_role``). The default keeps
     the legacy compatibility derivation unchanged.
+
+    AF #54 M2/W2 (G54-01): ``require_explicit_work_identity=yes`` is the thin
+    runtime path requirement for explicit semantic ``work_item_ref`` +
+    ``milestone_ref`` (typed fail-closed before dispatch when omitted; no
+    invented W1/M1 grounding). The default keeps the legacy compatibility
+    derivation unchanged.
     """
     if not isinstance(opened, Mapping):
         raise ValueError("opened durable handoff must be a mapping")
@@ -413,6 +481,9 @@ def load_trusted_work_item_task_handoff(
     if require_explicit_work_role:
         # Thin runtime path only; the legacy call shape stays byte-identical.
         load_kwargs["require_explicit_work_role"] = True
+    if require_explicit_work_identity:
+        # Thin runtime path only; the legacy call shape stays byte-identical.
+        load_kwargs["require_explicit_work_identity"] = True
     return _load_work_item_task_handoff(semantic, sandbox, envelope, **load_kwargs)
 
 
@@ -468,8 +539,11 @@ def task_start(
     thin_task_lifecycle is the trusted mechanical runtime-path classification
     supplied by the canonical ingress (``is_thin_task_lifecycle_binding``); on
     the thin path the durable work_item handoff must carry an explicit semantic
-    work_role and a missing/invalid role fails closed before dispatch. It never
-    changes the agent-facing operation contract (role, handoff_ref).
+    work_role AND explicit Plan/Work semantic identity (work_item_ref +
+    milestone_ref); a missing/invalid role or identity fails closed before
+    dispatch (the Control Plane invents neither the child role nor the Work
+    identity). It never changes the agent-facing operation contract
+    (role, handoff_ref).
 
     Returns {task_id, status, handoff_digest}
     """
@@ -500,10 +574,12 @@ def task_start(
     try:
         load_kwargs: dict[str, Any] = {"opened": opened, "sandbox": sandbox}
         if thin_task_lifecycle:
-            # Only the thin runtime path supplies the explicit-role requirement;
-            # the legacy compatibility call shape stays byte-identical for
-            # existing legacy doubles/clients.
+            # Only the thin runtime path supplies the explicit semantic
+            # requirements (child role + Plan/Work identity); the legacy
+            # compatibility call shape stays byte-identical for existing
+            # legacy doubles/clients.
             load_kwargs["require_explicit_work_role"] = True
+            load_kwargs["require_explicit_work_identity"] = True
         task_handoff = load_trusted_work_item_task_handoff(**load_kwargs)
     except Exception as exc:
         # Preserve typed fail-closed identity (e.g. WORK_SCOPE_INSUFFICIENT for
@@ -520,10 +596,18 @@ def task_start(
     # Compile/reuse existing execution-start inputs
     from aota_forge.work_plane.compiler import TrustedExecutionBinding, compile_handoff_to_execution_package
 
-    # Generate canonical_task_id deterministically from envelope artifact + target role
+    # Generate canonical_task_id deterministically from the grounded handoff
+    # identity. AF #54 M2/W2 (G54-01): prefer the CONTROL-GROUNDED envelope
+    # identity, then the grounded durable handoff's own Milestone/Work
+    # semantic identity (which the thin path now requires to be explicit).
+    # The historical M1/W1 literal remains a legacy-only tail and is never a
+    # thin-path fabrication; the Worker binding resolver's consistency gate
+    # requires canonical_task_id to carry the grounded Milestone/Work identity.
     artifact_id = envelope.get("artifact_id", uuid.uuid4().hex)
-    milestone_id = envelope.get("milestone_id") or "M1"
-    work_item_id = envelope.get("work_item_id") or "W1"
+    grounded_milestone = task_handoff.milestone_ref.ref if task_handoff.milestone_ref is not None else None
+    grounded_work_item = task_handoff.work_item_ref.ref if task_handoff.work_item_ref is not None else None
+    milestone_id = envelope.get("milestone_id") or grounded_milestone or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE
+    work_item_id = envelope.get("work_item_id") or grounded_work_item or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM
     # task_id for execution is distinct from handoff artifact_id
     canonical_task_id = f"{sandbox.project_id}:{milestone_id}:{work_item_id}:{artifact_id[:8]}:{uuid.uuid4().hex[:8]}"
     # Use sandbox project_id as binding project
@@ -767,6 +851,15 @@ __all__ = [
     "THIN_PATH_MISSING_WORK_ROLE_FAILS_CLOSED",
     "CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH",
     "LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT",
+    "THIN_WORK_ITEM_SEMANTIC_IDENTITY_EXPLICIT",
+    "THIN_PATH_MISSING_WORK_IDENTITY_FAILS_CLOSED",
+    "CONTROL_PLANE_DEFAULTS_WORK_ITEM_TO_W1_ON_THIN_PATH",
+    "CONTROL_PLANE_DEFAULTS_MILESTONE_TO_M1_ON_THIN_PATH",
+    "CONTROL_PLANE_INVENTS_SEMANTIC_WORK_IDENTITY",
+    "LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM",
+    "LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE",
+    "WORK_ITEM_HANDOFF_WORK_ITEM_REF_FIELD",
+    "WORK_ITEM_HANDOFF_MILESTONE_REF_FIELD",
     "WORKER_RESULT_FULL_WRITE_COUNT_NORMAL",
     "WORKER_AUTHORS_RESULT_CARD",
     "RESULT_CARD_DETERMINISTIC",

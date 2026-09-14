@@ -612,6 +612,9 @@ class TestC7DefaultThinWorkerLifecycle:
                 "payload": {
                     "work_role": "coder",
                     "task_kind": "af53-m3w3-cutover",
+                    # AF #54 M2/W2: explicit Plan/Work semantic identity (task-main owned).
+                    "work_item_ref": "W1",
+                    "milestone_ref": "M1",
                     "objective": "bounded default thin worker lifecycle",
                     "bounded_scope": "bounded scope",
                     "validation_expectations": ["focused validation"],

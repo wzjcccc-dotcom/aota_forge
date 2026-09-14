@@ -177,6 +177,10 @@ _THIN_ROUTE_SUBPROCESS_SCRIPT = textwrap.dedent(
             "payload": {
                 "work_role": "coder",
                 "task_kind": "af53-m2w1-thin",
+                # AF #54 M2/W2: explicit Plan/Work semantic identity is now
+                # part of the thin work_item contract (task-main owned).
+                "work_item_ref": "W1",
+                "milestone_ref": "M1",
                 "objective": "generic child",
                 "bounded_scope": "bounded",
                 "validation_expectations": ["focused"],

@@ -226,6 +226,9 @@ def _write_work_item(host: Any, *, role: str = "coder") -> str:
             "payload": {
                 "work_role": role,
                 "task_kind": "af53-m3w2r1",
+                # AF #54 M2/W2: explicit Plan/Work semantic identity (task-main owned).
+                "work_item_ref": "W1",
+                "milestone_ref": "M1",
                 "objective": "bounded thin Worker binding propagation",
                 "bounded_scope": "bounded thin scope",
                 "validation_expectations": ["focused repair validation"],
@@ -790,6 +793,9 @@ client.runtime_root.mkdir()
 print("RESOLVER=%s" % ("present" if client._worker_env_resolver is not None else "missing"))
 written = host.invoke("handoff.write", {{"mode": "work_item", "payload": {{
     "work_role": "coder", "task_kind": "fresh", "objective": "child",
+    # AF #54 M2/W2: explicit Plan/Work semantic identity (task-main owned).
+    "work_item_ref": "W1",
+    "milestone_ref": "M1",
     "bounded_scope": "bounded", "validation_expectations": ["focused"],
     "semantic_stop_expectations": ["stop"],
 }}}})

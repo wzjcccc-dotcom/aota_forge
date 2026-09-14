@@ -1169,8 +1169,14 @@ def create_governed_worker_env_resolver(
                 # AF #53 M3/W2-R2 (I53-B002): this resolver is composed only by
                 # the thin host runtime path; require the same explicit
                 # work_role grounding the thin task.start enforced.
+                # AF #54 M2/W2 (G54-01): the same shared requirement applies to
+                # the explicit Plan/Work semantic identity (no invented
+                # W1/M1 grounding on the thin path).
                 handoff = load_trusted_work_item_task_handoff(
-                    opened=opened, sandbox=sandbox, require_explicit_work_role=True
+                    opened=opened,
+                    sandbox=sandbox,
+                    require_explicit_work_role=True,
+                    require_explicit_work_identity=True,
                 )
                 if handoff.project_ref is not None and handoff.project_ref.ref != project_id:
                     raise _governed_worker_binding_unavailable(

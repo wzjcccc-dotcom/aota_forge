@@ -221,6 +221,7 @@ _FRESH_PROCESS_SCRIPT = textwrap.dedent(
     print("GUIDANCE_OK" if "task.start" in base else "GUIDANCE_BAD")
     written = host.invoke("handoff.write", {{"mode": "work_item", "payload": {{
         "work_role": "coder", "task_kind": "fresh", "objective": "child",
+        "work_item_ref": "W1", "milestone_ref": "M1",
         "bounded_scope": "bounded", "validation_expectations": ["focused"],
         "semantic_stop_expectations": ["stop"],
     }}}})
@@ -317,7 +318,12 @@ def _compose(
 
 
 def _write_work_item(
-    host: ThinTaskMainHost, *, role: str = "coder", task_kind: str = "af53-m2w2"
+    host: ThinTaskMainHost,
+    *,
+    role: str = "coder",
+    task_kind: str = "af53-m2w2",
+    work_item_ref: str = "W1",
+    milestone_ref: str = "M1",
 ) -> str:
     response = host.invoke(
         "handoff.write",
@@ -326,6 +332,11 @@ def _write_work_item(
             "payload": {
                 "work_role": role,
                 "task_kind": task_kind,
+                # AF #54 M2/W2: the thin work_item handoff carries the
+                # explicit Plan/Work semantic identity task-main reasoned it
+                # under (CP never invents W1/M1 on the thin path).
+                "work_item_ref": work_item_ref,
+                "milestone_ref": milestone_ref,
                 "objective": "bounded child objective",
                 "bounded_scope": "bounded child scope",
                 "validation_expectations": ["focused thin host validation"],

@@ -179,8 +179,11 @@ AF_TOOL_SURFACES = dict(_TOOL_SURFACES)
 
 _SKILL_META: dict[str, tuple[str, str]] = {
     "aota-task-main-control": (
-        "Task-main milestone control via aota.invoke",
-        "use when you need to activate, recover, or advance milestone as task-main",
+        "Canonical task-main usage contract: bounded child dispatch with "
+        "explicit semantic role and Plan Work identity, typed-error recovery, "
+        "delegation and review sizing",
+        "use as the detailed procedure source before writing child handoffs "
+        "or when handling a typed dispatch failure",
     ),
     "aota-workspace-operations": (
         "Bounded workspace search/read/write plus test policy via aota.invoke",
@@ -339,19 +342,17 @@ THIN_TASK_MAIN_GUIDANCE_IS_ADVISORY = True
 THIN_TASK_MAIN_GUIDANCE_IS_WORKFLOW_PRESCRIPTIVE = False
 
 THIN_TASK_MAIN_EAGER_GUIDANCE = (
-    "Task-main operating guidance (thin host): you own plan interpretation, workflow "
-    "strategy, sequencing, delegation, review strategy, repair strategy and Milestone "
-    "judgment. Read project/Plan context on demand via workspace.search / workspace.read; "
-    "search or open relevant context only when needed. Write the semantic handoff for a "
-    "child task with handoff.write(mode=work_item, payload.work_role=<target child role>); "
-    "payload.work_role must equal the task.start role you pass next. Re-read the handoff "
-    "with handoff.open; start any permitted child role "
-    "(coder|analyst|reviewer|project-steward) via task.start(role, handoff_ref); observe "
-    "child results through the factual completion/result surfaces and reason about the "
-    "next action yourself. The Control Plane enforces authority and records mechanical "
-    "facts only: it does not prescribe review frequency or order, Work sequence, repair "
-    "strategy or Milestone advancement. Stop with needs_input when trusted evidence is "
-    "insufficient; never invent authority, project scope or session identity."
+    "Task-main (thin host): you own plan interpretation, workflow strategy, "
+    "delegation, review frequency and Milestone judgment; the Control Plane "
+    "enforces authority and grounds mechanical facts only. Discover context "
+    "via workspace.search / workspace.read, then reason the next semantic "
+    "action. Child dispatch normal path: handoff.write(mode=work_item, "
+    "payload.work_role + work_item_ref + milestone_ref + objective + "
+    "bounded_scope) then task.start(role=same work_role, handoff_ref). The "
+    "full procedure, work-identity rules and typed-error recovery live in "
+    "your aota-task-main-control base Skill (open the ref listed under "
+    "BASE_SKILLS via skill.open). Stop with needs_input when evidence is "
+    "insufficient; never invent authority, scope or identity."
 )
 
 

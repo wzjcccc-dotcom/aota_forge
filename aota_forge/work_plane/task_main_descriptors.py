@@ -132,25 +132,34 @@ _TASK_START_EXAMPLE = {"role": "coder", "handoff_ref": "<ref from handoff.write>
 # is generic for every permitted child role (coder|analyst|reviewer|
 # project-steward) per canonical role policy.
 _THIN_NORMAL_PATH_FLOW = (
-    "choose child role -> handoff.write(mode=work_item, payload.work_role=<role>) "
-    "-> task.start(role=<same role>, handoff_ref=<ref>)"
+    "choose child role and Plan Work identity -> handoff.write(mode=work_item, "
+    "payload = semantic intent) -> task.start(role=<same role>, handoff_ref=<ref>)"
 )
+# AF #54 M2/W2: thin affordance ONLY. The canonical detailed handoff procedure
+# (semantic fields, work identity rules, typed-error recovery) lives in the
+# task-main Role Skill; this note keeps the single first-use invariant that
+# prevents the historical role/handoff mismatch, and the example now carries
+# the explicit Plan/Work semantic identity the thin grounding requires.
 _THIN_HANDOFF_WRITE_NOTE = (
-    "normal step 1; mode=work_item; payload.work_role = target child role "
-    "(coder|analyst|reviewer|project-steward); payload.work_role MUST equal the "
-    "subsequent task.start.role; trusted envelope filled by AF"
+    "normal step 1; mode=work_item; payload carries the semantic child role "
+    "(payload.work_role) and the authoritative Plan Work identity "
+    "(work_item_ref, milestone_ref) per the task-main Skill; "
+    "payload.work_role MUST equal the subsequent task.start.role; "
+    "mechanical envelope fields are filled by AF"
 )
 _THIN_HANDOFF_WRITE_EXAMPLE = {
     "mode": "work_item",
     "payload": {
         "work_role": "reviewer",
+        "work_item_ref": "W1",
+        "milestone_ref": "M2",
         "objective": "Review W1 result",
-        "bounded_scope": "Read and validate W1",
+        "bounded_scope": "Read and validate only W1",
     },
 }
 _THIN_TASK_START_NOTE = (
     "normal step 2; role MUST equal the grounded durable handoff payload.work_role; "
-    "AF verifies durable Work-source grounding"
+    "missing semantic work_role/work identity fails closed (typed) before dispatch"
 )
 _THIN_TASK_START_EXAMPLE = {"role": "reviewer", "handoff_ref": "<ref from handoff.write>"}
 
