@@ -911,6 +911,17 @@ def build_worker_child_environment(
     if not resolved_root.is_dir():
         raise TrustedBindingError(f"worker child env root missing: {resolved_root}")
     effective_repo = Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[2]
+    # AF #54 M3/W2: carry the operator-opt-in passive observation config into
+    # the worker envelope (bounded, mechanical, non-authoritative) so the
+    # Worker MCP child can emit its own bounded observations with the parent
+    # session correlation. Absent unless the operator configured a sink.
+    observation_provenance: dict[str, str] = {}
+    try:
+        from aota_forge.work_plane.runtime_observation import observation_provenance_from_env
+
+        observation_provenance = observation_provenance_from_env()
+    except BaseException:
+        observation_provenance = {}
     # Pre-resolved envelope: AF runtime constructs trusted binding before MCP
     envelope_path = create_worker_envelope(
         worktree_root=resolved_root,
@@ -918,6 +929,7 @@ def build_worker_child_environment(
         worktree_id=worktree_id,
         canonical_task_id=canonical_task_id,
         handoff=handoff,
+        provenence=observation_provenance or None,
     )
     child: dict[str, str] = {
         PRE_RESOLVED_BINDING_ENV: str(envelope_path),

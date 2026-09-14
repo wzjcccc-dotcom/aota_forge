@@ -516,6 +516,57 @@ def ensure_runtime_observation_ready() -> None:
                 pass
 
 
+def configure_runtime_observation(
+    *,
+    evidence_path: str | None,
+    run_ref: str | None = None,
+    session_ref: str | None = None,
+    parent_session_ref: str | None = None,
+) -> bool:
+    """Install the operator-opt-in bounded evidence sink + correlation scope.
+
+    Called from trusted MCP-side binding reconstruction (the verified
+    bootstrap / envelope is the carrier, never model input). Fail-isolated:
+    telemetry configuration can never break runtime binding construction.
+    Also exports the same bounded keys into ``os.environ`` so descendant
+    Worker processes can carry the operator opt-in.
+    """
+    try:
+        raw_path = (evidence_path or "").strip()
+        run = (run_ref or "").strip() or None
+        session = (session_ref or "").strip() or None
+        parent = (parent_session_ref or "").strip() or None
+        if not raw_path and not run and not session:
+            return False
+        for env_key, env_value in (
+            (OBSERVATION_SINK_ENV, raw_path),
+            (OBSERVATION_RUN_REF_ENV, run or ""),
+            (OBSERVATION_SESSION_REF_ENV, session or ""),
+        ):
+            if env_value and not os.environ.get(env_key, "").strip():
+                os.environ[env_key] = env_value
+        if raw_path and get_runtime_observation_sink() is None:
+            install_runtime_observation_sink(FileRuntimeObservationSink(raw_path))
+        if run or session:
+            install_runtime_observation_scope(
+                RuntimeObservationScope(run_ref=run, session_ref=session)
+            )
+        return True
+    except BaseException as exc:
+        _record_failure(f"configure:{type(exc).__name__}")
+        return False
+
+
+def observation_provenance_from_env() -> dict[str, str]:
+    """Bounded operator observation config currently present in this process."""
+    provenance: dict[str, str] = {}
+    for key in (OBSERVATION_SINK_ENV, OBSERVATION_RUN_REF_ENV, OBSERVATION_SESSION_REF_ENV):
+        value = os.environ.get(key, "").strip()
+        if value:
+            provenance[key] = value
+    return provenance
+
+
 def emit_tool_observation_passive(observation: ToolUsageObservation) -> bool:
     """Emit one Tool observation; any sink failure is swallowed and counted."""
     if not isinstance(observation, ToolUsageObservation):
@@ -706,6 +757,8 @@ __all__ = [
     "runtime_observation_health",
     "reset_runtime_observation_health",
     "ensure_runtime_observation_ready",
+    "configure_runtime_observation",
+    "observation_provenance_from_env",
     "emit_tool_observation_passive",
     "emit_skill_observation_passive",
     "emit_role_bootstrap_skill_observations",

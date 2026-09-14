@@ -905,6 +905,8 @@ class DailyTaskMainLauncher:
                 runtime_config_path=runtime_config_path,
                 origin_task_main_session_ref=origin_task_main_session_ref,
                 execution_store_path=execution_store_path,
+                observation_evidence_path=os.environ.get("AOTA_RUNTIME_OBSERVATION_SINK", "").strip() or None,
+                observation_run_ref=os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip() or None,
             )
             try:
                 mode = bootstrap_path.stat().st_mode

@@ -519,13 +519,34 @@ def load_binding_from_envelope(envelope_path: Path | str) -> TrustedWorkerBindin
         worktree_id = payload["worktree_id"]
         canonical_task_id = payload["canonical_task_id"]
         handoff = TaskHandoff.from_dict(payload["handoff"])
-        return build_worker_binding(
+        binding = build_worker_binding(
             root=worktree_root,
             project_id=project_id,
             worktree_id=worktree_id,
             canonical_task_id=canonical_task_id,
             handoff=handoff,
         )
+        # AF #54 M3/W2: install the operator-opt-in passive observation sink
+        # carried by the verified envelope provenance (bounded, mechanical,
+        # non-authoritative). Fail-isolated.
+        try:
+            provenance = payload.get("provenance")
+            if isinstance(provenance, dict):
+                from aota_forge.work_plane.runtime_observation import (
+                    OBSERVATION_RUN_REF_ENV,
+                    OBSERVATION_SESSION_REF_ENV,
+                    OBSERVATION_SINK_ENV,
+                    configure_runtime_observation,
+                )
+
+                configure_runtime_observation(
+                    evidence_path=provenance.get(OBSERVATION_SINK_ENV),
+                    run_ref=provenance.get(OBSERVATION_RUN_REF_ENV),
+                    session_ref=provenance.get(OBSERVATION_SESSION_REF_ENV),
+                )
+        except BaseException:
+            pass
+        return binding
     else:  # task-main
         # Delegate to host bootstrap's builder via explicit path handling
         # The envelope payload contains bootstrap_content; we reconstruct via

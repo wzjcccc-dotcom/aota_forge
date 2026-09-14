@@ -223,6 +223,8 @@ def materialize_thin_task_main_bootstrap(
     origin_task_main_session_ref: str,
     execution_store_path: str | PathLike[str] | None = None,
     executor_id: str = "hermes",
+    observation_evidence_path: str | None = None,
+    observation_run_ref: str | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -272,6 +274,20 @@ def materialize_thin_task_main_bootstrap(
         "origin_task_main_session_ref": origin,
         "executor_id": executor_id.strip(),
     }
+    # AF #54 M3/W2 optional bounded passive-observation configuration carried
+    # through the trusted operator bootstrap (mechanical, non-authoritative;
+    # absent unless the operator explicitly configured a per-run evidence
+    # sink). Bounded identifiers only; never model input.
+    if observation_evidence_path is not None and str(observation_evidence_path).strip():
+        candidate = str(observation_evidence_path).strip()
+        if len(candidate) > 1024 or "\x00" in candidate:
+            raise TaskMainRuntimeSelectionError("thin bootstrap observation evidence path invalid")
+        payload["observation_evidence_path"] = candidate
+    if observation_run_ref is not None and str(observation_run_ref).strip():
+        candidate_run = str(observation_run_ref).strip()
+        if len(candidate_run) > 128 or not _SAFE_ID.fullmatch(candidate_run):
+            raise TaskMainRuntimeSelectionError("thin bootstrap observation run_ref invalid")
+        payload["observation_run_ref"] = candidate_run
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:
@@ -380,6 +396,19 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         origin_task_main_session_ref=str(content["origin_task_main_session_ref"]),
         execution_store=execution_store,
     )
+    # AF #54 M3/W2: install the operator-opt-in passive observation sink from
+    # the verified bootstrap (bounded, non-authoritative). Fail-isolated:
+    # telemetry configuration never breaks binding construction.
+    try:
+        from aota_forge.work_plane.runtime_observation import configure_runtime_observation
+
+        configure_runtime_observation(
+            evidence_path=content.get("observation_evidence_path"),
+            run_ref=content.get("observation_run_ref"),
+            session_ref=str(content["origin_task_main_session_ref"]),
+        )
+    except BaseException:
+        pass
     return host.trusted_binding
 
 
