@@ -85,6 +85,28 @@ def _handle_git_inspect(ctx: OperationContext) -> dict[str, Any]:
     return {"data": result}
 
 
+def _handle_project_reconcile(ctx: OperationContext) -> dict[str, Any]:
+    """AF #55 M1 on-demand mechanical project reconciliation (trusted channel)."""
+    from aota_forge.core.project.lifecycle import reconcile_project
+
+    workspace_id = ctx.params.get("workspace_id")
+    project_id = ctx.params.get("project_id")
+    if not isinstance(workspace_id, str) or not isinstance(project_id, str):
+        raise ForgeError("PROJECT_NOT_FOUND", "workspace_id and project_id are required")
+    source_repository = ctx.params.get("source_repository")
+    expected_project_root = ctx.params.get("expected_project_root")
+    expected_manifest_path = ctx.params.get("expected_manifest_path")
+    evidence = reconcile_project(
+        workspace_id=workspace_id,
+        registry_path=_registry_path(ctx.params),
+        project_id=project_id,
+        source_repository=source_repository if isinstance(source_repository, str) else None,
+        expected_project_root=expected_project_root if isinstance(expected_project_root, str) else None,
+        expected_manifest_path=expected_manifest_path if isinstance(expected_manifest_path, str) else None,
+    )
+    return {"data": evidence.to_dict()}
+
+
 def _handle_runtime_status(ctx: OperationContext) -> dict[str, Any]:
     pid = ctx.params.get("pid")
     if not isinstance(pid, int) or isinstance(pid, bool):
@@ -407,6 +429,7 @@ def register_operations() -> None:
     closed on unknown descriptors or duplicate handler attachment.
     """
     DEFAULT_REGISTRY.bind_handler("project.resolve", _handle_project_resolve)
+    DEFAULT_REGISTRY.bind_handler("project.reconcile", _handle_project_reconcile)
     DEFAULT_REGISTRY.bind_handler("git.inspect", _handle_git_inspect)
     DEFAULT_REGISTRY.bind_handler("runtime.status", _handle_runtime_status)
     DEFAULT_REGISTRY.bind_handler("host.status", _handle_host_status)

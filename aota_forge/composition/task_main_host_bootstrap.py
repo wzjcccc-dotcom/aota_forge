@@ -72,7 +72,10 @@ from aota_forge.work_plane.progression import FocusedValidationEvidence, Focused
 from aota_forge.runtime.task_main.reconciliation import GovernedWorkItemEvidence, GovernedReviewEvidence
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle, ReviewFindingEvidence, ReviewFindingClassification
 from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
-from aota_forge.composition.project_binding import resolve_trusted_project_evidence
+from aota_forge.composition.project_binding import (
+    resolve_trusted_project_binding,
+    resolve_trusted_project_evidence,
+)
 from aota_forge.composition.completion_evidence import (
     create_automatic_governed_evidence_resolver,
     derive_governed_review_evidence,
@@ -124,7 +127,13 @@ PENDING_PLACEHOLDER_MAY_ENTER_DURABLE_CHILD_RECORD = False
 TASK_MAIN_SESSION_BINDING_IS_REAL_EXACT_IDENTITY = True
 
 
-def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
+def _project_evidence(
+    root: Path,
+    project_id: str,
+    *,
+    source_repository: str | None = None,
+    registry_path: Path | None = None,
+) -> ProjectResolutionEvidence:
     """Generic trusted project evidence via canonical resolver.
 
     Derives ProjectResolutionEvidence from trusted workspace root (worktree)
@@ -135,12 +144,24 @@ def _project_evidence(root: Path, project_id: str) -> ProjectResolutionEvidence:
     Reuses canonical scan_projects / fingerprint_registry via
     resolve_trusted_project_evidence (single shared helper).
     Fail-closed: unknown / ambiguous / invalid remains not RESOLVED.
+
+    AF #55 M1/W4: when the operator-owned bootstrap declares a
+    ``source_repository`` (Plan SOURCE_REPOSITORY) and/or a workspace
+    ``registry_path``, resolution goes through the canonical registry-backed
+    trusted binding with mechanical Git origin verification. No cwd/folder
+    inference, no synthetic fallback on that path.
     """
-    evidence = resolve_trusted_project_evidence(
+    if (source_repository is not None and str(source_repository).strip()) or registry_path is not None:
+        binding = resolve_trusted_project_binding(
+            project_id=project_id,
+            source_repository=source_repository,
+            registry_path=registry_path,
+        )
+        return binding.resolution
+    return resolve_trusted_project_evidence(
         worktree_root=root,
         project_id=project_id,
     )
-    return evidence
 
 
 def _neutral_envelope(milestone: str) -> MilestoneRiskEnvelope:
@@ -467,6 +488,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     coordinator_id = data.get("coordinator_id")  # may be None
     live_view_dict = data["live_plan_view"]
     next_view_dict = data.get("next_milestone_view")
+    # AF #55 M1/W4: optional trusted Plan project identity from the
+    # operator-owned bootstrap. Consumed by the canonical project binding;
+    # never a model argument.
+    bootstrap_source_repository = str(data.get("source_repository") or "").strip() or None
+    raw_registry = str(data.get("registry_path") or "").strip()
+    bootstrap_registry_path = Path(raw_registry).resolve() if raw_registry else None
 
     # Reconstruct typed views
     live_view = _view_from_dict(live_view_dict)
@@ -976,13 +1003,24 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # project evidence fails closed (MISSING_CANONICAL_PROJECT_EVIDENCE_FAILS_CLOSED=yes).
     # Test fixtures may create synthetic evidence only via explicit test seam
     # (AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE=1).
+    trusted_identity_declared = bool(bootstrap_source_repository or bootstrap_registry_path)
     try:
-        _ev = _project_evidence(worktree_root, project_id)
+        _ev = _project_evidence(
+            worktree_root,
+            project_id,
+            source_repository=bootstrap_source_repository,
+            registry_path=bootstrap_registry_path,
+        )
         if _ev.status != "RESOLVED":
             raise ValueError(f"evidence not resolved: {_ev.status}")
         sandbox = bind_worktree_sandbox(_ev, worktree_id, worktree_root)
     except Exception as exc:
-        if os.environ.get("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE") == "1" or os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1":
+        # A declared trusted Plan identity must never degrade to synthetic
+        # evidence (AF #55 M1/W4): Git-grounded resolution fails closed.
+        if not trusted_identity_declared and (
+            os.environ.get("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE") == "1"
+            or os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1"
+        ):
             from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
 
             synthetic = ProjectCandidateEvidence(

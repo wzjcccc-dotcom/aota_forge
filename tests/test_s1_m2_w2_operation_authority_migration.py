@@ -38,6 +38,11 @@ from aota_forge.core.contracts.operations import get_contract, available_operati
 
 EXPECTED_HASHES: dict[str, str] = {
     "project.resolve": "c7904fc0dd1424025cc0b79c692a0f6adc4ca5ba415ae1d0dd360ae4da0b18ea",
+    # AF #55 M1: the on-demand mechanical project reconciliation operation joins
+    # the canonical Core general registry topology (NOT the Agent-visible
+    # aota.invoke surface). Registration stays a Control-Plane operator
+    # operation (trusted inputs only), not a Core ingress dispatch operation.
+    "project.reconcile": "2ca3fc8cb797d45ae1cceaddba84621663da4f8ebfcfc3429e4fd2d45c3e8a0e",
     "git.inspect": "be4389b55eda1f88b11e382627135c9dfb7d5520187306207efdc13a016fbfc1",
     "runtime.status": "8b0504b2e6e0d64f7fa3caa8a9a0a9bb236292bd21939ff73f96df254c367d6c",
     "host.status": "ca6320f0445741e6794014a67fac39d720d8fcbb20e76077f5a12085a2f1da10",
@@ -65,6 +70,7 @@ EXPECTED_NAMES = frozenset(EXPECTED_HASHES.keys())
 CATALOG_NAMES = frozenset(
     {
         "project.resolve",
+        "project.reconcile",
         "git.inspect",
         "runtime.status",
         "host.status",

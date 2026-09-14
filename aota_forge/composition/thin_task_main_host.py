@@ -62,7 +62,10 @@ from aota_forge.composition.execution import (
     create_hermes_completion_delivery_transport,
     create_production_execution_dispatcher,
 )
-from aota_forge.composition.project_binding import resolve_trusted_project_evidence
+from aota_forge.composition.project_binding import (
+    resolve_trusted_project_binding,
+    resolve_trusted_project_evidence,
+)
 from aota_forge.composition.worker_vertical_slice import (
     create_governed_worker_env_resolver,
 )
@@ -231,13 +234,46 @@ def _validate_worktree_root(value: Any) -> Path:
 
 
 def _resolve_sandbox(
-    *, worktree_root: Path, project_id: str, worktree_id: str
-) -> tuple[Any, WorktreeSandboxBoundary]:
-    """Canonical project binding + trusted worktree sandbox (hard boundary)."""
-    evidence = resolve_trusted_project_evidence(
-        worktree_root=worktree_root,
-        project_id=project_id,
-    )
+    *,
+    worktree_root: Path,
+    project_id: str,
+    worktree_id: str,
+    source_repository: str | None = None,
+    registry_path: str | PathLike[str] | None = None,
+) -> tuple[Any, WorktreeSandboxBoundary, dict[str, Any]]:
+    """Canonical project binding + trusted worktree sandbox (hard boundary).
+
+    AF #55 M1/W4: when the trusted operator/runtime construction supplies a
+    workspace registry and/or a Plan SOURCE_REPOSITORY, resolution goes
+    through ``resolve_trusted_project_binding`` — registry-backed
+    deterministic project_id resolution + mechanical Git origin grounding.
+    No cwd inference, no folder-name inference, no model path authority.
+
+    Without registry/SOURCE_REPOSITORY inputs the existing worktree-scan
+    canonical path is preserved (legacy compatibility); it is still the same
+    canonical resolver, never a second one.
+    """
+    trusted_context: dict[str, Any] = {
+        "source_repository": "",
+        "repository_identity_verified": False,
+    }
+    if source_repository is not None or registry_path is not None:
+        binding = resolve_trusted_project_binding(
+            project_id=project_id,
+            source_repository=source_repository,
+            registry_path=registry_path,
+        )
+        evidence = binding.resolution
+        trusted_context = {
+            "source_repository": binding.source_repository,
+            "repository_identity_verified": binding.repository_identity is not None,
+            "repository_identity": binding.repository_identity,
+        }
+    else:
+        evidence = resolve_trusted_project_evidence(
+            worktree_root=worktree_root,
+            project_id=project_id,
+        )
     candidates = tuple(getattr(evidence, "candidates", ()) or ())
     if getattr(evidence, "status", None) != "RESOLVED" or len(candidates) != 1:
         raise TrustedBindingError(
@@ -250,7 +286,7 @@ def _resolve_sandbox(
         worktree_root,
         expected_project_id=project_id,
     )
-    return evidence, sandbox
+    return evidence, sandbox, trusted_context
 
 
 def _task_main_control_handoff() -> TaskHandoff:
@@ -385,6 +421,12 @@ class ThinTaskMainHost:
     # with ("" when no Plan was bound at launch). Mechanical identity fact
     # for guidance/observation; never authority by itself.
     plan_ref: str = ""
+    # AF #55 M1/W4: trusted Plan project identity grounding. Mechanical
+    # identity facts only (never authority by themselves); M2 owns the full
+    # multi-root bootstrap projection.
+    source_repository: str = ""
+    repository_identity_verified: bool = False
+    repository_identity: dict[str, Any] | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -437,6 +479,8 @@ def compose_thin_task_main_host(
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
     plan_ref: str | None = None,
+    source_repository: str | None = None,
+    registry_path: str | PathLike[str] | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -444,6 +488,12 @@ def compose_thin_task_main_host(
     model never supplies or overrides them. The composition never consults a
     Plan, never constructs the legacy workflow coordinator, and leaves the
     production default path untouched.
+
+    AF #55 M1/W4: ``source_repository`` and ``registry_path`` are trusted
+    operator/runtime inputs (Plan project identity + authorized workspace
+    registry). When supplied, project resolution becomes registry-backed with
+    mechanical Git origin verification; when absent the existing trusted
+    worktree-scan resolution is preserved.
     """
     pid = _validate_identifier(project_id, "project_id")
     wid = _validate_identifier(worktree_id, "worktree_id")
@@ -458,8 +508,12 @@ def compose_thin_task_main_host(
     if not isinstance(runtime_config, RuntimeConfig):
         raise TrustedBindingError("thin host requires the canonical RuntimeConfig authority")
 
-    project_evidence, sandbox = _resolve_sandbox(
-        worktree_root=root, project_id=pid, worktree_id=wid
+    project_evidence, sandbox, trusted_project_context = _resolve_sandbox(
+        worktree_root=root,
+        project_id=pid,
+        worktree_id=wid,
+        source_repository=source_repository,
+        registry_path=registry_path,
     )
 
     store: ExecutionStateStore = (
@@ -585,6 +639,11 @@ def compose_thin_task_main_host(
         completion_transport=transport,
         aota_invoke=aota_invoke,
         plan_ref=plan_binding.plan_ref if plan_binding is not None else "",
+        source_repository=str(trusted_project_context.get("source_repository", "") or ""),
+        repository_identity_verified=bool(
+            trusted_project_context.get("repository_identity_verified", False)
+        ),
+        repository_identity=trusted_project_context.get("repository_identity"),
     )
 
 

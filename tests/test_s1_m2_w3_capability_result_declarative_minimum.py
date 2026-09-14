@@ -557,8 +557,9 @@ def test_w2_regression_operations_13_and_hashes():
 def test_registry_topology_preserved():
     from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 
-    # Should still be 7 general/lifecycle
-    assert len(DEFAULT_REGISTRY.names()) == 7
+    # AF #55 M1 adds project.reconcile to the canonical Core general registry
+    # (8 general/lifecycle); execution.* still absent.
+    assert len(DEFAULT_REGISTRY.names()) == 8
     assert "execution.task_start" not in DEFAULT_REGISTRY.names()
 
 

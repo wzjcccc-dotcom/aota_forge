@@ -73,6 +73,31 @@ def find_git_root(start: Path, boundary: Path) -> Path:
     )
 
 
+def read_git_origin(project_root: Path, boundary: Path | None = None) -> str:
+    """Read the configured ``origin`` remote URL within the project boundary.
+
+    Bounded, read-only, structured argv (``git remote get-url origin``),
+    ``shell=False``, fixed command, timeout, no model-supplied Git arguments.
+    The resolved project boundary remains the search boundary; the origin is
+    read from the Git repository that contains ``project_root`` inside that
+    boundary.
+
+    Raises:
+        GitBoundaryViolationError / GitNotFoundError fail-closed.
+    """
+    boundary_resolved = (boundary or project_root).resolve()
+    git_root = find_git_root(project_root, boundary_resolved)
+    stdout, stderr, rc = _run_git(git_root, ["git", "remote", "get-url", "origin"])
+    if rc != 0:
+        raise GitNotFoundError(
+            f"git remote origin unavailable in {git_root}: {stderr.strip() or 'no origin'}"
+        )
+    origin = stdout.strip()
+    if not origin or "\x00" in origin or "\n" in origin:
+        raise GitNotFoundError(f"git remote origin is empty or malformed in {git_root}")
+    return origin
+
+
 def _porcelain_split(porcelain: str) -> tuple[list[str], list[str], list[str]]:
     staged: list[str] = []
     unstaged: list[str] = []

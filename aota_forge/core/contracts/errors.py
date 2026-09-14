@@ -126,6 +126,32 @@ class ProjectRegistryInvalidError(ForgeError):
         _canonical_init(self, message, retryable, details)
 
 
+class ProjectSourceRepositoryMismatchError(ForgeError):
+    """AF #55 M1/W3: a Plan-declared SOURCE_REPOSITORY does not match the
+    mechanically-read Git origin of the resolved checkout.  The Control Plane
+    grounds repository identity; it never interprets semantic intent."""
+
+    code = "PROJECT_SOURCE_REPOSITORY_MISMATCH"
+    default_message = "project source repository does not match the checkout Git origin"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
+class ProjectReconciliationDriftError(ForgeError):
+    """AF #55 M1/W2: trusted project reconciliation observed that the
+    registered project identity changed (root/manifest/repository).  Fail
+    closed; no name/nearest-path/similarity rebinding is permitted."""
+
+    code = "PROJECT_RECONCILIATION_DRIFT"
+    default_message = "project reconciliation drift detected"
+    default_retryable = False
+
+    def __init__(self, message: str | None = None, retryable: bool | None = None, details: object = None) -> None:
+        _canonical_init(self, message, retryable, details)
+
+
 class GitNotFoundError(ForgeError):
     code = "GIT_NOT_FOUND"
     default_message = "git repository not found within boundary"
@@ -649,6 +675,8 @@ ERROR_CLASSES: dict[str, type[ForgeError]] = {
         ProjectAmbiguousError,
         ProjectManifestInvalidError,
         ProjectRegistryInvalidError,
+        ProjectSourceRepositoryMismatchError,
+        ProjectReconciliationDriftError,
         GitNotFoundError,
         GitBoundaryViolationError,
         RuntimeNotRunningError,

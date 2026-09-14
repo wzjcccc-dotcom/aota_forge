@@ -48,6 +48,11 @@ class M43WriteIngressTests(unittest.TestCase):
         from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 
         ensure_handlers_bound()
+        # AF #55 M1 intentionally extends the canonical Core general registry
+        # with the on-demand mechanical project reconciliation operation
+        # (project.reconcile). project.register stays a Control-Plane operator
+        # operation outside the Core ingress dispatch planes; execution.* stays
+        # separate and the Agent-visible aota.invoke surface is unchanged.
         self.assertEqual(
             DEFAULT_REGISTRY.names(),
             (
@@ -56,6 +61,7 @@ class M43WriteIngressTests(unittest.TestCase):
                 "operations.list",
                 "plan_init",
                 "plan_retirement",
+                "project.reconcile",
                 "project.resolve",
                 "runtime.status",
             ),

@@ -36,8 +36,16 @@ from aota_forge.core.contracts.loader import (
 from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 
 # Stable operation identity / routing grouping (allowed to remain)
+# AF #55 M1: project.reconcile joins the Core general registry topology as the
+# on-demand mechanical project reconciliation operation. It is deliberately
+# NOT in the Agent-visible aota.invoke surface (mcp_transport
+# LOGICAL_OPERATIONS). project.register is a Control-Plane operator operation
+# (core.project.lifecycle.register_project) with trusted-input-only semantics:
+# it is not a Core ingress dispatch operation and the model never self-grants
+# project authority.
 CANONICAL_GENERAL_OPERATIONS: Final[tuple[str, ...]] = (
     "project.resolve",
+    "project.reconcile",
     "git.inspect",
     "runtime.status",
     "host.status",

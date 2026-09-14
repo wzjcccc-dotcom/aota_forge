@@ -366,6 +366,44 @@ contracts:
   result_contract: null
   errors: []
   protocol_version: '1.0'
+- name: project.reconcile
+  description: On-demand mechanical project reconciliation (registered workspace + manifest + Git identity; drift fails closed)
+  inputs:
+  - name: workspace_id
+    type: str
+  - name: project_id
+    type: str
+  - name: registry_path
+    type: str
+  - name: source_repository
+    type: str?
+  - name: expected_project_root
+    type: str?
+  - name: expected_manifest_path
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - PROJECT_NOT_FOUND
+  - PROJECT_AMBIGUOUS
+  - PROJECT_MANIFEST_INVALID
+  - PROJECT_RECONCILIATION_DRIFT
+  - PROJECT_SOURCE_REPOSITORY_MISMATCH
+  - GIT_NOT_FOUND
+  protocol_version: '1.0'
 - name: runtime.status
   description: executor-neutral runtime process status by pid
   inputs:

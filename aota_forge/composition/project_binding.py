@@ -34,18 +34,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from aota_forge.core.contracts.errors import (
     ProjectAmbiguousError,
+    ProjectBindingMissingError,
     ProjectNotFoundError,
     ProjectRegistryInvalidError,
 )
 from aota_forge.core.project.discovery import fingerprint_registry, scan_projects
+from aota_forge.core.project.repository_identity import verify_checkout_repository_identity
 from aota_forge.core.project.resolver import (
     ProjectCandidateEvidence,
     ProjectResolutionEvidence,
+    resolve_project_across_workspaces,
     resolve_project_candidates,
 )
 
@@ -213,6 +217,119 @@ def derive_project_evidence_via_registry(
     return resolve_project_candidates(workspace_id, registry_path, project_id)
 
 
+@dataclass(frozen=True)
+class TrustedProjectBindingEvidence:
+    """Trusted Project Binding: singular project resolution + repository identity.
+
+    The resolution evidence is the existing canonical
+    ``ProjectResolutionEvidence`` (complete fingerprints, no heuristic
+    selection).  ``repository_identity`` is present only when a
+    ``SOURCE_REPOSITORY`` was declared and mechanically grounded against the
+    checkout Git origin (AF #55 M1/W3/W4).
+    """
+
+    resolution: ProjectResolutionEvidence
+    project_id: str
+    source_repository: str = ""
+    repository_identity: dict[str, Any] | None = None
+    status: str = "RESOLVED"
+
+    @property
+    def candidate(self) -> ProjectCandidateEvidence | None:
+        if len(self.resolution.candidates) != 1:
+            return None
+        return self.resolution.candidates[0]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "project_id": self.project_id,
+            "source_repository": self.source_repository,
+            "repository_identity": self.repository_identity,
+            "resolution": self.resolution.to_dict(),
+        }
+
+
+def resolve_trusted_project_binding(
+    *,
+    project_id: str,
+    source_repository: str | None = None,
+    registry_path: Path | str | None = None,
+    workspace_id: str | None = None,
+    workspace_root: Path | str | None = None,
+) -> TrustedProjectBindingEvidence:
+    """Canonical trusted project binding for production composition.
+
+    Chain (AF #55 M1/W4):
+
+        trusted Plan context (PROJECT_ID, SOURCE_REPOSITORY)
+            → trusted workspace registry (or a trusted workspace root)
+            → .aota/project.yaml discovery
+            → exact project_id resolution (0/1/>1 fail-closed)
+            → Git origin verification against SOURCE_REPOSITORY
+            → Trusted Project Binding evidence
+
+    Fail-closed typed outcomes:
+        * no match                → ProjectNotFoundError
+        * >1 match                → ProjectAmbiguousError (no auto-selection)
+        * no registry/root input  → ProjectRegistryInvalidError
+        * wrong Git origin        → ProjectSourceRepositoryMismatchError
+        * non-singular evidence   → ProjectBindingMissingError
+
+    Never consults cwd, never infers from folder/repo name similarity, never
+    accepts a model-supplied root as authority.
+    """
+    pid = _validate_project_id(project_id)
+    src = str(source_repository).strip() if source_repository else ""
+
+    if registry_path is not None:
+        registry = Path(registry_path)
+        if workspace_id is not None:
+            evidence = derive_project_evidence_via_registry(
+                workspace_id=workspace_id,
+                registry_path=registry,
+                project_id=pid,
+            )
+        else:
+            evidence = resolve_project_across_workspaces(registry, pid)
+    elif workspace_root is not None:
+        evidence = derive_canonical_project_evidence(
+            workspace_root=Path(workspace_root),
+            project_id=pid,
+            workspace_id=workspace_id,
+        )
+    else:
+        raise ProjectRegistryInvalidError(
+            "trusted project binding requires a trusted registry_path or workspace_root"
+        )
+
+    if evidence.status == "PROJECT_NOT_FOUND":
+        raise ProjectNotFoundError(f"trusted project binding found no project: {pid}")
+    if evidence.status == "NEEDS_SEMANTIC_CHOICE":
+        raise ProjectAmbiguousError(
+            f"trusted project binding is ambiguous for {pid!r}: {len(evidence.candidates)} candidates"
+        )
+    if evidence.status != "RESOLVED" or len(evidence.candidates) != 1:
+        raise ProjectBindingMissingError(
+            f"trusted project binding requires singular RESOLVED evidence for {pid!r} "
+            f"(status={evidence.status!r}, candidates={len(evidence.candidates)})"
+        )
+    candidate = evidence.candidates[0]
+    identity = None
+    if src:
+        identity = verify_checkout_repository_identity(
+            project_root=Path(candidate.project_root),
+            declared_source_repository=src,
+            boundary=Path(candidate.project_root),
+        )
+    return TrustedProjectBindingEvidence(
+        resolution=evidence,
+        project_id=pid,
+        source_repository=src,
+        repository_identity=identity.to_dict() if identity is not None else None,
+    )
+
+
 def resolve_trusted_project_evidence(
     *,
     worktree_root: Path,
@@ -293,14 +410,29 @@ PROJECT_ID_SPECIAL_CASE_ALLOWED = False
 DOGFOOD_PROJECT_LITERAL_IN_PRODUCTION_PATH_ALLOWED = False
 M3_FIXTURE_IS_PRODUCTION_AUTHORITY = False
 PROJECT_RESOLUTION_HEURISTIC_FALLBACK = False
+# AF #55 M1/W4: production binding grounds repository identity mechanically
+# through the same canonical resolver path; registry search is deterministic
+# across operator-authorized workspaces.
+SOURCE_REPOSITORY_VALIDATED_MECHANICALLY = True
+GIT_REMOTE_IDENTITY_IS_AUTHORITATIVE = True
+FOLDER_NAME_SIMILARITY_IS_IDENTITY = False
+CWD_IS_PROJECT_AUTHORITY = False
+MODEL_GUESSES_PROJECT_ROOT = False
 
 __all__ = [
     "derive_canonical_project_evidence",
     "derive_project_evidence_via_registry",
+    "resolve_trusted_project_binding",
     "resolve_trusted_project_evidence",
+    "TrustedProjectBindingEvidence",
     "PROJECT_EVIDENCE_DERIVED_FROM_CANONICAL_PROJECT_RESOLUTION",
     "PROJECT_ID_SPECIAL_CASE_ALLOWED",
     "DOGFOOD_PROJECT_LITERAL_IN_PRODUCTION_PATH_ALLOWED",
     "M3_FIXTURE_IS_PRODUCTION_AUTHORITY",
     "PROJECT_RESOLUTION_HEURISTIC_FALLBACK",
+    "SOURCE_REPOSITORY_VALIDATED_MECHANICALLY",
+    "GIT_REMOTE_IDENTITY_IS_AUTHORITATIVE",
+    "FOLDER_NAME_SIMILARITY_IS_IDENTITY",
+    "CWD_IS_PROJECT_AUTHORITY",
+    "MODEL_GUESSES_PROJECT_ROOT",
 ]

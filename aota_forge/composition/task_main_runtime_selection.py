@@ -228,6 +228,8 @@ def materialize_thin_task_main_bootstrap(
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
     plan_ref: str | None = None,
+    source_repository: str | None = None,
+    registry_path: str | PathLike[str] | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -236,6 +238,13 @@ def materialize_thin_task_main_bootstrap(
     the explicit ``runtime_path=thin`` marker. It never contains
     MilestonePlanView, coordinator store, TaskMainControlService, review
     state or task_main.advance_once.
+
+    AF #55 M1/W4: optional trusted Plan project identity —
+    ``source_repository`` (Plan SOURCE_REPOSITORY assertion) and
+    ``registry_path`` (operator-authorized workspace registry) — may ride the
+    same operator-owned channel. Both are validated mechanically here and
+    consumed by the canonical project binding; they never become model
+    arguments.
     """
     root = _validate_worktree_root(worktree_root)
     pid = _validate_identifier(project_id, "project_id")
@@ -318,6 +327,31 @@ def materialize_thin_task_main_bootstrap(
         except Exception as exc:
             raise TaskMainRuntimeSelectionError(f"thin bootstrap plan_ref invalid: {exc}") from exc
         payload["plan_ref"] = candidate_plan
+    # AF #55 M1/W4: optional trusted Plan project identity. A malformed
+    # declared SOURCE_REPOSITORY fails closed at materialization (before any
+    # session launch); the registry path must be an existing trusted file.
+    if source_repository is not None and str(source_repository).strip():
+        declared = str(source_repository).strip()
+        if len(declared) > 512 or "\x00" in declared:
+            raise TaskMainRuntimeSelectionError("thin bootstrap source_repository invalid")
+        from aota_forge.core.project.repository_identity import (
+            normalize_repository_identity,
+        )
+
+        try:
+            normalize_repository_identity(declared)
+        except ValueError as exc:
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap source_repository not a repository identity: {exc}"
+            ) from exc
+        payload["source_repository"] = declared
+    if registry_path is not None and str(registry_path).strip():
+        registry = Path(str(registry_path)).resolve()
+        if registry.is_symlink() or not registry.is_file():
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap registry_path must be an existing trusted file: {registry!r}"
+            )
+        payload["registry_path"] = str(registry)
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:
@@ -418,6 +452,8 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
 
     from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
 
+    source_repository = str(content.get("source_repository") or "").strip() or None
+    registry_path = str(content.get("registry_path") or "").strip() or None
     host = compose_thin_task_main_host(
         worktree_root=root,
         project_id=str(content["project_id"]),
@@ -428,6 +464,8 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         git_integration_branch=str(content.get("git_integration_branch") or "").strip() or None,
         git_remote=str(content.get("git_remote") or "").strip() or None,
         plan_ref=str(content.get("plan_ref") or "").strip() or None,
+        source_repository=source_repository,
+        registry_path=registry_path,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:
