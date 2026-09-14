@@ -265,13 +265,17 @@ class TestFGEagerProgressive:
 
     def test_progressive_only_rare(self, tmp_path: Path) -> None:
         rare = {"aota-result-hydration", "aota-restricted-shell",
-                "aota-multi-phase-doc-closure", "aota-workspace-operations"}
+                "aota-multi-phase-doc-closure", "aota-workspace-operations",
+                # AF #54 M5/W3: governance procedures are on-demand only
+                # (never eager-dumped into bootstrap).
+                "aota-task-main-governance"}
         for role, (eager, prog) in _ROLE_SKILL_DEFS.items():
             # Eager must be normal capabilities (not large-ref/hydration/shell fallback)
             assert "aota-result-hydration" not in eager, f"{role} hydration must not be eager"
             assert "aota-restricted-shell" not in eager, f"{role} shell must not be eager"
             for sid in prog:
                 assert sid in rare or sid in ("aota-workspace-operations",), f"{role} progressive {sid} not rare"
+                assert sid not in _ROLE_SKILL_DEFS[role][0], f"{role} progressive {sid} also eager"
         # Coder normal test guidance eager (not hidden progressive)
         coder_text = " ".join(e["materialized"] for e in _bootstrap_for(AgentWorkRole.CODER, tmp_path)["BASE_SKILLS"])
         assert "test.run" in coder_text

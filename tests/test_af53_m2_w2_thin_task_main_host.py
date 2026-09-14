@@ -897,8 +897,15 @@ class TestH6RoleSkillGuidanceAdvisory:
         host = _compose(tmp_path, operator_config_file)
         guidance = host.role_guidance()
         operation_guidance = guidance["OPERATION_GUIDANCE"]
-        assert set(operation_guidance) == {"normal_path", "handoff.write", "task.start"}
+        # AF #54 M5/W3: the thin contract grew the bounded git/github
+        # lifecycle primitive surfaces + a governance-Skill pointer; NO
+        # legacy task_main.* control entry may ever return to the thin path.
+        assert set(operation_guidance) == {
+            "normal_path", "handoff.write", "task.start",
+            "git", "github", "governance_procedure",
+        }
         assert "task_main.submit_work_projection" not in operation_guidance
+        assert "advance_once" not in operation_guidance
         assert operation_guidance == build_thin_task_main_operation_guidance()
 
     def test_legacy_task_main_guidance_remains_unchanged(self) -> None:

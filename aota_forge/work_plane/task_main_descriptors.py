@@ -163,6 +163,39 @@ _THIN_TASK_START_NOTE = (
 )
 _THIN_TASK_START_EXAMPLE = {"role": "reviewer", "handoff_ref": "<ref from handoff.write>"}
 
+# AF #54 M5/W1-W2: thin primitive contracts for the governed lifecycle
+# surfaces. Mechanics only — the semantic procedure (which comment is which,
+# when to checkpoint/integrate, governance record shapes) lives canonically
+# in the progressive aota-task-main-governance Skill; never duplicate it
+# here.
+_THIN_GIT_NOTE = (
+    "bounded git on the trusted worktree (targets never model-supplied); "
+    "reads eager; checkpoint/integrate/push require configured trusted "
+    "task-main lifecycle authority"
+)
+_THIN_GIT_EXAMPLE = {
+    "git.status": {},
+    "git.diff": {"max_entries": "int?<=100"},
+    "git.checkpoint": {"message": "str", "expected_head": "sha40?"},
+    "git.integrate": {"expected_old_sha": "sha40 (FF-only CAS)"},
+    "git.push": {"expected_remote_sha": "sha40? (never force)"},
+}
+_THIN_GITHUB_NOTE = (
+    "Plan-bound GitHub governance on the trusted bound-Plan Issue only "
+    "(plan_ref grounded at launch; repo/owner/issue are NOT model inputs); "
+    "reads are card-first with by_ref hydration; mutations task-main-only, "
+    "read-before-write CAS; comment roles are task-main semantics"
+)
+_THIN_GITHUB_EXAMPLE = {
+    "github.issue.read": {"view": "card|full?"},
+    "github.issue.comments.read": {"max_comments": "int?"},
+    "github.issue.update": {
+        "body?": "str", "section_marker?+section_content?": "str",
+        "state?": "open|closed", "expected_updated_at": "str (required)",
+    },
+    "github.issue.comment.update": {"comment_id": "str", "body": "str", "expected_digest?": "sha64"},
+}
+
 
 def _required_types(descriptor: OperationContractDescriptor) -> dict[str, str]:
     """Deterministic required-name -> type projection from the descriptor."""
@@ -240,6 +273,18 @@ def build_thin_task_main_operation_guidance() -> dict[str, dict[str, object]]:
             "note": _THIN_TASK_START_NOTE,
             "example": dict(_THIN_TASK_START_EXAMPLE),
         },
+        "git": {
+            "note": _THIN_GIT_NOTE,
+            "operations": dict(_THIN_GIT_EXAMPLE),
+        },
+        "github": {
+            "note": _THIN_GITHUB_NOTE,
+            "operations": dict(_THIN_GITHUB_EXAMPLE),
+        },
+        "governance_procedure": (
+            "open the aota-task-main-governance progressive Skill before "
+            "governance mutations or milestone/plan close"
+        ),
     }
 
 

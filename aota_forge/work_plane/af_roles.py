@@ -165,7 +165,8 @@ AF_TOOL_SURFACES = dict(_TOOL_SURFACES)
 # Skill catalog — converged five-Role universes (exclusive AF source)
 #
 # ROLE x SKILL matrix (ASSIGNMENT eager/progressive/not_assigned):
-# task-main: task-main-control eager; workspace-operations/result-hydration progressive
+# task-main: task-main-control eager; workspace-operations/result-hydration/
+#            task-main-governance progressive
 # analyst: workspace-operations + evidence-first-debugging eager;
 #          result-hydration + restricted-shell progressive
 # coder: workspace-operations + spec-driven-implementation eager;
@@ -184,6 +185,14 @@ _SKILL_META: dict[str, tuple[str, str]] = {
         "delegation and review sizing",
         "use as the detailed procedure source before writing child handoffs "
         "or when handling a typed dispatch failure",
+    ),
+    "aota-task-main-governance": (
+        "Transitional Governance 1.x procedure: Plan Issue body authority, "
+        "exactly five managed comments, read-before-write reconciliation, "
+        "progress/defect/appendix/decision records, Milestone close and "
+        "known-good checkpoint lifecycle",
+        "open before performing any Plan/Milestone governance mutation or "
+        "checkpoint/integration close procedure",
     ),
     "aota-workspace-operations": (
         "Bounded workspace search/read/write plus test policy via aota.invoke",
@@ -222,7 +231,7 @@ _SKILL_META: dict[str, tuple[str, str]] = {
 _ROLE_SKILL_DEFS: dict[str, tuple[list[str], list[str]]] = {
     "task-main": (
         ["aota-task-main-control"],
-        ["aota-workspace-operations", "aota-result-hydration"],
+        ["aota-workspace-operations", "aota-result-hydration", "aota-task-main-governance"],
     ),
     "analyst": (
         ["aota-workspace-operations", "aota-evidence-first-debugging"],
@@ -251,6 +260,7 @@ ORPHAN_SKILL_DISPOSITION: dict[str, tuple[str, str]] = {
     "aota-implementation-review": ("assign_eager", "independent review is reviewer normal path; verifies product effect"),
     "aota-spec-driven-implementation": ("assign_eager", "SPEC-driven workflow + validation integrity is coder normal path"),
     "aota-task-main-control": ("assign_eager", "milestone orchestration is task-main normal path"),
+    "aota-task-main-governance": ("assign_progressive", "Governance 1.x transition procedures are task-main-owned but on-demand; never eager"),
     "aota-workspace-operations": ("assign_eager", "search/read (+role-scoped write/test policy) is normal for analyst/coder/reviewer/steward"),
     "aota-restricted-shell": ("assign_progressive", "residual fallback only for analyst/coder conditional; never eager"),
     "aota-result-hydration": ("assign_progressive", "large-reference hydrate only; never normal Skill loading"),
@@ -344,15 +354,19 @@ THIN_TASK_MAIN_GUIDANCE_IS_WORKFLOW_PRESCRIPTIVE = False
 THIN_TASK_MAIN_EAGER_GUIDANCE = (
     "Task-main (thin host): you own plan interpretation, workflow strategy, "
     "delegation, review frequency and Milestone judgment; the Control Plane "
-    "enforces authority and grounds mechanical facts only. Discover context "
-    "via workspace.search / workspace.read, then reason the next semantic "
-    "action. Child dispatch normal path: handoff.write(mode=work_item, "
-    "payload.work_role + work_item_ref + milestone_ref + objective + "
-    "bounded_scope) then task.start(role=same work_role, handoff_ref). The "
-    "full procedure, work-identity rules and typed-error recovery live in "
-    "your aota-task-main-control base Skill (open the ref listed under "
-    "BASE_SKILLS via skill.open). Stop with needs_input when evidence is "
-    "insufficient; never invent authority, scope or identity."
+    "enforces authority and grounds mechanical facts only. During the "
+    "Governance 1.x transition you ALSO own Plan/Milestone reconciliation "
+    "and project-lifecycle decisions (git checkpoint/integrate; governance "
+    "records on the bound Plan Issue); never delegate governance to a "
+    "project-steward child. Discover context via workspace.search/read and "
+    "github.issue.read/comments.read, then reason the next semantic action "
+    "(targets ground from your trusted binding). Child dispatch: "
+    "handoff.write(mode=work_item, payload.work_role + work_item_ref + "
+    "milestone_ref + objective + bounded_scope) then task.start(role=same "
+    "work_role, handoff_ref). Full procedures live in your Skills: "
+    "aota-task-main-control and aota-task-main-governance (open via "
+    "skill.open). Stop with needs_input when evidence is insufficient; "
+    "never invent authority, scope or identity."
 )
 
 

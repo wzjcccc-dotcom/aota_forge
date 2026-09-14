@@ -388,7 +388,13 @@ class TestT7MinimalNonContradictoryAffordances:
 
     def test_operation_guidance_stays_thin_affordance(self) -> None:
         thin = build_thin_task_main_operation_guidance()
-        assert set(thin) == {"normal_path", "handoff.write", "task.start"}
+        # AF #54 M5/W3: thin primitive contracts for the governed git/github
+        # lifecycle + a governance-Skill pointer were added; procedures stay
+        # in the progressive Skill (verified by test_af54_m5_w3).
+        assert set(thin) == {
+            "normal_path", "handoff.write", "task.start",
+            "git", "github", "governance_procedure",
+        }
         example = thin["handoff.write"]["example"]["payload"]
         assert example["work_item_ref"] == "W1"
         assert example["milestone_ref"] == "M2"
