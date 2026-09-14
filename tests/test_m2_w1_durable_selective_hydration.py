@@ -797,6 +797,24 @@ class TestNoSecondAuthority:
             assert {"handoff.write", "handoff.open", "task.start", "task.return"}.issubset(set(_mt.SUPPORTED_OPERATIONS))
             assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
             return
+        if "task-main-operational-governance" in branch:
+            # AF #54 M5/W1 legitimately extends the canonical logical
+            # operation catalog with the bounded Git surface (two reads plus
+            # the task-main-gated lifecycle mutation family) over the SAME
+            # single-entry aota.invoke transport. No new MCP tool, no generic
+            # gateway; provider selection and authority stay in core_ingress.
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert _mt.ONE_SHARED_AOTA_MCP is True
+            assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
+            assert {
+                "git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push",
+            } <= set(_mt.SUPPORTED_OPERATIONS)
+            assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
+            assert _mt.GIT_OPERATIONS == ("git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push")
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

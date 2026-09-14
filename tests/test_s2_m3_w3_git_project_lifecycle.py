@@ -68,6 +68,12 @@ from aota_forge.work_plane.git_tools import (
     NEW_GIT_RESULT_ONTOLOGY_CREATED,
     RESTRICTED_SHELL_IMPLEMENTED_IN_W3,
     GENERIC_PROCESS_TOOL_CREATED,
+    GIT_MUTATION_REQUIRES_TASK_MAIN_TRUSTED_AUTHORITY,
+    GIT_INTEGRATION_IS_FF_ONLY_CAS,
+    GIT_PUSH_NEVER_FORCES,
+    CONTROL_PLANE_IS_GIT_WORKFLOW_DECISION_OWNER,
+    GIT_VIA_RESTRICTED_SHELL,
+    EXPOSED_GIT_LIFECYCLE_OPERATIONS,
     M2_SHARED_FILE_CHANGE_COUNT,
     S1_HIGH_CONFLICT_FILE_CHANGE_COUNT,
     AGGREGATOR_EXPORT_UPDATED,
@@ -653,8 +659,12 @@ class TestT21HighRiskIrreversibleWithoutGateFailsClosed:
 
 class TestT22OrdinaryMutationCannotBypassIrreversibleGate:
     def test_ordinary_mutation_cannot_bypass_gate(self):
-        # No mutation exposed, so any mutation authority is insufficient for irreversible
-        assert GIT_MUTATION_OPERATION_EXPOSED is False
+        # AF #54 M5/W1: the mutation family is exposed ONLY as the three
+        # canonical bounded lifecycle primitives behind trusted task-main
+        # authority; every non-canonical or destructive name still fails
+        # closed at authority creation and provider dispatch.
+        assert GIT_MUTATION_OPERATION_EXPOSED is True
+        assert GIT_MUTATION_REQUIRES_TASK_MAIN_TRUSTED_AUTHORITY is True
         assert GIT_MUTATION_AUTHORITY_REQUIRED is True
         tmp = Path(tempfile.mkdtemp())
         _init_git_repo(tmp)
@@ -794,11 +804,19 @@ class TestT29NoNetworkRemoteMutation:
         src = (REPO_ROOT / "aota_forge" / "work_plane" / "git_tools.py").read_text(encoding="utf-8")
         assert "LIVE_GIT_REMOTE_MUTATION_REQUIRED: bool = False" in src
         assert "NETWORK_CALL_REQUIRED_FOR_W3: bool = False" in src
-        # Ensure no push/fetch remote code
+        # Ensure no generic remote code and no force push: the AF #54 M5/W1
+        # git.push primitive delegates FF-only push to the existing trusted
+        # finalizer GitPort (push_branch) — it never implements force,
+        # --delete or a generic remote surface here.
         low = src.lower()
-        # push/remote should not be implemented as operation
-        assert '"git.push"' not in low
-        assert "'git.push'" not in low
+        # No force/destructive argv is ever passed to git by this module
+        # (prose in comments may name the denied verbs; argv strings may not).
+        for denied in ('"--force"', "'--force'", '"-f"', "'-f'", '"--force-with-lease"'):
+            assert denied not in low
+        assert '"git.push"' in low  # bounded primitive exists (M5/W1)
+        assert "git.force_push" not in low
+        assert "git.pull" not in low
+        assert "generic remote" not in low
         assert "GENERIC_PROCESS_TOOL_CREATED: bool = False" in src
 
 
@@ -895,7 +913,16 @@ class TestAdditionalInvariants:
         assert AGGREGATOR_EXPORT_UPDATED is False
         assert NEW_GIT_STATE_MACHINE_CREATED is False
         assert EXPOSED_GIT_OPERATIONS == ("git.status", "git.diff")
-        assert GIT_MUTATION_OPERATION_EXPOSED is False
+        # AF #54 M5/W1: the read surface above is unchanged; the bounded
+        # lifecycle mutation family exists ONLY behind trusted task-main
+        # operation authority (never generic Git, never destructive verbs).
+        assert GIT_MUTATION_OPERATION_EXPOSED is True
+        assert GIT_MUTATION_REQUIRES_TASK_MAIN_TRUSTED_AUTHORITY is True
+        assert GIT_INTEGRATION_IS_FF_ONLY_CAS is True
+        assert GIT_PUSH_NEVER_FORCES is True
+        assert CONTROL_PLANE_IS_GIT_WORKFLOW_DECISION_OWNER is False
+        assert GIT_VIA_RESTRICTED_SHELL is False
+        assert EXPOSED_GIT_LIFECYCLE_OPERATIONS == ("git.checkpoint", "git.integrate", "git.push")
 
     def test_exposed_surface_minimal(self):
         assert len(EXPOSED_GIT_OPERATIONS) == 2

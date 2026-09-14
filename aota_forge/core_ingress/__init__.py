@@ -90,6 +90,9 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "task_main.submit_work_projection",
     "git.status",
     "git.diff",
+    "git.checkpoint",
+    "git.integrate",
+    "git.push",
     "handoff.write",
     "handoff.open",
     "task.start",
@@ -1923,10 +1926,18 @@ def _dispatch_tool_operation_inner(
             _persist_governed_if_needed(binding, response, operation)
             return response
 
-        if operation in ("git.status", "git.diff"):
+        if operation in ("git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push"):
             authority = _authority_for(binding.git_authorities, operation)
             if authority is None:
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted git authority is absent"})
+            # Same canonical-contract discipline as the workspace reads: an
+            # authority minted from a drifted (non-canonical) descriptor fails
+            # closed even when the operation name matches.
+            try:
+                if authority.operation.contract_hash() != descriptor.contract_hash():
+                    return ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from canonical descriptor"})
+            except Exception:
+                pass
             from aota_forge.work_plane.git_tools import BoundedGitToolProvider
 
             provider = BoundedGitToolProvider(authority)

@@ -797,6 +797,7 @@ class TestH4CanonicalIngressLifecycleBinding:
             "_build_thin_tool_surface",
             "_build_read_authorities",
             "_build_restricted_shell_authority",
+            "_build_git_authorities",
             "_default_execution_store",
             "compose_thin_task_main_host",
         }

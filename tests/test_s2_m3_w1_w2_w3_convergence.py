@@ -196,7 +196,7 @@ class TestW1W3MutationObservationIntegration:
         # entries should contain initial.txt
         paths = [e["path"] for e in entries]
         assert "initial.txt" in paths
-        assert GIT_MUTATION_OPERATION_EXPOSED is False
+        assert GIT_MUTATION_OPERATION_EXPOSED is True  # AF #54 M5/W1: gated task-main lifecycle only
         assert GENERIC_GIT_COMMAND_EXECUTION is False
         assert RAW_GIT_COMMAND_STRING_ACCEPTED is False
 
@@ -408,7 +408,7 @@ class TestResultGovernanceIntegration:
         assert NEW_GIT_STATE_MACHINE_CREATED is False
         assert GIT_MUTATION_AUTHORITY_REQUIRED is True
         # W3 read surface does NOT require mutation authority for current read ops — verify provider accepts read authority
-        assert GIT_MUTATION_OPERATION_EXPOSED is False
+        assert GIT_MUTATION_OPERATION_EXPOSED is True  # AF #54 M5/W1: gated task-main lifecycle only
 
 
 # ---------------------------------------------------------------------------

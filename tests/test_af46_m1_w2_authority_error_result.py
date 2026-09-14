@@ -332,12 +332,15 @@ class TestW2ArchitectureOwnership:
         import aota_forge.core_ingress as ci
 
         # AF #48 M1/W2 extends with handoff/task thin façade (4 ops) via shared hot file ownership.
+        # AF #54 M5/W1 extends with the bounded task-main Git lifecycle family
+        # (git.checkpoint/git.integrate/git.push) through the SAME single
+        # aota.invoke entry — no new transport tool, no generic gateway.
         assert set(ci.PROVIDER_BACKED_OPERATIONS) <= {
             "workspace.search", "workspace.read", "workspace.write", "result.hydrate",
             "restricted_shell.run", "role.bootstrap", "skill.open", "test.run",
             "task_main.activate_milestone", "task_main.recover_coordinator",
             "task_main.advance_once", "task_main.submit_work_projection",
-            "git.status", "git.diff",
+            "git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push",
             "handoff.write", "handoff.open", "task.start", "task.return",
         }
         import aota_forge.mcp_transport as mt

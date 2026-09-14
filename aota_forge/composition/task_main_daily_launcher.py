@@ -826,6 +826,8 @@ class DailyTaskMainLauncher:
         origin_task_main_session_ref: str | None = None,
         coordinator_id: str | None = None,
         work_semantics: Mapping[str, Any] | None = None,
+        git_integration_branch: str | None = None,
+        git_remote: str | None = None,
     ) -> DailyLaunchContext:
         """Trusted bootstrap materialization (create or refresh).
 
@@ -907,6 +909,8 @@ class DailyTaskMainLauncher:
                 execution_store_path=execution_store_path,
                 observation_evidence_path=os.environ.get("AOTA_RUNTIME_OBSERVATION_SINK", "").strip() or None,
                 observation_run_ref=os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip() or None,
+                git_integration_branch=git_integration_branch,
+                git_remote=git_remote,
             )
             try:
                 mode = bootstrap_path.stat().st_mode
@@ -1116,6 +1120,8 @@ class DailyTaskMainLauncher:
         trace_path: Path | None = None,
         completion_timeout_seconds: float | None = None,
         max_productive_continuations: int = DEFAULT_MAX_PRODUCTIVE_CONTINUATIONS,
+        git_integration_branch: str | None = None,
+        git_remote: str | None = None,
     ) -> tuple[DailyLaunchContext, str]:
         """Two-phase production task-main launch (AF #49 M1/W6).
 
@@ -1158,6 +1164,8 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=_new_unbound_origin_session_ref(),
+            git_integration_branch=git_integration_branch,
+            git_remote=git_remote,
         )
         env = self.build_env(ctx_pending, trace_path=trace_path)
         hermes_env = {**os.environ, **env}
@@ -1207,6 +1215,8 @@ class DailyTaskMainLauncher:
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
             coordinator_id=coordinator_id,
+            git_integration_branch=git_integration_branch,
+            git_remote=git_remote,
         )
         continuation = self._continue_exact_session(
             ctx=ctx,

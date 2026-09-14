@@ -931,3 +931,85 @@ contracts:
   - INPUT_SIZE_EXCEEDED
   - INTERNAL_MECHANICAL_ERROR
   protocol_version: '1.0'
+- name: git.checkpoint
+  description: Bounded governed checkpoint commit of the accepted trusted-worktree state (task-main git lifecycle; no shell, no arbitrary argv, expected-head CAS)
+  inputs:
+  - name: message
+    type: str
+  - name: expected_head
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: git_repository
+  required_authority: trusted_git_lifecycle
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: not_idempotent
+  result_contract: result.git.checkpoint.v1
+  errors:
+  - AUTHORITY_DENIED
+  - GIT_CAS_CONFLICT
+  - GIT_IDENTITY_MISSING
+  - GIT_NOTHING_TO_COMMIT
+  - GIT_ERROR
+  protocol_version: '1.0'
+- name: git.integrate
+  description: Governed FF-only integration of the trusted-worktree accepted frontier into the configured integration branch with expected-old CAS (no merge commit, no force, no reset)
+  inputs:
+  - name: expected_old_sha
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: git_repository
+  required_authority: trusted_git_lifecycle
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent when branch already at target
+  result_contract: result.git.integrate.v1
+  errors:
+  - AUTHORITY_DENIED
+  - GIT_CAS_CONFLICT
+  - GIT_NON_FAST_FORWARD
+  - GIT_ERROR
+  protocol_version: '1.0'
+- name: git.push
+  description: Synchronize the configured integration branch frontier to the configured trusted remote FF-only (never force; expected-remote CAS when supplied)
+  inputs:
+  - name: expected_remote_sha
+    type: str?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: git_remote
+  required_authority: trusted_git_lifecycle
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: idempotent when remote already at local frontier
+  result_contract: result.git.push.v1
+  errors:
+  - AUTHORITY_DENIED
+  - GIT_CAS_CONFLICT
+  - GIT_REMOTE_STALE
+  - GIT_NON_FAST_FORWARD
+  - GIT_ERROR
+  protocol_version: '1.0'

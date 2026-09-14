@@ -160,6 +160,12 @@ class TrustedWorkerBinding:
     mutation_authority: WorkspaceMutationAuthority | None = None
     restricted_shell_authority: Any | None = None
     test_execution_authority: Any | None = None
+    # AF #54 M5/W1: bounded trusted Git operation-authority evidences
+    # (git.status/git.diff reads + the task-main lifecycle mutation family).
+    # Like every other authority here this is a thin carrier of
+    # already-authoritative runtime-minted evidence: it decides no policy and
+    # is never minted from model input. Worker compositions mint none.
+    git_authorities: tuple[Any, ...] = ()
     trusted_task_main_context: Any | None = None
     # AF #53 M3/W1 trusted classification of the task-main production
     # composition path this binding was minted for. Mechanical carrier
@@ -185,6 +191,12 @@ class TrustedWorkerBinding:
             from aota_forge.work_plane.test_execution import TestExecutionAuthorityEvidence as _TestEv  # type: ignore
         except Exception:
             _TestEv = None  # type: ignore
+        try:
+            from aota_forge.work_plane.git_tools import GitOperationAuthorityEvidence as _GitEv  # type: ignore
+            from aota_forge.work_plane.git_tools import ALL_EXPOSED_GIT_OPERATIONS as _GIT_OPS  # type: ignore
+        except Exception:
+            _GitEv = None  # type: ignore
+            _GIT_OPS = ("git.status", "git.diff", "git.checkpoint", "git.integrate", "git.push")  # type: ignore
 
         if not isinstance(self.canonical_task_id, str) or not _SAFE_ID.fullmatch(self.canonical_task_id):
             raise TrustedBindingError("canonical_task_id must be a bounded trusted identifier")
@@ -236,6 +248,9 @@ class TrustedWorkerBinding:
                 "task.return",
                 "git.status",
                 "git.diff",
+                "git.checkpoint",
+                "git.integrate",
+                "git.push",
             }
         surface_names = set(self.tool_surface.all_capability_names())
         if not surface_names.issubset(allowed):
@@ -284,6 +299,29 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("test execution authority does not match trusted binding")
             if ev.operation.name != "test.run":  # type: ignore[union-attr]
                 raise TrustedBindingError(f"test execution authority operation must be test.run, got {ev.operation.name!r}")  # type: ignore[union-attr]
+        # AF #54 M5/W1: bounded Git operation-authority validation (mechanical
+        # match against the already-trusted sandbox/handoff; lifecycle
+        # mutation evidence additionally requires the trusted task-main role —
+        # evidence construction itself enforces the rest).
+        if not isinstance(self.git_authorities, tuple):
+            raise TrustedBindingError("git_authorities must be tuple")
+        if len(self.git_authorities) > 5:
+            raise TrustedBindingError("git authorities at most 5")
+        git_names: set[str] = set()
+        for authority in self.git_authorities:
+            if _GitEv is not None and not isinstance(authority, _GitEv):
+                raise TrustedBindingError(f"git authority must be GitOperationAuthorityEvidence, got {type(authority).__name__}")
+            if authority.sandbox != self.sandbox or authority.handoff != self.handoff:
+                raise TrustedBindingError("git authority does not match trusted binding")
+            op_name = authority.operation.name
+            if op_name not in _GIT_OPS:
+                raise TrustedBindingError(f"git authority operation must be a canonical git operation, got {op_name!r}")
+            if op_name in git_names:
+                raise TrustedBindingError(f"duplicate git authority for {op_name!r}")
+            git_names.add(op_name)
+            if op_name in ("git.checkpoint", "git.integrate", "git.push"):
+                if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
+                    raise TrustedBindingError(f"git lifecycle mutation authority {op_name!r} requires task-main role binding")
         if self.trusted_task_main_context is not None:
             if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
                 raise TrustedBindingError(f"trusted_task_main_context must be TrustedTaskMainRuntimeContext, got {type(self.trusted_task_main_context).__name__}")

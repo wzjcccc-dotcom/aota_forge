@@ -86,6 +86,14 @@ from aota_forge.runtime.trusted_runtime_binding import (
     TrustedBindingError,
     TrustedWorkerBinding,
 )
+from aota_forge.work_plane.git_tools import (
+    GIT_CHECKPOINT_DESCRIPTOR,
+    GIT_DIFF_DESCRIPTOR,
+    GIT_INTEGRATE_DESCRIPTOR,
+    GIT_PUSH_DESCRIPTOR,
+    GIT_STATUS_DESCRIPTOR,
+    create_git_authority,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.restricted_shell import (
     RESTRICTED_SHELL_DESCRIPTOR,
@@ -142,18 +150,26 @@ PROGRESSIVE_DISCLOSURE_TASK_MAIN = True
 TASK_MAIN_STARTUP_PRELOADS_PLAN = False
 TASK_MAIN_CONTEXT_READ_ON_DEMAND = True
 
-# Task-main visible surface: the generic common operations + ``task.start``.
-# No workflow-special tools are added or exposed on the thin normal path.
+# Task-main visible surface: the generic common operations + ``task.start``
+# + the bounded Git reads (AF #54 M5/W1). No workflow-special tools are added
+# or exposed on the thin normal path. Exposure is visibility only; the
+# lifecycle mutation family below is granted only through trusted
+# GitOperationAuthorityEvidence minted at composition time.
 THIN_TASK_MAIN_EAGER_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
     "handoff.write",
     "handoff.open",
     "task.start",
+    "git.status",
+    "git.diff",
 )
 THIN_TASK_MAIN_PROGRESSIVE_OPERATIONS: tuple[str, ...] = (
     "result.hydrate",
     "restricted_shell.run",
+    "git.checkpoint",
+    "git.integrate",
+    "git.push",
 )
 WORKFLOW_SPECIAL_OPERATIONS: tuple[str, ...] = (
     "task.observe",
@@ -270,6 +286,52 @@ def _build_restricted_shell_authority(
         return None
 
 
+def _build_git_authorities(
+    sandbox: WorktreeSandboxBoundary,
+    handoff: TaskHandoff,
+    *,
+    git_integration_branch: str | None = None,
+    git_remote: str | None = None,
+) -> tuple[Any, ...]:
+    """AF #54 M5/W1: mint the bounded trusted Git authorities for task-main.
+
+    Reads (git.status/git.diff) are always minted. The lifecycle mutation
+    family is minted only when the trusted operator runtime explicitly
+    configured the integration branch (and remote for push); unconfigured
+    operations have no authority and fail closed at dispatch. The model can
+    never supply or widen these mechanical facts.
+    """
+    authorities: list[Any] = [
+        create_git_authority(sandbox, handoff, (), GIT_STATUS_DESCRIPTOR),
+        create_git_authority(sandbox, handoff, (), GIT_DIFF_DESCRIPTOR),
+    ]
+    branch = str(git_integration_branch).strip() if git_integration_branch else ""
+    remote = str(git_remote).strip() if git_remote else ""
+    if branch:
+        authorities.append(
+            create_git_authority(
+                sandbox, handoff, (), GIT_CHECKPOINT_DESCRIPTOR, integration_branch=branch
+            )
+        )
+        authorities.append(
+            create_git_authority(
+                sandbox, handoff, (), GIT_INTEGRATE_DESCRIPTOR, integration_branch=branch
+            )
+        )
+        if remote:
+            authorities.append(
+                create_git_authority(
+                    sandbox,
+                    handoff,
+                    (),
+                    GIT_PUSH_DESCRIPTOR,
+                    integration_branch=branch,
+                    remote_name=remote,
+                )
+            )
+    return tuple(authorities)
+
+
 def _default_execution_store(worktree_root: Path) -> FileBackedExecutionStateStore:
     store_path = worktree_root / ".aota" / "execution.json"
     store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -356,6 +418,8 @@ def compose_thin_task_main_host(
     host_client: Any | None = None,
     host_client_factory: Callable[..., Any] | None = None,
     completion_transport: Any | None = None,
+    git_integration_branch: str | None = None,
+    git_remote: str | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -431,6 +495,12 @@ def compose_thin_task_main_host(
     tool_surface = _build_thin_tool_surface()
     read_authorities = _build_read_authorities(sandbox, handoff)
     restricted_shell_authority = _build_restricted_shell_authority(sandbox, handoff)
+    git_authorities = _build_git_authorities(
+        sandbox,
+        handoff,
+        git_integration_branch=git_integration_branch,
+        git_remote=git_remote,
+    )
 
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
@@ -447,6 +517,9 @@ def compose_thin_task_main_host(
         read_authorities=read_authorities,
         mutation_authority=None,
         restricted_shell_authority=restricted_shell_authority,
+        # AF #54 M5/W1: bounded trusted Git authorities (reads always;
+        # lifecycle mutation family only when the operator configured it).
+        git_authorities=git_authorities,
         # The thin seam: no TrustedTaskMainRuntimeContext => M2/W1 generic thin
         # task lifecycle; no legacy workflow object is required or passed.
         trusted_task_main_context=None,

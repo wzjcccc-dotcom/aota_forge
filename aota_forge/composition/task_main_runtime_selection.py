@@ -225,6 +225,8 @@ def materialize_thin_task_main_bootstrap(
     executor_id: str = "hermes",
     observation_evidence_path: str | None = None,
     observation_run_ref: str | None = None,
+    git_integration_branch: str | None = None,
+    git_remote: str | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -288,6 +290,19 @@ def materialize_thin_task_main_bootstrap(
         if len(candidate_run) > 128 or not _SAFE_ID.fullmatch(candidate_run):
             raise TaskMainRuntimeSelectionError("thin bootstrap observation run_ref invalid")
         payload["observation_run_ref"] = candidate_run
+    # AF #54 M5/W1 optional bounded trusted Git lifecycle configuration
+    # (mechanical Control-Plane facts: which integration branch / which
+    # remote. Absent => no lifecycle mutation authority; fail closed).
+    if git_integration_branch is not None and str(git_integration_branch).strip():
+        branch = str(git_integration_branch).strip()
+        if len(branch) > 128 or not _SAFE_ID.fullmatch(branch):
+            raise TaskMainRuntimeSelectionError("thin bootstrap git integration branch invalid")
+        payload["git_integration_branch"] = branch
+    if git_remote is not None and str(git_remote).strip():
+        remote = str(git_remote).strip()
+        if len(remote) > 64 or not _SAFE_ID.fullmatch(remote):
+            raise TaskMainRuntimeSelectionError("thin bootstrap git remote invalid")
+        payload["git_remote"] = remote
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:
@@ -395,6 +410,8 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         runtime_config_path=str(content["runtime_config_path"]),
         origin_task_main_session_ref=str(content["origin_task_main_session_ref"]),
         execution_store=execution_store,
+        git_integration_branch=str(content.get("git_integration_branch") or "").strip() or None,
+        git_remote=str(content.get("git_remote") or "").strip() or None,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

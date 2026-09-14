@@ -297,7 +297,16 @@ INTERNAL_TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.observe_terminal_completions",
     "task_main.dispatch_ready",
 )
-LOGICAL_OPERATIONS: tuple[str, ...] = WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS
+# AF #54 M5/W1: governed Git/project lifecycle operations are canonical
+# Agent-visible through the same single aota.invoke transport. Exposure is an
+# exposure boundary only; execution still requires server-side trusted Git
+# operation-authority evidence (core_ingress + GitOperationAuthorityEvidence).
+GIT_READ_OPERATIONS: tuple[str, ...] = ("git.status", "git.diff")
+GIT_LIFECYCLE_OPERATIONS: tuple[str, ...] = ("git.checkpoint", "git.integrate", "git.push")
+GIT_OPERATIONS: tuple[str, ...] = GIT_READ_OPERATIONS + GIT_LIFECYCLE_OPERATIONS
+LOGICAL_OPERATIONS: tuple[str, ...] = (
+    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS
+)
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
 LOGICAL_CAPABILITY_SURFACE = LOGICAL_OPERATIONS
