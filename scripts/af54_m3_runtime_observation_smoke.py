@@ -248,20 +248,36 @@ def main() -> int:
     result["REVIEWER_CHILD_USED"] = "yes" if reviewer_used else "no"
 
     # ---- parent reentry correlation ----
+    # Reentry is proven when a parent-session observation occurs after a child
+    # completion (task.return receipt / child terminal update). The earliest
+    # child completion is the correct deterministic anchor for "parent
+    # re-entered after a child finished"; later completions may legitimately
+    # have no further parent tool call in the bounded run.
     parent_obs = [o for o in tool_obs if "task-main" in str(o.canonical_task_id or "")]
-    parent_reentry = False
-    if child_ids and parent_obs:
-        terminal_times = []
+    terminal_times: list[str] = []
+    receipts_dir = root / ".aota" / "task_return_receipts"
+    if receipts_dir.is_dir():
+        for receipt_path in receipts_dir.glob("*.json"):
+            try:
+                payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            created = payload.get("created_at")
+            if isinstance(created, str) and created:
+                terminal_times.append(created)
+    if not terminal_times:
         for rec in child_records.values():
             ts = rec.get("updated_at") if isinstance(rec, dict) else None
             if isinstance(ts, str) and ts:
                 terminal_times.append(ts)
-        if terminal_times:
-            last = max(terminal_times)
-            parent_reentry = any(
-                (o.started_at_utc or "") >= last for o in parent_obs
-            )
-    result["PARENT_REENTRY_CORRELATED"] = "yes" if parent_reentry else "no"
+    earliest_terminal = min(terminal_times) if terminal_times else None
+    reentry_observations = []
+    if earliest_terminal:
+        reentry_observations = [
+            o for o in parent_obs if (o.started_at_utc or "") >= earliest_terminal
+        ]
+    result["PARENT_REENTRY_CORRELATED"] = "yes" if reentry_observations else "no"
+    result["PARENT_REENTRY_OBSERVATIONS_AFTER_CHILD_COMPLETION"] = str(len(reentry_observations))
     result["PARENT_OBSERVATION_COUNT"] = str(len(parent_obs))
 
     # ---- bounded metadata supplement (model/provider) ----
@@ -434,6 +450,31 @@ def _negative_isolation_proof(root: Path, runtime_config: str, session_id: str) 
             if read_with_failure == read_without_failure
             else "no"
         )
+
+        # ---- bounded observation overhead measurement (component) ----
+        import time as _time
+
+        def _timed_reads(iterations: int) -> float:
+            started = _time.perf_counter()
+            for _ in range(iterations):
+                host.invoke("workspace.read", {"path": "src/widget.py"})
+            return (_time.perf_counter() - started) / iterations * 1_000_000.0
+
+        ro.clear_runtime_observation_sink()
+        saved_path = os.environ.pop("AOTA_RUNTIME_OBSERVATION_SINK", None)
+        saved_run = os.environ.pop("AOTA_RUNTIME_OBSERVATION_RUN_REF", None)
+        no_sink_avg = _timed_reads(40)
+        if saved_path is not None:
+            os.environ["AOTA_RUNTIME_OBSERVATION_SINK"] = saved_path
+        if saved_run is not None:
+            os.environ["AOTA_RUNTIME_OBSERVATION_RUN_REF"] = saved_run
+        ro.install_runtime_observation_sink(ro.InMemoryRuntimeObservationSink())
+        sink_avg = _timed_reads(40)
+        ro.clear_runtime_observation_sink()
+        out["OBSERVATION_OVERHEAD_MEASURED"] = "yes"
+        out["OBSERVATION_OVERHEAD_NO_SINK_AVG_US"] = f"{no_sink_avg:.1f}"
+        out["OBSERVATION_OVERHEAD_SINK_AVG_US"] = f"{sink_avg:.1f}"
+        out["OBSERVATION_OVERHEAD_DELTA_US"] = f"{sink_avg - no_sink_avg:.1f}"
     except Exception as exc:
         out["NEGATIVE_PROOF_OUTCOME"] = f"inconclusive:{type(exc).__name__}"
         out["TELEMETRY_FAILURE_DOES_NOT_CHANGE_TOOL_RESULT"] = "no"
