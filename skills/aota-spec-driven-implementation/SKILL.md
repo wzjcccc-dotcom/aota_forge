@@ -23,7 +23,16 @@ tags: [aota, coder, implementation]
 
 ## Tool use
 
-`workspace.search` to locate, `workspace.read` to inspect, `workspace.write` bounded 4096 (`create_only|replace_existing|create_or_replace`) within scope. `restricted_shell.run` only as residual fallback when specialized ops insufficient. No unrestricted shell.
+`workspace.search` to locate, `workspace.read` to inspect, then `workspace.write` bounded 4096 (`create_only|replace_existing|create_or_replace`) strictly within scope; inspect before mutating where appropriate. There is no delete/move operation — if the work needs one, stop and report as a blocker rather than improvising through other tools. `restricted_shell.run` exists only when your binding actually grants it and only as a residual fallback when specialized ops are insufficient; `AUTHORITY_DENIED` there is a boundary, not an invitation to probe. No unrestricted shell.
+
+## Completion (required governed return)
+
+Process exit is never semantic completion. Terminate your Work exactly once through the governed path:
+
+1. `handoff.write {"mode": "result", "payload": {"summary": "...", ...}}` — `summary` is the required usable text; also carry what changed and the validation evidence you actually ran (compact). Workers may only write `result` mode.
+2. `task.return {"status": "completed|blocked|failed", "result_ref": "<result handoff ref>"}` — `INVALID_STATUS`, `UNKNOWN_REF`, or a foreign `result_ref` fail closed.
+
+`blocked`/`failed` still require the same result+`task.return` path with the factual blocker; never silently exit.
 
 ## Stop
 

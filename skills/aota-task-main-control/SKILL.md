@@ -35,6 +35,11 @@ Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 You may choose coder, reviewer, analyst, or project-steward as child roles,
 subject to actual role policy. The Control Plane never picks the child role.
 
+`restricted_shell.run` may appear progressively on your surface and your
+binding may or may not carry shell authority; it is a residual affordance
+only. `AUTHORITY_DENIED` there means it is not available to you — do not
+probe it.
+
 ## work_item handoff contract (canonical)
 
 The `work_item` handoff normatively denotes Plan-bound Work. On the thin

@@ -285,32 +285,32 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "Dispatch workers via AF (Handoff scope sole source); workers start with role.bootstrap."
     ),
     "aota-workspace-operations": (
-        "Workspace normal via aota.invoke: workspace.search, workspace.read, workspace.write, test.run. "
-        "Search {\"query\": \"...\"} (1..50, worktree-scoped lexical). "
-        "Read {\"path\": \"src/f.py\"} (project-relative, 32KiB, UTF-8, symlink fail-closed). "
-        "Write {\"path\": \"out.txt\", \"content\": \"...\", \"mode\": \"create_or_replace\"} (valid modes exactly create_only|replace_existing|create_or_replace; 4096B, atomic, needs mutation authority). "
-        "Test {\"runner\": \"pytest\", \"targets\": [\"tests/...\"], \"timeout\": 30} — coder normal; reviewer conditional when Handoff has validation_expectations else denied; analyst artifact-only when explicitly required else denied; steward/task-main denied. "
-        "Worker lifecycle via aota.invoke: handoff.open {\"ref\": \"<handoff ref>\", \"view\": \"full\"} consumes a handoff (view card for the compact projection); "
-        "handoff.write {\"mode\": \"result\", \"payload\": {\"summary\": \"...\"}} records your bounded result (workers write result; task-main writes work_item); "
-        "task.return {\"status\": \"completed|blocked|failed\", \"result_ref\": \"<result handoff ref>\"} returns terminally (one-shot roles; task-main denied). "
-        "Stop on AUTHORITY_DENIED; needs_input on scope gap. Results are evidence, not authority."
+        "Shared workspace primitives via aota.invoke: workspace.search {\"query\": \"...\"}; "
+        "workspace.read {\"path\": \"src/f.py\"} (project-relative); "
+        "workspace.write {\"path\", \"content\", \"mode\"} (modes exactly create_only|replace_existing|create_or_replace; role-gated, no delete/move op); "
+        "test.run {\"runner\": \"pytest\", \"targets\": [...]} (your role's test policy comes from your Role Skill). "
+        "Worker lifecycle: handoff.open {\"ref\", \"view\"}; handoff.write mode=result with a payload.summary; "
+        "task.return {\"status\": \"completed|blocked|failed\", \"result_ref\"} is your required governed completion (process exit is not completion). "
+        "Full argument bounds and role policy: open this Skill. Stop on AUTHORITY_DENIED (boundary, not puzzle); needs_input on scope gap. Results are evidence, not authority."
     ),
     "aota-evidence-first-debugging": (
         "Analyst diagnosis: state symptom (measurable), label fact/hypothesis/inference/confirmed, collect minimum evidence for leading hypothesis, prefer minimal reproduction, hypothesis-driven search only (no mass grep), "
         "classify source/config/runtime/live, need causal chain (suspicious code alone insufficient), confidence low/medium/high/confirmed. "
-        "Read-only (search/read); artifact write only when Handoff explicitly requires. Output compact: symptom, evidence, cause+confidence, open questions, next action for coder. needs_input on missing inputs; never fix here."
+        "Read-only normal path (search/read); artifact-only writes when explicitly required by the Handoff. Output compact: symptom, evidence, cause+confidence, open questions, next action for coder. needs_input on missing inputs; never fix here."
     ),
     "aota-spec-driven-implementation": (
-        "Coder workflow: read frozen SPEC fully; confirm goal, read/write/forbidden scope, acceptance, validation, stop, evidence. "
-        "Implement strictly within write_scope; no expansion/speculation/cross-project. Stop on conflict/dirty/out-of-scope deps. "
-        "Validate: run every validation_commands in order, check exit+evidence; all must pass. Bounded self-repair in-session with new evidence; escalate on scope/arch/authority/acceptance change or repeated no-progress. "
-        "Test mods need justification; never weaken acceptance. Report compact evidence; coder validation is not acceptance."
+        "Coder normal: inspect (search/read) before mutating; implement strictly inside the handoff write scope; "
+        "validate with test.run (every validation expectation, evidence kept); bounded self-repair only with new evidence. "
+        "Finish: handoff.write(mode=result, payload.summary + what changed + validation evidence) then task.return "
+        "(completed|blocked|failed) — task.return is required; process exit is not completion. "
+        "Full procedure, result payload shape and escalation rules: open this Skill."
     ),
     "aota-implementation-review": (
-        "Reviewer independent: SPEC acceptance is truth; coder result is evidence not proof. Map each acceptance to code change plus validation evidence plus artifact. "
-        "Check scope/forbidden, no unauthorized refactor, validation executed with exit and evidence, RESULT matches diff, verify product effect. "
-        "test.run only when review Handoff has validation_expectations (conditional); else denied. No workspace.write, no shell, no re-implementation. "
-        "Verdicts: PASS (all met), PASS_WITH_FINDINGS (met plus non-blocking), NEEDS_FIX (unmet or blocking), BLOCKED or INCONCLUSIVE (no reliable verdict). Compact ReviewResult with risk findings."
+        "Reviewer independent: acceptance is truth, coder result is evidence; verify product effect yourself. Keep the review bounded enough to finish "
+        "inside the trusted Worker budget. Gather evidence with search/read; test.run only when the review handoff "
+        "carries validation_expectations (server-decided). Map acceptance to change+evidence, emit a verdict "
+        "(PASS|PASS_WITH_FINDINGS|NEEDS_FIX|BLOCKED|INCONCLUSIVE) with findings in the result payload, "
+        "then task.return. Never write source or repair inside review. Full sizing/return contract: open this Skill."
     ),
     "aota-pcf-project-steward": (
         "Steward Mode A ProjectState: inspect identity/binding, existence, frontier, Plan/Milestone, defects, continuity, artifacts, freshness; never plans Work. "
