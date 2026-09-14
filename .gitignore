@@ -3,3 +3,13 @@ __pycache__/
 .codegraph/
 .deploy-backups/
 .deploy-receipts/
+
+# AF per-worktree runtime state (never project source)
+.aota/execution.json
+.aota/coordinator.json
+.aota/handoffs/
+.aota/durable_payloads/
+.aota/pre-resolved-bindings/
+.aota/task_return_receipts/
+.aota/task-main-bootstrap.json
+.aota/task-main-thin-bootstrap.json

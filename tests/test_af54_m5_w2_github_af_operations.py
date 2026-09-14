@@ -282,7 +282,10 @@ class TestW2ReadOperations:
         assert {c["comment_id"] for c in comments} == {"111", "222"}
         assert all(c["author"] == "op" and c["updated_at"] for c in comments)
         big = next(c for c in comments if c["comment_id"] == "222")
-        assert big["body_truncated"] is True
+        # Governance read-before-write needs fully readable bodies; size is
+        # bounded via the existing governed by_ref/hydrate transport instead.
+        assert big["body_truncated"] is False
+        assert len(big["body"]) == 9000
         assert big["body_digest"] == _digest("x" * 9000)
         assert comments  # semantic naming is NOT assigned by the Control Plane
         assert "role" not in comments[0]

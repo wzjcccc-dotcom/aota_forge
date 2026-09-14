@@ -94,7 +94,14 @@ NEW_PERMISSION_ENGINE_CREATED: bool = False
 # ---------------------------------------------------------------------------
 
 MAX_COMMENTS_RETURNED: int = 100
-MAX_COMMENT_INLINE_BYTES: int = 4096
+# Governance 1.x read-before-write requires that managed comment bodies be
+# fully readable by task-main (a comment update replaces the whole body).
+# Per-comment truncation would break that; instead the whole result stays
+# bounded through the EXISTING governed by_ref/result.hydrate transport
+# (durable bound 64 KiB). Only genuinely oversized results degrade with an
+# explicit truncation marker.
+MAX_COMMENT_INLINE_BYTES: int = 32 * 1024
+MAX_COMMENTS_RESULT_BYTES: int = 60 * 1024
 MAX_ISSUE_CARD_BYTES: int = 8192
 MAX_ISSUE_FULL_BYTES: int = 60 * 1024
 MAX_UPDATE_BODY_BYTES: int = 64 * 1024
@@ -543,13 +550,26 @@ class BoundedGitHubToolProvider:
             limit = min(max_comments, MAX_COMMENTS_RETURNED)
         plan = self._authority.plan
         comments = self._port.list_comments(plan.repo, plan.issue_number)
-        projected = [_comment_projection(c) for c in comments[:limit]]
+        projected: list[dict[str, Any]] = []
+        used = 256  # envelope reserve
+        index = 0
+        for index, c in enumerate(comments):
+            if index >= limit:
+                break
+            item = _comment_projection(c)
+            size = len(json.dumps(item, ensure_ascii=False).encode("utf-8"))
+            if used + size > MAX_COMMENTS_RESULT_BYTES:
+                break
+            projected.append(item)
+            used += size
+        dropped = len(comments) - len(projected)
         return ToolResponse.success(
             {
                 "plan_ref": plan.plan_ref,
                 "comments": projected,
                 "total_comments": len(comments),
-                "truncated": len(comments) > limit,
+                "truncated": dropped > 0,
+                "dropped_by_bound": max(dropped, 0),
                 "note": "comment roles/names are task-main semantics; the Control Plane assigns none",
             }
         )
