@@ -467,6 +467,10 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
 
     source_repository = str(content.get("source_repository") or "").strip() or None
     registry_path = str(content.get("registry_path") or "").strip() or None
+    # AF #57 M1/W2: trusted operator governance base for the project-scoped
+    # local-governance read/search root. Trusted server-side construction
+    # input only; absent means the accepted #55 root set is unchanged.
+    governance_base = str(content.get("governance_base") or "").strip() or None
     # AF #55 M2: the bootstrap's static authorized root_ref declaration must
     # match the canonical contract exactly (fail closed on drift). The actual
     # authorized root set is re-materialized child-side from the resolved
@@ -499,6 +503,7 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         plan_ref=str(content.get("plan_ref") or "").strip() or None,
         source_repository=source_repository,
         registry_path=registry_path,
+        governance_base=governance_base,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

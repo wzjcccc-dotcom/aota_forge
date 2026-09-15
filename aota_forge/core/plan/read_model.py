@@ -42,6 +42,17 @@ from aota_forge.core.contracts.errors import ProjectManifestInvalidError
 LEGACY_PLAN_ID_RE = re.compile(r"^plan_[a-zA-Z0-9]+(?:[_-][a-zA-Z0-9]+)*$")
 MAX_PLAN_BYTES = 256 * 1024
 
+# Bounded Plan source kinds for the canonical normalized document.  The
+# default issue-body kind preserves all existing Governance 1.x behavior; the
+# local kind is the AF #57 M1/W2 Local Governance source (plan.md under the
+# trusted project-scoped local-governance root).  Source kind is provenance
+# metadata only: it never changes downstream Plan semantics.
+PORTABLE_PLAN_SOURCE_ISSUE_BODY = "portable_plan_issue_body"
+PORTABLE_PLAN_SOURCE_LOCAL = "portable_plan_local"
+PORTABLE_PLAN_SOURCE_KINDS: frozenset[str] = frozenset(
+    {PORTABLE_PLAN_SOURCE_ISSUE_BODY, PORTABLE_PLAN_SOURCE_LOCAL}
+)
+
 
 @dataclass(frozen=True)
 class WorkItemSnapshot:
@@ -142,7 +153,7 @@ class PortablePlanDocument:
     diagnostics: tuple[dict[str, Any], ...] = ()
     source_revision: str | None = None
     source_digest: str = ""
-    source_kind: str = "portable_plan_issue_body"
+    source_kind: str = PORTABLE_PLAN_SOURCE_ISSUE_BODY
     # M3-B003 canonical extensions (executor-neutral)
     milestone_work_items: dict[str, tuple[str, ...]] = field(default_factory=dict)
     milestone_dependencies: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)

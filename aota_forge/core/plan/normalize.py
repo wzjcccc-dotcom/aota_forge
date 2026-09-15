@@ -33,6 +33,8 @@ from aota_forge.core.contracts.errors import ForgeError
 from aota_forge.core.plan.read_model import (
     MAX_WORK_SOURCE_TEXT_LENGTH,
     MAX_WORK_SOURCE_TITLE_LENGTH,
+    PORTABLE_PLAN_SOURCE_ISSUE_BODY,
+    PORTABLE_PLAN_SOURCE_KINDS,
     PortablePlanDocument,
     WorkSourceSlice,
     portable_plan_digest,
@@ -933,8 +935,17 @@ def _extract_work_source_slices(
     return out
 
 
-def normalize_portable_plan(body: str, *, source_revision: str | None = None) -> PortablePlanDocument:
-    """Normalize the authoritative issue body into a PortablePlanDocument.
+def normalize_portable_plan(
+    body: str,
+    *,
+    source_revision: str | None = None,
+    source_kind: str = PORTABLE_PLAN_SOURCE_ISSUE_BODY,
+) -> PortablePlanDocument:
+    """Normalize the authoritative Plan body into a PortablePlanDocument.
+
+    ``source_kind`` is bounded provenance metadata (issue body vs local
+    Governance 2.0 ``plan.md``); it never changes parsing or downstream Plan
+    semantics and defaults to the existing issue-body kind.
 
     Raises :class:`PlanNormalizationError` on genuine current-state
     contradictions or malformed authoritative values.  Returns a canonical
@@ -942,6 +953,11 @@ def normalize_portable_plan(body: str, *, source_revision: str | None = None) ->
     """
     if not isinstance(body, str) or not body.strip():
         raise PlanNormalizationError("EMPTY_PLAN_BODY", "authoritative issue body is empty")
+    if not isinstance(source_kind, str) or source_kind not in PORTABLE_PLAN_SOURCE_KINDS:
+        raise PlanNormalizationError(
+            "MALFORMED_SOURCE_KIND",
+            f"source_kind must be one of {sorted(PORTABLE_PLAN_SOURCE_KINDS)}, got {source_kind!r}",
+        )
 
     sections = parse_body_sections(body)
     diagnostics: list[dict[str, Any]] = []
@@ -1042,7 +1058,7 @@ def normalize_portable_plan(body: str, *, source_revision: str | None = None) ->
         current_fields=current_fields,
         diagnostics=_bounded_diagnostics(diagnostics),
         source_revision=source_revision,
-        source_kind="portable_plan_issue_body",
+        source_kind=source_kind,
         milestone_work_items=milestone_work_items,
         milestone_dependencies=milestone_dependencies,
         milestone_approvals=milestone_approvals,
