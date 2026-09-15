@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from aota_forge.core.contracts.errors import ProjectManifestInvalidError
+from aota_forge.core.plan.validation import is_plan_id
 
 SCHEMA_VERSION = 1
 MAX_MANIFEST_BYTES = 256 * 1024
@@ -152,7 +153,7 @@ def validate_project(data: dict[str, Any], root: Path | None = None) -> dict[str
     plan = _mapping(data["plan"], "plan")
     _fields(plan, {"active_plan_id"}, "plan")
     _required(plan, {"active_plan_id"}, "plan")
-    if plan["active_plan_id"] is not None and (not isinstance(plan["active_plan_id"], str) or not re.fullmatch(r"plan_[a-z0-9]+(?:-[a-z0-9]+)*", plan["active_plan_id"])):
+    if plan["active_plan_id"] is not None and not is_plan_id(plan["active_plan_id"]):
         raise ProjectManifestInvalidError("manifest_invalid", "plan.active_plan_id is invalid")
     _list(data["constraints"], "constraints", str, 32)
     if root is not None:

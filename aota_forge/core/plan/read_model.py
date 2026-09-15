@@ -15,6 +15,13 @@ The Issue body remains Portable Plan authority.  Legacy plan.json state, when
 read for comparison/migration evidence, is isolated behind an explicit
 LegacyPlanStateReader (shadow/migration evidence only; no dual authority,
 no Plan mutation in M1).
+
+AF #57 M1/W1: the canonical new-Plan ID grammar is owned by
+``aota_forge.core.plan.validation``.  Legacy Plan IDs (uppercase timestamp
+forms such as ``plan_20260729T075202_ff38a6a0``) are not canonical and are
+never silently normalized.  ``LEGACY_PLAN_ID_RE`` below is the explicit
+bounded legacy-read grammar used only by ``LegacyPlanStateReader`` so already
+accepted legacy fixtures/evidence remain readable.
 """
 
 from __future__ import annotations
@@ -28,7 +35,11 @@ from typing import Any
 
 from aota_forge.core.contracts.errors import ProjectManifestInvalidError
 
-PLAN_ID_RE = re.compile(r"^plan_[a-zA-Z0-9]+(?:[_-][a-zA-Z0-9]+)*$")
+# Canonical new-Plan IDs are validated by is_plan_id (core.plan.validation).
+# This bounded grammar is legacy-read compatibility ONLY: already accepted
+# legacy artifacts may carry uppercase timestamp segments.  It never defines
+# or normalizes canonical identity and must not be reused for new Plan IDs.
+LEGACY_PLAN_ID_RE = re.compile(r"^plan_[a-zA-Z0-9]+(?:[_-][a-zA-Z0-9]+)*$")
 MAX_PLAN_BYTES = 256 * 1024
 
 
@@ -351,6 +362,10 @@ class LegacyPlanStateReader(PlanSource):
 
     Shadow/migration evidence ONLY.  It does not become Portable Plan
     authority and M1 performs no Plan mutation.
+
+    Legacy identity is preserved exactly as observed (never lowercased or
+    otherwise normalized into a canonical Plan ID); LEGACY_PLAN_ID_RE is the
+    only grammar applied here.
     """
 
     def load(self, project_root: Path, plan_id: str | None = None) -> PortablePlanSnapshot | None:
@@ -373,7 +388,7 @@ class LegacyPlanStateReader(PlanSource):
             if not isinstance(data, dict):
                 continue
             resolved_id = str(data.get("plan_id") or plan_dir.name)
-            if not PLAN_ID_RE.fullmatch(resolved_id):
+            if not LEGACY_PLAN_ID_RE.fullmatch(resolved_id):
                 continue
             revision = int(data["revision"]) if isinstance(data.get("revision"), int) else 1
             status = str(data.get("status", "unknown"))
