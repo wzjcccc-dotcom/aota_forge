@@ -819,6 +819,25 @@ class TestNoSecondAuthority:
                 "github.issue.update", "github.issue.comment.update",
             )
             return
+        if "58-M2/trusted-interactive-ingress" in branch:
+            # AF #58 M2 legitimately adds ONE bounded pre-dispatch guard to the
+            # single-entry transport: the interactive approval gate for
+            # bindings carrying a trusted Plan state whose milestone user
+            # approval is not satisfied, plus the mechanical carrier copy of
+            # that state into the canonical dispatch binding. No new MCP tool,
+            # no new operation, no second authority or gateway; delegation
+            # stays in core_ingress. Single-entry invariants must still hold.
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert _mt.ONE_SHARED_AOTA_MCP is True
+            assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
+            assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
+            assert _mt.INTERACTIVE_APPROVAL_GATE_ENFORCED is True
+            assert _mt.INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY is False
+            assert _mt.INTERACTIVE_APPROVAL_GATED_OPERATIONS <= set(_mt.SUPPORTED_OPERATIONS)
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

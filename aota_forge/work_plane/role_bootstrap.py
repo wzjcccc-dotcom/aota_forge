@@ -567,6 +567,45 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     plan_binding = getattr(binding, "plan_binding", None)
     if plan_binding is not None:
         result["CURRENT_EXECUTION_CONTEXT"]["plan_ref"] = str(getattr(plan_binding, "plan_ref", "") or "")
+    # AF #58 M2: the source-neutral Plan authority binding facts (internal
+    # plan_id + the one bound authority source). Mechanical identity facts
+    # only; the bound source is the authority, never these strings.
+    plan_authority_binding = getattr(binding, "plan_authority_binding", None)
+    if plan_authority_binding is not None:
+        result["PLAN_AUTHORITY"] = {
+            "plan_id": str(getattr(plan_authority_binding, "plan_id", "") or ""),
+            "source_kind": str(getattr(plan_authority_binding, "source_kind", "") or ""),
+            "authority_ref": str(getattr(plan_authority_binding, "authority_ref", "") or ""),
+            "IS_AUTHORITY": False,
+        }
+    # AF #58 M2: bounded trusted Plan state projection carried by an
+    # interactive trusted binding (current milestone + approval truth + Plan
+    # revision identity, read from the live Plan before the first model
+    # prompt). Mechanical context only: approval truth is still owned by the
+    # live Plan; this projection is never a substitute for reading it.
+    trusted_plan_state = getattr(binding, "trusted_plan_state", None)
+    if trusted_plan_state:
+        result["TRUSTED_PLAN_STATE"] = dict(trusted_plan_state)
+        result["TRUSTED_PLAN_STATE_IS_AUTHORITY"] = False
+        # AF #58 M2 (I58-B001 repair): an unsatisfied milestone user approval
+        # is an explicit, model-visible stop gate. The same condition is
+        # mechanically enforced by the transport before dispatch; this block
+        # makes the required behavior unambiguous to the model.
+        if trusted_plan_state.get("milestone_user_approval_satisfied") is not True:
+            milestone = str(trusted_plan_state.get("current_milestone") or "").strip() or "current"
+            result["APPROVAL_GATE"] = {
+                "required": True,
+                "current_milestone": milestone,
+                "milestone_user_approval_satisfied": trusted_plan_state.get(
+                    "milestone_user_approval_satisfied"
+                ),
+                "instruction": (
+                    f"milestone {milestone} user approval is not satisfied: stop at the "
+                    "user approval gate. Do not call task.start, do not dispatch workers, "
+                    "and do not mutate source or governance. Report the gate and wait."
+                ),
+                "MECHANICAL_GATE_ENFORCED": True,
+            }
     # AF #55 M2 §8: trusted project context projection. PLAN_AUTHORITY
     # (plan_ref + governing repository), IMPLEMENTATION_PROJECT (project_id +
     # SOURCE_REPOSITORY + project-main root ref) and ACTIVE_WORKTREE are

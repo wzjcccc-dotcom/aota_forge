@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
@@ -380,6 +381,28 @@ if TASK_START_DESCRIPTOR is not None:
 if TASK_RETURN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_RETURN_DESCRIPTOR.name] = TASK_RETURN_DESCRIPTOR
 SUPPORTED_OPERATIONS: frozenset[str] = frozenset(LOGICAL_OPERATIONS)
+# AF #58 M2: bounded interactive approval gate. When a trusted binding carries
+# an interactive Plan state projection whose milestone user approval is not
+# satisfied (False or unknown), the model-facing single entry refuses the
+# construction/mutation operations before Core dispatch. This gate exists only
+# for bindings carrying ``trusted_plan_state`` (the interactive ingress
+# composition); headless/worker bindings are untouched.
+# The gate is derived from trusted Plan truth; it is not itself authority
+# (INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY=no).
+INTERACTIVE_APPROVAL_GATED_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "task.start",
+        "workspace.write",
+        "restricted_shell.run",
+        "git.checkpoint",
+        "git.integrate",
+        "git.push",
+        "github.issue.update",
+        "github.issue.comment.update",
+    }
+)
+INTERACTIVE_APPROVAL_GATE_ENFORCED = True
+INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY = False
 # For backward compatibility, retain WORKSPACE_OPERATIONS alias but expanded set is canonical
 CANONICAL_SUPPORTED_OPERATIONS = SUPPORTED_OPERATIONS
 # W5 exposure/canonical relationship: role surfaces must remain a subset of the
@@ -673,6 +696,34 @@ def _governed_from_response(binding: TrustedWorkerBinding, operation: str, respo
     return _governed_projection_to_mcp(operation, projection)
 
 
+def _interactive_approval_gate_denial(
+    binding: TrustedWorkerBinding, operation: str
+) -> McpToolResult | None:
+    """Fail-closed interactive approval gate (AF #58 M2, I58-B001 repair).
+
+    Only applies when the binding carries an interactive trusted Plan state
+    projection (the interactive ingress composition) and the current
+    milestone user approval is not explicitly satisfied. The denial happens
+    before any Core dispatch, so no construction, source or governance
+    mutation can be authorized for an unapproved milestone.
+    """
+    if operation not in INTERACTIVE_APPROVAL_GATED_OPERATIONS:
+        return None
+    plan_state = getattr(binding, "trusted_plan_state", None)
+    if not isinstance(plan_state, Mapping):
+        return None
+    if plan_state.get("milestone_user_approval_satisfied") is True:
+        return None
+    milestone = str(plan_state.get("current_milestone") or "").strip() or "unknown"
+    return _governed_error(
+        binding,
+        operation,
+        "MILESTONE_APPROVAL_REQUIRED",
+        f"milestone {milestone} user approval is not satisfied; stop at the user "
+        "approval gate (no construction, no source or governance mutation)",
+    )
+
+
 def _governed_error(binding: TrustedWorkerBinding, operation: str, code: str, message: str) -> McpToolResult:
     """Governed typed error helper — preserves W1 error identity end-to-end."""
     err = {"code": code, "message": _bounded_failure_message(message)}
@@ -845,6 +896,10 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # the direct trusted binding (mechanical copies only).
         authorized_roots=getattr(binding, "authorized_roots", None),
         source_repository=str(getattr(binding, "source_repository", "") or ""),
+        # AF #58 M2: preserve the bounded interactive Plan state projection so
+        # Core-side role.bootstrap exposes the same trusted milestone/approval
+        # state the trusted binding carries (mechanical copy only).
+        trusted_plan_state=getattr(binding, "trusted_plan_state", None),
     )
 
 
@@ -913,6 +968,10 @@ class _SharedAotaMcpAdapter:
             arguments = {}
         if not isinstance(arguments, dict):
             return _governed_error(self.binding, operation, "INPUT_TYPE_INVALID", f"arguments must be object, got {type(arguments).__name__}")
+        # AF #58 M2 interactive approval gate (fail closed before dispatch).
+        gate_denial = _interactive_approval_gate_denial(self.binding, operation)
+        if gate_denial is not None:
+            return gate_denial
         # Canonical dispatch via Core (owns validation + provider selection).
         try:
             from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
