@@ -180,6 +180,11 @@ class TrustedWorkerBinding:
     # only: it decides no policy; GitHub authorities minted from it are the
     # authority. Workers keep None.
     plan_binding: Any | None = None
+    # AF #57 M1/W4: the source-neutral W1 PlanAuthorityBinding for this launch
+    # (internal plan_id + one bound authority source). Mechanical carrier
+    # only: it decides no policy and grants no authority. Workers keep None;
+    # a plan-less legacy launch keeps None.
+    plan_authority_binding: Any | None = None
     trusted_task_main_context: Any | None = None
     # AF #53 M3/W1 trusted classification of the task-main production
     # composition path this binding was minted for. Mechanical carrier
@@ -393,6 +398,51 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("plan_binding carries no plan_ref")
             if self.handoff.work_role.value != "task-main":
                 raise TrustedBindingError("plan_binding may only be carried by a task-main binding")
+        # AF #57 M1/W4: source-neutral Plan Authority binding (mechanical
+        # carrier only). It must be a real binding, task-main composition
+        # only, and it must not create a second simultaneous authority for
+        # one Plan: a github_issue binding must agree with the bound GitHub
+        # plan_binding, and a local_governance binding requires the GitHub
+        # plan authority to be absent.
+        if self.plan_authority_binding is not None:
+            try:
+                from aota_forge.adapters.plan_authority.binding import (
+                    PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
+                    PlanAuthorityBinding,
+                )  # type: ignore
+            except Exception:
+                PlanAuthorityBinding = None  # type: ignore
+                PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE = "github_issue"  # type: ignore
+            if PlanAuthorityBinding is not None and not isinstance(
+                self.plan_authority_binding, PlanAuthorityBinding
+            ):
+                raise TrustedBindingError(
+                    "plan_authority_binding must be a source-neutral PlanAuthorityBinding, "
+                    f"got {type(self.plan_authority_binding).__name__}"
+                )
+            bound_kind = getattr(self.plan_authority_binding, "source_kind", None)
+            bound_plan_id = getattr(self.plan_authority_binding, "plan_id", None)
+            bound_ref = getattr(self.plan_authority_binding, "authority_ref", None)
+            if not isinstance(bound_plan_id, str) or not bound_plan_id.strip():
+                raise TrustedBindingError("plan_authority_binding carries no plan_id")
+            if not isinstance(bound_ref, str) or not bound_ref.strip():
+                raise TrustedBindingError("plan_authority_binding carries no authority_ref")
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError(
+                    "plan_authority_binding may only be carried by a task-main binding"
+                )
+            if bound_kind == PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE:
+                plan_ref = getattr(self.plan_binding, "plan_ref", None)
+                if plan_ref is None or str(plan_ref).strip() != bound_ref:
+                    raise TrustedBindingError(
+                        "github_issue plan_authority_binding must agree with the bound "
+                        "Plan GitHub reference (no second authority)"
+                    )
+            elif self.plan_binding is not None:
+                raise TrustedBindingError(
+                    f"{bound_kind!r} plan_authority_binding must not carry a simultaneous "
+                    "Plan GitHub authority (no silent dual authority)"
+                )
         if self.trusted_task_main_context is not None:
             if not isinstance(self.trusted_task_main_context, TrustedTaskMainRuntimeContext):
                 raise TrustedBindingError(f"trusted_task_main_context must be TrustedTaskMainRuntimeContext, got {type(self.trusted_task_main_context).__name__}")

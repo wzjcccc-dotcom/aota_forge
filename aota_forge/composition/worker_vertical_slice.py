@@ -51,6 +51,10 @@ from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
     compile_handoff_to_execution_package,
 )
+from aota_forge.work_plane.execution_identity import (
+    TaskIdentityError,
+    parse_task_identity_bounded,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.result_card import (
     WorkerResultCard,
@@ -566,6 +570,44 @@ def _context_kind_hint() -> str | None:
     return value
 
 
+def _verify_canonical_task_handoff_identity(
+    canonical_task_id: Any,
+    handoff_milestone_ref: Any,
+    handoff_work_item_ref: Any,
+) -> None:
+    """Mechanical Milestone/Work agreement between a canonical task identity and
+    the grounded handoff refs (AF #57 M1/W4).
+
+    Replaces the legacy ``rsplit(":", 3)`` positional heuristic with the shared
+    Plan-aware bounded parse (``execution_identity``). The Plan position is
+    explicit: legacy plan-less identities and Plan-aware identities are read
+    identically, and a structurally malformed identity fails closed instead of
+    being silently skipped. Either grounded ref may be absent; a present ref
+    is always checked.
+    """
+    if handoff_milestone_ref is None and handoff_work_item_ref is None:
+        return
+    try:
+        parsed = parse_task_identity_bounded(canonical_task_id)
+    except TaskIdentityError as exc:
+        raise TrustedBindingError(
+            f"SESSION_METADATA_MISMATCH: canonical_task {canonical_task_id!r} "
+            f"is not a bounded task identity: {exc}"
+        ) from exc
+    if handoff_milestone_ref is not None and parsed.milestone_id != str(handoff_milestone_ref):
+        raise TrustedBindingError(
+            f"SESSION_METADATA_MISMATCH: canonical_task {canonical_task_id!r} "
+            f"milestone {parsed.milestone_id!r} contradicts handoff milestone "
+            f"{handoff_milestone_ref!r}"
+        )
+    if handoff_work_item_ref is not None and parsed.work_item_id != str(handoff_work_item_ref):
+        raise TrustedBindingError(
+            f"SESSION_METADATA_MISMATCH: canonical_task {canonical_task_id!r} "
+            f"work {parsed.work_item_id!r} contradicts handoff work "
+            f"{handoff_work_item_ref!r}"
+        )
+
+
 def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
     """Fail closed when launch/session metadata contradicts trusted context.
 
@@ -618,17 +660,12 @@ def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
                 _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
                 # AF #49 M1/W8: every accepted canonical dispatch identity
                 # embeds the governed milestone/work identity as an adjacent
-                # colon-delimited pair:
-                #   <project>:<milestone>:<work-item>:attempt-<n>
-                #   <project>:<milestone>:<work-item>:<artifact>:<attempt>
-                # A canonical task identity that does not carry the handoff's
-                # trusted milestone/work identity fails closed.
+                # colon-delimited pair. AF #57 M1/W4: the shared Plan-aware
+                # bounded parse reads the explicit Plan position identically
+                # for legacy plan-less and Plan-aware identities; a malformed
+                # identity fails closed instead of being silently skipped.
                 if _h_mid is not None and _h_wi is not None:
-                    if f":{_h_mid}:{_h_wi}:" not in f":{cid}:":
-                        raise TrustedBindingError(
-                            f"SESSION_METADATA_MISMATCH: canonical_task {cid!r} does not carry "
-                            f"handoff milestone/work identity {_h_mid!r}/{_h_wi!r}"
-                        )
+                    _verify_canonical_task_handoff_identity(cid, _h_mid, _h_wi)
             except TrustedBindingError:
                 raise
             except Exception:
@@ -698,21 +735,14 @@ def _verify_session_metadata(binding: TrustedWorkerBinding) -> None:
             raise TrustedBindingError("SESSION_METADATA_MISMATCH: handoff project_ref contradicts binding project")
         # Canonical task identity must agree with handoff milestone/work refs:
         # trusted context expects (project A, worktree X, task T) but launch
-        # metadata claims (B, Y, U) must fail closed.
+        # metadata claims (B, Y, U) must fail closed. AF #57 M1/W4: the shared
+        # Plan-aware bounded parse replaces the legacy ``rsplit(":", 3)``
+        # positional heuristic and reads the explicit Plan position
+        # identically for legacy plan-less and Plan-aware identities.
         try:
-            parts = binding.canonical_task_id.rsplit(":", 3)
-            if len(parts) == 4:
-                _cid_milestone, _cid_work = parts[1], parts[2]
-                _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
-                _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
-                if _h_mid is not None and _h_mid != _cid_milestone:
-                    raise TrustedBindingError(
-                        f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} milestone {_cid_milestone!r} contradicts handoff milestone {_h_mid!r}"
-                    )
-                if _h_wi is not None and _h_wi != _cid_work:
-                    raise TrustedBindingError(
-                        f"SESSION_METADATA_MISMATCH: canonical_task {binding.canonical_task_id!r} work {_cid_work!r} contradicts handoff work {_h_wi!r}"
-                    )
+            _h_mid = binding.handoff.milestone_ref.ref if binding.handoff.milestone_ref is not None else None
+            _h_wi = binding.handoff.work_item_ref.ref if binding.handoff.work_item_ref is not None else None
+            _verify_canonical_task_handoff_identity(binding.canonical_task_id, _h_mid, _h_wi)
         except TrustedBindingError:
             raise
         except Exception:
@@ -1135,15 +1165,17 @@ def _validate_dispatch_handoff_consistency(
             )
     handoff_mid = handoff.milestone_ref.ref if handoff.milestone_ref is not None else None
     handoff_wi = handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
-    if (
-        handoff_mid is not None
-        and handoff_wi is not None
-        and f":{handoff_mid}:{handoff_wi}:" not in f":{canonical_task_id}:"
-    ):
-        raise _governed_worker_binding_unavailable(
-            f"canonical_task {canonical_task_id!r} does not carry grounded handoff "
-            f"milestone/Work identity {handoff_mid!r}/{handoff_wi!r}"
-        )
+    if handoff_mid is not None and handoff_wi is not None:
+        # AF #57 M1/W4: shared Plan-aware bounded parse (explicit Plan position;
+        # legacy plan-less and Plan-aware identities read identically; a
+        # malformed identity fails closed with the canonical binding code).
+        try:
+            _verify_canonical_task_handoff_identity(canonical_task_id, handoff_mid, handoff_wi)
+        except TrustedBindingError as exc:
+            raise _governed_worker_binding_unavailable(
+                f"canonical_task {canonical_task_id!r} does not carry grounded handoff "
+                f"milestone/Work identity {handoff_mid!r}/{handoff_wi!r} ({exc})"
+            ) from exc
 
 
 def create_governed_worker_env_resolver(

@@ -204,6 +204,10 @@ class CanonicalDispatchBinding:
     # trusted bound-Plan identity carrier (mechanical, runtime-minted).
     github_authorities: tuple[Any, ...] = ()
     plan_binding: Any | None = None
+    # AF #57 M1/W4: source-neutral Plan Authority binding carrier (internal
+    # plan_id + one bound authority source). Mechanical copy only; it decides
+    # no policy and grants no authority.
+    plan_authority_binding: Any | None = None
     trusted_task_main_context: Any | None = None
     allowed_operations: frozenset[str] = frozenset()
     # AF #56 M3/W3: mechanical carriers for the #55/M2 trusted project context
@@ -1768,6 +1772,14 @@ def _dispatch_tool_operation_inner(
                 )
                 if adopt_failure is not None:
                     return ToolResponse.failure(adopt_failure)
+            # AF #57 M1/W4: the trusted internal Plan identity rides the
+            # source-neutral PlanAuthorityBinding on the trusted runtime
+            # binding (never a model argument). Absent => the bounded legacy
+            # plan-less identity is preserved.
+            trusted_plan_authority_binding = getattr(binding, "plan_authority_binding", None)
+            trusted_plan_id = getattr(trusted_plan_authority_binding, "plan_id", None)
+            if not isinstance(trusted_plan_id, str) or not trusted_plan_id.strip():
+                trusted_plan_id = None
             try:
                 from aota_forge.work_plane.task_facade import task_start
 
@@ -1782,6 +1794,7 @@ def _dispatch_tool_operation_inner(
                     # requires an explicit semantic work_role; the legacy
                     # compatibility path keeps its historical coder default.
                     thin_task_lifecycle=thin_binding,
+                    plan_id=trusted_plan_id,
                 )
             except ValueError as exc:
                 msg = str(exc)

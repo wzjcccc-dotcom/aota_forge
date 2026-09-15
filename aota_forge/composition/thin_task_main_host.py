@@ -63,6 +63,11 @@ from aota_forge.composition.execution import (
     create_opencode_completion_delivery_transport,
     create_production_execution_dispatcher,
 )
+from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.composition.plan_authority import (
+    PlanAuthorityCompositionError,
+    compose_plan_authority_binding,
+)
 from aota_forge.composition.project_binding import (
     resolve_trusted_project_binding,
     resolve_trusted_project_evidence,
@@ -79,6 +84,7 @@ from aota_forge.core.execution.durable_state import (
     is_bound_origin_session_ref,
 )
 from aota_forge.core.ingress import bind_execution_dispatcher
+from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.mcp_transport import create_aota_invoke_dispatch
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.config import (
@@ -449,6 +455,10 @@ class ThinTaskMainHost:
     # Mechanical carrier only: the binding grants the task-main read/search
     # root; it is never model-visible and never a write capability.
     local_governance_binding: LocalGovernanceRootBinding | None = None
+    # AF #57 M1/W4: the one source-neutral PlanAuthorityBinding this launch
+    # materialized (None for a plan-less legacy launch). Mechanical carrier
+    # only: it decides no policy and grants no authority by itself.
+    plan_authority_binding: PlanAuthorityBinding | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -504,6 +514,7 @@ def compose_thin_task_main_host(
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
     governance_base: str | PathLike[str] | None = None,
+    plan_id: str | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -524,11 +535,28 @@ def compose_thin_task_main_host(
     exactly ``<governance-base>/<canonical project id>/``; the base itself and
     every sibling project scope stay unreachable, and no write capability is
     granted. When absent, the accepted #55 root set is unchanged.
+
+    AF #57 M1/W4: ``plan_id`` is the trusted internal Plan identity (never a
+    model argument, never inferred). When supplied, the host materializes
+    exactly one source-neutral ``PlanAuthorityBinding`` for the launch: the
+    existing GitHub ``plan_ref`` (``github_issue``) or an active trusted
+    local-governance root (``local_governance``). Both at once fail closed
+    (no silent dual authority); neither fails closed when an identity is
+    declared. When absent, the launch stays plan-less/legacy and unchanged.
     """
     pid = _validate_identifier(project_id, "project_id")
     wid = _validate_identifier(worktree_id, "worktree_id")
     root = _validate_worktree_root(worktree_root)
     origin = _validate_origin_session(origin_task_main_session_ref)
+    normalized_plan_id: str | None = None
+    if plan_id is not None and str(plan_id).strip():
+        normalized_plan_id = str(plan_id).strip()
+        if not is_plan_id(normalized_plan_id):
+            raise TrustedBindingError(
+                "thin host plan_id must be one canonical internal Plan ID "
+                "(an Issue number, worktree, branch, repository or title is "
+                "never a Plan identity)"
+            )
 
     config_path = Path(runtime_config_path)
     if not config_path.is_file():
@@ -634,6 +662,23 @@ def compose_thin_task_main_host(
             create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENT_UPDATE_DESCRIPTOR, plan_binding),
         )
 
+    # AF #57 M1/W4: one source-neutral Plan Authority binding per launch.
+    # The internal Plan identity is supplied explicitly by the trusted
+    # runtime; the source kind is derived from exactly one available trusted
+    # source (GitHub plan_ref or active local-governance root). Both or
+    # neither fail closed; a plan-less legacy launch stays unchanged.
+    plan_authority_binding: PlanAuthorityBinding | None = None
+    if normalized_plan_id is not None:
+        try:
+            plan_authority_binding = compose_plan_authority_binding(
+                project_id=pid,
+                plan_id=normalized_plan_id,
+                github_plan_ref=plan_binding.plan_ref if plan_binding is not None else None,
+                local_governance_enabled=local_governance_binding is not None,
+            )
+        except PlanAuthorityCompositionError as exc:
+            raise TrustedBindingError(str(exc)) from exc
+
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
         project_id=pid,
@@ -656,6 +701,9 @@ def compose_thin_task_main_host(
         # Plan-bound governance authorities (task-main composition only).
         github_authorities=github_authorities,
         plan_binding=plan_binding,
+        # AF #57 M1/W4: the one source-neutral Plan Authority binding (None
+        # for a plan-less legacy launch; never a second authority ontology).
+        plan_authority_binding=plan_authority_binding,
         # The thin seam: no TrustedTaskMainRuntimeContext => M2/W1 generic thin
         # task lifecycle; no legacy workflow object is required or passed.
         trusted_task_main_context=None,
@@ -713,6 +761,7 @@ def compose_thin_task_main_host(
         authorized_roots=authorized_roots,
         context_projection=context_projection,
         local_governance_binding=local_governance_binding,
+        plan_authority_binding=plan_authority_binding,
     )
 
 
