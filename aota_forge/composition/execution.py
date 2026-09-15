@@ -74,7 +74,9 @@ from aota_forge.core.ingress import bind_execution_dispatcher
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.config import (
     DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS,
+    EXECUTOR_HERMES,
     RuntimeConfig,
+    RuntimeConfigError,
     load_runtime_config,
     resolve_binding_for_canonical_role,
     worker_canonical_profile_mapping,
@@ -151,12 +153,26 @@ def _resolve_operator_runtime_config(runtime_config: Any | None) -> RuntimeConfi
     if runtime_config is None:
         runtime_config = load_runtime_config()
     if not isinstance(runtime_config, RuntimeConfig):
-        from aota_forge.runtime.config import RuntimeConfigError
-
         raise RuntimeConfigError(
             f"production composition requires an operator-owned RuntimeConfig, got {type(runtime_config).__name__}"
         )
     return runtime_config
+
+
+def _require_hermes_executor(config: RuntimeConfig, *, seam: str) -> None:
+    """Fail closed when operator config selects an executor M1 cannot dispatch.
+
+    AF #56 M1/W3: ``executor=opencode`` is representable in the one operator
+    RuntimeConfig authority, but the OpenCode ExecutorAdapter is M2 scope.
+    Until that adapter exists, any production construction that would need an
+    execution host must refuse truthfully instead of silently falling back to
+    the Hermes adapter (no silent cross-host meaning).
+    """
+    if config.executor != EXECUTOR_HERMES:
+        raise RuntimeConfigError(
+            f"{seam}: executor {config.executor!r} has no registered AF execution adapter "
+            "in M1 (the OpenCode ExecutorAdapter is M2 scope); refusing to fall back to hermes"
+        )
 
 
 def create_production_execution_dispatcher(
@@ -195,6 +211,7 @@ def create_production_execution_dispatcher(
     record. There is still exactly ONE dispatcher in this graph.
     """
     config = _resolve_operator_runtime_config(runtime_config)
+    _require_hermes_executor(config, seam="create_production_execution_dispatcher")
     if worker_env_resolver is not None and not callable(worker_env_resolver):
         raise TypeError("worker_env_resolver must be callable or None")
 
@@ -353,6 +370,7 @@ def create_hermes_completion_delivery_transport(
     be supplied by the model or the Worker.
     """
     config = _resolve_operator_runtime_config(runtime_config)
+    _require_hermes_executor(config, seam="create_hermes_completion_delivery_transport")
     task_main_profile = config.get_binding(TASK_MAIN_COMPLETION_DELIVERY_ROLE).profile
     effective_home: Path | None = None
     if hermes_home is not None:

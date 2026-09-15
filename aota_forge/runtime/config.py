@@ -31,9 +31,27 @@ Invariants
   unknown role, unknown key, incomplete bindings, missing worker toolset pin.
 * Deterministic: same config + same role -> same effective binding.
 
+Bounded host selection (AF #56 M1/W3)
+-------------------------------------
+``executor`` is exactly one of ``hermes`` or ``opencode``. There is ONE
+operator-owned authority (this RuntimeConfig) and no second config system:
+
+* ``hermes`` behaves exactly as before: local executable/process host, Hermes
+  profile invariants, Hermes worker toolset pin, ``hermes_args`` translation.
+* ``opencode`` behaves as a dedicated persistent local HTTP/SSE host: the
+  operator-owned ``host_endpoint`` (loopback base URL) is required, and the
+  ``executable`` remains the operator-owned pinned host server binary
+  (identity/verification; not spawned per dispatch). Hermes-only invocation
+  fields (``toolsets``, ``hermes_args``) are rejected for ``opencode`` and
+  OpenCode-only fields are rejected for ``hermes`` — no silent cross-meaning.
+* M1 implements configuration authority only. No OpenCode execution adapter
+  exists yet (M2 scope): production composition fails closed for
+  ``executor=opencode`` and never silently falls back to Hermes.
+
 Minimal V1 contract
 -------------------
-Fields: executor, executable, concurrency, provider, model, toolsets, bindings.
+Fields: executor, executable, concurrency, provider, model, toolsets, bindings,
+host_endpoint (opencode-only).
 Provider/model are explicit operator pins (a key may carry JSON null to defer
 to the Hermes profile's own configuration); they are never defaulted here.
 Concurrency is bounded operator setting (default 1, validated).
@@ -50,6 +68,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from aota_forge.core.contracts.errors import ForgeError
 
@@ -66,7 +85,17 @@ SHARED_WORKER_PROFILE = "aota-worker"
 # provider/model/executable authority.
 SHARED_MCP_TOOLSET = "aota"
 
-ALLOWED_EXECUTORS: frozenset[str] = frozenset({"hermes"})
+# Bounded host selection (AF #56 M1/W3): exactly two executors, no discovery,
+# no registry, no plugin framework. Hermes keeps its existing semantics;
+# OpenCode is representable as a dedicated persistent local HTTP/SSE host with
+# an operator-owned loopback endpoint.
+EXECUTOR_HERMES = "hermes"
+EXECUTOR_OPENCODE = "opencode"
+ALLOWED_EXECUTORS: frozenset[str] = frozenset({EXECUTOR_HERMES, EXECUTOR_OPENCODE})
+
+# OpenCode host endpoint bounds (operator-owned; never model-supplied).
+OPENCODE_HOST_ENDPOINT_MAX_LENGTH = 512
+_LOOPBACK_HOSTNAMES: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 ALLOWED_WORK_ROLES: frozenset[str] = frozenset(
     {"task-main", "analyst", "coder", "reviewer", "project-steward"}
 )
@@ -144,7 +173,7 @@ def _validate_executor(value: Any) -> str:
     return v
 
 
-def _validate_profile(value: Any, work_role: str) -> str:
+def _validate_profile(value: Any, work_role: str, executor: str = EXECUTOR_HERMES) -> str:
     if not isinstance(value, str) or type(value) is not str:
         raise RuntimeConfigError(f"profile for {work_role!r} must be a string, got {type(value).__name__}")
     v = value.strip()
@@ -152,15 +181,19 @@ def _validate_profile(value: Any, work_role: str) -> str:
         raise RuntimeConfigError(f"profile for {work_role!r} must be a non-empty string")
     if any(ch.isspace() for ch in v):
         raise RuntimeConfigError(f"profile for {work_role!r} must not contain whitespace: {v!r}")
-    # Enforce shared worker profile invariant and task-main profile
-    if work_role in WORKER_ROLES and v != SHARED_WORKER_PROFILE:
-        raise RuntimeConfigError(
-            f"worker role {work_role!r} must map to shared profile {SHARED_WORKER_PROFILE!r}, got {v!r}"
-        )
-    if work_role == "task-main" and v != TASK_MAIN_PROFILE:
-        raise RuntimeConfigError(
-            f"task-main must map to profile {TASK_MAIN_PROFILE!r}, got {v!r}"
-        )
+    if executor == EXECUTOR_HERMES:
+        # Enforce shared worker profile invariant and task-main profile
+        if work_role in WORKER_ROLES and v != SHARED_WORKER_PROFILE:
+            raise RuntimeConfigError(
+                f"worker role {work_role!r} must map to shared profile {SHARED_WORKER_PROFILE!r}, got {v!r}"
+            )
+        if work_role == "task-main" and v != TASK_MAIN_PROFILE:
+            raise RuntimeConfigError(
+                f"task-main must map to profile {TASK_MAIN_PROFILE!r}, got {v!r}"
+            )
+    # For executor=opencode the profile is a mechanical host agent-profile
+    # binding name; AF role identity stays in work_role (AF_ROLE_IDENTITY !=
+    # HOST_PROFILE_IDENTITY), so only bounded string checks apply.
     return v
 
 
@@ -255,15 +288,87 @@ def _validate_executable(value: Any) -> str:
     return str(p.resolve())
 
 
-def _validate_toolsets(value: Any, work_role: str) -> tuple[str, ...] | None:
+def _validate_host_endpoint(value: Any, executor: str) -> str | None:
+    """Bounded operator-owned opencode host endpoint (loopback HTTP base URL).
+
+    Exact semantics: ``host_endpoint`` is an OpenCode-host-only field. For
+    ``hermes`` it must be absent; for ``opencode`` it is required, must be a
+    bounded loopback HTTP(S) base URL with an explicit port, no userinfo, no
+    path/query/fragment. The value is operator deployment truth, never
+    TaskHandoff/model supplied, and is never hardcoded in Core.
+    """
+    if executor == EXECUTOR_HERMES:
+        if value is not None:
+            raise RuntimeConfigError(
+                "host_endpoint is an opencode-only operator field; "
+                "executor 'hermes' must not carry it (no silent cross-meaning)"
+            )
+        return None
+
+    # executor == opencode
+    if not isinstance(value, str) or type(value) is not str:
+        raise RuntimeConfigError(
+            f"executor 'opencode' requires an operator-owned host_endpoint string, got {type(value).__name__}"
+        )
+    v = value.strip()
+    if not v:
+        raise RuntimeConfigError("executor 'opencode' requires a non-empty host_endpoint")
+    if len(v) > OPENCODE_HOST_ENDPOINT_MAX_LENGTH:
+        raise RuntimeConfigError(
+            f"host_endpoint exceeds {OPENCODE_HOST_ENDPOINT_MAX_LENGTH} characters"
+        )
+    if any(ch.isspace() for ch in v):
+        raise RuntimeConfigError(f"host_endpoint must not contain whitespace: {v!r}")
+    try:
+        parts = urlsplit(v)
+    except ValueError as exc:
+        raise RuntimeConfigError(f"host_endpoint is malformed: {type(exc).__name__}") from exc
+    if parts.scheme not in ("http", "https"):
+        raise RuntimeConfigError(f"host_endpoint must use http or https, got scheme {parts.scheme!r}")
+    if parts.username is not None or parts.password is not None:
+        raise RuntimeConfigError("host_endpoint must not embed credentials")
+    try:
+        hostname = parts.hostname
+        port = parts.port
+    except ValueError as exc:
+        raise RuntimeConfigError(f"host_endpoint is malformed: {type(exc).__name__}") from exc
+    if not hostname or hostname.lower() not in {h.strip("[]") for h in _LOOPBACK_HOSTNAMES}:
+        raise RuntimeConfigError(
+            f"host_endpoint must be loopback-only (127.0.0.1/localhost/::1), got {hostname!r}"
+        )
+    if port is None:
+        raise RuntimeConfigError("host_endpoint must carry an explicit port")
+    if not (1 <= port <= 65535):
+        raise RuntimeConfigError(f"host_endpoint port out of range: {port!r}")
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        raise RuntimeConfigError("host_endpoint must be a base URL without path, query or fragment")
+    host_for_url = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{parts.scheme}://{host_for_url}:{port}"
+
+
+def _validate_toolsets(
+    value: Any, work_role: str, executor: str = EXECUTOR_HERMES
+) -> tuple[str, ...] | None:
     """Bounded toolset allowlist validation (deployment/runtime policy).
 
-    Worker roles must pin exactly the shared AOTA MCP toolset: the accepted M1
-    boundary requires the shared MCP to be the Worker work interface and raw
-    terminal/shell/native filesystem toolsets to be mechanically unavailable.
-    task-main may carry any bounded allowlist or none (it is not dispatched as
-    a Worker in M1).
+    Hermes worker roles must pin exactly the shared AOTA MCP toolset: the
+    accepted M1 boundary requires the shared MCP to be the Worker work
+    interface and raw terminal/shell/native filesystem toolsets to be
+    mechanically unavailable. task-main may carry any bounded allowlist or
+    none (it is not dispatched as a Worker in M1).
+
+    ``toolsets`` is a Hermes invocation field (``-t``): for executor=opencode
+    it must be absent, because the OpenCode tool surface is enforced by the
+    operator-owned host permission/MCP configuration, not by a per-invocation
+    toolset selector.
     """
+    if executor != EXECUTOR_HERMES:
+        if value is not None:
+            raise RuntimeConfigError(
+                "toolsets is a hermes-only invocation field; executor 'opencode' "
+                "must not carry it (host tool surface is operator host config)"
+            )
+        return None
     if value is None:
         if work_role in WORKER_ROLES:
             raise RuntimeConfigError(
@@ -316,7 +421,7 @@ class RuntimeBinding:
         if validate_role not in ALLOWED_WORK_ROLES:
             raise RuntimeConfigError(f"unknown work role {validate_role!r}")
         _validate_executor(self.executor)
-        _validate_profile(self.profile, self.work_role)
+        _validate_profile(self.profile, self.work_role, self.executor)
         if self.provider is not None:
             _validate_provider(self.provider, "provider")
         if self.model is not None:
@@ -324,7 +429,7 @@ class RuntimeBinding:
         _validate_concurrency(self.concurrency)
         _validate_executable(self.executable)
         object.__setattr__(
-            self, "toolsets", _validate_toolsets(self.toolsets, self.work_role)
+            self, "toolsets", _validate_toolsets(self.toolsets, self.work_role, self.executor)
         )
 
     @property
@@ -343,7 +448,14 @@ class RuntimeBinding:
         invocation-level toolset allowlist; MCP server names are valid),
         --provider PROVIDER, -m MODEL, -z PROMPT.
         No memory lookup, no heuristic.
+
+        Hermes-only: an executor=opencode binding has no Hermes argv
+        translation and fails closed here (never silently reinterpreted).
         """
+        if self.executor != EXECUTOR_HERMES:
+            raise RuntimeConfigError(
+                f"hermes_args is Hermes-only; executor {self.executor!r} has no Hermes argv translation"
+            )
         if not isinstance(instruction, str) or not instruction.strip():
             raise RuntimeConfigError("instruction must be a non-empty string for hermes invocation")
         args: list[str] = [self.executable, "-p", self.profile]
@@ -381,6 +493,7 @@ class RuntimeConfig:
     bindings: tuple[RuntimeBinding, ...]
     worker_execution_timeout_seconds: int = DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS
     runtime_path: str = DEFAULT_TASK_MAIN_RUNTIME_PATH
+    host_endpoint: str | None = None
 
     def __post_init__(self) -> None:
         _validate_executor(self.executor)
@@ -392,6 +505,9 @@ class RuntimeConfig:
             _validate_provider(self.provider, "provider")
         if self.model is not None:
             _validate_model(self.model, "model")
+        object.__setattr__(
+            self, "host_endpoint", _validate_host_endpoint(self.host_endpoint, self.executor)
+        )
         if not isinstance(self.bindings, (tuple, list)) or len(self.bindings) == 0:
             raise RuntimeConfigError("bindings must be a non-empty sequence")
         seen: set[str] = set()
@@ -471,6 +587,7 @@ class RuntimeConfig:
             "bindings": [b.to_dict() for b in sorted(self.bindings, key=lambda x: x.work_role)],
             "worker_execution_timeout_seconds": self.worker_execution_timeout_seconds,
             "runtime_path": self.runtime_path,
+            "host_endpoint": self.host_endpoint,
         }
 
 
@@ -506,7 +623,7 @@ def _parse_bindings_dict(
         # Profile is required
         if "profile" not in binding_raw:
             raise RuntimeConfigError(f"binding for {role!r} missing required field 'profile'")
-        profile = _validate_profile(binding_raw["profile"], role)
+        profile = _validate_profile(binding_raw["profile"], role, executor)
 
         if "provider" not in binding_raw:
             provider = default_provider
@@ -522,11 +639,11 @@ def _parse_bindings_dict(
         concurrency = _validate_concurrency(concurrency, f"concurrency for {role!r}")
 
         if "toolsets" in binding_raw:
-            toolsets = _validate_toolsets(binding_raw["toolsets"], role)
+            toolsets = _validate_toolsets(binding_raw["toolsets"], role, executor)
         elif role in WORKER_ROLES:
-            toolsets = _validate_toolsets(default_toolsets, role)
+            toolsets = _validate_toolsets(default_toolsets, role, executor)
         else:
-            toolsets = None
+            toolsets = _validate_toolsets(None, role, executor)
 
         # executor/executable per binding may override but must match global if present
         binding_executor = binding_raw.get("executor", executor)
@@ -615,6 +732,7 @@ def load_runtime_config(
         "bindings",
         "worker_execution_timeout_seconds",
         "runtime_path",
+        "host_endpoint",
     }
     unknown_top = set(data.keys()) - allowed_top
     if unknown_top:
@@ -628,6 +746,12 @@ def load_runtime_config(
         raise RuntimeConfigError(f"runtime config missing required fields: {missing_top}")
 
     executor = _validate_executor(data["executor"])
+    if executor == EXECUTOR_OPENCODE and "host_endpoint" not in data:
+        raise RuntimeConfigError(
+            "executor 'opencode' requires the operator-owned 'host_endpoint' "
+            "(dedicated local reference server base URL); none was provided"
+        )
+    host_endpoint = _validate_host_endpoint(data.get("host_endpoint"), executor)
     executable = _validate_executable(data["executable"])
     concurrency = _validate_concurrency(data.get("concurrency", 1))
     provider = _validate_provider(data["provider"], "provider")
@@ -661,6 +785,7 @@ def load_runtime_config(
         bindings=bindings,
         worker_execution_timeout_seconds=worker_execution_timeout_seconds,
         runtime_path=runtime_path,
+        host_endpoint=host_endpoint,
     )
 
 
