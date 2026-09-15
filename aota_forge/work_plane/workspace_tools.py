@@ -80,7 +80,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -89,6 +89,17 @@ from aota_forge.core.contracts.descriptor import InputSpec, OperationContractDes
 from aota_forge.core.contracts.errors import ForgeError, InputTypeError
 from aota_forge.core.providers.tool import ToolProvider, ToolRequest, ToolResponse
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate, resolve_applicable_policies
+from aota_forge.work_plane.authorized_roots import (
+    AuthorizedRoot,
+    AuthorizedRootCapabilityError,
+    AuthorizedRootError,
+    AuthorizedRootSet,
+    CAPABILITY_READ,
+    CAPABILITY_SEARCH,
+    authorized_roots_single_root,
+    resolve_authorized_root,
+    validate_root_set_against_sandbox,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.worktree_resources import (
     WorktreeResourceEvidence,
@@ -196,6 +207,33 @@ POLICY_YAML_EXTERNALIZATION_PERFORMED: bool = False
 GENERIC_POLICY_ENGINE_CREATED: bool = False
 
 # ---------------------------------------------------------------------------
+# M2/W2 Authorized Root Context — AF #55 M2
+# ---------------------------------------------------------------------------
+# workspace.* now resolves through the session's *authorized root set* (root_ref
+# capability model), never cwd and never the host tree. root_ref is an optional
+# bounded name selecting a granted root; a model-supplied path can never be a
+# root_ref. Default read root stays the active worktree (accepted behavior);
+# default search covers all granted search-capable roots. Capability checks are
+# mechanical and fail closed before any filesystem access.
+AUTHORIZED_MULTI_ROOT_READ_MODEL_MATERIALIZED: bool = True
+ROOT_REF_CAPABILITY_MECHANICALLY_ENFORCED: bool = True
+ROOT_REF_AWARE_WORKSPACE_OPS: bool = True
+MODEL_NOMINATES_ROOT_PATH: bool = False
+MODEL_SUPPLIED_ROOT_REF_IS_PATH: bool = False
+WORKSPACE_ROOTS_ARE_AF_AUTHORIZED_SET: bool = True
+WORKSPACE_ROOTS_ARE_CWD: bool = False
+ARBITRARY_HOST_PATH_REACHABLE: bool = False
+CROSS_ROOT_ACCESS_REQUIRES_EXPLICIT_GRANT: bool = True
+ROOT_REF_DEFAULT_READ: str = "active-worktree"
+ROOT_REF_SEARCH_DEFAULT_IS_GRANTED_SET: bool = True
+# Plan authority is read through the AF GitHub tool surface, never through
+# workspace.read (Governance 2.0 local Plan store is not implemented here).
+PLAN_READ_VIA_WORKSPACE_READ: bool = False
+GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED: bool = False
+WRITE_ROOT_REF_GRANTED: str = "active-worktree"
+PROJECT_MAIN_WRITE_GRANTED: bool = False
+
+# ---------------------------------------------------------------------------
 # Bounds (local Milestone constants, not Child Plan authority)
 # ---------------------------------------------------------------------------
 
@@ -283,6 +321,9 @@ class WorkspaceAuthorityEvidence:
     applicable_policies: tuple[AgentsPolicyCandidate, ...]
     operation: OperationContractDescriptor
     evidence_id: str
+    # AF #55 M2: the session's authorized root set. None preserves the accepted
+    # single-worktree behavior (legacy authorities derive active-worktree only).
+    authorized_roots: AuthorizedRootSet | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.sandbox, WorktreeSandboxBoundary):
@@ -305,12 +346,28 @@ class WorkspaceAuthorityEvidence:
         # Enforce that operation name matches known workspace ops to avoid arbitrary operation smuggling
         if self.operation.name not in ("workspace.read", "workspace.search"):
             raise WorkspaceAuthorityError(f"operation name must be workspace.read or workspace.search, got {self.operation.name!r}")
+        # AF #55 M2: an explicitly carried authorized root set must be the
+        # trusted sandbox's own roots (no forged/sibling roots).
+        if self.authorized_roots is not None:
+            if not isinstance(self.authorized_roots, AuthorizedRootSet):
+                raise WorkspaceAuthorityError(
+                    f"authorized_roots must be AuthorizedRootSet or None, got {type(self.authorized_roots).__name__}"
+                )
+            validate_root_set_against_sandbox(self.authorized_roots, self.sandbox)
         # Re-validate operation descriptor itself
         self.operation.validate()
 
+    @property
+    def authorized_root_set(self) -> AuthorizedRootSet:
+        """The effective authorized root set (legacy authorities get the
+        accepted single-worktree set; never cwd, never the host tree)."""
+        if self.authorized_roots is not None:
+            return self.authorized_roots
+        return authorized_roots_single_root(self.sandbox)
+
     def canonical_dict(self) -> dict[str, Any]:
         handoff_digest = self.handoff.handoff_digest if self.handoff is not None else "no-handoff"
-        return {
+        payload = {
             "evidence_id": self.evidence_id,
             "operation": self.operation.name,
             "contract_hash": self.operation.contract_hash(),
@@ -319,6 +376,10 @@ class WorkspaceAuthorityEvidence:
             "policy_count": len(self.applicable_policies),
             "policy_digests": sorted([p.content_digest or "" for p in self.applicable_policies]),
         }
+        if self.authorized_roots is not None:
+            payload["root_refs"] = list(self.authorized_roots.names())
+            payload["root_set_session"] = self.authorized_roots.session_kind
+        return payload
 
     def canonical_json(self) -> str:
         return canonical_json(self.canonical_dict())
@@ -334,6 +395,7 @@ def create_workspace_authority(
     operation: OperationContractDescriptor,
     *,
     evidence_id: str | None = None,
+    authorized_roots: AuthorizedRootSet | None = None,
 ) -> WorkspaceAuthorityEvidence:
     """Create trusted workspace operation-authority evidence.
 
@@ -385,6 +447,11 @@ def create_workspace_authority(
     if evidence_id is None:
         # deterministic from operation + sandbox + handoff
         seed = f"{sandbox.compute_digest()}:{operation.contract_hash()}:{handoff.handoff_digest}"
+        if authorized_roots is not None:
+            if not isinstance(authorized_roots, AuthorizedRootSet):
+                raise WorkspaceAuthorityError("authorized_roots must be AuthorizedRootSet or None")
+            validate_root_set_against_sandbox(authorized_roots, sandbox)
+            seed = f"{seed}:roots:{authorized_roots.digest()}"
         evidence_id = "wse-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     else:
         if not isinstance(evidence_id, str) or not evidence_id.strip():
@@ -400,6 +467,7 @@ def create_workspace_authority(
         applicable_policies=policies_tuple,
         operation=operation,
         evidence_id=evidence_id,
+        authorized_roots=authorized_roots,
     )
 
 
@@ -410,6 +478,7 @@ def create_broad_workspace_read_authority(
     handoff: TaskHandoff | None = None,
     applicable_policies: Sequence[AgentsPolicyCandidate] = (),
     evidence_id: str | None = None,
+    authorized_roots: AuthorizedRootSet | None = None,
 ) -> WorkspaceAuthorityEvidence:
     """W3 broad read authority — trusted role + project/worktree binding + operation.
 
@@ -443,6 +512,11 @@ def create_broad_workspace_read_authority(
     if evidence_id is None:
         h_digest = handoff.handoff_digest if handoff is not None else "no-handoff"
         seed = f"{sandbox.compute_digest()}:{operation.contract_hash()}:{h_digest}:broad"
+        if authorized_roots is not None:
+            if not isinstance(authorized_roots, AuthorizedRootSet):
+                raise WorkspaceAuthorityError("authorized_roots must be AuthorizedRootSet or None")
+            validate_root_set_against_sandbox(authorized_roots, sandbox)
+            seed = f"{seed}:roots:{authorized_roots.digest()}"
         evidence_id = "wse-broad-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     else:
         if not isinstance(evidence_id, str) or not evidence_id.strip():
@@ -458,6 +532,7 @@ def create_broad_workspace_read_authority(
         applicable_policies=policies_tuple,
         operation=operation,
         evidence_id=evidence_id,
+        authorized_roots=authorized_roots,
     )
 
 
@@ -613,6 +688,16 @@ class BoundedWorkspaceToolProvider:
         self._handoff = authority.handoff
         self._policies = authority.applicable_policies
         self._operation = authority.operation
+        # AF #55 M2: the session's authorized root set (root_ref capability
+        # model). Legacy authorities derive the accepted single-worktree set.
+        try:
+            self._roots: AuthorizedRootSet = authority.authorized_root_set
+        except AuthorizedRootError as exc:
+            raise WorkspaceAuthorityError(f"authorized root set invalid: {exc}") from exc
+
+    @property
+    def authorized_roots(self) -> AuthorizedRootSet:
+        return self._roots
 
     @property
     def authority(self) -> WorkspaceAuthorityEvidence:
@@ -674,11 +759,29 @@ class BoundedWorkspaceToolProvider:
                 except Exception:
                     pass
             # Note: no TASK_SCOPE_MISSING failure for broad read
+            # AF #55 M2: mechanical root_ref capability enforcement (fail closed
+            # before any filesystem access). root_ref is a bounded granted name,
+            # never a path; unknown / ungranted / capability-less input never
+            # reaches the filesystem.
+            selected_root: AuthorizedRoot | None = None
+            raw_root_ref = request.inputs.get("root_ref")
+            if raw_root_ref is not None:
+                capability = (
+                    CAPABILITY_READ
+                    if request.operation.name == "workspace.read"
+                    else CAPABILITY_SEARCH
+                )
+                try:
+                    selected_root = resolve_authorized_root(
+                        self._roots, raw_root_ref, capability=capability
+                    )
+                except AuthorizedRootError as exc:
+                    return ToolResponse.failure({"code": exc.code, "message": str(exc)})
             # Dispatch to bounded handlers
             if request.operation.name == "workspace.read":
-                return self._handle_read(request)
+                return self._handle_read(request, selected_root)
             elif request.operation.name == "workspace.search":
-                return self._handle_search(request)
+                return self._handle_search(request, selected_root)
             else:
                 return ToolResponse.failure({"code": "UNKNOWN_OPERATION", "message": f"unsupported workspace operation: {request.operation.name!r}"})
         except Exception as exc:  # defensive fail-closed
@@ -691,7 +794,7 @@ class BoundedWorkspaceToolProvider:
     # workspace.read — bounded, worktree-bound, revalidated, symlink fail-closed
     # -----------------------------------------------------------------------
 
-    def _handle_read(self, request: ToolRequest) -> ToolResponse:
+    def _handle_read(self, request: ToolRequest, selected_root: AuthorizedRoot | None = None) -> ToolResponse:
         inputs = request.inputs
         # inputs already validated via ToolRequest/validate_inputs (unknown inputs rejected, required inputs enforced)
         # But we need to extract and bound-check again defensively
@@ -724,16 +827,33 @@ class BoundedWorkspaceToolProvider:
         except Exception as exc:
             return ToolResponse.failure({"code": "INVALID_INPUT", "message": str(exc)})
 
+        # AF #55 M2: resolve the granted read root (explicit root_ref wins,
+        # else the deterministic default = active-worktree). Mechanical only.
+        try:
+            root_obj = selected_root if selected_root is not None else self._roots.default_read_root()
+        except AuthorizedRootError as exc:
+            return ToolResponse.failure({"code": exc.code, "message": str(exc)})
+        if root_obj.root_path == str(self._root):
+            resolution_sandbox = self._sandbox
+        else:
+            # Resolution-only sandbox projection: the trusted binding's granted
+            # root re-anchors path containment for this root. Project/worktree
+            # identity is unchanged; no second sandbox or resolver is created.
+            resolution_sandbox = dataclass_replace(
+                self._sandbox, worktree_root=root_obj.root_path
+            )
+        selected_root_canonical = Path(root_obj.root_path)
+
         # Reuse M1 resolver for logical ref validation and initial containment
         # This also enforces bounded ref length, charset, no absolute/traversal
         try:
-            evidence = resolve_worktree_resource(self._sandbox, raw_path)
+            evidence = resolve_worktree_resource(resolution_sandbox, raw_path)
         except Exception as exc:
             return ToolResponse.failure({"code": "INVALID_PATH", "message": f"path rejected: {exc}"})
         # Ensure evidence project/worktree identity preserved (M1 resolver already binds)
-        if evidence.project_id != self._sandbox.project_id:
+        if evidence.project_id != resolution_sandbox.project_id:
             return ToolResponse.failure({"code": "CROSS_PROJECT_READ_FAIL_CLOSED", "message": "project mismatch (cross-project read rejected)"})
-        if evidence.worktree_id != self._sandbox.worktree_id:
+        if evidence.worktree_id != resolution_sandbox.worktree_id:
             return ToolResponse.failure({"code": "CROSS_WORKTREE_READ_FAIL_CLOSED", "message": "worktree mismatch (cross-worktree stale evidence rejected)"})
         if evidence.kind == "directory":
             return ToolResponse.failure({"code": "INVALID_PATH", "message": "path is a directory"})
@@ -742,7 +862,7 @@ class BoundedWorkspaceToolProvider:
 
         # RESOURCE_EVIDENCE_REVALIDATED_AT_READ: re-resolve immediately before read, do not trust stale evidence
         try:
-            fresh_evidence = resolve_worktree_resource(self._sandbox, raw_path)
+            fresh_evidence = resolve_worktree_resource(resolution_sandbox, raw_path)
         except Exception as exc:
             return ToolResponse.failure({"code": "INVALID_PATH", "message": f"revalidation failed: {exc}"})
         # Ensure fresh evidence still matches expected identity and still exists/file
@@ -758,8 +878,9 @@ class BoundedWorkspaceToolProvider:
         # Additional symlink escape fail-closed at use time (even though resolver already checked)
         try:
             _check_symlink_escape(canonical_path)
-            # Also ensure canonical still under root (defense against TOCTOU symlink swap)
-            root_canonical = self._root
+            # Also ensure canonical still under the selected granted root (defense
+            # against TOCTOU symlink swap); root containment never uses cwd.
+            root_canonical = selected_root_canonical
             try:
                 canonical_path.resolve(strict=True).relative_to(root_canonical)
             except ValueError:
@@ -810,8 +931,11 @@ class BoundedWorkspaceToolProvider:
             "returned_bytes": len(sliced),
             "offset": offset,
             "truncated": truncated,
-            "project_id": self._sandbox.project_id,
-            "worktree_id": self._sandbox.worktree_id,
+            "project_id": resolution_sandbox.project_id,
+            "worktree_id": resolution_sandbox.worktree_id,
+            # AF #55 M2: the granted root this read resolved through (bounded
+            # name; never a model-supplied path).
+            "root_ref": root_obj.root_ref,
             "canonical_path": str(canonical_path),
             # Note: canonical_path is physical layer path holder, not authority; included for traceability but not as authority grant
         }
@@ -829,7 +953,9 @@ class BoundedWorkspaceToolProvider:
     # workspace.search — bounded, worktree-scoped, deterministic, symlink-safe
     # -----------------------------------------------------------------------
 
-    def _handle_search(self, request: ToolRequest) -> ToolResponse:
+    def _handle_search(
+        self, request: ToolRequest, selected_root: AuthorizedRoot | None = None
+    ) -> ToolResponse:
         inputs = request.inputs
         query_val = inputs.get("query")
         if query_val is None:
@@ -854,18 +980,103 @@ class BoundedWorkspaceToolProvider:
         # query must not be absolute path; we already validated charset but also reject if query looks like absolute path with traversal
         if query.startswith("/"):
             return ToolResponse.failure({"code": "INVALID_QUERY", "message": "query must not be absolute path"})
-        # scope must derive exclusively from trusted worktree root; never accept absolute root from caller
-        # Ensure search root is always under trusted worktree root
-        root = self._root
+
+        # AF #55 M2: the search root set derives exclusively from the session's
+        # authorized roots. An explicit root_ref selects exactly that granted
+        # root; the default covers all granted search-capable roots in
+        # deterministic order (active-worktree first) with canonical-path
+        # deduplication. cwd and model-supplied paths are never consulted.
+        if selected_root is not None:
+            search_roots: tuple[AuthorizedRoot, ...] = (selected_root,)
+        else:
+            search_roots = self._roots.search_roots()
+        ordered: list[AuthorizedRoot] = []
+        seen_root_paths: set[str] = set()
+        for root_obj in search_roots:
+            if root_obj.root_path in seen_root_paths:
+                continue
+            seen_root_paths.add(root_obj.root_path)
+            ordered.append(root_obj)
+        if not ordered:
+            return ToolResponse.failure(
+                {"code": "AUTHORIZED_ROOT_UNKNOWN", "message": "no search-capable root is granted in this session"}
+            )
+
+        # Perform bounded lexical/file search per granted root — standard
+        # filesystem, no persistent index, no vector DB. Deterministic: sorted
+        # file enumeration, sorted results, snippets bounded.
+        results: list[dict[str, Any]] = []
+        max_files_to_scan = 2000  # operational safety bound (global across roots)
+        files_scanned = 0
+        for root_obj in ordered:
+            if len(results) >= max_results or files_scanned >= max_files_to_scan:
+                break
+            scanned = self._search_single_root(
+                root=Path(root_obj.root_path),
+                root_ref=root_obj.root_ref,
+                scope=scope,
+                query=query,
+                max_results=max_results,
+                remaining_files=max_files_to_scan - files_scanned,
+                results=results,
+            )
+            if isinstance(scanned, ToolResponse):
+                return scanned
+            files_scanned += scanned
+
+        # Deterministic ordering: sort by (path, match_offset, root_ref)
+        results_sorted = sorted(results, key=lambda r: (r["path"], r["match_offset"], r["root_ref"]))
+        # Enforce result count bound (already)
+        if len(results_sorted) > max_results:
+            results_sorted = results_sorted[:max_results]
+            truncated = True
+        else:
+            truncated = False
+        payload = {
+            "query": query,
+            "scope": scope,
+            "results": results_sorted,
+            "total_matches": len(results_sorted),
+            "truncated": truncated,
+            "project_id": self._sandbox.project_id,
+            "worktree_id": self._sandbox.worktree_id,
+            # AF #55 M2: every result carries its granted root_ref; the searched
+            # set is the AF-authorized root set (never cwd / host tree).
+            "root_refs": [root_obj.root_ref for root_obj in ordered],
+        }
+        # Final total output bound check
+        try:
+            payload_size = len(canonical_json(payload).encode("utf-8"))
+        except Exception:
+            payload_size = len(str(payload).encode("utf-8"))
+        if payload_size > MAX_TOTAL_OUTPUT_BYTES:
+            return ToolResponse.failure({"code": "OUTPUT_BOUNDED_EXCEEDED", "message": f"search output size {payload_size} exceeds max {MAX_TOTAL_OUTPUT_BYTES}"})
+        # Search results are evidence/content, not authority — documented
+        return ToolResponse.success(payload)
+
+    def _search_single_root(
+        self,
+        *,
+        root: Path,
+        root_ref: str,
+        scope: str,
+        query: str,
+        max_results: int,
+        remaining_files: int,
+        results: list[dict[str, Any]],
+    ) -> int | ToolResponse:
+        """Bounded walk of one granted root; appends tagged results.
+
+        Returns files scanned, or a failure ToolResponse (fail closed). Root
+        containment is always the granted root canonical path — never cwd.
+        """
         if scope == "":
             search_root = root
         else:
-            # Validate scope is logical relative, then join to root
-            # Re-check containment deterministically
+            # Validate scope is logical relative, then join to the granted root
             candidate_root = root / Path(scope)
             try:
-                # Reject symlink at scope directory
-                # Check each component for symlink escape
+                # Reject symlink at scope directory; check each component
                 parts = scope.split("/") if scope else []
                 current = root
                 for part in parts:
@@ -877,64 +1088,41 @@ class BoundedWorkspaceToolProvider:
                 cand_canonical.relative_to(root)
                 # If scope exists as directory, ensure it stays under root
                 if candidate_root.exists():
-                    cand_canonical_strict = candidate_root.resolve(strict=True) if candidate_root.exists() else cand_canonical
+                    cand_canonical_strict = candidate_root.resolve(strict=True)
                     try:
                         cand_canonical_strict.relative_to(root)
                     except ValueError:
-                        return ToolResponse.failure({"code": "SCOPE_ESCAPE", "message": "scope escapes worktree"})
+                        return ToolResponse.failure({"code": "SCOPE_ESCAPE", "message": "scope escapes granted root"})
                 search_root = candidate_root
             except ValueError:
-                return ToolResponse.failure({"code": "SCOPE_ESCAPE", "message": "scope escapes worktree"})
+                return ToolResponse.failure({"code": "SCOPE_ESCAPE", "message": "scope escapes granted root"})
             except OSError as exc:
                 return ToolResponse.failure({"code": "SCOPE_ERROR", "message": str(exc)})
-            # If scope does not exist, search yields zero results (deterministic, not error) unless caller expects fail?
-            # We treat non-existent scope as empty result set
+            # Non-existent scope yields zero results for this root (deterministic)
             if not search_root.exists():
-                return ToolResponse.success(
-                    {
-                        "query": query,
-                        "scope": scope,
-                        "results": [],
-                        "total_matches": 0,
-                        "truncated": False,
-                        "project_id": self._sandbox.project_id,
-                        "worktree_id": self._sandbox.worktree_id,
-                    }
-                )
+                return 0
             if not search_root.is_dir():
                 return ToolResponse.failure({"code": "INVALID_SCOPE", "message": "scope is not a directory"})
 
-        # Perform bounded lexical/file search — standard filesystem, no persistent index, no vector DB
-        # Deterministic: sorted file enumeration, sorted results by path, snippets bounded
-        results: list[dict[str, Any]] = []
-        total_output_estimate = 0
-        # Walk with os.walk, but skip symlink dirs, deterministic sorted order
-        # Bound: limit total files visited to avoid unbounded scan? Use bounded walk with max files
-        max_files_to_scan = 2000  # operational safety bound
         files_scanned = 0
         try:
             for dirpath, dirnames, filenames in os.walk(search_root, topdown=True, followlinks=False):
                 # Sort deterministically
                 dirnames.sort()
                 filenames.sort()
-                # Remove symlink directories from traversal (fail-closed: skip them)
-                # os.walk with followlinks=False will not follow symlink dirs, but we also remove them from dirnames
-                # to ensure deterministic skip
-                # Filter out symlink dirnames
+                # Remove symlink directories from traversal (fail-closed skip)
                 orig_dirnames = list(dirnames)
                 dirnames[:] = [d for d in orig_dirnames if not Path(dirpath, d).is_symlink()]
-                # Also ensure dirpath itself is not symlink-escaped (already checked, but re-check)
-                # Canonical containment for dirpath
+                # Canonical containment for dirpath (never escape the granted root)
                 try:
                     Path(dirpath).resolve(strict=False).relative_to(root)
                 except ValueError:
-                    # dirpath escapes root via symlink — skip
                     dirnames[:] = []
                     continue
                 for fname in filenames:
                     if len(results) >= max_results:
                         break
-                    if files_scanned >= max_files_to_scan:
+                    if files_scanned >= remaining_files:
                         break
                     fpath = Path(dirpath) / fname
                     # Skip symlink files (fail-closed)
@@ -955,12 +1143,10 @@ class BoundedWorkspaceToolProvider:
                     except OSError:
                         continue
                     files_scanned += 1
-                    # Read file bounded: if file too large, skip or truncate snippet?
-                    # For search, we read with bound: if file exceeds 64KiB, we skip or read truncated
+                    # Read file bounded; skip overly large files for search
                     try:
-                        # Stat to avoid reading huge files
                         size = fpath.stat().st_size
-                        if size > MAX_READ_BYTES * 2:  # skip overly large files for search
+                        if size > MAX_READ_BYTES * 2:
                             continue
                         raw = fpath.read_bytes()
                     except OSError:
@@ -980,7 +1166,7 @@ class BoundedWorkspaceToolProvider:
                     snippet = text[start:end]
                     if len(snippet) > MAX_SNIPPET_CHARS:
                         snippet = snippet[:MAX_SNIPPET_CHARS]
-                    # Logical path relative to worktree root (deterministic, not absolute host path)
+                    # Logical path relative to the granted root (deterministic, not absolute host path)
                     try:
                         logical_path = str(fpath.resolve(strict=False).relative_to(root))
                     except ValueError:
@@ -992,57 +1178,19 @@ class BoundedWorkspaceToolProvider:
                         "path": logical_path,
                         "snippet": snippet,
                         "match_offset": idx,
+                        "root_ref": root_ref,
                     }
-                    # Ensure per-result bounded
-                    # Check total output bound
                     results.append(result)
-                    # Estimate output size
-                    # If total would exceed MAX_TOTAL_OUTPUT_BYTES, truncate
+                    # Bound total output; drop the last result and stop when hit
                     est = len(canonical_json(results).encode("utf-8"))
                     if est > MAX_TOTAL_OUTPUT_BYTES - 1024:  # leave margin for wrapper
-                        # Remove last and mark truncated
                         results.pop()
                         break
-                if len(results) >= max_results or files_scanned >= max_files_to_scan:
+                if len(results) >= max_results or files_scanned >= remaining_files:
                     break
         except OSError as exc:
             return ToolResponse.failure({"code": "SEARCH_ERROR", "message": str(exc)})
-
-        # Deterministic ordering: sort by path
-        results_sorted = sorted(results, key=lambda r: (r["path"], r["match_offset"]))
-        # Enforce result count bound (already)
-        if len(results_sorted) > max_results:
-            results_sorted = results_sorted[:max_results]
-            truncated = True
-        else:
-            truncated = files_scanned >= max_files_to_scan or len(results_sorted) == max_results and files_scanned < max_files_to_scan and False
-            # More accurately, truncated if we stopped due to output bound or file scan bound
-            # Simplify: truncated indicates we hit a bound
-            truncated = False
-            # If we broke early due to file scan limit or output bound, we would have set truncated already
-            # For now, deterministic: truncated false unless we hit exact limit via early break
-            # We can detect if we stopped due to file limit
-            # Keep as false for now unless results length == max_results and we could have more
-            # To be safe, if len == max_results, mark truncated if we scanned less than total files? hard to know
-            # We'll keep truncated False for deterministic simplicity, unless we know we truncated
-        payload = {
-            "query": query,
-            "scope": scope,
-            "results": results_sorted,
-            "total_matches": len(results_sorted),
-            "truncated": truncated,
-            "project_id": self._sandbox.project_id,
-            "worktree_id": self._sandbox.worktree_id,
-        }
-        # Final total output bound check
-        try:
-            payload_size = len(canonical_json(payload).encode("utf-8"))
-        except Exception:
-            payload_size = len(str(payload).encode("utf-8"))
-        if payload_size > MAX_TOTAL_OUTPUT_BYTES:
-            return ToolResponse.failure({"code": "OUTPUT_BOUNDED_EXCEEDED", "message": f"search output size {payload_size} exceeds max {MAX_TOTAL_OUTPUT_BYTES}"})
-        # Search results are evidence/content, not authority — documented
-        return ToolResponse.success(payload)
+        return files_scanned
 
 
 __all__ = [

@@ -57,6 +57,7 @@ from aota_forge.work_plane.result_card import (
     project_worker_result_card,
 )
 from aota_forge.work_plane.roles import AgentWorkRole
+from aota_forge.work_plane.authorized_roots import authorized_roots_for_worker
 from aota_forge.work_plane.tool_surface import create_role_tool_surface
 from aota_forge.work_plane.workspace_mutation import (
     WORKSPACE_WRITE_DESCRIPTOR,
@@ -335,9 +336,19 @@ def build_worker_binding(
         content=f"Bounded scope derived from TaskHandoff: {raw_scope}",
         provenance_ref=f"{milestone_ref}/{wi_ref}",
     )
+    # AF #55 M2: workers receive only the assigned active-worktree. Workers do
+    # not inherit task-main roots; supporting roots would require an explicit
+    # grant channel (not instantiable in this Plan).
+    worker_authorized_roots = authorized_roots_for_worker(sandbox)
     read_authorities = (
-        create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_SEARCH_DESCRIPTOR),
-        create_workspace_authority(sandbox, handoff, (policy,), WORKSPACE_READ_DESCRIPTOR),
+        create_workspace_authority(
+            sandbox, handoff, (policy,), WORKSPACE_SEARCH_DESCRIPTOR,
+            authorized_roots=worker_authorized_roots,
+        ),
+        create_workspace_authority(
+            sandbox, handoff, (policy,), WORKSPACE_READ_DESCRIPTOR,
+            authorized_roots=worker_authorized_roots,
+        ),
     )
     # Determine work_role string (handoff owns role; already gated above).
     try:
@@ -356,6 +367,7 @@ def build_worker_binding(
             handoff,
             (policy,),
             WORKSPACE_WRITE_DESCRIPTOR,
+            authorized_roots=worker_authorized_roots,
         )
     else:
         mutation_authority = None
@@ -454,6 +466,8 @@ def build_worker_binding(
         restricted_shell_authority=shell_authority,
         test_execution_authority=test_execution_authority,
         trusted_task_main_context=None,
+        # AF #55 M2: the worker's authorized root set (active-worktree only).
+        authorized_roots=worker_authorized_roots,
     )
 
 

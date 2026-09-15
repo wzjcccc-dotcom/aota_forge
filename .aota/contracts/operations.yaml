@@ -577,7 +577,7 @@ contracts:
   - UNKNOWN_INPUT
   protocol_version: '1.0'
 - name: workspace.read
-  description: Bounded workspace file read (text, worktree-scoped)
+  description: Bounded workspace file read (authorized-root-scoped; root_ref selects a granted root)
   inputs:
   - name: max_bytes
     type: int?
@@ -585,6 +585,8 @@ contracts:
     type: int?
   - name: path
     type: str
+  - name: root_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -603,12 +605,14 @@ contracts:
   errors: []
   protocol_version: '1.0'
 - name: workspace.search
-  description: Bounded workspace lexical search (worktree-scoped, read-only)
+  description: Bounded workspace lexical search (authorized-root-scoped; default all granted roots)
   inputs:
   - name: max_results
     type: int?
   - name: query
     type: str
+  - name: root_ref
+    type: str?
   - name: scope
     type: str?
   required_context: []

@@ -36,6 +36,11 @@ from aota_forge.runtime.config import (
     TASK_MAIN_RUNTIME_PATH_THIN,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.authorized_roots import (
+    AuthorizedRootSet,
+    authorized_roots_single_root,
+    validate_root_set_against_sandbox,
+)
 from aota_forge.work_plane.tool_surface import ToolRoleSurface
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.work_plane.workspace_tools import WorkspaceAuthorityEvidence  # type: ignore
@@ -189,6 +194,15 @@ class TrustedWorkerBinding:
     session_ref: str = ""
     parent_session_ref: str = ""
     run_ref: str = ""
+    # AF #55 M2: trusted Plan project identity (declared SOURCE_REPOSITORY,
+    # mechanically grounded through the canonical resolver + Git origin).
+    # Mechanical carrier only; task-main composition only.
+    source_repository: str = ""
+    # AF #55 M2: the session's authorized root set (root_ref capability model).
+    # None preserves the accepted single-worktree behavior for legacy bindings;
+    # when present it must be the trusted sandbox's own roots and must match
+    # every read/mutation authority's root set.
+    authorized_roots: AuthorizedRootSet | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -419,6 +433,58 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError(f"{_label} must be a string")
             if _value and (len(_value) > 512 or "\x00" in _value or not _SAFE_ID.fullmatch(_value)):
                 raise TrustedBindingError(f"{_label} must be a bounded trusted identifier")
+        # AF #55 M2: trusted Plan project identity is a task-main-only
+        # mechanical fact and must be a normalizable repository identity.
+        if self.source_repository:
+            if not isinstance(self.source_repository, str) or len(self.source_repository) > 512:
+                raise TrustedBindingError("source_repository must be a bounded repository identity string")
+            from aota_forge.core.project.repository_identity import normalize_repository_identity  # type: ignore
+
+            try:
+                normalize_repository_identity(self.source_repository)
+            except ValueError as exc:
+                raise TrustedBindingError(f"source_repository is not a repository identity: {exc}") from exc
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError("source_repository may only be carried by a task-main binding")
+        # AF #55 M2: an explicitly carried authorized root set must be the
+        # trusted sandbox's own roots and must agree with every authority's
+        # effective root set (no authority may widen the binding's roots).
+        if self.authorized_roots is not None:
+            if not isinstance(self.authorized_roots, AuthorizedRootSet):
+                raise TrustedBindingError(
+                    f"authorized_roots must be AuthorizedRootSet or None, got {type(self.authorized_roots).__name__}"
+                )
+            try:
+                validate_root_set_against_sandbox(self.authorized_roots, self.sandbox)
+            except Exception as exc:
+                raise TrustedBindingError(f"authorized root set is not sandbox-derived: {exc}") from exc
+            expected_digest = self.authorized_roots.digest()
+            for authority in self.read_authorities:
+                try:
+                    actual_digest = authority.authorized_root_set.digest()
+                except Exception as exc:
+                    raise TrustedBindingError(f"read authority authorized root set invalid: {exc}") from exc
+                if actual_digest != expected_digest:
+                    raise TrustedBindingError(
+                        "read authority authorized root set does not match the binding's authorized roots"
+                    )
+            if self.mutation_authority is not None:
+                try:
+                    mutation_digest = self.mutation_authority.authorized_root_set.digest()
+                except Exception as exc:
+                    raise TrustedBindingError(f"mutation authority authorized root set invalid: {exc}") from exc
+                if mutation_digest != expected_digest:
+                    raise TrustedBindingError(
+                        "mutation authority authorized root set does not match the binding's authorized roots"
+                    )
+
+    @property
+    def effective_authorized_roots(self) -> AuthorizedRootSet:
+        """Effective authorized root set (legacy bindings derive the accepted
+        single-worktree set from the trusted sandbox)."""
+        if self.authorized_roots is not None:
+            return self.authorized_roots
+        return authorized_roots_single_root(self.sandbox)
 
 
 # ---------------------------------------------------------------------------

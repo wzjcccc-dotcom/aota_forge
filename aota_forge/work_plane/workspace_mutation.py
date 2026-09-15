@@ -77,6 +77,15 @@ from aota_forge.core.contracts.version import PROTOCOL_VERSION
 from aota_forge.core.providers.tool import ToolProvider, ToolRequest, ToolResponse
 from aota_forge.core.result_governance import GovernedReference, GovernedReferenceKind
 from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate, resolve_applicable_policies
+from aota_forge.work_plane.authorized_roots import (
+    AuthorizedRoot,
+    AuthorizedRootError,
+    AuthorizedRootSet,
+    CAPABILITY_WRITE,
+    ROOT_REF_ACTIVE_WORKTREE,
+    authorized_roots_single_root,
+    validate_root_set_against_sandbox,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.worktree_resources import (
     WorktreeResourceEvidence,
@@ -250,6 +259,10 @@ class WorkspaceMutationAuthority:
     applicable_policies: tuple[AgentsPolicyCandidate, ...]
     operation: OperationContractDescriptor
     evidence_id: str
+    # AF #55 M2: authorized root set (narrow write: only the sandbox's
+    # active-worktree carries the write capability). None preserves the
+    # accepted single-worktree behavior.
+    authorized_roots: AuthorizedRootSet | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.sandbox, WorktreeSandboxBoundary):
@@ -269,10 +282,30 @@ class WorkspaceMutationAuthority:
             raise WorkspaceMutationAuthorityError("evidence_id must be non-empty string")
         if self.operation.name != "workspace.write":
             raise WorkspaceMutationAuthorityError(f"operation name must be workspace.write, got {self.operation.name!r}")
+        # AF #55 M2: explicit root sets must be the trusted sandbox's own roots
+        # and must include the write-capable active worktree (narrow write).
+        if self.authorized_roots is not None:
+            if not isinstance(self.authorized_roots, AuthorizedRootSet):
+                raise WorkspaceMutationAuthorityError(
+                    f"authorized_roots must be AuthorizedRootSet or None, got {type(self.authorized_roots).__name__}"
+                )
+            validate_root_set_against_sandbox(self.authorized_roots, self.sandbox)
+            if not any(root.has_capability(CAPABILITY_WRITE) for root in self.authorized_roots.roots):
+                raise WorkspaceMutationAuthorityError(
+                    "mutation authority requires a write-capable active-worktree root"
+                )
         self.operation.validate()
 
+    @property
+    def authorized_root_set(self) -> AuthorizedRootSet:
+        """Effective authorized root set (legacy authorities get the accepted
+        single-worktree set; project-main never becomes writable)."""
+        if self.authorized_roots is not None:
+            return self.authorized_roots
+        return authorized_roots_single_root(self.sandbox)
+
     def canonical_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "evidence_id": self.evidence_id,
             "operation": self.operation.name,
             "contract_hash": self.operation.contract_hash(),
@@ -281,6 +314,10 @@ class WorkspaceMutationAuthority:
             "policy_count": len(self.applicable_policies),
             "policy_digests": sorted([p.content_digest or "" for p in self.applicable_policies]),
         }
+        if self.authorized_roots is not None:
+            payload["root_refs"] = list(self.authorized_roots.names())
+            payload["root_set_session"] = self.authorized_roots.session_kind
+        return payload
 
     def canonical_json(self) -> str:
         return canonical_json(self.canonical_dict())
@@ -302,6 +339,7 @@ def create_workspace_mutation_authority(
     operation: OperationContractDescriptor,
     *,
     evidence_id: str | None = None,
+    authorized_roots: AuthorizedRootSet | None = None,
 ) -> WorkspaceMutationAuthority:
     """Create trusted workspace mutation authority evidence.
 
@@ -335,6 +373,11 @@ def create_workspace_mutation_authority(
         policies_tuple = resolved
     if evidence_id is None:
         seed = f"{sandbox.compute_digest()}:{operation.contract_hash()}:{handoff.handoff_digest}:mutation"
+        if authorized_roots is not None:
+            if not isinstance(authorized_roots, AuthorizedRootSet):
+                raise WorkspaceMutationAuthorityError("authorized_roots must be AuthorizedRootSet or None")
+            validate_root_set_against_sandbox(authorized_roots, sandbox)
+            seed = f"{seed}:roots:{authorized_roots.digest()}"
         evidence_id = "wma-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     else:
         if not isinstance(evidence_id, str) or not evidence_id.strip():
@@ -350,6 +393,7 @@ def create_workspace_mutation_authority(
         applicable_policies=policies_tuple,
         operation=operation,
         evidence_id=evidence_id,
+        authorized_roots=authorized_roots,
     )
 
 # ---------------------------------------------------------------------------
@@ -638,6 +682,22 @@ class BoundedWorkspaceMutationProvider:
         self._handoff = authority.handoff
         self._policies = authority.applicable_policies
         self._operation = authority.operation
+        # AF #55 M2: the granted write root is always the sandbox
+        # active-worktree; project-main never carries write capability.
+        try:
+            self._roots: AuthorizedRootSet = authority.authorized_root_set
+            write_root = self._roots.default_write_root()
+        except AuthorizedRootError as exc:
+            raise WorkspaceMutationAuthorityError(f"authorized write root invalid: {exc}") from exc
+        if write_root.root_kind != ROOT_REF_ACTIVE_WORKTREE or write_root.root_path != str(self._root):
+            raise WorkspaceMutationAuthorityError(
+                "write root must be the sandbox active-worktree (narrow write)"
+            )
+        self._write_root: AuthorizedRoot = write_root
+
+    @property
+    def authorized_roots(self) -> AuthorizedRootSet:
+        return self._roots
 
     @property
     def authority(self) -> WorkspaceMutationAuthority:
@@ -860,6 +920,7 @@ class BoundedWorkspaceMutationProvider:
             "project_id": self._sandbox.project_id,
             "worktree_id": self._sandbox.worktree_id,
             "mode": mode,
+            "root_ref": self._write_root.root_ref,
             "canonical_path": str(canonical_path),
         }
         # Output bounded check

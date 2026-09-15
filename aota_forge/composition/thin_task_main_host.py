@@ -106,6 +106,11 @@ from aota_forge.work_plane.git_tools import (
     create_git_authority,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.authorized_roots import (
+    AuthorizedRootSet,
+    authorized_roots_for_task_main,
+    build_trusted_project_context_projection,
+)
 from aota_forge.work_plane.restricted_shell import (
     RESTRICTED_SHELL_DESCRIPTOR,
     create_restricted_shell_authority,
@@ -310,14 +315,18 @@ def _build_thin_tool_surface() -> ToolRoleSurface:
 
 
 def _build_read_authorities(
-    sandbox: WorktreeSandboxBoundary, handoff: TaskHandoff
+    sandbox: WorktreeSandboxBoundary,
+    handoff: TaskHandoff,
+    authorized_roots: AuthorizedRootSet,
 ) -> tuple[Any, ...]:
     return (
         create_broad_workspace_read_authority(
-            sandbox, WORKSPACE_SEARCH_DESCRIPTOR, handoff=handoff, applicable_policies=()
+            sandbox, WORKSPACE_SEARCH_DESCRIPTOR, handoff=handoff, applicable_policies=(),
+            authorized_roots=authorized_roots,
         ),
         create_broad_workspace_read_authority(
-            sandbox, WORKSPACE_READ_DESCRIPTOR, handoff=handoff, applicable_policies=()
+            sandbox, WORKSPACE_READ_DESCRIPTOR, handoff=handoff, applicable_policies=(),
+            authorized_roots=authorized_roots,
         ),
     )
 
@@ -427,6 +436,11 @@ class ThinTaskMainHost:
     source_repository: str = ""
     repository_identity_verified: bool = False
     repository_identity: dict[str, Any] | None = None
+    # AF #55 M2: the task-main authorized root set (project-main read +
+    # active-worktree read/write) and the §8 trusted context projection that
+    # separates Plan authority, implementation project and active worktree.
+    authorized_roots: AuthorizedRootSet | None = None
+    context_projection: dict[str, Any] | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -516,6 +530,11 @@ def compose_thin_task_main_host(
         registry_path=registry_path,
     )
 
+    # AF #55 M2: the task-main authorized root set is derived exclusively from
+    # the trusted sandbox (project-main = canonical project root; active-worktree
+    # = the bound construction worktree). No model input is involved.
+    authorized_roots = authorized_roots_for_task_main(sandbox)
+
     store: ExecutionStateStore = (
         execution_store if execution_store is not None else _default_execution_store(root)
     )
@@ -564,7 +583,7 @@ def compose_thin_task_main_host(
 
     handoff = _task_main_control_handoff()
     tool_surface = _build_thin_tool_surface()
-    read_authorities = _build_read_authorities(sandbox, handoff)
+    read_authorities = _build_read_authorities(sandbox, handoff, authorized_roots)
     restricted_shell_authority = _build_restricted_shell_authority(sandbox, handoff)
     git_authorities = _build_git_authorities(
         sandbox,
@@ -618,8 +637,26 @@ def compose_thin_task_main_host(
         # effectiveness evidence only; it decides no policy and grants no
         # authority.
         session_ref=origin,
+        # AF #55 M2: trusted Plan SOURCE_REPOSITORY fact (mechanically grounded
+        # above) and the task-main authorized root set. Mechanical carriers.
+        source_repository=str(trusted_project_context.get("source_repository", "") or ""),
+        authorized_roots=authorized_roots,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
+
+    # AF #55 M2 §8: the trusted context projection separates PLAN_AUTHORITY
+    # (plan_ref + governing repository), IMPLEMENTATION_PROJECT (project_id +
+    # SOURCE_REPOSITORY + project-main root ref) and ACTIVE_WORKTREE, so the
+    # model never infers the relationship. Bounded root refs only — no paths.
+    source_repository_value = str(trusted_project_context.get("source_repository", "") or "")
+    context_projection = build_trusted_project_context_projection(
+        project_id=pid,
+        worktree_id=wid,
+        roots=authorized_roots,
+        plan_ref=plan_binding.plan_ref if plan_binding is not None else "",
+        governing_repository=plan_binding.repo if plan_binding is not None else "",
+        source_repository=source_repository_value,
+    )
 
     return ThinTaskMainHost(
         project_id=pid,
@@ -644,6 +681,8 @@ def compose_thin_task_main_host(
             trusted_project_context.get("repository_identity_verified", False)
         ),
         repository_identity=trusted_project_context.get("repository_identity"),
+        authorized_roots=authorized_roots,
+        context_projection=context_projection,
     )
 
 

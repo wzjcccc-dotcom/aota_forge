@@ -567,6 +567,32 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
     plan_binding = getattr(binding, "plan_binding", None)
     if plan_binding is not None:
         result["CURRENT_EXECUTION_CONTEXT"]["plan_ref"] = str(getattr(plan_binding, "plan_ref", "") or "")
+    # AF #55 M2 §8: trusted project context projection. PLAN_AUTHORITY
+    # (plan_ref + governing repository), IMPLEMENTATION_PROJECT (project_id +
+    # SOURCE_REPOSITORY + project-main root ref) and ACTIVE_WORKTREE are
+    # mechanically separated so the model never infers the relationship.
+    # Bounded root refs only; never physical paths. Absence is a defect, not a
+    # silent omission: bindings without a trusted sandbox (test-only reader
+    # fallback) simply have no project context to project.
+    if sandbox is not None:
+        from aota_forge.work_plane.authorized_roots import (
+            authorized_roots_single_root,
+            build_trusted_project_context_projection,
+        )
+
+        effective_roots = getattr(binding, "effective_authorized_roots", None)
+        if callable(effective_roots):
+            effective_roots = effective_roots()
+        if effective_roots is None:
+            effective_roots = authorized_roots_single_root(sandbox)
+        result["TRUSTED_PROJECT_CONTEXT"] = build_trusted_project_context_projection(
+            project_id=project_id,
+            worktree_id=worktree_id,
+            roots=effective_roots,
+            plan_ref=str(getattr(plan_binding, "plan_ref", "") or "") if plan_binding is not None else "",
+            governing_repository=str(getattr(plan_binding, "repo", "") or "") if plan_binding is not None else "",
+            source_repository=str(getattr(binding, "source_repository", "") or ""),
+        )
     # M3/W1-R1 F1: eager model-visible writer contract, derived from the
     # single canonical descriptor authority (no second schema). Task-main
     # only; other roles keep the existing compatible shape.

@@ -352,6 +352,19 @@ def materialize_thin_task_main_bootstrap(
                 f"thin bootstrap registry_path must be an existing trusted file: {registry!r}"
             )
         payload["registry_path"] = str(registry)
+    # AF #55 M2: the static authorized root_ref contract carried by the trusted
+    # operator bootstrap. Ref names are fixed; the child re-materializes the
+    # authorized root set from the resolved trusted sandbox and fails closed
+    # if this declaration ever drifts.
+    from aota_forge.work_plane.authorized_roots import (
+        ROOT_REF_ACTIVE_WORKTREE,
+        ROOT_REF_PROJECT_MAIN,
+    )
+
+    payload["authorized_root_refs"] = {
+        "project": ROOT_REF_PROJECT_MAIN,
+        "worktree": ROOT_REF_ACTIVE_WORKTREE,
+    }
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     try:
@@ -454,6 +467,26 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
 
     source_repository = str(content.get("source_repository") or "").strip() or None
     registry_path = str(content.get("registry_path") or "").strip() or None
+    # AF #55 M2: the bootstrap's static authorized root_ref declaration must
+    # match the canonical contract exactly (fail closed on drift). The actual
+    # authorized root set is re-materialized child-side from the resolved
+    # trusted sandbox by ``compose_thin_task_main_host``.
+    declared_root_refs = content.get("authorized_root_refs")
+    if declared_root_refs is not None:
+        from aota_forge.work_plane.authorized_roots import (
+            ROOT_REF_ACTIVE_WORKTREE,
+            ROOT_REF_PROJECT_MAIN,
+        )
+
+        if not isinstance(declared_root_refs, Mapping):
+            raise TrustedBindingError("thin bootstrap authorized_root_refs must be a mapping")
+        if (
+            str(declared_root_refs.get("project", "")).strip() != ROOT_REF_PROJECT_MAIN
+            or str(declared_root_refs.get("worktree", "")).strip() != ROOT_REF_ACTIVE_WORKTREE
+        ):
+            raise TrustedBindingError(
+                "thin bootstrap authorized_root_refs declaration drifts from the trusted root_ref contract"
+            )
     host = compose_thin_task_main_host(
         worktree_root=root,
         project_id=str(content["project_id"]),
