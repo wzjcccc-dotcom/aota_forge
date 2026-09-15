@@ -13,3 +13,6 @@ __pycache__/
 .aota/task_return_receipts/
 .aota/task-main-bootstrap.json
 .aota/task-main-thin-bootstrap.json
+
+# AF #56 M3: per-instance OpenCode host namespace (mechanical runtime state)
+.aota/opencode/

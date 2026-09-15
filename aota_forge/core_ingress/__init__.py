@@ -206,6 +206,28 @@ class CanonicalDispatchBinding:
     plan_binding: Any | None = None
     trusted_task_main_context: Any | None = None
     allowed_operations: frozenset[str] = frozenset()
+    # AF #56 M3/W3: mechanical carriers for the #55/M2 trusted project context
+    # projection (task-main authorized root set + grounded SOURCE_REPOSITORY).
+    # Without these the MCP transport conversion loses the model-visible
+    # project-main root/source-repository facts; carriers only, never authority.
+    authorized_roots: Any | None = None
+    source_repository: str = ""
+
+    @property
+    def effective_authorized_roots(self) -> Any | None:
+        """Authorized root set (legacy bindings derive the single sandbox root)."""
+        if self.authorized_roots is not None:
+            return self.authorized_roots
+        if self.sandbox is None:
+            return None
+        try:
+            from aota_forge.work_plane.authorized_roots import (
+                authorized_roots_single_root,
+            )
+
+            return authorized_roots_single_root(self.sandbox)
+        except Exception:
+            return None
 
     def capability_names(self) -> frozenset[str]:
         """Visibility-only helper (never authority).

@@ -138,3 +138,53 @@ def test_completion_transport_follows_operator_executor(tmp_path: Path) -> None:
         origin_task_main_session_ref="ses_generic0001",
     )
     assert isinstance(host.completion_transport, opencode_delivery.OpenCodeCompletionDeliveryTransport)
+
+
+def test_mcp_transport_conversion_preserves_trusted_project_context(tmp_path: Path) -> None:
+    """MCP-path role.bootstrap must expose the SAME trusted project context.
+
+    Regression for the M3/W3 dogfood finding: the transport-to-Core binding
+    conversion dropped ``authorized_roots``/``source_repository``, so the
+    model-visible TRUSTED_PROJECT_CONTEXT lost project-main + SOURCE_REPOSITORY
+    even though the trusted binding carried them.
+    """
+    import dataclasses
+
+    from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
+    from aota_forge.mcp_transport import _to_canonical_binding
+    from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
+
+    root = _make_worktree(tmp_path)
+    cfg = _opencode_config(tmp_path)
+    host = compose_thin_task_main_host(
+        worktree_root=root,
+        project_id="generic_proj",
+        worktree_id="wt",
+        runtime_config_path=cfg,
+        origin_task_main_session_ref="ses_generic0001",
+        plan_ref="owner/repo#123",
+    )
+    canonical = _to_canonical_binding(host.trusted_binding)
+    result = handle_role_bootstrap(canonical, {})
+    projection = result["TRUSTED_PROJECT_CONTEXT"]
+    assert projection["project"]["project_id"] == "generic_proj"
+    assert projection["project"]["root_ref"] == "project-main"
+    assert set(projection["roots"]) == {"project-main", "active-worktree"}
+    # Direct-binding and MCP-path projections agree.
+    assert projection == handle_role_bootstrap(host.trusted_binding, {})["TRUSTED_PROJECT_CONTEXT"]
+
+    # A grounded SOURCE_REPOSITORY carrier reaches the model-visible projection
+    # through the same conversion (mechanical carrier only).
+    with_source = dataclasses.replace(canonical, source_repository="owner/source_repo")
+    assert (
+        handle_role_bootstrap(with_source, {})["TRUSTED_PROJECT_CONTEXT"]["project"][
+            "source_repository"
+        ]
+        == "owner/source_repo"
+    )
+
+    # The mechanical carriers are the only difference; no other conversion path
+    # exists (single transport-to-Core conversion).
+    without = dataclasses.replace(canonical, authorized_roots=None, source_repository="")
+    fallback = handle_role_bootstrap(without, {})["TRUSTED_PROJECT_CONTEXT"]
+    assert set(fallback["roots"]) == {"active-worktree"}

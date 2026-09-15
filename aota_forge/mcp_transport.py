@@ -837,6 +837,11 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         plan_binding=getattr(binding, "plan_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
         allowed_operations=allowed,
+        # AF #56 M3/W3: preserve the trusted project context carriers so the
+        # MCP path exposes the same authorized root set / SOURCE_REPOSITORY as
+        # the direct trusted binding (mechanical copies only).
+        authorized_roots=getattr(binding, "authorized_roots", None),
+        source_repository=str(getattr(binding, "source_repository", "") or ""),
     )
 
 
