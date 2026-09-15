@@ -47,6 +47,11 @@ from aota_forge.core.execution.durable_state import (
 )
 from aota_forge.core.execution.results import CanonicalResult
 from aota_forge.core.execution.state import CanonicalTaskState
+from aota_forge.core.plan.validation import is_plan_id
+from aota_forge.work_plane.execution_identity import (
+    MalformedTaskIdentityError,
+    format_plan_aware_task_id,
+)
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
@@ -147,6 +152,17 @@ WORK_ITEM_HANDOFF_WORK_ITEM_REF_FIELD = "work_item_ref"
 WORK_ITEM_HANDOFF_MILESTONE_REF_FIELD = "milestone_ref"
 _WORK_ITEM_REF_SEMANTIC_KEYS = ("work_item_ref", "work_item_id")
 _MILESTONE_REF_SEMANTIC_KEYS = ("milestone_ref", "milestone_id")
+
+# AF #57 M1/W4 canonical Plan-aware runtime identity contract:
+# * when the trusted runtime supplies an explicit internal Plan identity
+#   (the source-neutral PlanAuthorityBinding minted by composition), the
+#   canonical task identity embeds it at the explicit Plan position;
+# * when it does not (existing Governance 1.x launch), the bounded legacy
+#   plan-less identity form is preserved byte-identically - no fake Plan ID
+#   is injected and no legacy identity is silently upgraded.
+CANONICAL_TASK_ID_PLAN_AWARE_WHEN_BOUND = True
+LEGACY_PLAN_LESS_TASK_IDENTITY_COMPATIBILITY = True
+PLAN_ID_SILENT_INFERENCE = False
 
 
 class RoleHandoffMismatchError(ValueError):
@@ -528,6 +544,7 @@ def task_start(
     sandbox: WorktreeSandboxBoundary,
     dispatcher: ExecutionDispatcher | None = None,
     thin_task_lifecycle: bool = False,
+    plan_id: str | None = None,
 ) -> dict[str, Any]:
     """Agent-facing task.start — validates and reuses execution.task_start seam.
 
@@ -544,6 +561,12 @@ def task_start(
     dispatch (the Control Plane invents neither the child role nor the Work
     identity). It never changes the agent-facing operation contract
     (role, handoff_ref).
+
+    plan_id is the trusted internal Plan identity supplied by the runtime
+    (source-neutral ``PlanAuthorityBinding`` minted by composition), never a
+    model argument. When present, the canonical task identity embeds the Plan
+    at its explicit Plan position; when absent, the bounded legacy
+    Governance 1.x plan-less identity is preserved. It is never inferred.
 
     Returns {task_id, status, handoff_digest}
     """
@@ -608,8 +631,28 @@ def task_start(
     grounded_work_item = task_handoff.work_item_ref.ref if task_handoff.work_item_ref is not None else None
     milestone_id = envelope.get("milestone_id") or grounded_milestone or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE
     work_item_id = envelope.get("work_item_id") or grounded_work_item or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM
-    # task_id for execution is distinct from handoff artifact_id
-    canonical_task_id = f"{sandbox.project_id}:{milestone_id}:{work_item_id}:{artifact_id[:8]}:{uuid.uuid4().hex[:8]}"
+    # task_id for execution is distinct from handoff artifact_id.
+    # AF #57 M1/W4: the trusted runtime may supply the explicit internal Plan
+    # identity (source-neutral PlanAuthorityBinding). When present, the
+    # canonical identity carries it at the explicit Plan position. When absent
+    # (existing Governance 1.x launch) the bounded legacy plan-less form is
+    # preserved byte-identically; no Plan identity is inferred or fabricated.
+    if plan_id is not None:
+        if not is_plan_id(plan_id):
+            raise MalformedTaskIdentityError(
+                "plan_id must be one canonical internal Plan ID when supplied "
+                "by the trusted runtime; the Control Plane never infers it from "
+                "an Issue number, worktree, branch, repository or title"
+            )
+        canonical_task_id = format_plan_aware_task_id(
+            project_id=sandbox.project_id,
+            plan_id=plan_id,
+            milestone_id=milestone_id,
+            work_item_id=work_item_id,
+            tail=(artifact_id[:8], uuid.uuid4().hex[:8]),
+        )
+    else:
+        canonical_task_id = f"{sandbox.project_id}:{milestone_id}:{work_item_id}:{artifact_id[:8]}:{uuid.uuid4().hex[:8]}"
     # Use sandbox project_id as binding project
     binding = TrustedExecutionBinding(canonical_task_id=canonical_task_id, project_id=sandbox.project_id)
     package = compile_handoff_to_execution_package(task_handoff, binding)
@@ -860,6 +903,9 @@ __all__ = [
     "LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE",
     "WORK_ITEM_HANDOFF_WORK_ITEM_REF_FIELD",
     "WORK_ITEM_HANDOFF_MILESTONE_REF_FIELD",
+    "CANONICAL_TASK_ID_PLAN_AWARE_WHEN_BOUND",
+    "LEGACY_PLAN_LESS_TASK_IDENTITY_COMPATIBILITY",
+    "PLAN_ID_SILENT_INFERENCE",
     "WORKER_RESULT_FULL_WRITE_COUNT_NORMAL",
     "WORKER_AUTHORS_RESULT_CARD",
     "RESULT_CARD_DETERMINISTIC",

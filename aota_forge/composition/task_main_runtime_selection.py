@@ -230,6 +230,7 @@ def materialize_thin_task_main_bootstrap(
     plan_ref: str | None = None,
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
+    plan_id: str | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -245,6 +246,10 @@ def materialize_thin_task_main_bootstrap(
     same operator-owned channel. Both are validated mechanically here and
     consumed by the canonical project binding; they never become model
     arguments.
+
+    AF #57 M1/W4: ``plan_id`` is the optional trusted internal Plan identity
+    for the source-neutral PlanAuthorityBinding. It is validated mechanically
+    here and never inferred from the Issue, worktree, branch or repository.
     """
     root = _validate_worktree_root(worktree_root)
     pid = _validate_identifier(project_id, "project_id")
@@ -327,6 +332,17 @@ def materialize_thin_task_main_bootstrap(
         except Exception as exc:
             raise TaskMainRuntimeSelectionError(f"thin bootstrap plan_ref invalid: {exc}") from exc
         payload["plan_ref"] = candidate_plan
+    # AF #57 M1/W4: trusted internal Plan identity for the source-neutral
+    # PlanAuthorityBinding (never inferred; absent => plan-less legacy launch).
+    if plan_id is not None and str(plan_id).strip():
+        candidate_plan_id = str(plan_id).strip()
+        from aota_forge.core.plan.validation import is_plan_id
+
+        if not is_plan_id(candidate_plan_id):
+            raise TaskMainRuntimeSelectionError(
+                "thin bootstrap plan_id must be one canonical internal Plan ID"
+            )
+        payload["plan_id"] = candidate_plan_id
     # AF #55 M1/W4: optional trusted Plan project identity. A malformed
     # declared SOURCE_REPOSITORY fails closed at materialization (before any
     # session launch); the registry path must be an existing trusted file.
@@ -471,6 +487,10 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
     # local-governance read/search root. Trusted server-side construction
     # input only; absent means the accepted #55 root set is unchanged.
     governance_base = str(content.get("governance_base") or "").strip() or None
+    # AF #57 M1/W4: trusted internal Plan identity carried by the same
+    # operator-owned bootstrap channel (digest-covered). Absent => the launch
+    # stays plan-less/legacy; never inferred from the Issue or the worktree.
+    plan_id = str(content.get("plan_id") or "").strip() or None
     # AF #55 M2: the bootstrap's static authorized root_ref declaration must
     # match the canonical contract exactly (fail closed on drift). The actual
     # authorized root set is re-materialized child-side from the resolved
@@ -504,6 +524,7 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         source_repository=source_repository,
         registry_path=registry_path,
         governance_base=governance_base,
+        plan_id=plan_id,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

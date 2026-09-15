@@ -835,6 +835,9 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         git_authorities=tuple(getattr(binding, "git_authorities", ()) or ()),
         github_authorities=tuple(getattr(binding, "github_authorities", ()) or ()),
         plan_binding=getattr(binding, "plan_binding", None),
+        # AF #57 M1/W4: mechanical carrier copy of the source-neutral Plan
+        # Authority binding (never authority by itself).
+        plan_authority_binding=getattr(binding, "plan_authority_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
         allowed_operations=allowed,
         # AF #56 M3/W3: preserve the trusted project context carriers so the

@@ -97,6 +97,38 @@ include `S<n>` in Plan context deterministically; do not force an
 excessively long path — Plan context must remain deterministic, not verbose.
 Lane slug may equal `W<n>` if no extra alias is needed; `LANE_IS_FORMAL_WORK_ITEM_ID=no`.
 
+### Plan-aware identity (AF #57 M1/W4; prospective)
+
+New work created after AF #57 M1/W4 acceptance carries the internal Plan
+identity as an explicit segment:
+
+```text
+NEW_WORKTREE_PATH_PATTERN=<workspace>/.aota-worktrees/<project-id>/<plan-id>/<milestone-id>/<work-item-or-lane-slug>
+NEW_BRANCH_PATTERN=aota/<plan-id>/<milestone-id>/<work-item-or-lane-slug>
+NEW_WORKTREE_IDENTITY_INCLUDES_PLAN=yes
+NEW_BRANCH_IDENTITY_INCLUDES_PLAN=yes
+```
+
+`plan-id` is the W1 canonical internal Plan ID (`plan_[a-z0-9]+(?:[_-][a-z0-9]+)*`),
+never an Issue number, worktree/folder basename, branch name, repository name
+or display title. The deterministic identity segments are owned by
+`aota_forge/work_plane/execution_identity.py`; worktree/branch execution
+stays the assigned mechanical Git operation above (no runtime worktree
+creation).
+
+Prospective only:
+
+```text
+LEGACY_WORKTREE_MASS_MIGRATION=no
+LEGACY_WORKTREE_READ_COMPATIBLE=yes
+LEGACY_BRANCH_RENAME_REQUIRED=no
+```
+
+Already-created worktrees/branches (including the W1/W2/W3 worktrees and
+other Plans' legacy worktrees) are read-compatible and are never renamed or
+mass migrated. Branch identity omits the project id because a Git branch
+already belongs to exactly one repository.
+
 ## BASE semantics
 
 Retire the oversimplified rules:
