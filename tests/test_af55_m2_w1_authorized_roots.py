@@ -9,8 +9,9 @@ Deterministic local-only proofs:
 * unknown / path-shaped root_ref fail closed with typed codes
 * capability enforcement: write on project-main denied
 * forged sibling roots fail mechanical sandbox validation
-* prepared Governance 2.0 refs (authorized-evidence / local-governance) are
-  not instantiable and no local Plan store is implemented
+* prepared Governance 2.0 refs (authorized-evidence) are not instantiable;
+  AF #57 M1/W2 supersedes the local-governance half: that root now requires
+  the trusted project-scoped governance binding and is never model-grantable
 * §8 trusted projection separates plan / project / worktree and carries
   bounded root refs only (no physical paths)
 """
@@ -78,7 +79,11 @@ def test_flags_freeze() -> None:
     assert ar.SECOND_SANDBOX_SUBSYSTEM_CREATED is False
     assert ar.SECOND_AUTHORITY_ENGINE_CREATED is False
     assert ar.GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED is False
-    assert ar.LOCAL_GOVERNANCE_ROOT_SUPPORTED is False
+    # AF #57 M1/W2 supersedes the W1-era pin: the local-governance root is
+    # now instantiable through the trusted project-scoped governance binding
+    # (see test_af57_m1_w2_local_governance_authority.py); authorized-evidence
+    # remains a prepared, never-instantiated abstraction.
+    assert ar.LOCAL_GOVERNANCE_ROOT_SUPPORTED is True
     assert ar.PREPARED_ROOT_REFS_INSTANTIATED is False
 
 
@@ -180,9 +185,10 @@ def test_write_capability_not_constructible_on_project_main(tmp_path: Path) -> N
         )
 
 
-def test_prepared_governance_roots_not_instantiable(tmp_path: Path) -> None:
+def test_prepared_governance_roots_require_trusted_binding(tmp_path: Path) -> None:
     sandbox = _sandbox(tmp_path, shared_root=True)
-    for prepared in ("local-governance", "authorized-evidence"):
+    # authorized-evidence remains a prepared abstraction: never instantiable.
+    for prepared in ("authorized-evidence",):
         with pytest.raises(ar.AuthorizedRootSetError):
             ar.AuthorizedRoot(
                 root_ref=prepared,
@@ -191,6 +197,25 @@ def test_prepared_governance_roots_not_instantiable(tmp_path: Path) -> None:
                 capabilities=frozenset({"read"}),
                 project_id=sandbox.project_id,
             )
+    # AF #57 M1/W2: local-governance is instantiable only from the trusted
+    # project-scoped governance binding; a bare sandbox-path construction is
+    # still rejected by the separate governance validation seam.
+    governance = ar.AuthorizedRoot(
+        root_ref="local-governance",
+        root_kind="local-governance",
+        root_path=sandbox.worktree_root,
+        capabilities=frozenset({"read"}),
+        project_id=sandbox.project_id,
+        source=ar.SOURCE_TRUSTED_GOVERNANCE,
+    )
+    with pytest.raises(ar.LocalGovernanceRootError):
+        ar.validate_local_governance_root(
+            governance, project_id=sandbox.project_id, binding=None
+        )
+    with pytest.raises(ar.AuthorizedRootSetError):
+        ar.AuthorizedRootSet(
+            session_kind=ar.ROOT_SET_SESSION_TASK_MAIN, roots=(governance,)
+        )
 
 
 def test_forged_sibling_root_fails_sandbox_validation(tmp_path: Path) -> None:

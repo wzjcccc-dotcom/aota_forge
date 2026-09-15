@@ -28,19 +28,28 @@ Invariants
 * WORKER_INHERITS_TASK_MAIN_ROOTS=no
 * WORKER_EXTRA_ROOT_REQUIRES_EXPLICIT_GRANT=yes
 * NARROW_WRITE=yes (write capability only on active-worktree)
-* GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED=no
-* LOCAL_GOVERNANCE_ROOT_SUPPORTED=no (prepared abstraction only)
+* GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED=no (the Project Governance
+  Store is AF #57 M1/W3 scope; W2 materializes only the trusted root +
+  Plan authority adapter behind the existing PlanAuthorityMutationPort)
+* LOCAL_GOVERNANCE_ROOT_SUPPORTED=yes (AF #57 M1/W2: project-scoped trusted
+  binding only; the whole plans base is never grantable)
+* LOCAL_GOVERNANCE_ROOT_PROJECT_SCOPED=yes
+* LOCAL_GOVERNANCE_ROOT_REQUIRES_TRUSTED_BINDING=yes
+* LOCAL_GOVERNANCE_AGENT_WRITE_CAPABILITY=no
+* LOCAL_GOVERNANCE_MODEL_NOMINATED_PATH=no
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from aota_forge.core.contracts.canonical import canonical_json
+from aota_forge.core.project.manifest import PROJECT_ID_RE
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 # ---------------------------------------------------------------------------
@@ -50,20 +59,23 @@ from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 ROOT_REF_PROJECT_MAIN = "project-main"
 ROOT_REF_ACTIVE_WORKTREE = "active-worktree"
 
-# Prepared abstraction only (Governance 2.0 / future evidence roots). These
-# never instantiate in this Plan and are never grantable through a model
-# argument; the constants exist so the abstraction shape is honest.
-ROOT_REF_AUTHORIZED_EVIDENCE = "authorized-evidence"
+# AF #57 M1/W2: the project-scoped trusted governance root.  It is never
+# derived from the sandbox and never instantiable from a model-supplied path;
+# it requires an explicit LocalGovernanceRootBinding built from a trusted
+# operator governance base + the canonical project identity.
 ROOT_REF_LOCAL_GOVERNANCE = "local-governance"
+
+# Prepared abstraction only (future evidence roots). These never instantiate
+# in this Plan and are never grantable through a model argument; the constants
+# exist so the abstraction shape is honest.
+ROOT_REF_AUTHORIZED_EVIDENCE = "authorized-evidence"
 
 INSTANTIABLE_ROOT_REFS: tuple[str, ...] = (
     ROOT_REF_PROJECT_MAIN,
     ROOT_REF_ACTIVE_WORKTREE,
-)
-PREPARED_ROOT_REFS: tuple[str, ...] = (
-    ROOT_REF_AUTHORIZED_EVIDENCE,
     ROOT_REF_LOCAL_GOVERNANCE,
 )
+PREPARED_ROOT_REFS: tuple[str, ...] = (ROOT_REF_AUTHORIZED_EVIDENCE,)
 
 CAPABILITY_SEARCH = "search"
 CAPABILITY_READ = "read"
@@ -74,6 +86,7 @@ SUPPORTED_CAPABILITIES: frozenset[str] = frozenset(
 
 SOURCE_TRUSTED_SANDBOX = "trusted_sandbox"
 SOURCE_EXPLICIT_GRANT = "explicit_grant"
+SOURCE_TRUSTED_GOVERNANCE = "trusted_governance"
 
 ROOT_SET_SESSION_TASK_MAIN = "task-main"
 ROOT_SET_SESSION_WORKER = "worker"
@@ -85,6 +98,7 @@ SUPPORTED_ROOT_SET_SESSIONS: frozenset[str] = frozenset(
 _ROOT_REF_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _BOUNDED_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _MAX_PATH_LENGTH = 4096
+_MAX_PROJECT_ID_LENGTH = 96
 
 # Deterministic multi-root traversal order for search: the active worktree is
 # traversed first so the accepted single-root behavior is preserved when the
@@ -92,6 +106,7 @@ _MAX_PATH_LENGTH = 4096
 _SEARCH_PRIORITY: dict[str, int] = {
     ROOT_REF_ACTIVE_WORKTREE: 0,
     ROOT_REF_PROJECT_MAIN: 1,
+    ROOT_REF_LOCAL_GOVERNANCE: 2,
 }
 
 
@@ -161,6 +176,151 @@ def _canonical_directory(raw_path: object, *, label: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Trusted local governance binding (AF #57 M1/W2 §3)
+# ---------------------------------------------------------------------------
+
+
+class LocalGovernanceRootError(AuthorizedRootError):
+    """The trusted governance binding or the local-governance root is invalid."""
+
+    code = "LOCAL_GOVERNANCE_ROOT_INVALID"
+
+
+def _canonical_project_id(value: object) -> str:
+    if not isinstance(value, str) or type(value) is not str:
+        raise LocalGovernanceRootError(f"project_id must be str, got {type(value).__name__}")
+    if value != value.strip() or not value or len(value) > _MAX_PROJECT_ID_LENGTH:
+        raise LocalGovernanceRootError("project_id must be the canonical bounded project identity")
+    if not PROJECT_ID_RE.fullmatch(value):
+        raise LocalGovernanceRootError(
+            "project_id must use the canonical project identity grammar (manifest project id)"
+        )
+    return value
+
+
+@dataclass(frozen=True)
+class LocalGovernanceRootBinding:
+    """Trusted operator governance base + canonical project identity.
+
+    The operator/control plane configures one trusted governance base
+    directory (for example ``<workspace>/plans``).  The binding resolves it
+    only to this project's scope::
+
+        <governance-base>/<canonical-project-id>/
+
+    The folder name alone is never authority: the root must be an existing,
+    canonical, non-symlink directory strictly inside the trusted base and
+    exactly the project-scoped child of it.  The whole governance base and
+    any sibling project scope are never the bound root, and no model-supplied
+    input participates in the resolution.
+    """
+
+    governance_base: str
+    project_id: str
+    root_path: str = ""
+
+    def __post_init__(self) -> None:
+        try:
+            base = _canonical_directory(self.governance_base, label="governance_base")
+        except AuthorizedRootSetError as exc:
+            raise LocalGovernanceRootError(str(exc)) from exc
+        pid = _canonical_project_id(self.project_id)
+        candidate = Path(base) / pid
+        if candidate.parent != Path(base) or candidate.name != pid:
+            raise LocalGovernanceRootError(
+                "project scope must be exactly one project-id child of the governance base"
+            )
+        try:
+            if candidate.is_symlink():
+                raise LocalGovernanceRootError("project-scoped governance root must not be a symlink")
+            resolved = candidate.resolve(strict=True)
+        except LocalGovernanceRootError:
+            raise
+        except OSError as exc:
+            raise LocalGovernanceRootError(f"project-scoped governance root must exist: {exc}") from exc
+        if resolved != candidate:
+            raise LocalGovernanceRootError("project-scoped governance root must already be canonical")
+        if not resolved.is_dir():
+            raise LocalGovernanceRootError("project-scoped governance root must be a directory")
+        base_path = Path(base)
+        if resolved.parent != base_path or not resolved.is_relative_to(base_path):
+            raise LocalGovernanceRootError(
+                "project-scoped governance root must not escape the trusted governance base"
+            )
+        derived = str(resolved)
+        if self.root_path and self.root_path != derived:
+            raise LocalGovernanceRootError("binding root_path must be the derived project scope")
+        object.__setattr__(self, "governance_base", base)
+        object.__setattr__(self, "project_id", pid)
+        object.__setattr__(self, "root_path", derived)
+
+    @classmethod
+    def from_trusted_base(
+        cls, governance_base: object, *, project_id: object
+    ) -> "LocalGovernanceRootBinding":
+        """Trusted construction seam: operator governance base + canonical id."""
+        raw = os.fspath(governance_base) if isinstance(governance_base, (str, os.PathLike)) else governance_base
+        if isinstance(raw, bytes):
+            raise LocalGovernanceRootError("governance_base must be a text path")
+        return cls(governance_base=raw, project_id=project_id)
+
+    def revalidate(self) -> "LocalGovernanceRootBinding":
+        """Re-run fail-closed validation against current filesystem state."""
+        self.__post_init__()
+        return self
+
+
+def validate_local_governance_root(
+    root: AuthorizedRoot,
+    *,
+    project_id: object,
+    binding: LocalGovernanceRootBinding | None,
+) -> None:
+    """Separate bounded validation seam for the local-governance root.
+
+    Deliberately separate from the trusted-sandbox validator: the sandbox
+    knows nothing about operator governance storage.  Fail closed on a missing
+    binding, non-canonical or symlinked root, project identity mismatch,
+    sibling escape, worktree identity, or any capability beyond read/search.
+    """
+    if not isinstance(root, AuthorizedRoot):
+        raise LocalGovernanceRootError(
+            f"root must be AuthorizedRoot, got {type(root).__name__}"
+        )
+    if root.root_kind != ROOT_REF_LOCAL_GOVERNANCE:
+        raise LocalGovernanceRootError("validator only accepts the local-governance root kind")
+    if not isinstance(binding, LocalGovernanceRootBinding):
+        raise LocalGovernanceRootError(
+            "local-governance root requires the trusted project-scoped governance binding"
+        )
+    pid = _canonical_project_id(project_id)
+    if binding.project_id != pid:
+        raise LocalGovernanceRootError(
+            "governance binding project identity does not match the trusted project"
+        )
+    if root.source != SOURCE_TRUSTED_GOVERNANCE:
+        raise LocalGovernanceRootError(
+            "local-governance root must come from the trusted governance binding"
+        )
+    if root.worktree_id:
+        raise LocalGovernanceRootError("local-governance root must not carry worktree identity")
+    forbidden = set(root.capabilities) - {CAPABILITY_SEARCH, CAPABILITY_READ}
+    if forbidden:
+        raise LocalGovernanceRootError(
+            f"local-governance root is read/search only; forbidden capabilities: {sorted(forbidden)}"
+        )
+    if root.project_id != binding.project_id:
+        raise LocalGovernanceRootError(
+            "local-governance root project_id must equal the bound project identity"
+        )
+    binding.revalidate()
+    if root.root_path != binding.root_path:
+        raise LocalGovernanceRootError(
+            "local-governance root path must be the bound project-scoped governance root"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Authorized root
 # ---------------------------------------------------------------------------
 
@@ -205,13 +365,34 @@ class AuthorizedRoot:
             raise AuthorizedRootSetError(
                 "write capability is only grantable on the active-worktree root (narrow write)"
             )
-        if self.source not in (SOURCE_TRUSTED_SANDBOX, SOURCE_EXPLICIT_GRANT):
+        if self.source not in (SOURCE_TRUSTED_SANDBOX, SOURCE_EXPLICIT_GRANT, SOURCE_TRUSTED_GOVERNANCE):
             raise AuthorizedRootSetError(f"invalid root source {self.source!r}")
         if self.source == SOURCE_EXPLICIT_GRANT and self.root_kind != ROOT_REF_ACTIVE_WORKTREE:
             # Explicitly granted supporting roots are a future extension; in
             # this Plan only the canonical sandbox-derived roots are trusted.
             raise AuthorizedRootSetError(
                 "explicit grant roots are not instantiable in this Plan"
+            )
+        if self.root_kind == ROOT_REF_LOCAL_GOVERNANCE:
+            # The trusted governance source is the only admissible origin for
+            # the local-governance root; the binding path validation itself
+            # lives in the separate governance validation seam.
+            if self.source != SOURCE_TRUSTED_GOVERNANCE:
+                raise AuthorizedRootSetError(
+                    "local-governance roots must be constructed from a trusted governance binding"
+                )
+            if self.worktree_id:
+                raise AuthorizedRootSetError(
+                    "local-governance roots do not carry worktree identity"
+                )
+            forbidden = set(self.capabilities) - {CAPABILITY_SEARCH, CAPABILITY_READ}
+            if forbidden:
+                raise AuthorizedRootSetError(
+                    f"local-governance roots are read/search only; got {sorted(forbidden)}"
+                )
+        elif self.source == SOURCE_TRUSTED_GOVERNANCE:
+            raise AuthorizedRootSetError(
+                "the trusted governance source is only valid for the local-governance root"
             )
         self_project = _validate_bounded_identifier(self.project_id, label="project_id")
         object.__setattr__(self, "project_id", self_project)
@@ -260,6 +441,11 @@ class AuthorizedRootSet:
 
     session_kind: str
     roots: tuple[AuthorizedRoot, ...]
+    # AF #57 M1/W2: trusted operator governance binding for this session. It
+    # is trusted construction data (never model-visible, never a path in any
+    # projection) and is required exactly when a local-governance root is
+    # granted. The whole governance base is never itself a root.
+    governance_binding: LocalGovernanceRootBinding | None = None
 
     def __post_init__(self) -> None:
         if self.session_kind not in SUPPORTED_ROOT_SET_SESSIONS:
@@ -279,6 +465,20 @@ class AuthorizedRootSet:
             project_ids.add(root.project_id)
         if len(project_ids) != 1:
             raise AuthorizedRootSetError("all roots in a set must share one project_id")
+        if ROOT_REF_LOCAL_GOVERNANCE in seen:
+            if not isinstance(self.governance_binding, LocalGovernanceRootBinding):
+                raise AuthorizedRootSetError(
+                    "a local-governance root requires the trusted project-scoped governance binding"
+                )
+            if self.session_kind in (ROOT_SET_SESSION_WORKER, ROOT_SET_SESSION_SINGLE):
+                raise AuthorizedRootSetError(
+                    "worker/single root sets must not include local-governance "
+                    "(governance roots are task-main/project-scope only)"
+                )
+        elif self.governance_binding is not None and not isinstance(
+            self.governance_binding, LocalGovernanceRootBinding
+        ):
+            raise AuthorizedRootSetError("governance_binding must be a LocalGovernanceRootBinding or None")
         if self.session_kind == ROOT_SET_SESSION_WORKER and ROOT_REF_PROJECT_MAIN in seen:
             raise AuthorizedRootSetError(
                 "worker root sets must not include project-main (worker does not inherit task-main roots)"
@@ -407,6 +607,11 @@ def validate_root_set_against_sandbox(
     project-main must be the canonical ``sandbox.project_root``;
     active-worktree must be the canonical ``sandbox.worktree_root``. Nothing
     else (no sibling project, no host path, no cwd) is admissible.
+
+    AF #57 M1/W2: a local-governance root is additionally admitted, but only
+    through the separate trusted governance-binding validation seam carried by
+    the set itself.  The sandbox checks above are unchanged and are never
+    relaxed by the presence of a governance binding.
     """
     if not isinstance(roots, AuthorizedRootSet):
         raise AuthorizedRootSetError(f"roots must be AuthorizedRootSet, got {type(roots).__name__}")
@@ -433,6 +638,12 @@ def validate_root_set_against_sandbox(
                 raise AuthorizedRootSetError(
                     "active-worktree root worktree_id does not match sandbox worktree"
                 )
+        elif root.root_kind == ROOT_REF_LOCAL_GOVERNANCE:
+            validate_local_governance_root(
+                root,
+                project_id=sandbox.project_id,
+                binding=roots.governance_binding,
+            )
         else:
             raise AuthorizedRootSetError(f"root kind {root.root_kind!r} is not sandbox-derivable")
 
@@ -445,13 +656,21 @@ def authorized_roots_from_sandbox(
     return project_root, worktree_root
 
 
-def authorized_roots_for_task_main(sandbox: WorktreeSandboxBoundary) -> AuthorizedRootSet:
+def authorized_roots_for_task_main(
+    sandbox: WorktreeSandboxBoundary,
+    *,
+    governance_binding: LocalGovernanceRootBinding | None = None,
+) -> AuthorizedRootSet:
     """Task-main default roots: project-main (read/search) + active-worktree
-    (read/search/write). Derived exclusively from the trusted sandbox."""
+    (read/search/write), plus the project-scoped local-governance root
+    (read/search only) when the trusted operator governance binding is
+    supplied.  Derived exclusively from the trusted sandbox and the trusted
+    operator binding; no model input participates.
+    """
     if not isinstance(sandbox, WorktreeSandboxBoundary):
         raise AuthorizedRootSetError(f"sandbox must be WorktreeSandboxBoundary, got {type(sandbox).__name__}")
     project_root, worktree_root = authorized_roots_from_sandbox(sandbox)
-    roots = (
+    roots: tuple[AuthorizedRoot, ...] = (
         AuthorizedRoot(
             root_ref=ROOT_REF_PROJECT_MAIN,
             root_kind=ROOT_REF_PROJECT_MAIN,
@@ -468,7 +687,30 @@ def authorized_roots_for_task_main(sandbox: WorktreeSandboxBoundary) -> Authoriz
             worktree_id=sandbox.worktree_id,
         ),
     )
-    root_set = AuthorizedRootSet(session_kind=ROOT_SET_SESSION_TASK_MAIN, roots=roots)
+    if governance_binding is not None:
+        if not isinstance(governance_binding, LocalGovernanceRootBinding):
+            raise AuthorizedRootSetError(
+                f"governance_binding must be LocalGovernanceRootBinding, got {type(governance_binding).__name__}"
+            )
+        if governance_binding.project_id != sandbox.project_id:
+            raise AuthorizedRootSetError(
+                "governance binding project identity does not match the trusted sandbox project"
+            )
+        roots = roots + (
+            AuthorizedRoot(
+                root_ref=ROOT_REF_LOCAL_GOVERNANCE,
+                root_kind=ROOT_REF_LOCAL_GOVERNANCE,
+                root_path=governance_binding.root_path,
+                capabilities=frozenset({CAPABILITY_SEARCH, CAPABILITY_READ}),
+                project_id=sandbox.project_id,
+                source=SOURCE_TRUSTED_GOVERNANCE,
+            ),
+        )
+    root_set = AuthorizedRootSet(
+        session_kind=ROOT_SET_SESSION_TASK_MAIN,
+        roots=roots,
+        governance_binding=governance_binding,
+    )
     validate_root_set_against_sandbox(root_set, sandbox)
     return root_set
 
@@ -597,12 +839,23 @@ NARROW_WRITE: bool = True
 SECOND_SANDBOX_SUBSYSTEM_CREATED: bool = False
 SECOND_AUTHORITY_ENGINE_CREATED: bool = False
 GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED: bool = False
-LOCAL_GOVERNANCE_ROOT_SUPPORTED: bool = False
+LOCAL_GOVERNANCE_ROOT_SUPPORTED: bool = True
+LOCAL_GOVERNANCE_ROOT_PROJECT_SCOPED: bool = True
+LOCAL_GOVERNANCE_ROOT_REQUIRES_TRUSTED_BINDING: bool = True
+LOCAL_GOVERNANCE_AGENT_WRITE_CAPABILITY: bool = False
+LOCAL_GOVERNANCE_MODEL_NOMINATED_PATH: bool = False
+# Prepared-ref invariant: authorized-evidence remains a prepared abstraction
+# and is never instantiated by this Plan.
 PREPARED_ROOT_REFS_INSTANTIATED: bool = False
 
 ROOT_REF_CAPABILITY_SEAM: str = (
     "AuthorizedRootSet(WorktreeSandboxBoundary.project_root/worktree_root) + "
     "resolve_authorized_root + workspace provider capability enforcement"
+)
+
+LOCAL_GOVERNANCE_SEAM: str = (
+    "LocalGovernanceRootBinding(trusted operator governance base + canonical "
+    "project_id) -> project-scoped local-governance root -> validate_local_governance_root"
 )
 
 __all__ = [
@@ -618,6 +871,7 @@ __all__ = [
     "SUPPORTED_CAPABILITIES",
     "SOURCE_TRUSTED_SANDBOX",
     "SOURCE_EXPLICIT_GRANT",
+    "SOURCE_TRUSTED_GOVERNANCE",
     "ROOT_SET_SESSION_TASK_MAIN",
     "ROOT_SET_SESSION_WORKER",
     "ROOT_SET_SESSION_SINGLE",
@@ -627,6 +881,9 @@ __all__ = [
     "AuthorizedRootUnknownError",
     "AuthorizedRootCapabilityError",
     "AuthorizedRootSetError",
+    "LocalGovernanceRootError",
+    "LocalGovernanceRootBinding",
+    "validate_local_governance_root",
     "AuthorizedRoot",
     "AuthorizedRootSet",
     "validate_root_ref_syntax",
@@ -655,6 +912,11 @@ __all__ = [
     "SECOND_AUTHORITY_ENGINE_CREATED",
     "GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED",
     "LOCAL_GOVERNANCE_ROOT_SUPPORTED",
+    "LOCAL_GOVERNANCE_ROOT_PROJECT_SCOPED",
+    "LOCAL_GOVERNANCE_ROOT_REQUIRES_TRUSTED_BINDING",
+    "LOCAL_GOVERNANCE_AGENT_WRITE_CAPABILITY",
+    "LOCAL_GOVERNANCE_MODEL_NOMINATED_PATH",
     "PREPARED_ROOT_REFS_INSTANTIATED",
     "ROOT_REF_CAPABILITY_SEAM",
+    "LOCAL_GOVERNANCE_SEAM",
 ]

@@ -35,7 +35,7 @@ GENERIC_EXTERNAL_MUTATION_API_CREATED = False
 GENERIC_GIT_WRITE_API_CREATED = False
 GENERIC_TERMINAL_API_CREATED = False
 
-_ALLOWED_OPERATIONS = frozenset({PLAN_INIT_OPERATION, PLAN_RETIREMENT_OPERATION})
+ALLOWED_OPERATIONS = frozenset({PLAN_INIT_OPERATION, PLAN_RETIREMENT_OPERATION})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _CORRELATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -185,8 +185,8 @@ class PortablePlanMutationRequest:
     candidate_raw_body: str | None = None  # exact raw bytes for readback comparison (bounded)
 
     def __post_init__(self) -> None:
-        if self.operation not in _ALLOWED_OPERATIONS:
-            raise ValueError(f"operation must be one of {sorted(_ALLOWED_OPERATIONS)}")
+        if self.operation not in ALLOWED_OPERATIONS:
+            raise ValueError(f"operation must be one of {sorted(ALLOWED_OPERATIONS)}")
         if not isinstance(self.typed_target, ObjectRef):
             raise ValueError("typed_target must be an ObjectRef")
         if not isinstance(self.correlation_id, str) or not _CORRELATION_RE.fullmatch(self.correlation_id):
@@ -294,7 +294,7 @@ class PortablePlanMutationResponse:
     error_message: str | None = None
 
     def __post_init__(self) -> None:
-        if self.operation not in _ALLOWED_OPERATIONS:
+        if self.operation not in ALLOWED_OPERATIONS:
             raise ValueError("response operation must be allowed")
         if self.observed_raw_digest is not None and not _SHA256_RE.fullmatch(self.observed_raw_digest):
             raise ValueError("observed_raw_digest must be SHA-256 when supplied")

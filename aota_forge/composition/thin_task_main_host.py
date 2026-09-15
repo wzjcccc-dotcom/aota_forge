@@ -110,6 +110,7 @@ from aota_forge.work_plane.git_tools import (
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.authorized_roots import (
     AuthorizedRootSet,
+    LocalGovernanceRootBinding,
     authorized_roots_for_task_main,
     build_trusted_project_context_projection,
 )
@@ -443,6 +444,11 @@ class ThinTaskMainHost:
     # separates Plan authority, implementation project and active worktree.
     authorized_roots: AuthorizedRootSet | None = None
     context_projection: dict[str, Any] | None = None
+    # AF #57 M1/W2: the trusted project-scoped local-governance binding this
+    # host activated (None when the operator configured no governance base).
+    # Mechanical carrier only: the binding grants the task-main read/search
+    # root; it is never model-visible and never a write capability.
+    local_governance_binding: LocalGovernanceRootBinding | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -497,6 +503,7 @@ def compose_thin_task_main_host(
     plan_ref: str | None = None,
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
+    governance_base: str | PathLike[str] | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -510,6 +517,13 @@ def compose_thin_task_main_host(
     registry). When supplied, project resolution becomes registry-backed with
     mechanical Git origin verification; when absent the existing trusted
     worktree-scan resolution is preserved.
+
+    AF #57 M1/W2: ``governance_base`` is the trusted operator governance base
+    directory (for example ``<workspace>/plans``). When supplied, the host
+    activates the project-scoped ``local-governance`` read/search root for
+    exactly ``<governance-base>/<canonical project id>/``; the base itself and
+    every sibling project scope stay unreachable, and no write capability is
+    granted. When absent, the accepted #55 root set is unchanged.
     """
     pid = _validate_identifier(project_id, "project_id")
     wid = _validate_identifier(worktree_id, "worktree_id")
@@ -535,7 +549,16 @@ def compose_thin_task_main_host(
     # AF #55 M2: the task-main authorized root set is derived exclusively from
     # the trusted sandbox (project-main = canonical project root; active-worktree
     # = the bound construction worktree). No model input is involved.
-    authorized_roots = authorized_roots_for_task_main(sandbox)
+    # AF #57 M1/W2: the trusted operator governance base additionally activates
+    # the project-scoped local-governance read/search root.
+    local_governance_binding: LocalGovernanceRootBinding | None = None
+    if governance_base is not None and str(governance_base).strip():
+        local_governance_binding = LocalGovernanceRootBinding.from_trusted_base(
+            governance_base, project_id=pid
+        )
+    authorized_roots = authorized_roots_for_task_main(
+        sandbox, governance_binding=local_governance_binding
+    )
 
     store: ExecutionStateStore = (
         execution_store if execution_store is not None else _default_execution_store(root)
@@ -689,6 +712,7 @@ def compose_thin_task_main_host(
         repository_identity=trusted_project_context.get("repository_identity"),
         authorized_roots=authorized_roots,
         context_projection=context_projection,
+        local_governance_binding=local_governance_binding,
     )
 
 
