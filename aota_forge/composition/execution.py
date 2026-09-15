@@ -535,6 +535,77 @@ def create_hermes_completion_delivery_transport(
     return HermesCompletionDeliveryTransport(reentry, surface_checker=_effective_surface_check)
 
 
+# AF #56 M2/W3 — OpenCode exact-session completion delivery wiring.
+# The target session identity is per-delivery durable origin_session_ref truth,
+# never a construction/factory input and never model/Worker supplied. The
+# exact session row's persisted directory scope (M1-proven directory(instance)
+# scoping) is resolved from the exact session itself at delivery time and
+# survives restart without any new durable field.
+OPENCODE_COMPLETION_REENTRY_TIMEOUT_SECONDS = 180.0
+OPENCODE_COMPLETION_REENTRY_POLL_SECONDS = 0.5
+
+
+def create_opencode_completion_delivery_transport(
+    *,
+    runtime_config: Any | None = None,
+    host_client: Any | None = None,
+    timeout_seconds: float | None = None,
+    poll_interval_seconds: float | None = None,
+) -> OpenCodeCompletionDeliveryTransport:
+    """Production OpenCode completion transport over the exact-session seam.
+
+    Reuses ``OpenCodeExactSessionReentry`` + ``OpenCodeCompletionDeliveryTransport``
+    exactly as the M2/W3 modules define them. The operator RuntimeConfig
+    supplies the loopback endpoint and the bounded re-entry model binding; the
+    exact parent session arrives per delivery from the durable execution
+    record's trusted ``origin_session_ref``.
+    """
+    from aota_forge.adapters.opencode.delivery import OpenCodeCompletionDeliveryTransport
+    from aota_forge.adapters.opencode.session_reentry import (
+        DEFAULT_REENTRY_POLL_SECONDS,
+        DEFAULT_REENTRY_TIMEOUT_SECONDS,
+        OpenCodeExactSessionReentry,
+    )
+
+    config = _resolve_operator_runtime_config(runtime_config)
+    if config.executor != EXECUTOR_OPENCODE:
+        raise RuntimeConfigError(
+            f"create_opencode_completion_delivery_transport: this seam is OpenCode-only; "
+            f"executor {config.executor!r} must use its own host wiring (no silent cross-host meaning)"
+        )
+    if host_client is not None:
+        if not isinstance(host_client, OpenCodeHostClient) and not hasattr(host_client, "get_session"):
+            raise RuntimeConfigError(
+                "opencode completion transport requires an OpenCodeHostClient-compatible host_client"
+            )
+        client = host_client
+    else:
+        assert config.host_endpoint is not None  # enforced by RuntimeConfig validation
+        client = OpenCodeHostClient(config.host_endpoint)
+
+    # Operator-owned re-entry model binding (never model/TaskHandoff supplied).
+    default_model: dict[str, str] | None = None
+    task_main_binding = config.get_binding(TASK_MAIN_COMPLETION_DELIVERY_ROLE)
+    provider = task_main_binding.provider if task_main_binding.provider is not None else config.provider
+    model = task_main_binding.model if task_main_binding.model is not None else config.model
+    if provider is not None and model is not None:
+        default_model = {"providerID": provider, "modelID": model}
+
+    reentry = OpenCodeExactSessionReentry(
+        client,
+        timeout_seconds=(
+            DEFAULT_REENTRY_TIMEOUT_SECONDS if timeout_seconds is None else float(timeout_seconds)
+        ),
+        poll_interval_seconds=(
+            DEFAULT_REENTRY_POLL_SECONDS
+            if poll_interval_seconds is None
+            else float(poll_interval_seconds)
+        ),
+        default_model=default_model,
+    )
+    return OpenCodeCompletionDeliveryTransport(reentry)
+
+
 def prune_reconciled_hermes_receipts(
     *,
     coordinator: DurableCompletionCoordinator,
@@ -807,11 +878,16 @@ def run_bounded_completion_continuation(
     if host_client_factory is not None:
         dispatcher_kwargs["host_client_factory"] = host_client_factory
     dispatcher = create_production_execution_dispatcher(**dispatcher_kwargs)
-    effective_transport = (
-        transport
-        if transport is not None
-        else create_hermes_completion_delivery_transport(runtime_config=config)
-    )
+    if transport is not None:
+        effective_transport = transport
+    elif config.executor == EXECUTOR_OPENCODE:
+        # AF #56 M2/W3: the completion transport is selected by the SAME
+        # operator RuntimeConfig authority that selected the dispatch host. The
+        # target parent session arrives per delivery from durable
+        # origin_session_ref truth only.
+        effective_transport = create_opencode_completion_delivery_transport(runtime_config=config)
+    else:
+        effective_transport = create_hermes_completion_delivery_transport(runtime_config=config)
     coordinator = create_durable_completion_coordinator(
         dispatcher=dispatcher,
         state_store=store,
