@@ -149,7 +149,11 @@ def _package(task_id: str = "aota_forge:m2:wi-a:01234567:abcdef12") -> Execution
     )
 
 
-def _session_payload(task_id: str, parent: str | None = PARENT) -> dict[str, Any]:
+def _session_payload(
+    task_id: str, parent: str | None = PARENT, agent: str | None = "coder-host-profile"
+) -> dict[str, Any]:
+    # AF #58 M1: the pinned host echoes the persisted agent on the created
+    # session row; every dispatch in this module is a coder-role dispatch.
     payload: dict[str, Any] = {
         "id": SES,
         "directory": DIR,
@@ -157,6 +161,8 @@ def _session_payload(task_id: str, parent: str | None = PARENT) -> dict[str, Any
     }
     if parent is not None:
         payload["parentID"] = parent
+    if agent is not None:
+        payload["agent"] = agent
     return payload
 
 

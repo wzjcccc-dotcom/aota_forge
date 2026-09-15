@@ -617,7 +617,11 @@ class OpenCodeAdapter(ExecutorAdapter):
             )
 
         directory = self._resolve_worker_directory(package)
-        self._resolve_host_profile(package.canonical_role)  # fail closed before any host call
+        # AF #58 M1: the exact worker host profile from the operator RuntimeConfig
+        # role mapping is resolved ONCE and carried on the session row and on
+        # every AF-submitted prompt (message-time agent is authoritative on the
+        # pinned host). It is never re-derived from TaskHandoff/model text.
+        host_profile = self._resolve_host_profile(package.canonical_role)
         instruction = self._compose_model_facing_instruction(package)
         prompt_model = self._resolve_prompt_model(package.canonical_role)
         parent_id = self._resolve_parent_id()
@@ -627,6 +631,7 @@ class OpenCodeAdapter(ExecutorAdapter):
                 directory=directory,
                 parent_id=parent_id,
                 title=_bounded_title(package.canonical_task_id),
+                agent=host_profile,
                 # Session-create model shape is the pinned `{id, providerID}`
                 # form; the prompt shape `{providerID, modelID}` is only valid
                 # on prompt submission (M2 empirical pin correction).
@@ -660,6 +665,7 @@ class OpenCodeAdapter(ExecutorAdapter):
                 directory=trusted_directory,
                 parts=[{"type": "text", "text": instruction}],
                 model=prompt_model,
+                agent=host_profile,
             )
         except OpenCodeHostError as exc:
             raise OpenCodeDispatchFailureError(

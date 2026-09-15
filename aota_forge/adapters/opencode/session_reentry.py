@@ -45,6 +45,10 @@ from aota_forge.adapters.opencode.host_client import (
     contains_ack_token,
     message_role,
 )
+from aota_forge.adapters.opencode.profiles import (
+    require_exact_profile,
+    task_main_profile_default,
+)
 
 # Bounded outcome vocabulary (structurally aligned with the executor-neutral
 # delivery outcome classes used by the AF completion coordinator: no new
@@ -101,6 +105,7 @@ class OpenCodeExactSessionReentry:
         timeout_seconds: float = DEFAULT_REENTRY_TIMEOUT_SECONDS,
         poll_interval_seconds: float = DEFAULT_REENTRY_POLL_SECONDS,
         default_model: dict[str, str] | None = None,
+        agent: str | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
         now_fn: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -123,6 +128,15 @@ class OpenCodeExactSessionReentry:
                 or not isinstance(default_model.get("modelID"), str)
             ):
                 raise ValueError("default_model must be {providerID, modelID} or None")
+        # AF #58 M1: completion re-entry targets the exact task-main parent
+        # session, so the re-entry prompt must carry the exact task-main host
+        # profile (message-time agent is authoritative; a profile-less prompt
+        # would otherwise be handled by the host default agent).
+        self._agent = (
+            task_main_profile_default()
+            if agent is None
+            else require_exact_profile(agent, label="task-main profile")
+        )
         self._host = host_client
         self._timeout_seconds = float(timeout_seconds)
         self._poll_interval_seconds = float(poll_interval_seconds)
@@ -193,6 +207,7 @@ class OpenCodeExactSessionReentry:
                 directory=directory,
                 parts=[{"type": "text", "text": envelope}],
                 model=self._default_model,
+                agent=self._agent,
             )
         except OpenCodeSessionNotFoundError:
             return self._not_found(session_id)

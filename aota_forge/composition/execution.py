@@ -88,6 +88,7 @@ from aota_forge.runtime.config import (
     RuntimeConfigError,
     load_runtime_config,
     resolve_binding_for_canonical_role,
+    task_main_host_profile,
     worker_canonical_profile_mapping,
 )
 from aota_forge.runtime.trusted_runtime_binding import (
@@ -651,6 +652,9 @@ def create_opencode_completion_delivery_transport(
             else float(poll_interval_seconds)
         ),
         default_model=default_model,
+        # AF #58 M1: the exact task-main host profile from the SAME operator
+        # binding drives completion re-entry into the exact parent session.
+        agent=task_main_host_profile(config),
     )
     return OpenCodeCompletionDeliveryTransport(reentry)
 

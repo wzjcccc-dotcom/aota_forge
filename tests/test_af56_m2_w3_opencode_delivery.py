@@ -154,10 +154,19 @@ def _package(task_id: str = "aota_forge:m2:wi-a:01234567:abcdef12") -> Execution
     )
 
 
-def _session_payload(session_id: str, directory: str, task_id: str | None = None) -> dict[str, Any]:
+def _session_payload(
+    session_id: str,
+    directory: str,
+    task_id: str | None = None,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    # AF #58 M1: the pinned host echoes the persisted agent on the created
+    # session row; dispatch tests script that exact echo.
     payload: dict[str, Any] = {"id": session_id, "directory": directory}
     if task_id is not None:
         payload["metadata"] = {"aota_canonical_task_id": task_id}
+    if agent is not None:
+        payload["agent"] = agent
     return payload
 
 
@@ -395,7 +404,7 @@ def _dispatch_and_complete(
     )
     adapter = dispatcher.registry.get("opencode")
     adapter._trusted_worker_directory = WORKER_DIR
-    transport.push(_resp(200, _session_payload(WORKER, WORKER_DIR, task_id)))
+    transport.push(_resp(200, _session_payload(WORKER, WORKER_DIR, task_id, agent="coder-host")))
     transport.push(_resp(204))
     package = _package(task_id)
     dispatcher.dispatch(package)

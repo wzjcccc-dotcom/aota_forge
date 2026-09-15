@@ -129,7 +129,12 @@ from aota_forge.core.execution.durable_state import (
 )
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import portable_plan_digest
-from aota_forge.runtime.config import EXECUTOR_OPENCODE, RuntimeConfig, load_runtime_config
+from aota_forge.runtime.config import (
+    EXECUTOR_OPENCODE,
+    RuntimeConfig,
+    load_runtime_config,
+    task_main_host_profile,
+)
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 
 # ---------------------------------------------------------------------------
@@ -1547,6 +1552,11 @@ class DailyTaskMainLauncher:
             )
         prompt_model = resolve_operator_prompt_model(runtime_config)
 
+        # AF #58 M1: the exact task-main host profile comes ONLY from the
+        # operator RuntimeConfig binding; every AF-submitted turn below carries
+        # the same exact profile (message-time agent is authoritative).
+        task_main_profile = task_main_host_profile(runtime_config)
+
         # Mechanical task/session-scoped instance namespace. This is NOT the
         # AF authorized worktree: the authorized worktree travels inside the
         # digest-bound binding envelope (host-instance-directory vs
@@ -1561,6 +1571,7 @@ class DailyTaskMainLauncher:
             instance_key=instance_key,
             plan_ref=plan_ref or "",
             model=prompt_model,
+            agent=task_main_profile,
         )
         session_id = str(session.get("id") or "").strip()
         if not session_id or not is_bound_origin_session_ref(session_id):
@@ -1619,6 +1630,7 @@ class DailyTaskMainLauncher:
             directory=session_directory,
             text=startup_prompt,
             model=prompt_model,
+            agent=task_main_profile,
             timeout_seconds=timeout_seconds,
         )
         messages = host_client.fetch_session_messages(session_id, directory=session_directory)
@@ -1673,6 +1685,9 @@ class DailyTaskMainLauncher:
             directory=directory,
             text=payload,
             model=resolve_operator_prompt_model(ctx.runtime_config),
+            # AF #58 M1: every AF-owned continuation of the exact task-main
+            # session carries the exact operator-configured host profile.
+            agent=task_main_host_profile(ctx.runtime_config),
             timeout_seconds=float(timeout_seconds),
         )
 

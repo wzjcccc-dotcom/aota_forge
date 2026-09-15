@@ -626,7 +626,16 @@ class OpenCodeHostClient:
             expected=(200, 201),
             rejection_statuses=frozenset({400, 401, 403, 409, 422}),
         )
-        return parse_session_info(payload)
+        session = parse_session_info(payload)
+        if agent is not None and session.get("agent") != agent:
+            # AF #58 M1: the exact requested AF host profile must be persisted on
+            # the exact session row. A row without it (or with any substitution)
+            # fails closed before any prompt can reach the host default agent.
+            raise OpenCodeProtocolViolationError(
+                "session create did not persist the exact requested agent profile "
+                f"({session.get('agent')!r} != {agent!r}); refusing a profile-less session row"
+            )
+        return session
 
     def get_session(
         self,

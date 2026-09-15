@@ -94,12 +94,17 @@ def _session_payload(
     directory: str = DIR,
     parent_id: str | None = PARENT,
     metadata: dict[str, Any] | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
+    # AF #58 M1: the pinned host echoes the persisted agent on the created
+    # session row; dispatch tests script that exact echo.
     payload: dict[str, Any] = {"id": session_id, "directory": directory}
     if parent_id is not None:
         payload["parentID"] = parent_id
     if metadata is not None:
         payload["metadata"] = metadata
+    if agent is not None:
+        payload["agent"] = agent
     return payload
 
 
@@ -153,7 +158,7 @@ def _adapter(
 
 def test_create_session_exact_endpoint_and_directory_scope() -> None:
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     client = OpenCodeHostClient("http://127.0.0.1:4096/", http_transport=transport)
     session = client.create_session(directory=DIR, parent_id=PARENT, title="af-worker:x")
     assert session["id"] == SES
@@ -244,7 +249,7 @@ def test_status_map_absent_means_idle_observation() -> None:
 
 def test_dispatch_creates_session_and_handle_is_session_id() -> None:
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=204, body=b""))
     adapter = _adapter(transport)
     result = adapter.dispatch(_package())
@@ -254,9 +259,13 @@ def test_dispatch_creates_session_and_handle_is_session_id() -> None:
     assert create_req["url"].startswith("http://127.0.0.1:4096/session?directory=")
     assert create_req["body"]["parentID"] == PARENT
     assert create_req["body"]["metadata"]["aota_canonical_task_id"] == _package().canonical_task_id
+    # AF #58 M1: the exact worker host profile is on the session row AND on the
+    # first AF-submitted prompt (message-time agent is authoritative).
+    assert create_req["body"]["agent"] == "coder-host"
     assert prompt_req["url"].startswith(
         f"http://127.0.0.1:4096/session/{SES}/prompt_async?directory="
     )
+    assert prompt_req["body"]["agent"] == "coder-host"
     assert prompt_req["body"]["parts"][0]["type"] == "text"
     assert "aota_aota_invoke" in prompt_req["body"]["parts"][0]["text"]
 
@@ -292,7 +301,7 @@ def test_dispatch_model_shapes_match_pinned_contract(tmp_path) -> None:
         host_endpoint="http://127.0.0.1:4096",
     )
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=204, body=b""))
     client = OpenCodeHostClient("http://127.0.0.1:4096", http_transport=transport)
     mapping = RoleMapping.create(OPENCODE_EXECUTOR_ID, {"coder": "coder-host"})
@@ -311,7 +320,7 @@ def test_dispatch_model_shapes_match_pinned_contract(tmp_path) -> None:
 
 def test_dispatch_parent_id_absent_keeps_identity_valid() -> None:
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload(parent_id=None)))
+    transport.push(_json_response(200, _session_payload(parent_id=None, agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=204, body=b""))
     adapter = _adapter(transport, parent=None)
     result = adapter.dispatch(_package())
@@ -341,7 +350,7 @@ def test_dispatch_malformed_create_response_fails_closed() -> None:
 
 def test_dispatch_prompt_rejection_fails_closed() -> None:
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=409, body=b"rejected"))
     adapter = _adapter(transport)
     with pytest.raises(OpenCodeDispatchFailureError):
@@ -350,7 +359,7 @@ def test_dispatch_prompt_rejection_fails_closed() -> None:
 
 def test_dispatch_idempotent_replay_without_second_host_call() -> None:
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=204, body=b""))
     adapter = _adapter(transport)
     package = _package()
@@ -439,7 +448,7 @@ def test_resume_fails_closed_truthfully() -> None:
 
 def _dispatch_for_observation(transport: FakeTransport, parent: str | None = PARENT) -> OpenCodeAdapter:
     adapter = _adapter(transport, parent=parent)
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     transport.push(OpenCodeHttpResponse(status=204, body=b""))
     adapter.dispatch(_package())
     return adapter
@@ -616,7 +625,7 @@ def test_wrong_directory_never_selects_another_session_structurally() -> None:
     # only addressing mode, and a wrong directory query still returns the same
     # exact session row (row wins) rather than another session.
     transport = FakeTransport()
-    transport.push(_json_response(200, _session_payload()))
+    transport.push(_json_response(200, _session_payload(agent="coder-host")))
     client = OpenCodeHostClient("http://127.0.0.1:4096", http_transport=transport)
     session = client.get_session(SES, directory="/tmp/wrong-directory")
     assert session["id"] == SES

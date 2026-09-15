@@ -818,6 +818,21 @@ def resolve_binding_for_work_role(
     return config.get_binding(work_role)
 
 
+def task_main_host_profile(config: RuntimeConfig) -> str:
+    """Operator-owned exact task-main host profile (AF #58 M1/W2).
+
+    The ONE task-main profile authority for every AF-controlled OpenCode host
+    path (session create + every AF-submitted turn + completion re-entry).
+    TaskHandoff/model text never supplies it; a missing binding fails closed in
+    ``RuntimeConfig`` validation (no host default agent is ever substituted).
+    """
+    if not isinstance(config, RuntimeConfig):
+        raise RuntimeConfigError(
+            f"an operator-owned RuntimeConfig is required, got {type(config).__name__}"
+        )
+    return config.get_binding("task-main").profile
+
+
 def resolve_binding_for_canonical_role(
     canonical_role: str,
     config: RuntimeConfig,

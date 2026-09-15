@@ -61,6 +61,10 @@ from aota_forge.adapters.opencode.host_client import (
     message_role,
     turn_evidence,
 )
+from aota_forge.adapters.opencode.profiles import (
+    require_exact_profile,
+    task_main_profile_default,
+)
 
 # ---------------------------------------------------------------------------
 # Mechanical namespace + binding pointer contract
@@ -368,9 +372,22 @@ def create_task_main_session(
     instance_key: str,
     plan_ref: str = "",
     model: Mapping[str, str] | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
-    """Create the EXACT task-main session in its mechanical instance namespace."""
+    """Create the EXACT task-main session in its mechanical instance namespace.
+
+    AF #58 M1: the exact task-main host profile is persisted on the session row.
+    When the caller does not supply the operator RuntimeConfig profile, the
+    accepted AF contract constant applies; the session is never created
+    profile-less (the pinned host would otherwise resolve the default agent at
+    message time).
+    """
     directory_str = str(Path(directory).resolve())
+    profile = (
+        task_main_profile_default()
+        if agent is None
+        else require_exact_profile(agent, label="task-main profile")
+    )
     metadata: dict[str, Any] = {
         TASK_MAIN_METADATA_ROLE_KEY: TASK_MAIN_METADATA_ROLE_VALUE,
         TASK_MAIN_METADATA_SCHEMA_KEY: TASK_MAIN_METADATA_SCHEMA,
@@ -381,6 +398,7 @@ def create_task_main_session(
     return host_client.create_session(
         directory=directory_str,
         title=f"af-task-main:{instance_key}"[:120],
+        agent=profile,
         model=_session_create_model(model),
         metadata=metadata,
     )
@@ -393,6 +411,7 @@ def submit_task_main_turn(
     directory: str | Path,
     text: str,
     model: Mapping[str, str] | None = None,
+    agent: str | None = None,
     timeout_seconds: float = DEFAULT_TASK_MAIN_TURN_TIMEOUT_SECONDS,
     poll_interval_seconds: float = DEFAULT_TASK_MAIN_TURN_POLL_SECONDS,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -404,11 +423,20 @@ def submit_task_main_turn(
     session joins the in-flight run). Termination evidence is read back from the
     EXACT session row only: a new assistant message plus observed idle. HTTP
     acceptance is never semantic success.
+
+    AF #58 M1: the pinned host resolves the message-time ``agent``
+    authoritatively, so EVERY task-main turn carries the exact task-main host
+    profile (never the session-row default and never the host default agent).
     """
     if not isinstance(session_id, str) or not session_id.strip():
         raise OpenCodeTaskMainTurnError("session_id must be a non-empty exact session id")
     if not isinstance(text, str) or not text.strip():
         raise OpenCodeTaskMainTurnError("turn text must be a non-empty string")
+    profile = (
+        task_main_profile_default()
+        if agent is None
+        else require_exact_profile(agent, label="task-main profile")
+    )
     scope = str(Path(directory).resolve())
 
     baseline = host_client.fetch_session_messages(session_id, directory=scope)
@@ -418,6 +446,7 @@ def submit_task_main_turn(
         directory=scope,
         parts=[{"type": "text", "text": text}],
         model=dict(model) if model is not None else None,
+        agent=profile,
     )
 
     deadline = now_fn() + float(timeout_seconds)
