@@ -129,7 +129,7 @@ from aota_forge.core.execution.durable_state import (
 )
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import portable_plan_digest
-from aota_forge.runtime.config import RuntimeConfig, load_runtime_config
+from aota_forge.runtime.config import EXECUTOR_OPENCODE, RuntimeConfig, load_runtime_config
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 
 # ---------------------------------------------------------------------------
@@ -829,6 +829,8 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        source_repository: str | None = None,
+        registry_path: Path | str | None = None,
     ) -> DailyLaunchContext:
         """Trusted bootstrap materialization (create or refresh).
 
@@ -879,7 +881,15 @@ class DailyTaskMainLauncher:
             # Thin production candidate: trusted operator bootstrap only. No
             # Plan read/interpretation, no MilestonePlanView, no coordinator
             # store, no TaskMainControlService, no review/READY state.
-            hermes_bin = self._resolve_hermes_bin(runtime_config)
+            #
+            # AF #56 M3/W1: the shared trusted preparation is host-neutral. The
+            # Hermes executable is a Hermes-host-only deployment fact and is
+            # never resolved for executor=opencode (no cross-host requirement).
+            hermes_bin = (
+                ""
+                if runtime_config.executor == EXECUTOR_OPENCODE
+                else self._resolve_hermes_bin(runtime_config)
+            )
 
             if origin_task_main_session_ref is None or not origin_task_main_session_ref.strip():
                 existing = read_existing_thin_origin_session_ref(
@@ -908,11 +918,14 @@ class DailyTaskMainLauncher:
                 runtime_config_path=runtime_config_path,
                 origin_task_main_session_ref=origin_task_main_session_ref,
                 execution_store_path=execution_store_path,
+                executor_id=runtime_config.executor,
                 observation_evidence_path=os.environ.get("AOTA_RUNTIME_OBSERVATION_SINK", "").strip() or None,
                 observation_run_ref=os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip() or None,
                 git_integration_branch=git_integration_branch,
                 git_remote=git_remote,
                 plan_ref=plan_ref,
+                source_repository=source_repository,
+                registry_path=registry_path,
             )
             try:
                 mode = bootstrap_path.stat().st_mode
@@ -937,6 +950,13 @@ class DailyTaskMainLauncher:
             )
 
         adapter = plan_adapter or self._plan_adapter
+        if runtime_config.executor == EXECUTOR_OPENCODE:
+            # executor=opencode is a thin-host deployment: the legacy
+            # plan-coordinator path is not a supported OpenCode composition.
+            raise RuntimeError(
+                "executor 'opencode' requires the thin task-main runtime path; the legacy "
+                "plan-coordinator composition is Hermes-only (no cross-host meaning)"
+            )
         if adapter is None:
             raise RuntimeError(
                 "plan_adapter is required: Plan authority is operator-selectable and must be explicitly supplied "
@@ -1027,6 +1047,11 @@ class DailyTaskMainLauncher:
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         origin_task_main_session_ref: str | None = None,
         work_semantics: Mapping[str, Any] | None = None,
+        git_integration_branch: str | None = None,
+        git_remote: str | None = None,
+        plan_ref: str | None = None,
+        source_repository: str | None = None,
+        registry_path: Path | str | None = None,
     ) -> DailyLaunchContext:
         """Refresh bootstrap from current live Plan truth (post-user-gate, recovery)."""
         return self.prepare(
@@ -1037,6 +1062,11 @@ class DailyTaskMainLauncher:
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=origin_task_main_session_ref,
             work_semantics=work_semantics,
+            git_integration_branch=git_integration_branch,
+            git_remote=git_remote,
+            plan_ref=plan_ref,
+            source_repository=source_repository,
+            registry_path=registry_path,
         )
 
     def build_env(self, ctx: DailyLaunchContext, *, trace_path: Path | None = None) -> dict[str, str]:
@@ -1125,6 +1155,8 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        source_repository: str | None = None,
+        registry_path: Path | str | None = None,
     ) -> tuple[DailyLaunchContext, str]:
         """Two-phase production task-main launch (AF #49 M1/W6).
 
@@ -1158,6 +1190,39 @@ class DailyTaskMainLauncher:
         # effective file is required (fail closed, no silent seed fallback) and
         # is delivered in PHASE 2, after the real origin binding exists.
         startup_prompt = _resolve_task_main_startup_prompt(initial_prompt)
+
+        # AF #56 M3/W1: shared trusted preparation; the operator RuntimeConfig
+        # executor selects exactly ONE host launch translation. There is no
+        # cross-host fallback and no second semantic launcher.
+        effective_config_path = runtime_config_path
+        if effective_config_path is None:
+            effective_config_path = os.environ.get("AOTA_FORGE_RUNTIME_CONFIG", "").strip() or None
+            if not effective_config_path:
+                raise RuntimeError(
+                    "runtime_config_path is required: set AOTA_FORGE_RUNTIME_CONFIG or pass explicitly"
+                )
+        effective_config = load_runtime_config(
+            config_path=str(Path(effective_config_path).resolve())
+        )
+        if effective_config.executor == EXECUTOR_OPENCODE:
+            return self._launch_opencode_task_main(
+                worktree_root=Path(worktree_root),
+                project_id=project_id,
+                worktree_id=worktree_id,
+                runtime_config_path=Path(effective_config_path),
+                runtime_config=effective_config,
+                plan_adapter=plan_adapter,
+                startup_prompt=startup_prompt,
+                timeout_seconds=float(timeout_seconds),
+                completion_timeout_seconds=completion_timeout_seconds,
+                max_productive_continuations=max_productive_continuations,
+                git_integration_branch=git_integration_branch,
+                git_remote=git_remote,
+                plan_ref=plan_ref,
+                source_repository=source_repository,
+                registry_path=registry_path,
+                trace_path=trace_path,
+            )
 
         # ---- PHASE 1: unbound bootstrap + session identity establishment ----
         ctx_pending = self.prepare(
@@ -1376,6 +1441,307 @@ class DailyTaskMainLauncher:
                 )
         return probe.tool_names
 
+    # ------------------------------------------------------------------
+    # AF #56 M3/W1: bounded OpenCode task-main launch translation
+    # ------------------------------------------------------------------
+    #
+    # Shared trusted preparation (project/worktree resolution, live Plan
+    # revalidation, approval freshness, RuntimeConfig, durable stores, trusted
+    # bootstrap, operator startup prompt) is the SAME preparation used by the
+    # Hermes path. Only the host launch mechanics differ:
+    #
+    #   shared trusted preparation
+    #           ↓
+    #   RuntimeConfig.executor
+    #           ↓
+    #   ┌──────────────┬───────────────┐
+    #   │ hermes       │ opencode      │
+    #   │ launch path  │ launch path   │
+    #   └──────────────┴───────────────┘
+    #
+    # No second Plan authority reader, no second bootstrap authority, no second
+    # task-main semantic coordinator, no generic host plugin framework.
+
+    def _require_opencode_task_main_tool_surface(self, *, env: Mapping[str, str], phase: str) -> tuple[str, ...]:
+        """Fail closed unless the production AF MCP surface is available.
+
+        Mechanically spawns the production AOTA MCP child with the exact
+        trusted binding environment and lists its tools. The single
+        ``aota.invoke`` entry must be present. This is a real child-process
+        probe, not a config-text reading.
+        """
+        probe = probe_production_af_mcp_surface(env=env)
+        if not probe.ok:
+            raise TaskMainToolSurfaceUnavailable(
+                f"{phase}: required OpenCode task-main production AF tool surface probe "
+                f"failed: {probe.detail}; refusing launch"
+            )
+        if AOTA_MCP_INVOKE_TOOL_NAME not in probe.tool_names:
+            raise TaskMainToolSurfaceUnavailable(
+                f"{phase}: AF MCP production surface lacks {AOTA_MCP_INVOKE_TOOL_NAME!r}: "
+                f"{list(probe.tool_names)}; refusing launch"
+            )
+        return probe.tool_names
+
+    def _launch_opencode_task_main(
+        self,
+        *,
+        worktree_root: Path,
+        project_id: str,
+        worktree_id: str,
+        runtime_config_path: Path,
+        runtime_config: RuntimeConfig,
+        plan_adapter: PlanAuthorityReadAdapter | None,
+        startup_prompt: str,
+        timeout_seconds: float,
+        completion_timeout_seconds: float | None,
+        max_productive_continuations: int,
+        git_integration_branch: str | None,
+        git_remote: str | None,
+        plan_ref: str | None,
+        source_repository: str | None,
+        registry_path: Path | str | None,
+        trace_path: Path | None,
+    ) -> tuple[DailyLaunchContext, str]:
+        """Real OpenCode task-main launch on the pinned reference host.
+
+        Order (each step is mechanical; no semantic scripting):
+
+          1. trusted shared preparation inputs (caller/operator supplied);
+          2. exact OpenCode task-main session create in the task-scoped
+             mechanical instance namespace;
+          3. shared trusted bootstrap rebound to the exact session identity;
+          4. task-main MCP binding envelope staged in the instance namespace +
+             mechanical routing pointer (the authorized worktree travels
+             inside the envelope, never as the host instance directory);
+          5. production AF MCP child surface gate (real child probe);
+          6. operator-owned startup prompt turn; first semantic action is
+             mechanically enforced to be aota.invoke(role.bootstrap);
+          7. runtime-owned bounded completion continuation + bounded
+             productive continuations (same lifecycle semantics as Hermes).
+        """
+        from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
+        from aota_forge.adapters.opencode.task_main import (
+            BINDING_KIND_TASK_MAIN,
+            assert_role_bootstrap_first,
+            create_task_main_session,
+            instance_directory,
+            resolve_operator_prompt_model,
+            stage_envelope_in_instance,
+            submit_task_main_turn,
+            task_main_instance_key,
+            write_binding_pointer,
+        )
+        from aota_forge.runtime.trusted_runtime_binding import create_task_main_envelope
+
+        if runtime_config.executor != EXECUTOR_OPENCODE:
+            raise RuntimeError("_launch_opencode_task_main requires executor=opencode")
+        if not runtime_config.host_endpoint:
+            raise RuntimeError("executor=opencode requires the operator-owned host_endpoint")
+
+        host_client = OpenCodeHostClient(runtime_config.host_endpoint)
+        health = host_client.probe_versions()
+        if not health.get("healthy"):
+            raise TaskMainSessionContinuationError(
+                f"OpenCode reference host is not healthy at {runtime_config.host_endpoint}: {health}"
+            )
+        prompt_model = resolve_operator_prompt_model(runtime_config)
+
+        # Mechanical task/session-scoped instance namespace. This is NOT the
+        # AF authorized worktree: the authorized worktree travels inside the
+        # digest-bound binding envelope (host-instance-directory vs
+        # AF-worktree authority separation, M3/W2).
+        run_token = f"{int(time.time())}-{os.getpid()}"
+        instance_key = task_main_instance_key(run_token)
+        instance_dir = instance_directory(worktree_root, instance_key)
+
+        session = create_task_main_session(
+            host_client,
+            directory=instance_dir,
+            instance_key=instance_key,
+            plan_ref=plan_ref or "",
+            model=prompt_model,
+        )
+        session_id = str(session.get("id") or "").strip()
+        if not session_id or not is_bound_origin_session_ref(session_id):
+            raise TaskMainSessionContinuationError(
+                f"OpenCode returned a non-exact task-main session identity ({session_id!r}); "
+                "refusing to bind a placeholder/foreign identity as the trusted origin"
+            )
+        session_directory = str(session.get("directory") or instance_dir)
+
+        # Shared trusted bootstrap rebound to the EXACT session identity.
+        ctx = self.prepare(
+            worktree_root=worktree_root,
+            project_id=project_id,
+            worktree_id=worktree_id,
+            runtime_config_path=runtime_config_path,
+            plan_adapter=plan_adapter,
+            origin_task_main_session_ref=session_id,
+            git_integration_branch=git_integration_branch,
+            git_remote=git_remote,
+            plan_ref=plan_ref,
+            source_repository=source_repository,
+            registry_path=registry_path,
+        )
+        if ctx.runtime_path != TASK_MAIN_RUNTIME_PATH_THIN:
+            raise TaskMainSessionContinuationError(
+                "executor=opencode requires the thin task-main runtime path"
+            )
+        bootstrap_path = ctx.worktree_root / THIN_BOOTSTRAP_RELPATH
+
+        # Task-main MCP binding: digest-bound envelope staged inside the
+        # task-main instance namespace + routing pointer. The pointer/envelope
+        # are the ONLY binding material the host-spawned MCP child of this
+        # instance can resolve.
+        envelope = create_task_main_envelope(
+            worktree_root=ctx.worktree_root,
+            bootstrap_path=bootstrap_path,
+            provenence={"host": "opencode", "instance_key": instance_key},
+        )
+        staged = stage_envelope_in_instance(instance_dir, envelope)
+        write_binding_pointer(
+            instance_dir,
+            kind=BINDING_KIND_TASK_MAIN,
+            envelope_path=staged,
+            binding_root=ctx.worktree_root,
+            bootstrap_path=bootstrap_path,
+        )
+
+        # Mechanical AF surface gate (real MCP child probe) before any prompt.
+        env = self.build_env(ctx, trace_path=trace_path)
+        self._require_opencode_task_main_tool_surface(env=env, phase="pre-prompt")
+
+        # Operator-owned startup prompt turn (bounded; exact session only).
+        submit_task_main_turn(
+            host_client,
+            session_id=session_id,
+            directory=session_directory,
+            text=startup_prompt,
+            model=prompt_model,
+            timeout_seconds=timeout_seconds,
+        )
+        messages = host_client.fetch_session_messages(session_id, directory=session_directory)
+        assert_role_bootstrap_first(messages)
+
+        # Runtime-owned bounded completion continuation + bounded productive
+        # continuations (identical lifecycle semantics to the Hermes path; the
+        # completion transport is selected by the same operator executor).
+        continuation = self._run_opencode_completion_continuation(
+            ctx=ctx, session_id=session_id, timeout_seconds=completion_timeout_seconds
+        )
+        self._run_opencode_productive_continuations(
+            ctx=ctx,
+            session_id=session_id,
+            continuation=continuation,
+            startup_prompt=startup_prompt,
+            timeout_seconds=timeout_seconds,
+            completion_timeout_seconds=completion_timeout_seconds,
+            max_productive_continuations=max_productive_continuations,
+        )
+        return ctx, session_id
+
+    def _continue_opencode_session(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        payload: str,
+        timeout_seconds: float = 120.0,
+    ):
+        """Continue the EXACT OpenCode task-main session (no replacement)."""
+        from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
+        from aota_forge.adapters.opencode.task_main import (
+            resolve_operator_prompt_model,
+            submit_task_main_turn,
+        )
+
+        if not ctx.runtime_config.host_endpoint:
+            raise TaskMainSessionContinuationError(
+                "opencode task-main continuation requires the operator host_endpoint"
+            )
+        host_client = OpenCodeHostClient(ctx.runtime_config.host_endpoint)
+        session = host_client.get_session(session_id)
+        directory = session.get("directory")
+        if not isinstance(directory, str) or not directory.strip():
+            raise TaskMainSessionContinuationError(
+                "exact task-main session row is missing its persisted directory scope"
+            )
+        return submit_task_main_turn(
+            host_client,
+            session_id=session_id,
+            directory=directory,
+            text=payload,
+            model=resolve_operator_prompt_model(ctx.runtime_config),
+            timeout_seconds=float(timeout_seconds),
+        )
+
+    def _run_opencode_completion_continuation(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        timeout_seconds: float | None = None,
+    ):
+        """Runtime-owned bounded completion continuation for the OpenCode host."""
+        from aota_forge.composition.execution import (
+            DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS,
+            run_bounded_completion_continuation,
+        )
+
+        effective_timeout = (
+            DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else float(timeout_seconds)
+        )
+        return run_bounded_completion_continuation(
+            execution_store_path=ctx.execution_store_path,
+            worktree_root=ctx.worktree_root,
+            runtime_config=ctx.runtime_config,
+            relevant_origin_session_ref=session_id,
+            project_id=ctx.project_id,
+            worktree_id=ctx.worktree_id,
+            timeout_seconds=effective_timeout,
+        )
+
+    def _run_opencode_productive_continuations(
+        self,
+        *,
+        ctx: DailyLaunchContext,
+        session_id: str,
+        continuation: Any,
+        startup_prompt: str,
+        timeout_seconds: float,
+        completion_timeout_seconds: float | None,
+        max_productive_continuations: int,
+    ) -> int:
+        """Bounded runtime-owned productive continuation (OpenCode host).
+
+        A delivered+acknowledged completion gives the exact parent session one
+        bounded productive turn with the operator-owned startup prompt.
+        """
+        if type(max_productive_continuations) is not int or max_productive_continuations < 0:
+            raise ValueError(
+                "max_productive_continuations must be an int >= 0, "
+                f"got {max_productive_continuations!r}"
+            )
+        turns = 0
+        report = continuation
+        while turns < max_productive_continuations and self._continuation_delivered_completion(report):
+            turns += 1
+            self._continue_opencode_session(
+                ctx=ctx,
+                session_id=session_id,
+                payload=startup_prompt,
+                timeout_seconds=timeout_seconds,
+            )
+            report = self._run_opencode_completion_continuation(
+                ctx=ctx,
+                session_id=session_id,
+                timeout_seconds=completion_timeout_seconds,
+            )
+        return turns
+
     def _continue_exact_session(
         self,
         *,
@@ -1532,8 +1898,27 @@ class DailyTaskMainLauncher:
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         timeout_seconds: int = 120,
         trace_path: Path | None = None,
+        git_integration_branch: str | None = None,
+        git_remote: str | None = None,
+        plan_ref: str | None = None,
+        source_repository: str | None = None,
+        registry_path: Path | str | None = None,
     ) -> Any:
         """Re-read live Plan, refresh bootstrap, and re-enter the exact task-main session."""
+        effective_config_path = runtime_config_path
+        if effective_config_path is None:
+            effective_config_path = os.environ.get("AOTA_FORGE_RUNTIME_CONFIG", "").strip() or None
+        effective_config = (
+            load_runtime_config(config_path=str(Path(effective_config_path).resolve()))
+            if effective_config_path is not None
+            else None
+        )
+        opencode = effective_config is not None and effective_config.executor == EXECUTOR_OPENCODE
+        if opencode and plan_adapter is None:
+            # The thin OpenCode path does not read the Plan at launch; an
+            # explicit operator adapter is still honored when supplied (no
+            # silent Plan read). Passing it is optional for opencode.
+            plan_adapter = self._plan_adapter
         ctx = self.refresh(
             worktree_root=worktree_root,
             project_id=project_id,
@@ -1541,7 +1926,19 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
+            git_integration_branch=git_integration_branch,
+            git_remote=git_remote,
+            plan_ref=plan_ref,
+            source_repository=source_repository,
+            registry_path=registry_path,
         )
+        if opencode:
+            return self._continue_opencode_session(
+                ctx=ctx,
+                session_id=session_id,
+                payload=payload,
+                timeout_seconds=float(timeout_seconds),
+            )
         return self._continue_exact_session(
             ctx=ctx,
             session_id=session_id,
@@ -1567,6 +1964,8 @@ def launch_daily_task_main(
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
     plan_ref: str | None = None,
+    source_repository: str | None = None,
+    registry_path: str | os.PathLike[str] | None = None,
 ) -> tuple[DailyLaunchContext, str]:
     """Operator-simple daily launcher entrypoint.
 
@@ -1590,6 +1989,8 @@ def launch_daily_task_main(
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
         plan_ref=plan_ref,
+        source_repository=source_repository,
+        registry_path=registry_path,
     )
 
 

@@ -60,6 +60,7 @@ from typing import Any
 from aota_forge.composition.execution import (
     create_durable_completion_coordinator,
     create_hermes_completion_delivery_transport,
+    create_opencode_completion_delivery_transport,
     create_production_execution_dispatcher,
 )
 from aota_forge.composition.project_binding import (
@@ -81,6 +82,7 @@ from aota_forge.core.ingress import bind_execution_dispatcher
 from aota_forge.mcp_transport import create_aota_invoke_dispatch
 from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.config import (
+    EXECUTOR_OPENCODE,
     TASK_MAIN_RUNTIME_PATH_THIN,
     RuntimeConfig,
     load_runtime_config,
@@ -567,11 +569,15 @@ def compose_thin_task_main_host(
     # resolves the real production dispatcher above.
     bind_execution_dispatcher(dispatcher)
 
-    transport = (
-        completion_transport
-        if completion_transport is not None
-        else create_hermes_completion_delivery_transport(runtime_config=runtime_config)
-    )
+    # AF #56 M3/W1: mechanical host-completion-transport selection by the SAME
+    # operator RuntimeConfig executor authority (shared trusted preparation,
+    # bounded host-specific launch wiring; no cross-host fallback).
+    if completion_transport is not None:
+        transport = completion_transport
+    elif runtime_config.executor == EXECUTOR_OPENCODE:
+        transport = create_opencode_completion_delivery_transport(runtime_config=runtime_config)
+    else:
+        transport = create_hermes_completion_delivery_transport(runtime_config=runtime_config)
     semantic_return_provider = WorktreeSemanticReturnEvidenceProvider(sandbox)
     completion_coordinator = create_durable_completion_coordinator(
         dispatcher=dispatcher,
