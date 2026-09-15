@@ -54,6 +54,12 @@ from aota_forge.adapters.hermes.session_reentry import (
     observe_persisted_session_tool_surface,
     production_aota_tool_surface_present,
 )
+from aota_forge.adapters.opencode.executor import (
+    OpenCodeAdapter,
+    build_opencode_host_payload,
+    default_opencode_capabilities,
+)
+from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
 from aota_forge.composition.worker_startup_guidance import (
     build_worker_model_prompt_composer,
 )
@@ -75,11 +81,17 @@ from aota_forge.runtime.completion import DurableCompletionCoordinator
 from aota_forge.runtime.config import (
     DEFAULT_WORKER_EXECUTION_TIMEOUT_SECONDS,
     EXECUTOR_HERMES,
+    EXECUTOR_OPENCODE,
     RuntimeConfig,
     RuntimeConfigError,
     load_runtime_config,
     resolve_binding_for_canonical_role,
     worker_canonical_profile_mapping,
+)
+from aota_forge.runtime.trusted_runtime_binding import (
+    PRE_RESOLVED_BINDING_ENV,
+    TrustedBindingError,
+    verify_envelope,
 )
 
 # Repository root is deterministic and independent of the process launch CWD.
@@ -160,19 +172,123 @@ def _resolve_operator_runtime_config(runtime_config: Any | None) -> RuntimeConfi
 
 
 def _require_hermes_executor(config: RuntimeConfig, *, seam: str) -> None:
-    """Fail closed when operator config selects an executor M1 cannot dispatch.
+    """Fail closed when a Hermes-only seam is reached with a different executor.
 
-    AF #56 M1/W3: ``executor=opencode`` is representable in the one operator
-    RuntimeConfig authority, but the OpenCode ExecutorAdapter is M2 scope.
-    Until that adapter exists, any production construction that would need an
-    execution host must refuse truthfully instead of silently falling back to
-    the Hermes adapter (no silent cross-host meaning).
+    AF #56 M2: ``executor=opencode`` now resolves to the real OpenCode adapter
+    through :func:`create_production_execution_dispatcher`; Hermes-only seams
+    (e.g. the Hermes completion transport factory) still refuse truthfully
+    instead of silently reinterpreting an OpenCode configuration as Hermes.
     """
     if config.executor != EXECUTOR_HERMES:
         raise RuntimeConfigError(
-            f"{seam}: executor {config.executor!r} has no registered AF execution adapter "
-            "in M1 (the OpenCode ExecutorAdapter is M2 scope); refusing to fall back to hermes"
+            f"{seam}: this seam is Hermes-only; executor {config.executor!r} must use its "
+            "own host wiring (no silent cross-host meaning, no fallback)"
         )
+
+
+OPENCODE_WORKER_DIRECTORY_ENV_FAILURE = "WORKER_DIRECTORY_UNAVAILABLE"
+
+
+def opencode_worker_directory_resolver(
+    worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None,
+) -> Callable[[ExecutionPackage], str | None] | None:
+    """Derive the trusted Worker session directory from the governed AF seam.
+
+    AF #56 M2 §13/§29: the only directory authority is the existing trusted
+    server-side Worker binding channel (``worker_env_resolver`` — the accepted
+    governed resolver over grounded ``task.start`` metadata). The resolver
+    verifies the digest-bound pre-resolved envelope and returns its trusted
+    ``worktree_root``; the model, TaskHandoff free text, OpenCode model output
+    and ambient process CWD are never consulted. No envelope/no root -> None
+    (the adapter then fails closed with WORKER_DIRECTORY_UNAVAILABLE).
+    """
+    if worker_env_resolver is None:
+        return None
+
+    def _resolve(package: ExecutionPackage) -> str | None:
+        if not isinstance(package, ExecutionPackage):
+            raise TypeError("opencode worker directory resolver requires an ExecutionPackage")
+        payload = build_opencode_host_payload(package)
+        env = worker_env_resolver(payload)
+        if not isinstance(env, Mapping):
+            return None
+        envelope_path = env.get(PRE_RESOLVED_BINDING_ENV)
+        if not isinstance(envelope_path, str) or not envelope_path.strip():
+            return None
+        try:
+            kind, verified_payload = verify_envelope(envelope_path)
+        except TrustedBindingError:
+            return None
+        if kind != "worker":
+            return None
+        root = verified_payload.get("worktree_root")
+        if not isinstance(root, str) or not root.strip() or not root.startswith("/"):
+            return None
+        return root
+
+    return _resolve
+
+
+def _create_opencode_production_dispatcher(
+    *,
+    config: RuntimeConfig,
+    host_client: Any | None,
+    host_client_factory: Callable[..., Any],
+    worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None,
+    state_store: ExecutionStateStore | None,
+    origin_session_ref: OriginSessionRef | str | None,
+) -> ExecutionDispatcher:
+    """Construct the OpenCode host graph through the SAME dispatcher contract.
+
+    ``host_client`` (optional) must be a production ``OpenCodeHostClient`` or a
+    structurally compatible bounded double; otherwise the client is built from
+    the operator-owned loopback ``host_endpoint``. Role->profile mapping,
+    admission scopes and capabilities derive ONLY from the operator
+    RuntimeConfig. There is no cross-host fallback in either direction.
+    """
+    if host_client is not None:
+        if not isinstance(host_client, OpenCodeHostClient) and not hasattr(
+            host_client, "create_session"
+        ):
+            raise RuntimeConfigError(
+                "opencode composition requires an OpenCodeHostClient-compatible host_client"
+            )
+        client = host_client
+    else:
+        if host_client_factory is not HermesHostClient:
+            raise RuntimeConfigError(
+                "host_client_factory is a Hermes-only seam; the opencode path constructs the "
+                "OpenCodeHostClient from the operator host_endpoint instead"
+            )
+        assert config.host_endpoint is not None  # enforced by RuntimeConfig validation
+        client = OpenCodeHostClient(config.host_endpoint)
+
+    effective_mapping = worker_canonical_profile_mapping(config)
+    role_mapping = RoleMapping.create(EXECUTOR_OPENCODE, effective_mapping)
+    capabilities = default_opencode_capabilities(
+        tuple(sorted(effective_mapping.keys())),
+        concurrency_limit=config.concurrency,
+        max_timeout_seconds=config.worker_execution_timeout_seconds,
+    )
+    directory_resolver = opencode_worker_directory_resolver(worker_env_resolver)
+    origin_text = origin_session_ref.value if isinstance(origin_session_ref, OriginSessionRef) else origin_session_ref
+    adapter = OpenCodeAdapter(
+        host_client=client,
+        capabilities=capabilities,
+        role_mapping=role_mapping,
+        runtime_config=config,
+        model_prompt_composer=build_worker_model_prompt_composer(runtime_config=config),
+        worker_directory_resolver=directory_resolver,
+        origin_session_ref=origin_text,
+    )
+    registry = ExecutorRegistry()
+    registry.register(adapter)
+    return ExecutionDispatcher(
+        registry,
+        state_store=state_store,
+        origin_session_ref=origin_session_ref,
+        admission_scope_resolver=admission_scope_for_package(config),
+    )
 
 
 def create_production_execution_dispatcher(
@@ -211,9 +327,21 @@ def create_production_execution_dispatcher(
     record. There is still exactly ONE dispatcher in this graph.
     """
     config = _resolve_operator_runtime_config(runtime_config)
-    _require_hermes_executor(config, seam="create_production_execution_dispatcher")
     if worker_env_resolver is not None and not callable(worker_env_resolver):
         raise TypeError("worker_env_resolver must be callable or None")
+
+    # AF #56 M2: operator config selects exactly ONE host path; no fallback in
+    # either direction (NO_FALLBACK_OPENCODE_TO_HERMES / HERMES_TO_OPENCODE).
+    if config.executor == EXECUTOR_OPENCODE:
+        return _create_opencode_production_dispatcher(
+            config=config,
+            host_client=host_client,
+            host_client_factory=host_client_factory,
+            worker_env_resolver=worker_env_resolver,
+            state_store=state_store,
+            origin_session_ref=origin_session_ref,
+        )
+    _require_hermes_executor(config, seam="create_production_execution_dispatcher")
 
     effective_launcher = str(launcher_path) if launcher_path is not None else config.executable
     # AF #51 M1/W2 (I40-B008): the trusted operator RuntimeConfig Worker

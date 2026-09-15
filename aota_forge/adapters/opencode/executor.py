@@ -288,9 +288,12 @@ class OpenCodeAdapter(ExecutorAdapter):
         trusted_worker_directory: str | None = None,
         origin_session_ref: str | None = None,
     ) -> None:
-        if host_client is not None and not isinstance(host_client, OpenCodeHostClient):
+        if host_client is not None and not (
+            isinstance(host_client, OpenCodeHostClient) or hasattr(host_client, "create_session")
+        ):
             raise TypeError(
-                f"host_client must be an OpenCodeHostClient or None, got {type(host_client).__name__}"
+                "host_client must implement the OpenCode host operations (create_session/"
+                f"prompt/status/messages/abort) or be an OpenCodeHostClient, got {type(host_client).__name__}"
             )
         self._host_client = host_client
         self._capabilities = capabilities or default_opencode_capabilities()

@@ -24,6 +24,7 @@ from aota_forge.composition.execution import (
     create_hermes_completion_delivery_transport,
     create_production_execution_dispatcher,
 )
+from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.runtime.config import (
     EXECUTOR_HERMES,
     EXECUTOR_OPENCODE,
@@ -77,6 +78,17 @@ def _load(tmp_path: pathlib.Path, doc: dict[str, Any]) -> RuntimeConfig:
     path = tmp_path / "runtime.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
     return load_runtime_config(config_path=str(path))
+
+
+class _FakeOpenCodeHost:
+    """Structurally compatible OpenCode host double that records calls."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def create_session(self, **kwargs):
+        self.calls += 1
+        raise AssertionError("no host call may happen without trusted directory authority")
 
 
 class _FakeHost:
@@ -256,16 +268,32 @@ class TestNoCrossMeaning:
 # ---------------------------------------------------------------------------
 
 class TestPreM2FailClosed:
-    def test_dispatcher_refuses_opencode_without_adapter(self, tmp_path):
+    def test_dispatcher_binds_opencode_adapter_and_fails_closed_without_directory(self, tmp_path):
+        # AF #56 M2 evolved M1: executor=opencode now resolves to the real
+        # OpenCode adapter through the same production composition. A dispatch
+        # without the trusted AF Worker directory binding still fails closed
+        # BEFORE any host call; there is no fallback to Hermes.
         config = _load(tmp_path, _config_doc(tmp_path, EXECUTOR_OPENCODE))
-        host = _FakeHost()
-        with pytest.raises(RuntimeConfigError, match="no registered AF execution adapter"):
-            create_production_execution_dispatcher(runtime_config=config, host_client=host)
+        host = _FakeOpenCodeHost()
+        dispatcher = create_production_execution_dispatcher(
+            runtime_config=config, host_client=host, worker_env_resolver=None
+        )
+        assert dispatcher.registry.has("opencode")
+        assert not dispatcher.registry.has("hermes")
+        package = ExecutionPackage.create(
+            canonical_task_id="aota_forge:m1:m1:deadbeef:cafebabe",
+            project_id="aota_forge",
+            canonical_role="coder",
+            instruction="bounded host selection check",
+        )
+        with pytest.raises(Exception) as info:
+            dispatcher.dispatch(package)
+        assert getattr(info.value, "code", None) == "WORKER_DIRECTORY_UNAVAILABLE"
         assert host.calls == 0
 
     def test_hermes_transport_refuses_opencode(self, tmp_path):
         config = _load(tmp_path, _config_doc(tmp_path, EXECUTOR_OPENCODE))
-        with pytest.raises(RuntimeConfigError, match="no registered AF execution adapter"):
+        with pytest.raises(RuntimeConfigError, match="Hermes-only"):
             create_hermes_completion_delivery_transport(runtime_config=config)
 
 
