@@ -6,6 +6,12 @@ schema validation, path-escape protection.
 
 Legacy semantic coupling (task-main decision_id, Profile Task, SPEC, active
 Plan, current work item, current_* pointers) is NOT preserved here.
+
+AF #57 M1/W3: ``plan.active_plan_id`` is retained as a schema-v1
+compatibility field only.  It is non-authoritative and is NOT Plan lifecycle
+truth; active Plan governance is owned by the Project Governance Store
+(``aota_forge.governance``).  No governance logic reads this field as Plan
+lifecycle truth, and the field is not removed while schema v1 lives.
 """
 
 from __future__ import annotations
@@ -24,6 +30,16 @@ MAX_MANIFEST_BYTES = 256 * 1024
 MAX_SUMMARY = 4000
 PROJECT_ID_RE = re.compile(r"^[a-z0-9_]+(?:[-_][a-z0-9_]+)*$")
 STATUS_VALUES = {"active", "maintenance", "planned", "archived"}
+
+# AF #57 M1/W3 frozen boundary.  The manifest owns project identity and
+# declarative metadata only; it never owns active Plan state.  The schema-v1
+# ``plan.active_plan_id`` field above remains validated for compatibility but
+# is projection/compatibility data, never Plan lifecycle truth or authority.
+PROJECT_MANIFEST_OWNS_PROJECT_IDENTITY = True
+PROJECT_MANIFEST_OWNS_ACTIVE_PLAN_STATE = False
+ACTIVE_PLAN_ID_IS_AUTHORITY = False
+ACTIVE_PLAN_ID_IS_PLAN_LIFECYCLE_TRUTH = False
+ACTIVE_PLAN_ID_RETAINED_FOR_SCHEMA_V1_COMPATIBILITY = True
 
 TOP_LEVEL = {"schema_version", "project", "summary", "capabilities", "paths", "commands", "runtime", "codegraph", "plan", "constraints"}
 PROJECT_FIELDS = {"id", "name", "kind", "status"}

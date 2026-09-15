@@ -96,6 +96,7 @@ from aota_forge.core.project.manifest import (
     validate_project,
 )
 from aota_forge.core.transitions import PlanInitRequest, plan_init
+from aota_forge.governance import project_store as governance_store
 from aota_forge.runtime.task_main.coordinator_state import TaskMainCoordinatorState
 from test_m4_2_m4_4_integration import (
     _issue_authorization,
@@ -138,8 +139,9 @@ NON_CANONICAL_PLAN_ID_SAMPLES = (
     57,
 )
 
-# Frozen Governance 2.0 negative ownership boundary for the future store.
-PROJECT_GOVERNANCE_STORE_IMPLEMENTED = "no"
+# Frozen Governance 2.0 negative ownership boundary, reconciled by W3 when it
+# implemented the real store (aota_forge.governance.project_store).
+PROJECT_GOVERNANCE_STORE_IMPLEMENTED = "yes"
 PROJECT_GOVERNANCE_STORE_OWNS_EXECUTION_ATTEMPTS = "no"
 PROJECT_GOVERNANCE_STORE_OWNS_WORKER_RESULTS = "no"
 PROJECT_GOVERNANCE_STORE_OWNS_WORK_PROGRESSION = "no"
@@ -588,22 +590,39 @@ class TestDurableStateOwnership:
         assert TaskMainCoordinatorState.from_dict(successor.to_dict()) == successor
 
     def test_project_governance_store_negative_boundaries(self):
-        assert PROJECT_GOVERNANCE_STORE_IMPLEMENTED == "no"
+        assert PROJECT_GOVERNANCE_STORE_IMPLEMENTED == "yes"
         assert PROJECT_GOVERNANCE_STORE_OWNS_EXECUTION_ATTEMPTS == "no"
         assert PROJECT_GOVERNANCE_STORE_OWNS_WORKER_RESULTS == "no"
         assert PROJECT_GOVERNANCE_STORE_OWNS_WORK_PROGRESSION == "no"
         assert PROJECT_GOVERNANCE_STORE_OWNS_HUMAN_BRAKE == "no"
         assert PROJECT_GOVERNANCE_STORE_OWNS_COMPLETION_QUEUE == "no"
+        # W3 implemented the real store; the same negative guards hold there.
+        assert governance_store.PROJECT_GOVERNANCE_STORE_IMPLEMENTED is True
+        assert governance_store.PROJECT_GOVERNANCE_STORE_OWNS_EXECUTION_ATTEMPTS is False
+        assert governance_store.PROJECT_GOVERNANCE_STORE_OWNS_WORKER_RESULTS is False
+        assert governance_store.PROJECT_GOVERNANCE_STORE_OWNS_WORK_PROGRESSION is False
+        assert governance_store.PROJECT_GOVERNANCE_STORE_OWNS_HUMAN_BRAKE is False
+        assert governance_store.PROJECT_GOVERNANCE_STORE_OWNS_COMPLETION_QUEUE is False
 
-    def test_no_speculative_project_governance_store_schema(self):
-        """W1-AC12 guard; the real W3 store replaces this W1 WIP boundary."""
+    def test_project_governance_store_schema_is_confined_to_the_w3_store(self):
+        """W1-AC12 guard, reconciled by W3: only the real W3 store may define it."""
+        allowed = {
+            AF_ROOT / "governance" / "project_store.py",
+            AF_ROOT / "governance" / "sqlite_store.py",
+        }
+        real_schema_holder = AF_ROOT / "governance" / "sqlite_store.py"
+        assert "CREATE TABLE" in real_schema_holder.read_text(encoding="utf-8")
         offenders = []
         for path in _source_files():
             text = path.read_text(encoding="utf-8")
-            if "CREATE TABLE" in text:
+            if "CREATE TABLE" in text and path not in allowed:
                 offenders.append(str(path.relative_to(REPO_ROOT)))
             tree = ast.parse(text)
             for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef) and node.name.startswith("ProjectGovernance"):
+                if (
+                    isinstance(node, ast.ClassDef)
+                    and node.name.startswith("ProjectGovernance")
+                    and path not in allowed
+                ):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.name}")
         assert offenders == []
