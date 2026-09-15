@@ -36,6 +36,7 @@ never a construction/factory input and never model/Worker supplied.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Callable, Mapping
@@ -63,6 +64,7 @@ from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
 from aota_forge.composition.worker_startup_guidance import (
     build_worker_model_prompt_composer,
 )
+from aota_forge.core.execution.adapter import ExecutorAdapter
 from aota_forge.core.execution.capabilities import ExecutorCapabilities
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import (
@@ -187,6 +189,50 @@ def _require_hermes_executor(config: RuntimeConfig, *, seam: str) -> None:
 
 
 OPENCODE_WORKER_DIRECTORY_ENV_FAILURE = "WORKER_DIRECTORY_UNAVAILABLE"
+# Mechanical per-directory binding pointer resolved by the host-side MCP child
+# (the pinned OpenCode host spawns local MCP servers per directory instance with
+# cwd = the instance directory). It points at the digest-verified pre-resolved
+# envelope; it is routing information only and grants no authority.
+OPENCODE_WORKER_BINDING_POINTER_RELPATH = (".aota", "opencode", "active_worker_binding.json")
+OPENCODE_WORKER_BINDING_POINTER_SCHEMA = "1"
+
+
+def _persist_opencode_worker_binding_pointer(root: str, envelope_path: str) -> None:
+    """Atomically persist the mechanical per-directory binding pointer.
+
+    Containment is enforced: the referenced envelope must live inside the
+    trusted worktree ``.aota`` boundary of ``root``. Failure is fail-closed
+    (the dispatch must not proceed without its governed MCP binding).
+    """
+    root_path = Path(root)
+    envelope = Path(envelope_path)
+    try:
+        resolved_envelope = envelope.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeConfigError(f"opencode binding envelope is missing: {exc}") from exc
+    aota_root = (root_path / ".aota").resolve()
+    try:
+        resolved_envelope.relative_to(aota_root)
+    except ValueError as exc:
+        raise RuntimeConfigError(
+            "opencode binding envelope escapes the trusted worktree .aota boundary"
+        ) from exc
+    pointer_dir = root_path / ".aota" / "opencode"
+    pointer_dir.mkdir(parents=True, exist_ok=True)
+    pointer_path = pointer_dir / "active_worker_binding.json"
+    payload = json.dumps(
+        {"schema_version": OPENCODE_WORKER_BINDING_POINTER_SCHEMA, "envelope_path": str(resolved_envelope)},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    tmp = pointer_path.with_suffix(".tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(pointer_path)
+    except OSError as exc:
+        raise RuntimeConfigError(
+            f"opencode worker binding pointer persist failed: {exc}"
+        ) from exc
 
 
 def opencode_worker_directory_resolver(
@@ -224,27 +270,30 @@ def opencode_worker_directory_resolver(
         root = verified_payload.get("worktree_root")
         if not isinstance(root, str) or not root.strip() or not root.startswith("/"):
             return None
+        # The host-side MCP child resolves its binding from its directory
+        # instance; persist the mechanical pointer before any physical
+        # dispatch so a Worker can never run without its governed binding.
+        _persist_opencode_worker_binding_pointer(root, envelope_path)
         return root
 
     return _resolve
 
 
-def _create_opencode_production_dispatcher(
+def _build_opencode_adapter(
     *,
     config: RuntimeConfig,
     host_client: Any | None,
     host_client_factory: Callable[..., Any],
     worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None,
-    state_store: ExecutionStateStore | None,
     origin_session_ref: OriginSessionRef | str | None,
-) -> ExecutionDispatcher:
-    """Construct the OpenCode host graph through the SAME dispatcher contract.
+) -> OpenCodeAdapter:
+    """Build the OpenCode host adapter for the SAME dispatcher contract.
 
     ``host_client`` (optional) must be a production ``OpenCodeHostClient`` or a
     structurally compatible bounded double; otherwise the client is built from
-    the operator-owned loopback ``host_endpoint``. Role->profile mapping,
-    admission scopes and capabilities derive ONLY from the operator
-    RuntimeConfig. There is no cross-host fallback in either direction.
+    the operator-owned loopback ``host_endpoint``. Role->profile mapping and
+    capabilities derive ONLY from the operator RuntimeConfig. There is no
+    cross-host fallback in either direction.
     """
     if host_client is not None:
         if not isinstance(host_client, OpenCodeHostClient) and not hasattr(
@@ -271,8 +320,10 @@ def _create_opencode_production_dispatcher(
         max_timeout_seconds=config.worker_execution_timeout_seconds,
     )
     directory_resolver = opencode_worker_directory_resolver(worker_env_resolver)
-    origin_text = origin_session_ref.value if isinstance(origin_session_ref, OriginSessionRef) else origin_session_ref
-    adapter = OpenCodeAdapter(
+    origin_text = (
+        origin_session_ref.value if isinstance(origin_session_ref, OriginSessionRef) else origin_session_ref
+    )
+    return OpenCodeAdapter(
         host_client=client,
         capabilities=capabilities,
         role_mapping=role_mapping,
@@ -280,14 +331,6 @@ def _create_opencode_production_dispatcher(
         model_prompt_composer=build_worker_model_prompt_composer(runtime_config=config),
         worker_directory_resolver=directory_resolver,
         origin_session_ref=origin_text,
-    )
-    registry = ExecutorRegistry()
-    registry.register(adapter)
-    return ExecutionDispatcher(
-        registry,
-        state_store=state_store,
-        origin_session_ref=origin_session_ref,
-        admission_scope_resolver=admission_scope_for_package(config),
     )
 
 
@@ -332,64 +375,65 @@ def create_production_execution_dispatcher(
 
     # AF #56 M2: operator config selects exactly ONE host path; no fallback in
     # either direction (NO_FALLBACK_OPENCODE_TO_HERMES / HERMES_TO_OPENCODE).
+    # Both branches build ONE adapter for the SAME single dispatcher below.
     if config.executor == EXECUTOR_OPENCODE:
-        return _create_opencode_production_dispatcher(
+        adapter: ExecutorAdapter = _build_opencode_adapter(
             config=config,
             host_client=host_client,
             host_client_factory=host_client_factory,
             worker_env_resolver=worker_env_resolver,
-            state_store=state_store,
             origin_session_ref=origin_session_ref,
         )
-    _require_hermes_executor(config, seam="create_production_execution_dispatcher")
-
-    effective_launcher = str(launcher_path) if launcher_path is not None else config.executable
-    # AF #51 M1/W2 (I40-B008): the trusted operator RuntimeConfig Worker
-    # execution lifetime drives the production Hermes host lifetime. The
-    # default production factory receives it explicitly; explicitly injected
-    # custom clients/factories (test/component seams) own their own lifetime.
-    if host_client is not None:
-        client = host_client
-        if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
-            client._worker_env_resolver = worker_env_resolver
-    elif host_client_factory is HermesHostClient:
-        client = host_client_factory(
-            effective_launcher,
-            default_cwd=default_cwd,
-            timeout_seconds=config.worker_execution_timeout_seconds,
-            worker_env_resolver=worker_env_resolver,
-        )
     else:
-        client = host_client_factory(effective_launcher, default_cwd=default_cwd)
-        if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
-            client._worker_env_resolver = worker_env_resolver
+        _require_hermes_executor(config, seam="create_production_execution_dispatcher")
 
-    # Role->profile mapping derives exclusively from operator config bindings.
-    # Worker bindings carry the shared AOTA MCP toolset pin enforced by
-    # RuntimeConfig validation; no static source-owned mapping exists.
-    effective_mapping = worker_canonical_profile_mapping(config)
-    role_mapping = RoleMapping.create("hermes", effective_mapping)
-    caps = _production_capabilities(
-        tuple(sorted(effective_mapping.keys())),
-        concurrency_limit=config.concurrency,
-        max_timeout_seconds=config.worker_execution_timeout_seconds,
-    )
+        effective_launcher = str(launcher_path) if launcher_path is not None else config.executable
+        # AF #51 M1/W2 (I40-B008): the trusted operator RuntimeConfig Worker
+        # execution lifetime drives the production Hermes host lifetime. The
+        # default production factory receives it explicitly; explicitly injected
+        # custom clients/factories (test/component seams) own their own lifetime.
+        if host_client is not None:
+            client = host_client
+            if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
+                client._worker_env_resolver = worker_env_resolver
+        elif host_client_factory is HermesHostClient:
+            client = host_client_factory(
+                effective_launcher,
+                default_cwd=default_cwd,
+                timeout_seconds=config.worker_execution_timeout_seconds,
+                worker_env_resolver=worker_env_resolver,
+            )
+        else:
+            client = host_client_factory(effective_launcher, default_cwd=default_cwd)
+            if worker_env_resolver is not None and hasattr(client, "_worker_env_resolver"):
+                client._worker_env_resolver = worker_env_resolver
 
-    # AF #49 M1/W11 (I49-B003): AF runtime composition installs the governed
-    # Worker model-prompt composer.  For governed Worker roles the real
-    # model-facing instruction becomes
-    #   canonical startup guidance + deterministic separator + package.instruction
-    # downstream of execution-package identity; any inability to obtain trusted
-    # startup guidance fails closed here, before any physical Worker spawn.
-    # Non-Worker/generic dispatch is unchanged (the composer returns the exact
-    # instruction unchanged for non-Worker runtime bindings).
-    adapter = HermesAdapter(
-        host_client=client,
-        capabilities=caps,
-        role_mapping=role_mapping,
-        runtime_config=config,
-        model_prompt_composer=build_worker_model_prompt_composer(runtime_config=config),
-    )
+        # Role->profile mapping derives exclusively from operator config bindings.
+        # Worker bindings carry the shared AOTA MCP toolset pin enforced by
+        # RuntimeConfig validation; no static source-owned mapping exists.
+        effective_mapping = worker_canonical_profile_mapping(config)
+        role_mapping = RoleMapping.create("hermes", effective_mapping)
+        caps = _production_capabilities(
+            tuple(sorted(effective_mapping.keys())),
+            concurrency_limit=config.concurrency,
+            max_timeout_seconds=config.worker_execution_timeout_seconds,
+        )
+
+        # AF #49 M1/W11 (I49-B003): AF runtime composition installs the governed
+        # Worker model-prompt composer.  For governed Worker roles the real
+        # model-facing instruction becomes
+        #   canonical startup guidance + deterministic separator + package.instruction
+        # downstream of execution-package identity; any inability to obtain trusted
+        # startup guidance fails closed here, before any physical Worker spawn.
+        # Non-Worker/generic dispatch is unchanged (the composer returns the exact
+        # instruction unchanged for non-Worker runtime bindings).
+        adapter = HermesAdapter(
+            host_client=client,
+            capabilities=caps,
+            role_mapping=role_mapping,
+            runtime_config=config,
+            model_prompt_composer=build_worker_model_prompt_composer(runtime_config=config),
+        )
     registry = ExecutorRegistry()
     registry.register(adapter)
     return ExecutionDispatcher(

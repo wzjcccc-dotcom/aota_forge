@@ -123,3 +123,57 @@ OPENCODE_REFERENCE_SOURCE_MUTATION=no
 OPENCODE_UPSTREAM_PATCH_REQUIRED=no
 REFERENCE_SERVER_LOOPBACK_ONLY=yes
 ```
+
+## 7. M2 Worker MCP binding seam (AF #56 M2)
+
+M1's probe MCP binding was M1-only (`m1_w2_opencode_mcp_probe_server.py`, one
+fixed probe task). M2 replaces the reference host's `mcp.aota` command with a
+per-directory binding wrapper that resolves the AF Worker binding for the
+host-spawned directory instance:
+
+```text
+<worktree>/.aota/opencode/active_worker_binding.json   # AF-written pointer
+  -> envelope_path under <worktree>/.aota/pre-resolved-bindings/worker-*.json
+  -> AOTA_PRE_RESOLVED_BINDING (verified digest-bound envelope)
+  -> python -m aota_forge.composition.worker_vertical_slice --mcp-server
+```
+
+Deployment shape used by the M2 real run:
+
+```json
+"mcp": {"aota": {"type": "local",
+  "command": ["/usr/bin/python3", "<runtime>/mcp/m2_opencode_worker_mcp_server.py"],
+  "environment": {"AOTA_FORGE_REPO_ROOT": "<aota_forge checkout>"},
+  "enabled": true, "timeout": 15000}}
+```
+
+Boundaries and known limits:
+
+```text
+MCP_SERVER_COUNT=1 (single aota entry; no second AOTA server)
+BINDING_SOURCE=trusted AF governed resolver (work_item handoff replay)
+POINTER_IS_ROUTING_ONLY=yes (envelope digest is the authority)
+MCP_CHILD_SCOPE=per directory instance (pinned host InstanceState.directory)
+KNOWN_LIMIT: a directory instance keeps its MCP child for the instance
+  lifetime; reusing one worktree across AF task lifetimes requires a fresh
+  instance / host restart / per-task worktree (M3 same-worktree design input).
+SYNTHETIC_PROJECT_EVIDENCE: the M2 wrapper defaults
+  AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE=1 for bounded test roots; a real
+  project onboarding/seam is M3 scope (override the env to disable).
+```
+
+Operator restart after config change:
+
+```sh
+cp scripts/m2_opencode_worker_mcp_server.py <runtime>/mcp/
+systemctl --user restart opencode-af-reference.service
+```
+
+M2 real integration harness:
+
+```sh
+python3 scripts/m2_w4_opencode_real_integration.py --mode full \
+  --run-root <evidence>/real-run --evidence-root <evidence>
+python3 scripts/m2_w4_opencode_real_integration.py --mode cancel ...
+python3 scripts/m2_w4_opencode_real_integration.py --mode restart-delivery ...
+```

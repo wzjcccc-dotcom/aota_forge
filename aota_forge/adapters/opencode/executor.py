@@ -627,7 +627,14 @@ class OpenCodeAdapter(ExecutorAdapter):
                 directory=directory,
                 parent_id=parent_id,
                 title=_bounded_title(package.canonical_task_id),
-                model=prompt_model,
+                # Session-create model shape is the pinned `{id, providerID}`
+                # form; the prompt shape `{providerID, modelID}` is only valid
+                # on prompt submission (M2 empirical pin correction).
+                model=(
+                    {"id": prompt_model["modelID"], "providerID": prompt_model["providerID"]}
+                    if prompt_model is not None
+                    else None
+                ),
                 metadata={
                     OPENCODE_HOST_METADATA_TASK_KEY: package.canonical_task_id,
                     OPENCODE_HOST_METADATA_SCHEMA_KEY: OPENCODE_HOST_METADATA_SCHEMA,

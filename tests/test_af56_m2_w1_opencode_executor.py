@@ -261,6 +261,54 @@ def test_dispatch_creates_session_and_handle_is_session_id() -> None:
     assert "aota_aota_invoke" in prompt_req["body"]["parts"][0]["text"]
 
 
+def test_dispatch_model_shapes_match_pinned_contract(tmp_path) -> None:
+    # Session create uses the pinned {id, providerID} shape; prompt submission
+    # uses the pinned {providerID, modelID} shape. Mixing them is a 400.
+    import stat as _stat
+
+    from aota_forge.runtime.config import EXECUTOR_OPENCODE, RuntimeBinding, RuntimeConfig
+
+    exe = tmp_path / "opencode-stub"
+    exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    exe.chmod(exe.stat().st_mode | _stat.S_IXUSR)
+    config = RuntimeConfig(
+        executor=EXECUTOR_OPENCODE,
+        executable=str(exe),
+        concurrency=1,
+        provider="afstub",
+        model="stub-model",
+        bindings=tuple(
+            RuntimeBinding(
+                work_role=role,
+                executor=EXECUTOR_OPENCODE,
+                profile=f"{role}-host",
+                provider="afstub",
+                model="stub-model",
+                concurrency=1,
+                executable=str(exe),
+            )
+            for role in ("analyst", "coder", "reviewer", "project-steward", "task-main")
+        ),
+        host_endpoint="http://127.0.0.1:4096",
+    )
+    transport = FakeTransport()
+    transport.push(_json_response(200, _session_payload()))
+    transport.push(OpenCodeHttpResponse(status=204, body=b""))
+    client = OpenCodeHostClient("http://127.0.0.1:4096", http_transport=transport)
+    mapping = RoleMapping.create(OPENCODE_EXECUTOR_ID, {"coder": "coder-host"})
+    adapter = OpenCodeAdapter(
+        host_client=client,
+        role_mapping=mapping,
+        runtime_config=config,
+        trusted_worker_directory=DIR,
+    )
+    adapter.dispatch(_package(role="coder"))
+    create_body = transport.requests[0]["body"]
+    prompt_body = transport.requests[1]["body"]
+    assert create_body["model"] == {"id": "stub-model", "providerID": "afstub"}
+    assert prompt_body["model"] == {"providerID": "afstub", "modelID": "stub-model"}
+
+
 def test_dispatch_parent_id_absent_keeps_identity_valid() -> None:
     transport = FakeTransport()
     transport.push(_json_response(200, _session_payload(parent_id=None)))

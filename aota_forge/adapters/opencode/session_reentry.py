@@ -29,7 +29,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+
 
 from aota_forge.adapters.opencode.host_client import (
     OpenCodeDispatchRejectedError,
