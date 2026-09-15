@@ -189,64 +189,58 @@ def _require_hermes_executor(config: RuntimeConfig, *, seam: str) -> None:
 
 
 OPENCODE_WORKER_DIRECTORY_ENV_FAILURE = "WORKER_DIRECTORY_UNAVAILABLE"
-# Mechanical per-directory binding pointer resolved by the host-side MCP child
-# (the pinned OpenCode host spawns local MCP servers per directory instance with
-# cwd = the instance directory). It points at the digest-verified pre-resolved
-# envelope; it is routing information only and grants no authority.
-OPENCODE_WORKER_BINDING_POINTER_RELPATH = (".aota", "opencode", "active_worker_binding.json")
+# AF #56 M3/W2 (NB-3 closure, option A): the OpenCode host instance directory is
+# a trusted task/session-scoped MECHANICAL NAMESPACE, not the AF authorized
+# worktree. The authorized worktree travels inside the digest-verified binding
+# envelope (``worktree_root`` payload field). Because every AF task lifetime
+# gets its own instance namespace and its own staged binding pointer/envelope,
+# the pinned host's per-directory MCP child (one per instance for the instance
+# lifetime) can never serve a new task with a previous task's binding.
+#
+#   HOST_INSTANCE_DIRECTORY_EQUALS_AF_WORKTREE=no
+#   STALE_BINDING_REUSED=no
+OPENCODE_WORKER_BINDING_POINTER_RELPATH = (".aota", "opencode", "active_binding.json")
 OPENCODE_WORKER_BINDING_POINTER_SCHEMA = "1"
 
 
-def _persist_opencode_worker_binding_pointer(root: str, envelope_path: str) -> None:
-    """Atomically persist the mechanical per-directory binding pointer.
+def _stage_opencode_worker_binding(instance_dir: Path, envelope_path: str, binding_root: str) -> None:
+    """Stage the digest-bound envelope + routing pointer inside the instance.
 
-    Containment is enforced: the referenced envelope must live inside the
-    trusted worktree ``.aota`` boundary of ``root``. Failure is fail-closed
-    (the dispatch must not proceed without its governed MCP binding).
+    The task-scoped instance namespace is the unit of binding isolation: the
+    host-spawned MCP child for this directory resolves its pointer and envelope
+    from ``<instance_dir>/.aota`` ONLY. Staging is fail-closed (a dispatch must
+    never proceed without its governed MCP binding material).
     """
-    root_path = Path(root)
-    envelope = Path(envelope_path)
-    try:
-        resolved_envelope = envelope.resolve(strict=True)
-    except OSError as exc:
-        raise RuntimeConfigError(f"opencode binding envelope is missing: {exc}") from exc
-    aota_root = (root_path / ".aota").resolve()
-    try:
-        resolved_envelope.relative_to(aota_root)
-    except ValueError as exc:
-        raise RuntimeConfigError(
-            "opencode binding envelope escapes the trusted worktree .aota boundary"
-        ) from exc
-    pointer_dir = root_path / ".aota" / "opencode"
-    pointer_dir.mkdir(parents=True, exist_ok=True)
-    pointer_path = pointer_dir / "active_worker_binding.json"
-    payload = json.dumps(
-        {"schema_version": OPENCODE_WORKER_BINDING_POINTER_SCHEMA, "envelope_path": str(resolved_envelope)},
-        sort_keys=True,
-        separators=(",", ":"),
+    from aota_forge.adapters.opencode.task_main import (
+        stage_envelope_in_instance,
+        write_binding_pointer,
     )
-    tmp = pointer_path.with_suffix(".tmp")
-    try:
-        tmp.write_text(payload, encoding="utf-8")
-        tmp.replace(pointer_path)
-    except OSError as exc:
-        raise RuntimeConfigError(
-            f"opencode worker binding pointer persist failed: {exc}"
-        ) from exc
+
+    instance = Path(instance_dir)
+    staged = stage_envelope_in_instance(instance, envelope_path)
+    write_binding_pointer(
+        instance,
+        kind="worker",
+        envelope_path=staged,
+        binding_root=binding_root,
+    )
 
 
 def opencode_worker_directory_resolver(
     worker_env_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None,
 ) -> Callable[[ExecutionPackage], str | None] | None:
-    """Derive the trusted Worker session directory from the governed AF seam.
+    """Derive the trusted Worker session instance directory from the governed seam.
 
-    AF #56 M2 §13/§29: the only directory authority is the existing trusted
-    server-side Worker binding channel (``worker_env_resolver`` — the accepted
-    governed resolver over grounded ``task.start`` metadata). The resolver
-    verifies the digest-bound pre-resolved envelope and returns its trusted
-    ``worktree_root``; the model, TaskHandoff free text, OpenCode model output
-    and ambient process CWD are never consulted. No envelope/no root -> None
-    (the adapter then fails closed with WORKER_DIRECTORY_UNAVAILABLE).
+    AF #56 M2 §13/§29 + M3/W2 §15/§16: the only binding authority is the
+    existing trusted server-side Worker binding channel
+    (``worker_env_resolver`` — the accepted governed resolver over grounded
+    ``task.start`` metadata). The resolver verifies the digest-bound
+    pre-resolved envelope, then stages the binding material inside a NEW
+    task-scoped instance namespace and returns that mechanical namespace as the
+    Worker session directory. The model, TaskHandoff free text, OpenCode model
+    output and ambient process CWD are never consulted. No envelope/no
+    worktree_root -> None (the adapter then fails closed with
+    WORKER_DIRECTORY_UNAVAILABLE).
     """
     if worker_env_resolver is None:
         return None
@@ -270,11 +264,22 @@ def opencode_worker_directory_resolver(
         root = verified_payload.get("worktree_root")
         if not isinstance(root, str) or not root.strip() or not root.startswith("/"):
             return None
-        # The host-side MCP child resolves its binding from its directory
-        # instance; persist the mechanical pointer before any physical
-        # dispatch so a Worker can never run without its governed binding.
-        _persist_opencode_worker_binding_pointer(root, envelope_path)
-        return root
+        from aota_forge.adapters.opencode.task_main import (
+            instance_directory,
+            worker_instance_key,
+        )
+
+        # One instance namespace per canonical task lifetime: a re-dispatched
+        # task on the SAME worktree never inherits the previous task's cached
+        # host MCP child/binding.
+        instance = instance_directory(root, worker_instance_key(payload["context"]["canonical_task_id"]))
+        try:
+            _stage_opencode_worker_binding(instance, envelope_path, root)
+        except Exception as exc:  # noqa: BLE001 - staging failure is fail-closed
+            raise RuntimeConfigError(
+                f"opencode worker binding staging failed: {type(exc).__name__}: {exc}"
+            ) from exc
+        return str(instance)
 
     return _resolve
 
