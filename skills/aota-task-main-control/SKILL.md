@@ -29,6 +29,53 @@ profile != authority
 Plan bind and not a session bind. A safe read never requires bootstrap to
 have been called first, and no first-message Plan grammar exists.
 
+## Plan locator discipline (bare number fast-stop)
+
+```text
+AMBIGUOUS_PLAN_NUMBER_IS_NOT_PLAN_REF=yes
+MISSING_PLAN_REF_FAST_STOP=yes
+SESSION_DIRECTORY_PROFILE_REPO_INFERENCE=no
+UNNECESSARY_DISCOVERY_BEFORE_NEEDS_INPUT=no
+```
+
+When an operation needs canonical Plan identity and the user supplied only a
+bare issue number (`#39`), the canonical `plan_ref` is insufficient. Ask for
+`owner/repo#number` immediately — a full GitHub Issue URL is used by
+normalizing it deterministically to `owner/repo#number` (never guess any
+component). Do **not** "resolve" the repository by exploring `host.status` /
+`runtime.status`, the current directory, the workspace root, the profile,
+session metadata or an arbitrary project search, and do not treat the missing
+ref as an operation-schema problem. A trusted, unique locator supplied by the
+user or by an operation result is used normally; this discipline only forbids
+self-invented authority locators.
+
+## Known context reuse first
+
+```text
+KNOWN_CONTEXT_REUSE_FIRST=yes
+```
+
+1. A Skill already materialized in your model-visible context (same ref and,
+   where available, the same version/digest) is not reopened; keep using it.
+2. When a prior search/result card already carries candidate refs C, D, E and
+   the first hydrated candidate does not satisfy the need, reuse the prior card
+   and continue with D/E. A candidate miss is **not** a search miss: do not
+   rerun the identical query by default.
+3. A result/ref already hydrated with unchanged source identity/digest is not
+   hydrated again by default.
+4. Re-retrieval is justified only when: the source/digest changed, the
+   candidate set is exhausted, the query/scope/intent changed, the information
+   is no longer in context (host compaction), freshness/CAS explicitly
+   requires a fresh authoritative read, or the prior result is incomplete for
+   the new question.
+5. Read-before-write means a fresh authority read before a mutation/CAS
+   decision — not a re-read at every reasoning step. Never probe live
+   authoritative state to "refresh" context that is already present and
+   unchanged.
+
+This is usage guidance only: no context registry, Skill-open cache, retrieval
+cache or session-state authority exists or may be assumed.
+
 ## Production model (thin, LLM-first)
 
 You own plan interpretation, workflow strategy, sequencing, delegation,
@@ -74,6 +121,10 @@ checkpoint / integrate / push
 
 Need exact operation arguments or semantics
   -> help(operation=...)
+
+plan_ref missing/ambiguous (bare #39)
+  -> needs_input: ask for owner/repo#number; never discover the repo
+     (host/runtime/workspace/profile/session/search)
 
 AUTHORITY_DENIED
   -> stop; never search for another transport (no raw gh / shell / API)
@@ -174,7 +225,9 @@ AUTHORITY_DENIED         -> stop. Do not retry to bypass and never seek an
   alternative transport (raw gh, generic API, shell). Choose an authorized
   action or stop with a blocker/needs_input.
 PLAN_REF_REQUIRED        -> the operation needs the canonical plan_ref
-  locator (owner/repo#number) in its arguments.
+  locator (owner/repo#number) in its arguments. If the user gave only a bare
+  number (#39) or nothing unique, ask for owner/repo#number; never infer the
+  repository (see Plan locator discipline).
 MILESTONE_APPROVAL_REQUIRED -> the current Milestone approval is "no" for
   the requested side effect. This is the user gate: stop and report; never
   bypass it.

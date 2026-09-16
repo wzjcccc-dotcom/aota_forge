@@ -377,7 +377,10 @@ class TestT6TaskMainSkillIsThinCanonical:
 class TestT7MinimalNonContradictoryAffordances:
     def test_thin_eager_guidance_is_discovery_pointer_not_manual(self) -> None:
         guidance = af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE
-        assert len(guidance) < 1200
+        # AF #59 M2 acceptance-polish R1/R2: the historical 1200-char guard
+        # moved to the canonical thin discovery-pointer bound (still far below
+        # the per-Skill bootstrap bound and enforced by role_bootstrap).
+        assert len(guidance) <= af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS
         assert "payload.work_role" in guidance
         assert "work_item_ref" in guidance
         assert "milestone_ref" in guidance

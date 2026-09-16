@@ -167,7 +167,10 @@ class TestG2MinimalDiscoverySurvives:
         assert "skill.open" in eager
         assert "payload.work_role" in eager
         assert "work_item_ref" in eager and "milestone_ref" in eager
-        assert len(eager) < 1200
+        # AF #59 M2 acceptance-polish R1/R2: the historical 1200-char guard
+        # moved to the canonical thin discovery-pointer bound (still far below
+        # the per-Skill bootstrap bound and enforced by role_bootstrap).
+        assert len(eager) <= af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS
 
 
 class TestG3SoulStaysIdentity:

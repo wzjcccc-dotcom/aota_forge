@@ -38,6 +38,7 @@ from aota_forge.work_plane.af_roles import (
     AF_SKILL_REGISTRY,
     AF_SOULS,
     AF_TOOL_SURFACES,
+    THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS,
     _ROLE_SKILL_DEFS,
     curated_eager_guidance,
     get_allowed_universe_for_role,
@@ -394,6 +395,12 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
             curated = materialized_override
         elif thin_task_main_binding and skill_id == "aota-task-main-control":
             curated = thin_task_main_eager_guidance()
+            if len(curated) > THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS:
+                raise RoleBootstrapError(
+                    "thin task-main eager guidance exceeds "
+                    f"{THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS} chars",
+                    code="GOVERNED_OPERATION_FAILURE",
+                )
         else:
             curated = curated_eager_guidance(skill_id)
         if not curated or not curated.strip():

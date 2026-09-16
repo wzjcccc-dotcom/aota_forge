@@ -420,22 +420,42 @@ ROLE_BOOTSTRAP_BINDS_PLAN = False
 ROLE_BOOTSTRAP_BINDS_SESSION = False
 ROLE_BOOTSTRAP_MECHANICAL_GATE = False
 
+# AF #59 M2 acceptance-polish (R1/R2): model-visible usage-contract
+# disciplines. These are guidance flags only — no session/context engine, no
+# cache and no new authority is introduced.
+AMBIGUOUS_PLAN_NUMBER_IS_NOT_PLAN_REF = True
+MISSING_PLAN_REF_FAST_STOP = True
+SESSION_DIRECTORY_PROFILE_REPO_INFERENCE = False
+UNNECESSARY_DISCOVERY_BEFORE_NEEDS_INPUT = False
+KNOWN_CONTEXT_REUSE_FIRST = True
+
+# Compact discovery-pointer bound for the thin materialized guidance. It stays
+# well below the generic per-Skill bootstrap bound; a growing text means it is
+# turning into a manual and must be moved into the base Skill instead.
+THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS = 1600
+
 THIN_TASK_MAIN_EAGER_GUIDANCE = (
-    "AF task-main (ordinary session = unbound). You own plan interpretation, "
-    "reasoning, workflow strategy, delegation, review frequency and Milestone "
-    "judgment; the Control Plane enforces authority and grounds mechanical "
-    "facts only. role.bootstrap is normal startup guidance, not authority, not "
-    "a Plan/session bind; plan_ref is a per-operation authority locator. Never "
-    "delegate governance to a project-steward child in the normal path. "
-    "Routing: Plan/state -> github.issue.read / github.issue.comments.read "
-    "(plan_ref). Source -> workspace.search / workspace.read (plan_ref). by_ref "
-    "-> result.hydrate (exact claims); open aota-result-hydration when needed. "
-    "Dispatch -> handoff.write(mode=work_item, payload.work_role + "
-    "work_item_ref + milestone_ref) then task.start(role=same, handoff_ref); "
-    "full procedure in aota-task-main-control (skill.open). Git -> git.status "
-    "/ git.diff. Governance mutation / Milestone or Plan close / checkpoint / "
-    "integrate / push -> open aota-task-main-governance@1.0.0 first. Exact args "
-    "-> help(operation=...). AUTHORITY_DENIED -> stop; no other transport. "
+    "AF task-main (unbound). You own reasoning, workflow, delegation, review "
+    "frequency and Milestone judgment; the Control Plane enforces authority "
+    "only. role.bootstrap is startup guidance, not authority/Plan/session "
+    "bind; plan_ref is an operation locator, never authority. Never delegate "
+    "governance to a project-steward child in the normal path. Routing: Plan "
+    "-> github.issue.read / github.issue.comments.read; Source -> "
+    "workspace.search / workspace.read (plan_ref). by_ref -> result.hydrate "
+    "(exact claims); aota-result-hydration when needed. Dispatch -> "
+    "handoff.write(mode=work_item, "
+    "payload.work_role+work_item_ref+milestone_ref) then task.start(role=same, "
+    "handoff_ref); procedure in aota-task-main-control (skill.open). Git -> "
+    "git.status / git.diff. Governance mutation / close / checkpoint / "
+    "integrate / push -> open aota-task-main-governance@1.0.0 first. Exact "
+    "args -> help(operation=...). A bare #N is not a plan_ref: without a "
+    "trusted unique locator, ask for owner/repo#number; never infer the repo "
+    "from host/runtime/workspace/cwd/profile/session/search. Reuse known "
+    "context first: don't reopen a Skill already in context (same "
+    "ref/digest); after a candidate miss use the same card's remaining refs, "
+    "not a repeat search/hydrate; re-read only on source/digest change, "
+    "exhausted candidates, changed intent, compaction, freshness/CAS, or an "
+    "incomplete prior result. AUTHORITY_DENIED -> stop; no other transport. "
     "UNKNOWN_INPUT -> read Skill/help; never probe live state. No "
     "approval/evidence -> needs_input."
 )
@@ -443,6 +463,11 @@ THIN_TASK_MAIN_EAGER_GUIDANCE = (
 
 def thin_task_main_eager_guidance() -> str:
     """Usable thin task-main base guidance (routing, not authority)."""
+    if len(THIN_TASK_MAIN_EAGER_GUIDANCE) > THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS:
+        raise ValueError(
+            "thin task-main eager guidance exceeds "
+            f"{THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS} chars; move detail to the base Skill"
+        )
     return THIN_TASK_MAIN_EAGER_GUIDANCE
 
 

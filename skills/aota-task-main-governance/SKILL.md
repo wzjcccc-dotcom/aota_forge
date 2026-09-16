@@ -38,7 +38,11 @@ outside your normal path.
    canonical `plan_ref` (`owner/repo#number`) in its arguments. The ref
    locates the current server-side authority (live Plan + trusted project +
    lifecycle authority); a ref is an authority **locator**, never authority
-   itself, and a session/directory/profile grants nothing.
+   itself, and a session/directory/profile grants nothing. If the user gives
+   only a bare issue number (`#39`) and no trusted unique `plan_ref`, stop and
+   ask for `owner/repo#number` — never explore `host.status` /
+   `runtime.status`, the workspace, the profile, session metadata or a project
+   search to infer the repository.
 2. **Exactly five canonical managed comments** carry the living governance
    state. Each managed comment's body carries the marker
    `COMMENT_ROLE=<role>` as its first line, where `<role>` is one of:
@@ -76,6 +80,13 @@ Before ANY governed mutation:
 
 Stale snapshots cannot silently overwrite newer authoritative content;
 identical content is an idempotent no-op (`already_applied=true`).
+
+This is a mutation discipline, not a re-read-per-step rule: an already-open
+Skill, a prior read result and its digest, or a prior search/card whose refs
+are still valid stay usable (`KNOWN_CONTEXT_REUSE_FIRST=yes`). Take a fresh
+authoritative read when a mutation/CAS needs current truth; do not repeat
+`skill.open` / the same search / the same hydrate without a real freshness
+reason.
 
 ## Destructive body semantics (M2/W3 — explicit)
 

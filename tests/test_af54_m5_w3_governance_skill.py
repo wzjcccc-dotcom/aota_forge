@@ -66,7 +66,10 @@ class TestW3ProgressiveRegistration:
         assert "aota-task-main-governance@1.0.0" in refs
         # eager guidance must stay short and must not contain the manual
         eager = af_roles.thin_task_main_eager_guidance()
-        assert len(eager) < 1200
+        # AF #59 M2 acceptance-polish R1/R2: the historical 1200-char guard
+        # moved to the canonical thin discovery-pointer bound (still far below
+        # the per-Skill bootstrap bound and enforced by role_bootstrap).
+        assert len(eager) <= af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS
         assert "milestone_progress_index" not in eager
         assert "decision_change_log" not in eager
 

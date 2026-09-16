@@ -112,3 +112,35 @@ PY
 
 The live `opencode.json` `aota-task-main` agent prompt is updated in place
 (operator-owned runtime config). Do NOT restart/modify :4095, :3000, :3001.
+
+## 6. M2 acceptance-polish R1/R2 (2026-09-16, same Plan #59 / same M2)
+
+Real :3002 acceptance exposed two task-main usage-contract issues; the bounded
+repair stays model-visible guidance only (no engine, no cache, no new
+authority):
+
+```text
+AMBIGUOUS_PLAN_NUMBER_IS_NOT_PLAN_REF=yes
+MISSING_PLAN_REF_FAST_STOP=yes
+SESSION_DIRECTORY_PROFILE_REPO_INFERENCE=no
+UNNECESSARY_DISCOVERY_BEFORE_NEEDS_INPUT=no
+KNOWN_CONTEXT_REUSE_FIRST=yes
+```
+
+* A bare issue number (`#39`) is not a canonical `plan_ref`: task-main asks for
+  `owner/repo#number` immediately (a full Issue URL normalizes
+  deterministically to it) and never explores host/runtime/workspace/profile/
+  session/search to infer the repository.
+* Already-materialized Skills, prior read results/digests, and prior
+  search/card candidate refs are reused first; a candidate miss is not a
+  search miss; a fresh authoritative read happens for a mutation/CAS need, not
+  at every reasoning step.
+
+Landing surfaces: the base Skill (`skills/aota-task-main-control/SKILL.md`),
+the bootstrap compact guidance (`THIN_TASK_MAIN_EAGER_GUIDANCE`, bounded at
+`THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS=1600`), the governance Skill's
+locator/freshness note, the startup seed and the same compact lines in the
+live `aota-task-main` agent prompt.
+
+Deploy: materialize the seed body, update the live `opencode.json` agent
+prompt in place (backup first), restart ONLY `opencode-af-reference.service`.
