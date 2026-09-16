@@ -139,7 +139,7 @@ class TestR2KnownContextReuseFirst:
         materialized = entry["materialized"]
         assert materialized == _eager()
         assert "Reuse known context first" in materialized
-        assert "don't reopen a Skill already in context" in materialized
+        assert "reopen a Skill already in context" in materialized
         assert "same ref/digest" in materialized
         assert "candidate miss" in materialized
         assert "remaining refs" in materialized
@@ -149,6 +149,8 @@ class TestR2KnownContextReuseFirst:
         assert "KNOWN_CONTEXT_REUSE_FIRST=yes" in skill
         assert "is not reopened; keep using it" in skill
         assert "same version/digest" in skill
+        assert "bootstrap-materialized base guidance is likewise not re-requested" in skill
+        assert "don't re-run role.bootstrap or reopen a Skill already in context" in _eager()
 
     def test_candidate_miss_is_not_search_miss(self) -> None:
         skill = _base_skill()

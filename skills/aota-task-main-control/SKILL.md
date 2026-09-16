@@ -57,6 +57,8 @@ KNOWN_CONTEXT_REUSE_FIRST=yes
 
 1. A Skill already materialized in your model-visible context (same ref and,
    where available, the same version/digest) is not reopened; keep using it.
+   The bootstrap-materialized base guidance is likewise not re-requested
+   without a freshness reason.
 2. When a prior search/result card already carries candidate refs C, D, E and
    the first hydrated candidate does not satisfy the need, reuse the prior card
    and continue with D/E. A candidate miss is **not** a search miss: do not
