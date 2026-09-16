@@ -40,14 +40,15 @@ UNNECESSARY_DISCOVERY_BEFORE_NEEDS_INPUT=no
 
 When an operation needs canonical Plan identity and the user supplied only a
 bare issue number (`#39`), the canonical `plan_ref` is insufficient. Ask for
-`owner/repo#number` immediately — a full GitHub Issue URL is used by
-normalizing it deterministically to `owner/repo#number` (never guess any
-component). Do **not** "resolve" the repository by exploring `host.status` /
-`runtime.status`, the current directory, the workspace root, the profile,
-session metadata or an arbitrary project search, and do not treat the missing
-ref as an operation-schema problem. A trusted, unique locator supplied by the
-user or by an operation result is used normally; this discipline only forbids
-self-invented authority locators.
+`owner/repo#number` immediately — a full GitHub Issue URL or its
+`owner/repo/issues/N` path form is used by normalizing it deterministically to
+`owner/repo#number` (never guess any component). Do **not** "resolve" the
+repository by exploring `host.status` / `runtime.status`, the current
+directory, the workspace root, the profile, session metadata or an arbitrary
+project search, and do not treat the missing ref as an operation-schema
+problem. A trusted, unique locator supplied by the user or by an operation
+result is used normally; this discipline only forbids self-invented authority
+locators.
 
 ## Known context reuse first
 

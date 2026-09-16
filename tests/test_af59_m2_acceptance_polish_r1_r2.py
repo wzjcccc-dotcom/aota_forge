@@ -58,11 +58,11 @@ class TestR1AmbiguousPlanLocatorFastStop:
 
     def test_guidance_forbids_repository_inference_from_host_runtime_workspace(self) -> None:
         eager = _eager()
-        skill = _base_skill()
+        skill = " ".join(_base_skill().split())
         gov = _governance_skill()
         assert "never infer" in eager
         assert "host/runtime/workspace/cwd/profile/session/search" in eager
-        assert "Do **not** \"resolve\" the repository by exploring `host.status`" in skill
+        assert 'Do **not** "resolve" the repository by exploring `host.status`' in skill
         for source in (
             "host.status",
             "runtime.status",
@@ -76,8 +76,8 @@ class TestR1AmbiguousPlanLocatorFastStop:
         assert "ask for `owner/repo#number`" in gov
 
     def test_missing_plan_ref_is_needs_input_not_discovery(self) -> None:
-        skill = _base_skill()
-        assert "do not treat the missing\nref as an operation-schema problem" in skill
+        skill = " ".join(_base_skill().split())
+        assert "do not treat the missing ref as an operation-schema problem" in skill
         assert "needs_input: ask for owner/repo#number" in skill
 
     def test_canonical_plan_ref_stays_usable_and_bare_number_fails_closed(self) -> None:
@@ -101,7 +101,9 @@ class TestR1AmbiguousPlanLocatorFastStop:
     def test_full_issue_url_is_documented_as_deterministic_normalization(self) -> None:
         skill = _base_skill()
         assert "GitHub Issue URL" in skill
-        assert "normalizing it deterministically to `owner/repo#number`" in skill
+        assert "`owner/repo/issues/N` path form" in skill
+        assert "normalizing it deterministically to" in skill
+        assert "owner/repo/issues/N path" in _eager()
 
     def test_authority_rules_unchanged(self) -> None:
         from aota_forge.work_plane import af_roles
