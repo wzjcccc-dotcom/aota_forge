@@ -82,8 +82,11 @@ AF_SOULS: dict[str, Soul] = {r: get_soul_for_role(r) for r in WORK_ROLES}
 # Tool surfaces — converged least-privilege visibility (visibility != authority)
 #
 # Actual-operation matrix (current operation names):
-# task-main: task_main.* + handoff.write/handoff.open/task.start eager,
-#            result.hydrate progressive; no workspace/test/shell
+# task-main: the canonical #59 thin/ref-scoped exposure (role.bootstrap,
+#            skill.open, help, introspection, Plan-bound GitHub/Git/workspace,
+#            handoff/task lifecycle, result.hydrate); eager = read-classified,
+#            progressive = mutation-classified. Legacy task_main.* workflow
+#            operations are not part of the thin surface.
 # analyst: search/read + handoff.open/handoff.write/task.return eager;
 #          write+hydrate+shell progressive conditional; no test/task_main
 # coder: search/read/write/test + handoff.open/handoff.write/task.return eager,
@@ -104,9 +107,19 @@ WORKSPACE_WRITE = "workspace.write"
 RESULT_HYDRATE = "result.hydrate"
 RESTRICTED_SHELL = "restricted_shell.run"
 TEST_RUN_OP = "test.run"
-TASK_MAIN_OPS = ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection")
+# AF #59 M2/W1-D: the legacy workflow-brain operations are no longer part of
+# the task-main normal surface. Their legacy implementations stay present
+# (not deleted in this Plan); they are simply not visible to the thin
+# task-main role.
+LEGACY_TASK_MAIN_WORKFLOW_OPS: tuple[str, ...] = (
+    "task_main.activate_milestone",
+    "task_main.recover_coordinator",
+    "task_main.advance_once",
+    "task_main.submit_work_projection",
+)
 ROLE_BOOTSTRAP_OP = "role.bootstrap"
 SKILL_OPEN_OP = "skill.open"
+HELP_OP = "help"
 HANDOFF_WRITE_OP = "handoff.write"
 HANDOFF_OPEN_OP = "handoff.open"
 TASK_START_OP = "task.start"
@@ -117,16 +130,69 @@ WORKER_NORMAL_PATH_OPS = (HANDOFF_OPEN_OP, HANDOFF_WRITE_OP, TASK_RETURN_OP)
 
 TASK_MAIN_NORMAL_PATH_OPERATIONS_VISIBLE = True
 WORKER_LIFECYCLE_OPERATIONS_VISIBLE = True
+# AF #59 M2/W1-D: the task-main role surface derives from the one canonical
+# role-filtered actual exposure (never a parallel hand-maintained list).
+LEGACY_TASK_MAIN_WORKFLOW_OPS_VISIBLE_TO_THIN_TASK_MAIN = False
 
 _TOOL_SURFACES: dict[str, ToolRoleSurface] = {}
+
+
+def task_main_thin_operations() -> tuple[str, ...]:
+    """Canonical current #59 task-main operation exposure (derived).
+
+    The single source is the light ``work_plane.task_main_exposure`` module
+    (the same set ``role.bootstrap.AOTA_MCP`` and unbound ``operations.list``
+    report). No second operation catalog is introduced.
+    """
+    from aota_forge.work_plane.task_main_exposure import (
+        canonical_task_main_operations,
+    )
+
+    return canonical_task_main_operations()
+
+
+# AF #59 M2/W1-D: accepted contract disposition — result.hydrate stays
+# progressive for every role (large-reference ref remains optional; it is
+# never an eager capability). This is a bounded disposition, not a second
+# operation catalog.
+_ALWAYS_PROGRESSIVE_ON_TASK_MAIN: frozenset[str] = frozenset({RESULT_HYDRATE})
+
+
+def _task_main_surface_partition() -> tuple[list[str], list[str]]:
+    """Deterministic eager/progressive split derived from the descriptors.
+
+    Read-classified exposed operations are eager (except the accepted
+    always-progressive hydration disposition); the remaining
+    (mutation-classified) operations are progressive. Classification comes
+    from the same canonical descriptor source used by the task-main
+    descriptors, never a hand-maintained list.
+    """
+    from aota_forge.core.contracts.loader import (
+        discover_canonical_project_root,
+        load_operation_descriptor_map,
+    )
+
+    descriptors = load_operation_descriptor_map(discover_canonical_project_root())
+    eager: list[str] = []
+    progressive: list[str] = []
+    for name in task_main_thin_operations():
+        descriptor = descriptors.get(name)
+        read_write = getattr(descriptor, "read_write", "write")
+        if read_write == "read" and name not in _ALWAYS_PROGRESSIVE_ON_TASK_MAIN:
+            eager.append(name)
+        else:
+            progressive.append(name)
+    return eager, progressive
+
 
 def _build_tool_surfaces() -> None:
     if _TOOL_SURFACES:
         return
+    task_main_eager, task_main_progressive = _task_main_surface_partition()
     _TOOL_SURFACES["task-main"] = create_role_tool_surface(
         "task-main",
-        eager=list(TASK_MAIN_OPS) + list(TASK_MAIN_NORMAL_PATH_OPS),
-        progressive=[RESULT_HYDRATE],
+        eager=task_main_eager,
+        progressive=task_main_progressive,
     )
     _TOOL_SURFACES["analyst"] = create_role_tool_surface(
         "analyst",
@@ -337,41 +403,46 @@ def curated_eager_guidance(skill_id: str) -> str:
         raise KeyError(f"no curated eager guidance for {skill_id!r}")
 
 # ---------------------------------------------------------------------------
-# AF #53 M2/W2: thin task-main eager guidance.
+# AF #59 M2/W1-B/W1-C: thin task-main base guidance (routing table).
 #
-# The legacy task-main eager guidance above prescribes the frozen coordinator
-# cycle (activate/recover/advance_once, integrated-review transition). The
-# thin task-main host has no legacy workflow operations on its surface, so its
-# advisory guidance describes capability and operating behavior only: the
-# task-main LLM owns workflow strategy, review frequency/order, repair
-# strategy and Milestone judgment. This text is guidance, never authority
-# (SKILL_IS_AUTHORITY=no), and encodes no mechanical workflow sequence.
+# ``role.bootstrap`` is the normal task-main startup guidance and delivers
+# this text as the materialized eager content of ``aota-task-main-control``.
+# It is guidance, never authority, never a Plan bind and never a session
+# bind (SKILL_IS_AUTHORITY=no). It teaches the base workflow, the progressive
+# Skill routing and the stop conditions; detailed procedures live in the
+# progressive Skills.
 # ---------------------------------------------------------------------------
 
 THIN_TASK_MAIN_GUIDANCE_IS_ADVISORY = True
 THIN_TASK_MAIN_GUIDANCE_IS_WORKFLOW_PRESCRIPTIVE = False
+ROLE_BOOTSTRAP_IS_AUTHORITY = False
+ROLE_BOOTSTRAP_BINDS_PLAN = False
+ROLE_BOOTSTRAP_BINDS_SESSION = False
+ROLE_BOOTSTRAP_MECHANICAL_GATE = False
 
 THIN_TASK_MAIN_EAGER_GUIDANCE = (
-    "Task-main (thin host): you own plan interpretation, workflow strategy, "
-    "delegation, review frequency and Milestone judgment; the Control Plane "
-    "enforces authority and grounds mechanical facts only. During the "
-    "Governance 1.x transition you ALSO own Plan/Milestone reconciliation "
-    "and project-lifecycle decisions (git checkpoint/integrate; governance "
-    "records on the bound Plan Issue); never delegate governance to a "
-    "project-steward child. Discover context via workspace.search/read and "
-    "github.issue.read/comments.read, then reason the next semantic action "
-    "(targets ground from your trusted binding). Child dispatch: "
-    "handoff.write(mode=work_item, payload.work_role + work_item_ref + "
-    "milestone_ref + objective + bounded_scope) then task.start(role=same "
-    "work_role, handoff_ref). Full procedures live in your Skills: "
-    "aota-task-main-control and aota-task-main-governance (open via "
-    "skill.open). Stop with needs_input when evidence is insufficient; "
-    "never invent authority, scope or identity."
+    "AF task-main (ordinary session = unbound). You own plan interpretation, "
+    "reasoning, workflow strategy, delegation, review frequency and Milestone "
+    "judgment; the Control Plane enforces authority and grounds mechanical "
+    "facts only. role.bootstrap is normal startup guidance, not authority, not "
+    "a Plan/session bind; plan_ref is a per-operation authority locator. Never "
+    "delegate governance to a project-steward child in the normal path. "
+    "Routing: Plan/state -> github.issue.read / github.issue.comments.read "
+    "(plan_ref). Source -> workspace.search / workspace.read (plan_ref). by_ref "
+    "-> result.hydrate (exact claims); open aota-result-hydration when needed. "
+    "Dispatch -> handoff.write(mode=work_item, payload.work_role + "
+    "work_item_ref + milestone_ref) then task.start(role=same, handoff_ref); "
+    "full procedure in aota-task-main-control (skill.open). Git -> git.status "
+    "/ git.diff. Governance mutation / Milestone or Plan close / checkpoint / "
+    "integrate / push -> open aota-task-main-governance@1.0.0 first. Exact args "
+    "-> help(operation=...). AUTHORITY_DENIED -> stop; no other transport. "
+    "UNKNOWN_INPUT -> read Skill/help; never probe live state. No "
+    "approval/evidence -> needs_input."
 )
 
 
 def thin_task_main_eager_guidance() -> str:
-    """Advisory thin task-main operating guidance (capability, not workflow)."""
+    """Usable thin task-main base guidance (routing, not authority)."""
     return THIN_TASK_MAIN_EAGER_GUIDANCE
 
 

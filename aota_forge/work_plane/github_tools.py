@@ -22,6 +22,14 @@ Hard invariants
 * GITHUB_MUTATION_CAS_GUARDED=yes — stale reads cannot silently overwrite
   newer authoritative content (expected updated_at for the Issue body/state,
   expected body digest for comments; read-back verification after write).
+* PORTABLE_PLAN_WHOLE_BODY_GUARD=yes — a full body replacement of a
+  recognized Portable Plan Issue is pre-validated by the canonical
+  ``normalize_portable_plan`` contract (structural validity + Plan identity
+  preservation) and fails ``INVALID_INPUT`` (``PLAN_BODY_INVALID``
+  diagnostic) BEFORE any provider mutation.
+* DESTRUCTIVE_BODY_SEMANTICS_EXPLICIT=yes — ``github.issue.update.body`` is
+  WHOLE BODY REPLACEMENT (never a patch, merge or append); bounded
+  Plan-state changes prefer ``section_marker`` + ``section_content``.
 * EXISTING_GOVERNANCE_MECHANICS_REUSED=yes — the trusted gh transport reuses
   the stable operator gh mechanics (GH_CONFIG_DIR + rtk gh, typed endpoints,
   structured argv, timeout, bounded output) already owned by
@@ -307,6 +315,97 @@ def create_github_authority(
 
 def _digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# AF #59 M2/W3 — Portable Plan whole-body replacement guard
+#
+# A whole-body replacement of a recognized Portable Plan Issue must be a
+# structurally valid Portable Plan that preserves the Plan identity before
+# any provider mutation happens. Reuses the canonical
+# ``normalize_portable_plan`` contract; this is never a second Plan parser.
+# Errors ride the existing canonical invalid-input contract with the
+# ``PLAN_BODY_INVALID`` diagnostic in the message.
+# ---------------------------------------------------------------------------
+
+_PORTABLE_PLAN_KIND_TOKENS = frozenset({"portable_plan"})
+_PLAN_KIND_MARKER_RE = re.compile(r"^\s*PLAN_(?:TYPE|KIND)\s*=\s*portable_plan\s*$", re.MULTILINE)
+
+
+def _plan_kind_tokens(fields: Mapping[str, Any]) -> str:
+    kind = fields.get("PLAN_KIND")
+    if not isinstance(kind, str) or not kind.strip():
+        kind = fields.get("PLAN_TYPE")
+    return kind.strip() if isinstance(kind, str) else ""
+
+
+def _is_portable_plan_body(body: str) -> bool:
+    """Bounded recognition of a Portable Plan Issue body.
+
+    The current authoritative body is recognized when it normalizes as a
+    Portable Plan (``PLAN_TYPE``/``PLAN_KIND`` = ``portable_plan``) or, for a
+    malformed body, when it declares the canonical kind markers. Non-Plan
+    Issues are not constrained by the guard.
+    """
+    from aota_forge.core.plan.normalize import PlanNormalizationError, normalize_portable_plan
+
+    try:
+        doc = normalize_portable_plan(body)
+    except PlanNormalizationError:
+        return bool(_PLAN_KIND_MARKER_RE.search(body))
+    except Exception:
+        return bool(_PLAN_KIND_MARKER_RE.search(body))
+    return _plan_kind_tokens(doc.current_fields) in _PORTABLE_PLAN_KIND_TOKENS
+
+
+def _portable_plan_replacement_error(cur_body: str, candidate: str) -> str | None:
+    """Return a bounded diagnostic when a whole-body replacement must fail.
+
+    ``None`` means the candidate may proceed to the existing CAS/provider
+    path. Applies only to a target recognized as a Portable Plan Issue; an
+    invalid or incomplete candidate returns a diagnostic BEFORE any GitHub
+    mutation.
+    """
+    if not _is_portable_plan_body(cur_body):
+        return None
+    from aota_forge.core.plan.normalize import PlanNormalizationError, normalize_portable_plan
+
+    try:
+        doc = normalize_portable_plan(candidate)
+    except PlanNormalizationError as exc:
+        return f"candidate does not normalize as a Portable Plan ({exc.diagnostic_code})"
+    except ForgeError as exc:
+        return f"candidate does not normalize as a Portable Plan ({exc.code})"
+
+    fields = doc.current_fields
+    kind = _plan_kind_tokens(fields)
+    if kind not in _PORTABLE_PLAN_KIND_TOKENS:
+        return "candidate is missing PLAN_TYPE=portable_plan / PLAN_KIND=portable_plan"
+    if not (fields.get("PROJECT_ID") or "").strip():
+        return "candidate is missing PROJECT_ID"
+    if not (doc.plan_status or "").strip():
+        return "candidate is missing PLAN_STATUS"
+    if doc.plan_status == "active" and not (doc.current_milestone or "").strip():
+        return "active candidate is missing CURRENT_MILESTONE"
+
+    try:
+        current_doc = normalize_portable_plan(cur_body)
+    except Exception:
+        current_doc = None
+    if current_doc is not None:
+        cur_fields = current_doc.current_fields
+        cur_project = (cur_fields.get("PROJECT_ID") or "").strip()
+        candidate_project = (fields.get("PROJECT_ID") or "").strip()
+        if cur_project and cur_project != candidate_project:
+            return (
+                "candidate PROJECT_ID does not preserve the current Plan identity "
+                f"({candidate_project!r} != {cur_project!r})"
+            )
+        cur_kind = _plan_kind_tokens(cur_fields)
+        if cur_kind and cur_kind != kind:
+            return "candidate PLAN_TYPE/PLAN_KIND does not preserve the current Plan kind"
+    return None
+
 
 
 class GhCliGovernancePort:
@@ -617,6 +716,14 @@ class BoundedGitHubToolProvider:
         cur_state = current.get("state")
         candidate_body: str | None = None
         if body is not None:
+            # AF #59 M2/W3: a full replacement of a recognized Portable Plan
+            # Issue must be a structurally valid Portable Plan preserving the
+            # Plan identity — fail BEFORE any provider mutation otherwise.
+            plan_body_error = _portable_plan_replacement_error(cur_body, body)
+            if plan_body_error is not None:
+                return ToolResponse.failure(
+                    {"code": "INVALID_INPUT", "message": f"PLAN_BODY_INVALID: {plan_body_error}"}
+                )
             candidate_body = body
         elif section_marker is not None:
             # Mechanical marker-delimited subsection upsert (idempotent; the

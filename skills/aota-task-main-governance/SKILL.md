@@ -1,19 +1,20 @@
 ---
 name: aota-task-main-governance
-description: Transitional Governance 1.x procedure for task-main — Plan Issue body authority, exactly five managed comments, read-before-write reconciliation, progress/defect/appendix/decision records, Milestone close, known-good checkpoint and frontier integration
+description: Governance 1.x procedure for task-main — Plan Issue body authority, exactly five managed comments, ref-scoped read-before-write reconciliation, progress/defect/appendix/decision records, Milestone close, known-good checkpoint and frontier integration
 category: governance
 tags: [aota, task-main, governance, plan-issue, managed-comments, git-lifecycle]
 ---
 
-# AOTA Task-Main Governance 1.x (transitional, task-main-owned)
+# AOTA Task-Main Governance 1.x (task-main-owned)
 
 > `SKILL_IS_AUTHORITY=no`. This is the canonical detailed procedure for
 > operational governance that task-main performs **directly** during the
 > Governance 1.x transition. The AF runtime decides authorization; guidance
-> is never authority. Tool primitive contracts live in the thin operation
-> descriptions (`role.bootstrap` OPERATION_GUIDANCE / this file's §Tools).
-> GitHub transport mechanics have exactly one canonical owner — this file —
-> and are never duplicated into the base task-main Skill or SOUL.
+> is never authority. Tool primitive contracts live in the canonical
+> operation descriptors (`role.bootstrap` OPERATION_GUIDANCE / `help` / this
+> file's §Tools). GitHub transport mechanics have exactly one canonical owner
+> — this file — and are never duplicated into the base task-main Skill or
+> SOUL.
 
 ## Why task-main owns this now
 
@@ -29,14 +30,15 @@ Governance 2.0 will later convert stewardship into a subsystem/plugin.
 `AOTA_TASK_LIFECYCLE_REINTRODUCED=no` — the historical lifecycle Skill stays
 outside your normal path.
 
-## Authoritative model (Governance 1.x)
+## Authoritative model (current #59 truth)
 
-1. **The Plan GitHub Issue body is the normative Plan authority.** Plan
-   identity is your bound `plan_ref` (`owner/repo#number`, shown in
-   `role.bootstrap` `CURRENT_EXECUTION_CONTEXT.plan_ref`). Never restate or
-   redirect owner/repo/issue in operation arguments — the Control Plane
-   grounds every `github.*` call from the trusted binding; a foreign target
-   is mechanically unreachable.
+1. **The Plan GitHub Issue body is the normative Plan authority.**
+   An ordinary task-main session is **unbound**: it carries no Plan or
+   session binding. Every Plan-bound governance/Git operation supplies the
+   canonical `plan_ref` (`owner/repo#number`) in its arguments. The ref
+   locates the current server-side authority (live Plan + trusted project +
+   lifecycle authority); a ref is an authority **locator**, never authority
+   itself, and a session/directory/profile grants nothing.
 2. **Exactly five canonical managed comments** carry the living governance
    state. Each managed comment's body carries the marker
    `COMMENT_ROLE=<role>` as its first line, where `<role>` is one of:
@@ -55,17 +57,17 @@ outside your normal path.
 
 Before ANY governed mutation:
 
-1. `github.issue.read {}` (card view) — Plan body truth
+1. `github.issue.read {plan_ref}` (card view) — Plan body truth
    (`state`, `updated_at`, `body_digest`).
-2. `github.issue.comments.read {}` — current managed comments
+2. `github.issue.comments.read {plan_ref}` — current managed comments
    (`comment_id`, `updated_at`, `body`, `body_digest`). Hydrate a truncated
    body through the attached `output_ref` claims (`result.hydrate`) before
    rewriting that comment wholesale.
 3. Compose the new content from the freshest read + your semantic judgment.
 4. Write with the CAS token from the read:
-   - comment update: `github.issue.comment.update {comment_id, body,
-     expected_digest}` — `expected_digest` is the `body_digest` you read;
-   - issue body/state update: `github.issue.update {…,
+   - comment update: `github.issue.comment.update {plan_ref, comment_id,
+     body, expected_digest}` — `expected_digest` is the `body_digest` you read;
+   - issue body/state update: `github.issue.update {plan_ref, …,
      expected_updated_at}` with `body`, or a bounded
      `section_marker`/`section_content` upsert, or `state` for Plan closure.
 5. A `GITHUB_CAS_CONFLICT` means someone (or something) moved the state
@@ -74,6 +76,43 @@ Before ANY governed mutation:
 
 Stale snapshots cannot silently overwrite newer authoritative content;
 identical content is an idempotent no-op (`already_applied=true`).
+
+## Destructive body semantics (M2/W3 — explicit)
+
+```text
+github.issue.update.body            = WHOLE BODY REPLACEMENT
+  not a patch, not a merge, not an append. The candidate replaces the
+  complete normative Plan body. For a recognized Portable Plan Issue the
+  candidate MUST be a complete structurally valid Portable Plan preserving
+  the Plan identity (PROJECT_ID + kind); an invalid/incomplete candidate is
+  rejected with INVALID_INPUT / PLAN_BODY_INVALID BEFORE any GitHub mutation.
+  Whole-body replacement is only for genuinely necessary full rewrites.
+
+github.issue.update.section_marker + section_content
+  = BOUNDED_SECTION_UPSERT (preferred for bounded Plan-state changes)
+
+github.issue.update.state
+  = open|closed (Plan closure; not a body rewrite)
+
+expected_updated_at                 = CAS precondition (required)
+```
+
+Default guidance: use `section_marker` + `section_content` for bounded
+Plan-state changes; use `state=closed` for closure; send a whole body only
+when the complete replacement genuinely is the Plan.
+
+## No live mutation probing (M2/W3)
+
+Never probe mutation schemas against live authoritative Plan data. If an
+operation shape is unclear:
+
+1. read the relevant Skill (this file / the base Skill),
+2. call `help(operation=...)` for the exact canonical mechanics,
+3. if still unclear, stop with `needs_input`.
+
+Do not send synthetic live mutation payloads to learn semantics. A failed
+experiment can corrupt normative Plan authority; there is no "test write"
+against the real Plan.
 
 ## Milestone procedures
 
@@ -103,11 +142,12 @@ identical content is an idempotent no-op (`already_applied=true`).
 ### Close
 1. Integrated review outcome recorded (e.g. `M5_RV1=PASS`).
 2. Known-good checkpoint: commit the accepted worktree frontier
-   (`git.checkpoint`), then FF-only integration (`git.integrate` with the
+   (`git.checkpoint {plan_ref, message, expected_head?}`), then FF-only
+   integration (`git.integrate {plan_ref, expected_old_sha}` with the
    `expected_old_sha` you observed via `git.status`), then sync the trusted
-   remote (`git.push`) when governance requires local == remote. Verify
-   `LOCAL_MAIN == ORIGIN_MAIN == <checkpoint sha>` from operation results;
-   never force.
+   remote (`git.push {plan_ref, expected_remote_sha?}`) when governance
+   requires local == remote. Verify `LOCAL_MAIN == ORIGIN_MAIN ==
+   <checkpoint sha>` from operation results; never force.
 3. Update the progress index (`*_STATUS=completed`, `*_ACCEPTED=yes`,
    `KNOWN_GOOD_CHECKPOINT=<sha>`), development notes final state, appendix
    with the checkpoint/integration evidence.
@@ -122,33 +162,34 @@ identical content is an idempotent no-op (`already_applied=true`).
 
 You own the semantic decisions: *this Work is accepted*, *a checkpoint is
 appropriate now*, *the Milestone should integrate*. The Control Plane
-mechanically enforces: your authority, the trusted worktree, expected-old
-CAS, FF-only, the configured remote/ref. `git.integrate`/`git.push` exist
-only when the operator configured them for this session;
-`AUTHORITY_DENIED` there means "not configured/not yours", never a puzzle to
-bypass. Do not create meaningless commits to exercise the tools; commit
-accepted work at real decision points. Destructive verbs (reset --hard,
-clean, force push, rebase, arbitrary argv) do not exist here — do not seek
-them via restricted shell (`GIT_VIA_RESTRICTED_SHELL=no`,
+mechanically enforces: your authority, the trusted worktree located by
+`plan_ref`, expected-old CAS, FF-only, the configured remote/ref. The
+lifecycle operations additionally require the **current** Milestone approval
+server-side; `MILESTONE_APPROVAL_REQUIRED` is the user gate — stop, report,
+never bypass. `AUTHORITY_DENIED` means "not configured/not yours", never a
+puzzle to bypass. Do not create meaningless commits to exercise the tools;
+commit accepted work at real decision points. Destructive verbs (reset
+--hard, clean, force push, rebase, arbitrary argv) do not exist here — do not
+seek them via restricted shell (`GIT_VIA_RESTRICTED_SHELL=no`,
 `GITHUB_VIA_RESTRICTED_SHELL=no`; `aota-restricted-shell` is residual
 fallback only).
 
-## Tools (thin primitive contract — mechanics canonical here for the
-transition; descriptions stay in OPERATION_GUIDANCE)
+## Tools (thin primitive contract — mechanics canonical here for the transition; descriptions stay in OPERATION_GUIDANCE / help)
 
 ```text
-github.issue.read            {view? card|full}
-github.issue.comments.read   {max_comments?}
-github.issue.update          {body? | section_marker+section_content? | state? , expected_updated_at}
-github.issue.comment.update  {comment_id, body, expected_digest?}
-git.status / git.diff        {} (bounded reads of the trusted worktree)
-git.checkpoint               {message, expected_head?}
-git.integrate                {expected_old_sha}     (FF-only, CAS)
-git.push                     {expected_remote_sha?} (FF-only, never force)
+github.issue.read            {plan_ref, view? card|full}
+github.issue.comments.read   {plan_ref, max_comments?}
+github.issue.update          {plan_ref, body? | section_marker+section_content? | state? , expected_updated_at}
+github.issue.comment.update  {plan_ref, comment_id, body, expected_digest?}
+git.status / git.diff        {plan_ref} (bounded reads of the trusted worktree)
+git.checkpoint               {plan_ref, message, expected_head?}
+git.integrate                {plan_ref, expected_old_sha}     (FF-only, CAS)
+git.push                     {plan_ref, expected_remote_sha?} (FF-only, never force)
 ```
 
 All through `aota.invoke` — the only Agent-facing AF MCP tool. Large results
-arrive `by_ref`; hydrate via the attached claims.
+arrive `by_ref`; hydrate via the attached claims. For the exact current
+canonical arguments call `help(operation=...)`.
 
 ## Stop conditions
 

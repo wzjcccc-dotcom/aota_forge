@@ -57,30 +57,21 @@ SECOND_SESSION_SYSTEM_CREATED = False
 SECOND_MCP_SERVER_CREATED = False
 
 # Operations whose unbound authority is located by the canonical ``plan_ref``
-# input (the smallest existing-ref carrier; added to these canonical
+# input (the smallest existing-ref carrier; declared on these canonical
 # descriptors in .aota/contracts/operations.yaml).
 # AF #59 M1 acceptance repair R4/R5: the task-main Git inspection reads and
 # the governed Git lifecycle mutations are ref-scoped the same way; the Git
 # mechanics themselves (trusted worktree, expected-head/CAS, FF-only
 # integration, configured integration branch/remote) stay exactly the
 # existing task-main providers.
-PLAN_REF_SCOPED_OPERATIONS: frozenset[str] = frozenset(
-    {
-        "github.issue.read",
-        "github.issue.comments.read",
-        "github.issue.update",
-        "github.issue.comment.update",
-        "handoff.write",
-        "handoff.open",
-        "task.start",
-        "workspace.read",
-        "workspace.search",
-        "git.status",
-        "git.diff",
-        "git.checkpoint",
-        "git.integrate",
-        "git.push",
-    }
+# AF #59 M2/W2-F: the canonical sets (ref-scoped + ordinary task-main
+# exposure) live in the light work-plane module so the role catalog and this
+# authority locator derive from the same one truth.
+from aota_forge.work_plane.task_main_exposure import (  # noqa: E402
+    PLAN_REF_SCOPED_OPERATIONS,
+    TASK_MAIN_UNBOUND_EXTRAS,
+    TASK_MAIN_UNBOUND_OPERATIONS,
+    canonical_task_main_operations,
 )
 
 # Read-classified ref-scoped operations never require milestone approval
@@ -411,6 +402,9 @@ class RefScopedAuthorityResolver:
 __all__ = [
     "PLAN_REF_SCOPED_OPERATIONS",
     "READ_CLASSIFIED_OPERATIONS",
+    "TASK_MAIN_UNBOUND_EXTRAS",
+    "TASK_MAIN_UNBOUND_OPERATIONS",
+    "canonical_task_main_operations",
     "REF_SCOPED_AUTHORITY",
     "SESSION_BINDING_REQUIRED",
     "REF_IS_AUTHORITY_LOCATOR",

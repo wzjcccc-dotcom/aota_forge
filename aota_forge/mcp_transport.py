@@ -281,6 +281,20 @@ W2_OPERATIONS: tuple[str, ...] = (
     "skill.open",
     "test.run",
 )
+# AF #59 M2/W2-E: ``help`` is one small read-only canonical operation. It is
+# a backup reader for exact tool mechanics, derived from the canonical
+# operation descriptors; it is never a second schema authority, an alias or a
+# generic shell/help surface.
+HELP_OPERATION = "help"
+# AF #59 M2/W2-F: the canonical read-only introspection operations are part
+# of the one Agent-visible operation catalog (they are served by the same
+# Core registry handlers in every session shape) and are exactly the unbound
+# read-only Progress introspection set.
+INTROSPECTION_OPERATIONS: tuple[str, ...] = (
+    "host.status",
+    "operations.list",
+    "runtime.status",
+)
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
 # operations are Agent-visible through the same single aota.invoke transport.
 # Exposure is an exposure boundary only; server-side role/authority validation
@@ -312,7 +326,7 @@ GITHUB_READ_OPERATIONS: tuple[str, ...] = ("github.issue.read", "github.issue.co
 GITHUB_MUTATION_OPERATIONS: tuple[str, ...] = ("github.issue.update", "github.issue.comment.update")
 GITHUB_OPERATIONS: tuple[str, ...] = GITHUB_READ_OPERATIONS + GITHUB_MUTATION_OPERATIONS
 LOGICAL_OPERATIONS: tuple[str, ...] = (
-    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS
+    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS + INTROSPECTION_OPERATIONS + (HELP_OPERATION,)
 )
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
@@ -947,6 +961,15 @@ class _SharedAotaMcpAdapter:
             arguments = {}
         if not isinstance(arguments, dict):
             return _governed_error(self.binding, operation, "INPUT_TYPE_INVALID", f"arguments must be object, got {type(arguments).__name__}")
+        # AF #59 M2/W2-E: the exact read-only contract reader is served by the
+        # same canonical descriptor derivation in every session shape (it
+        # grants nothing; SKILL_IS_AUTHORITY=no).
+        if operation == HELP_OPERATION:
+            return self._invoke_bound_help(arguments)
+        # AF #59 M2/W2-F: canonical read-only introspection in bound sessions
+        # through the same Core registry handlers (exposure is not authority).
+        if operation in INTROSPECTION_OPERATIONS:
+            return self._invoke_bound_introspection(operation, arguments)
         # Canonical dispatch via Core (owns validation + provider selection).
         try:
             from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
@@ -960,6 +983,28 @@ class _SharedAotaMcpAdapter:
         # delegate to the canonical helper; this adapter performs only protocol
         # projection and never decides durability/kind/digest/bounds/mode.
         return _project_tool_response(self.binding, operation, tool_response)
+
+    def _invoke_bound_help(self, arguments: dict[str, Any]) -> McpToolResult:
+        """Read-only exact contract reader in a trusted bound session.
+
+        The same canonical descriptor derivation as the unbound path; it
+        resolves no provider authority and grants nothing.
+        """
+        payload, error = _help_projection_result(arguments)
+        if error is not None:
+            return _governed_error(self.binding, HELP_OPERATION, error["code"], error["message"])
+        return _governed_from_response(self.binding, HELP_OPERATION, ToolResponse.success(payload or {}))
+
+    def _invoke_bound_introspection(self, operation: str, arguments: dict[str, Any]) -> McpToolResult:
+        """Canonical read-only introspection in a trusted bound session.
+
+        Same Core registry handlers as the unbound path; exposure is not
+        authority and these operations grant nothing.
+        """
+        payload, error = _introspection_payload_result(operation, arguments)
+        if error is not None:
+            return _governed_error(self.binding, operation, error["code"], error["message"])
+        return _governed_from_response(self.binding, operation, ToolResponse.success(payload or {}))
 
     def _invoke_task_main(self, operation: str, validated: dict[str, Any], descriptor: Any) -> McpToolResult:
         """Deprecated transport seam (W1 convergence).
@@ -1002,11 +1047,9 @@ UNBOUND_OPERATIONS_REQUIRE_CANONICAL_REFS = True
 # handlers) are available in an ordinary task-main session without any
 # Plan/session binding. They read host/registry state and grant nothing:
 # EXPOSURE_IS_NOT_AUTHORITY=yes, READ_AUTHORITY_IS_WRITE_AUTHORITY=no.
-UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = (
-    "host.status",
-    "operations.list",
-    "runtime.status",
-)
+# AF #59 M2/W2-F: one definition — the same introspection set is part of the
+# canonical Agent-visible operation catalog (INTROSPECTION_OPERATIONS).
+UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = INTROSPECTION_OPERATIONS
 
 
 @dataclass(frozen=True)
@@ -1094,22 +1137,19 @@ def _unbound_inline_success(operation: str, payload: dict[str, Any]) -> McpToolR
 def _unbound_agent_visible_operations() -> tuple[str, ...]:
     """Unbound host operations the model can actually use (honest catalog).
 
-    Ref-scoped Plan operations (Git reads + governed lifecycle included) +
-    hydration + optional role.bootstrap + read-only Progress introspection +
-    read-only Skill access. Legacy workflow-brain operations (task_main.*)
-    stay off the thin normal path.
+    AF #59 M2/W2-F: exactly the one canonical role-filtered actual exposure
+    (``canonical_task_main_operations``): ref-scoped Plan operations (Git
+    reads + governed lifecycle included) + hydration + role.bootstrap +
+    read-only Skill access + the ``help`` contract reader + read-only
+    Progress introspection. Legacy workflow-brain operations (task_main.*)
+    stay off the thin normal path. ``operations.list`` and ``help`` lookup
+    eligibility derive from this same canonical set.
     """
     from aota_forge.composition.ref_scoped_authority import (
-        PLAN_REF_SCOPED_OPERATIONS,
+        canonical_task_main_operations,
     )
 
-    return tuple(
-        sorted(
-            set(PLAN_REF_SCOPED_OPERATIONS)
-            | {"result.hydrate", "role.bootstrap", "skill.open"}
-            | set(UNBOUND_READ_INTROSPECTION_OPERATIONS)
-        )
-    )
+    return canonical_task_main_operations()
 
 
 def _unbound_task_main_skill_metadata() -> dict[str, list[dict[str, Any]]]:
@@ -1119,25 +1159,37 @@ def _unbound_task_main_skill_metadata() -> dict[str, list[dict[str, Any]]]:
     (``_ROLE_SKILL_DEFS`` -> ``AllowedSkillUniverse`` / ``StaticSkillRegistry``
     via the canonical ``af_roles`` helpers). No second Skill registry is
     created; the bound role.bootstrap composes the same catalog.
+
+    AF #59 M2/W1-B: the base Skill is eager/usable — the exact versioned ref,
+    digest and the canonical compact base guidance (``materialized``) are
+    delivered directly. It is never silently downgraded to metadata-only.
     """
     from aota_forge.work_plane.af_roles import (
         AF_SKILL_REGISTRY,
         eager_skill_refs_for_role,
         progressive_skill_metadata,
+        thin_task_main_eager_guidance,
     )
+    from aota_forge.work_plane.skill import compute_skill_digest
 
     role = "task-main"
     eager_entries: list[dict[str, Any]] = []
     for ref in eager_skill_refs_for_role(role):
         skill_id = ref.rsplit("@", 1)[0]
         entry = AF_SKILL_REGISTRY.get(role, skill_id, "1.0.0")
+        materialized = thin_task_main_eager_guidance() if skill_id == "aota-task-main-control" else ""
         eager_entries.append(
             {
                 "skill_id": skill_id,
                 "ref": ref,
-                "digest": entry.identity.digest if entry is not None else "",
+                "digest": compute_skill_digest(materialized) if materialized else (entry.identity.digest if entry is not None else ""),
+                "source_digest": entry.identity.digest if entry is not None else "",
                 "provenance": "aota_forge",
                 "delivery": "eager",
+                "materialized": materialized,
+                "content_length": len(materialized),
+                "byte_length": len(materialized.encode("utf-8")),
+                "is_truncated": False,
             }
         )
     return {
@@ -1146,19 +1198,53 @@ def _unbound_task_main_skill_metadata() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def _unbound_role_bootstrap_payload() -> dict[str, Any]:
-    """Bounded unbound role.bootstrap payload (optional useful operation).
+def _unbound_soul_projection() -> dict[str, Any]:
+    """Bounded usable SOUL projection from the one AF soul catalog."""
+    from aota_forge.work_plane.af_roles import get_soul_for_role
 
-    No trusted role/task context exists without a binding; this payload
-    reports the ordinary host session state, the Agent-visible operations and
-    the trusted task-main Skill identity/ref metadata (from the one AF
-    catalog) so the model can proceed with ref-scoped operations and open
-    Skills via ``skill.open``. It carries no Plan/session approval state
-    (never session-scoped authority).
+    soul = get_soul_for_role("task-main")
+    content = soul.content if hasattr(soul, "content") else str(soul)
+    fields = {
+        "purpose": "",
+        "lifecycle": "",
+        "boundary": "",
+        "cannot_do": "",
+    }
+    for line in content.splitlines():
+        low = line.strip().lower()
+        for key in fields:
+            if low.startswith(f"{key}:"):
+                fields[key] = line.split(":", 1)[1].strip()
+    return {
+        "role": "task-main",
+        "version": getattr(soul, "version", "1.0.0"),
+        "purpose": fields["purpose"][:500],
+        "lifecycle": fields["lifecycle"][:500],
+        "boundary": fields["boundary"][:500],
+        "cannot_do": fields["cannot_do"][:500],
+        "IS_AUTHORITY": False,
+    }
+
+
+def _unbound_role_bootstrap_payload() -> dict[str, Any]:
+    """Bounded unbound role.bootstrap payload (normal startup base guidance).
+
+    No trusted role/task binding exists in an ordinary host session, but
+    bootstrap is the normal task-main startup: it delivers the Role/Soul, the
+    usable base Skill guidance (eager/materialized, never metadata-only), the
+    progressive Skill refs with ``use_when`` routing, the actual AOTA
+    operation surface, compact operation guidance, the ``help`` fallback and
+    truthful unbound runtime facts. It carries no Plan/session approval state
+    and is never authority, Plan binding or session binding.
     """
+    from aota_forge.work_plane.task_main_descriptors import (
+        build_thin_task_main_operation_guidance,
+    )
+
     skills = _unbound_task_main_skill_metadata()
     return {
         "ROLE": "task-main",
+        "SOUL": _unbound_soul_projection(),
         "HOST_SESSION": "unbound",
         "AOTA_MCP": {
             "available": True,
@@ -1173,9 +1259,25 @@ def _unbound_role_bootstrap_payload() -> dict[str, Any]:
             "argument": "ref",
             "IS_AUTHORITY": False,
         },
+        "OPERATION_GUIDANCE": build_thin_task_main_operation_guidance(),
+        "OPERATION_CONTRACT_READER": {
+            "operation": HELP_OPERATION,
+            "argument": "operation",
+            "purpose": "exact tool mechanics backup; not the primary workflow",
+            "IS_AUTHORITY": False,
+        },
+        "RUNTIME_CONTEXT": {
+            "session": "unbound",
+            "plan_binding": "none",
+            "session_binding": "none",
+            "authority_source": "ref_scoped_operation_boundary",
+            "plan_ref_is_authority_locator_only": True,
+            "root_ref_required_for_normal_plan_work": False,
+        },
         "SESSION_BINDING_PRESENT": False,
         "SESSION_BINDING_REQUIRED": False,
         "ROLE_BOOTSTRAP_REQUIRED_FOR_CHAT": False,
+        "ROLE_BOOTSTRAP_MECHANICAL_GATE": False,
         "LEGACY_WORKFLOW_OPERATIONS_EXPOSED": False,
         "AUTHORITY_SOURCE": "ref_scoped_operation_boundary",
         "GUIDANCE": (
@@ -1190,9 +1292,156 @@ def _unbound_role_bootstrap_payload() -> dict[str, Any]:
     }
 
 
+# AF #59 M2/W2-E: the single canonical ``help`` contract reader. The output
+# is derived from the canonical operation descriptor (single schema
+# authority: .aota/contracts/operations.yaml via core_ingress) plus the
+# compact Skill routing that already exists in the base guidance. It is not
+# a second descriptor store, not an alias table and never a generic shell.
+_HELP_RELEVANT_SKILLS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("github.",), "aota-task-main-governance@1.0.0"),
+    (("git.",), "aota-task-main-governance@1.0.0"),
+    (("workspace.",), "aota-workspace-operations@1.0.0"),
+    (("result.hydrate",), "aota-result-hydration@1.0.0"),
+    (("handoff.",), "aota-task-main-control@1.0.0"),
+    (("task.start", "task.return"), "aota-task-main-control@1.0.0"),
+    (("role.bootstrap", "skill.open", HELP_OPERATION), "aota-task-main-control@1.0.0"),
+    (("operations.list", "host.status", "runtime.status"), "aota-task-main-control@1.0.0"),
+)
+
+
+def _help_relevant_skill_ref(operation: str) -> str | None:
+    for prefixes, skill_ref in _HELP_RELEVANT_SKILLS:
+        for prefix in prefixes:
+            if operation == prefix or operation.startswith(prefix):
+                return skill_ref
+    return None
+
+
+def help_operation_projection(operation: str) -> dict[str, Any]:
+    """Compact bounded projection derived from the canonical descriptor.
+
+    Raises ``ForgeError`` (``UNKNOWN_OPERATION`` / ``INPUT_TYPE_INVALID``) for
+    an unknown or non-string operation — exact lookup only, never fuzzy.
+    """
+    from aota_forge.core_ingress import resolve_descriptor
+
+    descriptor = resolve_descriptor(operation)
+    declared = {spec.name: spec.type for spec in descriptor.inputs}
+    required = sorted(name for name, type_text in declared.items() if not type_text.endswith("?"))
+    optional = sorted(name for name, type_text in declared.items() if type_text.endswith("?"))
+    projection: dict[str, Any] = {
+        "operation": descriptor.name,
+        "purpose": descriptor.description,
+        "read_or_write": descriptor.read_write,
+        "kind": "mutation" if descriptor.read_write == "write" else "read",
+        "required_inputs": required,
+        "optional_inputs": optional,
+        "authority_locator": "plan_ref" if "plan_ref" in declared else None,
+        "relevant_skill_ref": _help_relevant_skill_ref(descriptor.name),
+        "common_typed_errors": list(descriptor.errors or ()),
+        "IS_AUTHORITY": False,
+    }
+    if "body" in declared:
+        projection["body_semantics"] = "WHOLE_BODY_REPLACEMENT"
+    if "section_marker" in declared and "section_content" in declared:
+        projection["section_marker+section_content"] = "BOUNDED_SECTION_UPSERT"
+        if "body" in declared:
+            projection["preferred_plan_state_update"] = "section_marker+section_content"
+    if "state" in declared:
+        projection["state"] = "open|closed"
+    if "expected_updated_at" in declared:
+        projection["CAS_semantics"] = "expected_updated_at=CAS_PRECONDITION"
+    elif "expected_digest" in declared:
+        projection["CAS_semantics"] = "expected_digest=CAS_PRECONDITION"
+    elif getattr(descriptor, "subject_revision_precondition", False):
+        projection["CAS_semantics"] = "SUBJECT_REVISION_PRECONDITION"
+    return projection
+
+
+def _help_projection_result(arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """Shared mechanical input handling for the ``help`` operation.
+
+    Returns ``(payload, None)`` on success or ``(None, {"code", "message"})``
+    on a typed failure. Exact lookup only; the projection itself is derived
+    from the one canonical descriptor authority.
+    """
+    operation_input = arguments.get("operation")
+    extra = set(arguments.keys()) - {"operation"}
+    if extra:
+        return None, {"code": "UNKNOWN_INPUT", "message": f"unknown input for operation 'help': {sorted(extra)!r}"}
+    if not isinstance(operation_input, str) or not operation_input.strip():
+        return None, {"code": "INVALID_INPUT", "message": "help requires a canonical operation name string"}
+    try:
+        return help_operation_projection(operation_input.strip()), None
+    except ForgeError as exc:
+        return None, {"code": getattr(exc, "code", "UNKNOWN_OPERATION"), "message": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - fail closed
+        return None, {"code": "GOVERNED_OPERATION_FAILURE", "message": _bounded_failure_message(str(exc))}
+
+
+def _introspection_payload_result(
+    operation: str, arguments: dict[str, Any]
+) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """Shared canonical read-only introspection via the Core registry seam.
+
+    ``operations.list`` / ``host.status`` / ``runtime.status`` are canonical
+    general operations bound to Core ingress handlers and are read-only by
+    descriptor; they resolve no provider authority and grant nothing. One
+    implementation serves every session shape (same resolution/validation/
+    ingress path), never a second dispatch plane.
+    """
+    from aota_forge.core_ingress import dispatch_via_core
+
+    try:
+        envelope = dispatch_via_core(operation, dict(arguments))
+    except ForgeError as exc:
+        return None, {"code": getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), "message": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        return None, {"code": "GOVERNED_OPERATION_FAILURE", "message": _bounded_failure_message(str(exc))}
+    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+        error = envelope.get("error") if isinstance(envelope, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        message = error.get("message") if isinstance(error, dict) else None
+        return None, {
+            "code": str(code or "GOVERNED_OPERATION_FAILURE"),
+            "message": _bounded_failure_message(str(message or "governed operation failed")),
+        }
+    payload: dict[str, Any] = {}
+    data = envelope.get("data")
+    if isinstance(data, dict):
+        payload["data"] = data
+    evidence = envelope.get("evidence")
+    if isinstance(evidence, dict) and evidence:
+        payload["evidence"] = evidence
+    warnings = envelope.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        payload["warnings"] = list(warnings)
+    return payload, None
+
+
+def _unbound_operations_listing(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Role-filtered actual exposure listing (same canonical set as bootstrap).
+
+    Every entry's metadata derives from the canonical descriptor; no second
+    operation catalog is maintained.
+    """
+    from aota_forge.core_ingress import resolve_descriptor
+
+    entries: list[dict[str, Any]] = []
+    for name in _unbound_agent_visible_operations():
+        descriptor = resolve_descriptor(name)
+        entries.append(
+            {
+                "operation": descriptor.name,
+                "description": descriptor.description,
+                "read_only": descriptor.read_write == "read",
+            }
+        )
+    return {"data": {"operations": entries, "role": "task-main", "session": "unbound"}}
+
+
 class _UnboundAotaAdapter:
     """Single-entry transport for ordinary unbound host sessions.
-
     Owns only: envelope checks, exposure gating, operation-time ref-scoped
     authority resolution (delegated to the canonical resolver) and protocol
     projection. Resolution/validation/provider selection stay in core_ingress.
@@ -1361,6 +1610,10 @@ class _UnboundAotaAdapter:
         # Read-only Skill guidance: same AF catalog/universe as bound sessions.
         if operation == "skill.open":
             return self._invoke_unbound_skill_open(arguments)
+        # AF #59 M2/W2-E: exact read-only operation contract reader derived
+        # from the canonical descriptors (never a second schema authority).
+        if operation == HELP_OPERATION:
+            return self._invoke_unbound_help(arguments)
         # Read-only Progress introspection: canonical Core ingress handlers.
         if operation in UNBOUND_READ_INTROSPECTION_OPERATIONS:
             return self._invoke_read_introspection(operation, arguments)
@@ -1407,43 +1660,33 @@ class _UnboundAotaAdapter:
             )
         return _unbound_inline_success("skill.open", dict(payload))
 
+    def _invoke_unbound_help(self, arguments: dict[str, Any]) -> McpToolResult:
+        """Read-only exact operation contract reader (AF #59 M2/W2-E).
+
+        Exact canonical lookup only (case-sensitive, no fuzzy/aliases). The
+        projection is derived from the canonical descriptor; unknown
+        operations fail with the canonical typed ``UNKNOWN_OPERATION``.
+        """
+        payload, error = _help_projection_result(arguments)
+        if error is not None:
+            return _unbound_governed_error(HELP_OPERATION, error["code"], error["message"])
+        return _unbound_inline_success(HELP_OPERATION, payload or {})
+
     def _invoke_read_introspection(self, operation: str, arguments: dict[str, Any]) -> McpToolResult:
         """Canonical read-only Progress introspection (no authority needed).
 
-        ``operations.list`` / ``host.status`` / ``runtime.status`` are
-        canonical general operations bound to Core ingress handlers and are
-        read-only by descriptor; they resolve no provider authority and grant
-        nothing. Delegates to the canonical ``dispatch_via_core`` seam (same
-        resolution/validation/ingress path), never a second dispatch plane.
+        AF #59 M2/W2-F: in an ordinary unbound task-main session
+        ``operations.list`` returns exactly the canonical role-filtered actual
+        exposure (the same set ``role.bootstrap.AOTA_MCP`` reports), derived
+        from the one canonical source. Bound sessions keep the canonical
+        Core registry listing.
         """
-        from aota_forge.core_ingress import dispatch_via_core
-
-        try:
-            envelope = dispatch_via_core(operation, dict(arguments))
-        except ForgeError as exc:
-            return _unbound_governed_error(operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
-        except Exception as exc:  # noqa: BLE001
-            return _unbound_governed_error(operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
-        if not isinstance(envelope, dict) or envelope.get("ok") is not True:
-            error = envelope.get("error") if isinstance(envelope, dict) else None
-            code = error.get("code") if isinstance(error, dict) else None
-            message = error.get("message") if isinstance(error, dict) else None
-            return _unbound_governed_error(
-                operation,
-                str(code or "GOVERNED_OPERATION_FAILURE"),
-                _bounded_failure_message(str(message or "governed operation failed")),
-            )
-        payload: dict[str, Any] = {}
-        data = envelope.get("data")
-        if isinstance(data, dict):
-            payload["data"] = data
-        evidence = envelope.get("evidence")
-        if isinstance(evidence, dict) and evidence:
-            payload["evidence"] = evidence
-        warnings = envelope.get("warnings")
-        if isinstance(warnings, list) and warnings:
-            payload["warnings"] = list(warnings)
-        return _unbound_inline_success(operation, payload)
+        if operation == "operations.list":
+            return _unbound_inline_success(operation, _unbound_operations_listing(operation, arguments))
+        payload, error = _introspection_payload_result(operation, arguments)
+        if error is not None:
+            return _unbound_governed_error(operation, error["code"], error["message"])
+        return _unbound_inline_success(operation, payload or {})
 
     def _dispatch_with_binding_unbound(
         self, operation: str, arguments: dict[str, Any], canonical: Any
@@ -1681,6 +1924,8 @@ __all__ = [
     "M2_OPERATIONS",
     "TASK_MAIN_OPERATIONS",
     "HANDOFF_TASK_OPERATIONS",
+    "INTROSPECTION_OPERATIONS",
+    "HELP_OPERATION",
     "INTERNAL_TASK_MAIN_OPERATIONS",
     "BOUNDED_MCP_OPERATIONS",
     "LOGICAL_CAPABILITY_SURFACE",

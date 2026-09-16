@@ -1,13 +1,33 @@
 ---
 name: aota-task-main-control
-description: Task-main thin production usage contract — semantic child dispatch, Plan Work identity, typed-error recovery, bounded delegation
+description: Task-main thin production usage contract — unbound ref-scoped operation model, progressive Skill routing, semantic child dispatch, Plan Work identity, typed-error recovery
 category: orchestration
-tags: [aota, task-main, handoff, task.start, work-identity]
+tags: [aota, task-main, handoff, task.start, work-identity, routing]
 ---
 
-# AOTA Task-Main Control — Thin Production Normal Path
+# AOTA Task-Main Control — Thin Production Base Skill
 
-> `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. This Skill is the canonical detailed usage guidance for the thin task-main role. The AF runtime decides authorization; guidance is never authority. Tool visibility is not authority. `ROLE_SKILL_IS_PRIMARY_USAGE_GUIDANCE=yes`.
+> `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. This is
+> the canonical base Skill for the thin task-main role and the routing table
+> to the progressive Skills. The AF runtime decides authorization; guidance
+> is never authority. Tool visibility is not authority.
+> `ROLE_SKILL_IS_PRIMARY_USAGE_GUIDANCE=yes`.
+
+## Session model (current truth)
+
+```text
+ordinary task-main session = unbound
+plan_ref = per-operation authority locator (owner/repo#number)
+plan_ref != authority
+session != authority
+directory != authority
+profile != authority
+```
+
+`role.bootstrap` is the normal startup guidance/capability discovery
+(`ROLE_BOOTSTRAP_NORMAL_STARTUP=yes`); it is **not** a mechanical gate, not a
+Plan bind and not a session bind. A safe read never requires bootstrap to
+have been called first, and no first-message Plan grammar exists.
 
 ## Production model (thin, LLM-first)
 
@@ -20,26 +40,64 @@ frequency, Work order, or Milestone advancement.
 You also own the project-lifecycle decisions during the Governance 1.x
 transition: broad read of project/Plan evidence, the checkpoint/integration
 decisions, and the Plan/Milestone governance reconciliation itself. Open the
-progressive `aota-task-main-governance` Skill whenever a governance
-procedure is needed (Plan Issue truth, managed comments, progress index,
-defect register, checkpoint close). Do not delegate governance to a
-project-steward child in the normal path; the legacy steward role exists for
-compatibility only.
+progressive `aota-task-main-governance` Skill **before** any governance
+mutation (see routing below). Do not delegate governance to a project-steward
+child in the normal path; the legacy steward role exists for compatibility
+only.
+
+## Routing table (base Skill owns this)
+
+```text
+Read Plan/status
+  -> github.issue.read / github.issue.comments.read      (arguments carry plan_ref)
+
+Inspect source
+  -> workspace.search / workspace.read                   (plan_ref; root_ref normally not required)
+  -> open aota-workspace-operations when detailed workspace rules are needed
+
+Prior result came back by_ref
+  -> result.hydrate with the exact attached claims
+  -> open aota-result-hydration when the hydration procedure is needed
+
+Dispatch a child
+  -> handoff.write(mode=work_item, plan_ref, payload = semantic intent)
+  -> task.start(plan_ref, role=<same work_role>, handoff_ref)
+  (this base Skill owns the normal dispatch procedure)
+
+Inspect Git
+  -> git.status / git.diff                               (plan_ref)
+
+Plan/Milestone governance mutation
+Milestone close, Plan close
+checkpoint / integrate / push
+  -> open aota-task-main-governance@1.0.0 BEFORE proceeding
+
+Need exact operation arguments or semantics
+  -> help(operation=...)
+
+AUTHORITY_DENIED
+  -> stop; never search for another transport (no raw gh / shell / API)
+
+UNKNOWN_INPUT / INPUT_TYPE_INVALID
+  -> read this Skill / the relevant progressive Skill / help(operation=...);
+     do not repeatedly probe live authoritative state to guess a schema
+```
 
 ## Normal path
 
 Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 
 1. Read Plan/context on demand: `workspace.read` / `workspace.search` for
-   local evidence; `github.issue.read` / `github.issue.comments.read` for
-   the bound Plan Issue (owner/repo/issue are grounded from your trusted
-   binding — you never restate them). Reason the current Milestone, Work
-   Items and prior results from what you read.
+   local evidence; `github.issue.read` / `github.issue.comments.read` for the
+   Plan Issue you are working on (arguments carry the canonical `plan_ref`;
+   the Control Plane locates the authority server-side at the operation
+   boundary). Reason the current Milestone, Work Items and prior results from
+   what you read.
 2. Reason about the next semantic action.
 3. Write a bounded semantic handoff:
-   `handoff.write(mode="work_item", payload={...semantic intent...})`.
+   `handoff.write(mode="work_item", plan_ref=<ref>, payload={...semantic intent...})`.
 4. Start one permitted child role:
-   `task.start(role=<same work_role>, handoff_ref=<ref from handoff.write>)`.
+   `task.start(plan_ref=<ref>, role=<same work_role>, handoff_ref=<ref from handoff.write>)`.
 5. Consume the returned result/completion card (card-first; hydrate a
    `by_ref` result only through the exact claims attached to it).
 6. Reason again; choose the next action.
@@ -47,10 +105,9 @@ Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 You may choose coder, reviewer, analyst, or project-steward as child roles,
 subject to actual role policy. The Control Plane never picks the child role.
 
-`restricted_shell.run` may appear progressively on your surface and your
-binding may or may not carry shell authority; it is a residual affordance
-only. `AUTHORITY_DENIED` there means it is not available to you — do not
-probe it.
+`restricted_shell.run` is not part of your normal path; if it is not on your
+surface, do not seek it. `AUTHORITY_DENIED` means "not available to you" — do
+not probe it.
 
 ## work_item handoff contract (canonical)
 
@@ -71,7 +128,7 @@ Semantic intent you supply in `payload`:
 Example:
 
 ```json
-{"mode": "work_item", "payload": {
+{"mode": "work_item", "plan_ref": "owner/repo#59", "payload": {
   "work_role": "reviewer",
   "work_item_ref": "W1",
   "milestone_ref": "M2",
@@ -82,11 +139,13 @@ Example:
 }}
 ```
 
-Then: `aota.invoke(operation="task.start", arguments={"role": "reviewer", "handoff_ref": "<ref>"})`.
+Then: `aota.invoke(operation="task.start", arguments={"plan_ref": "owner/repo#59", "role": "reviewer", "handoff_ref": "<ref>"})`.
 
 The Control Plane supplies mechanics only: artifact/handoff identity,
 project/worktree binding, digests, timestamps, canonical task/attempt
-identity, parent session, timeouts, and Worker runtime/tool authority.
+identity, parent session, timeouts, and Worker runtime/tool authority. The
+`plan_ref` you pass is the authority locator for the trusted project and
+lifecycle authority — it never grants authority by itself.
 
 ## Work identity (yours to supply, never invented for you)
 
@@ -111,18 +170,24 @@ WORK_SCOPE_INSUFFICIENT  -> a required semantic intent is missing/invalid
 ROLE_HANDOFF_MISMATCH    -> task.start.role must equal the grounded handoff
   payload.work_role. Start the role the handoff names, or rewrite the
   handoff with the intended work_role. Zero child execution happened.
-AUTHORITY_DENIED         -> do not retry to bypass. Choose an authorized
-  role/tool or stop with a blocker/needs_input.
+AUTHORITY_DENIED         -> stop. Do not retry to bypass and never seek an
+  alternative transport (raw gh, generic API, shell). Choose an authorized
+  action or stop with a blocker/needs_input.
+PLAN_REF_REQUIRED        -> the operation needs the canonical plan_ref
+  locator (owner/repo#number) in its arguments.
+MILESTONE_APPROVAL_REQUIRED -> the current Milestone approval is "no" for
+  the requested side effect. This is the user gate: stop and report; never
+  bypass it.
 INVALID_MODE             -> work_item|milestone for task-main handoff.write;
   result is worker-only. Correct the mode.
 INVALID_PATH / PATH_ESCAPE / symlink -> correct to project-relative scope;
   never probe outside the authority you already have.
-UNKNOWN_INPUT / INPUT_TYPE_INVALID -> re-check the operation contract
-  (role.bootstrap OPERATION_GUIDANCE or this Skill), then re-issue;
-  repeated guessing is the failure, not the error.
+UNKNOWN_INPUT / INPUT_TYPE_INVALID -> re-check the operation contract via
+  this Skill / help(operation=...) and re-issue once; repeated guessing
+  against live state is the failure, not the error.
 UNKNOWN_REF / DIGEST_MISMATCH / CROSS_SCOPE_DENIED -> use the exact ref and
   digest claims attached to the prior result; hand-copied or stale
-  identity fails closed.
+  identity fails closed. Never trial-and-error other scope claims.
 timeout (test.run / child Worker budget) -> the scope is likely too broad;
   narrow verification or semantically decompose the work.
 ```
@@ -151,5 +216,8 @@ timeout (test.run / child Worker budget) -> the scope is likely too broad;
 - Never fabricate completion: a child is done only when its governed result
   says so (process exit is not semantic success), and Milestone claims must
   match durable evidence.
+- Never probe mutation schemas against live authoritative Plan data: read
+  the relevant Skill, call `help(operation=...)`, then proceed or stop.
+- No live mutation probing; no synthetic payload experiments on real Plans.
 - Respect authority boundaries: guidance and tool visibility are not
   authority; never invent authority, scope, identity, or session.

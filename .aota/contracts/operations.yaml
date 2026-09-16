@@ -580,6 +580,32 @@ contracts:
   - UNKNOWN_OPERATION
   - UNKNOWN_INPUT
   protocol_version: '1.0'
+- name: help
+  description: Bounded read-only operation contract reader derived from the canonical descriptors (exact lookup only; backup for exact tool mechanics when Skill/base guidance is insufficient)
+  inputs:
+  - name: operation
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: read
+  mutation_scope: null
+  required_authority: null
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: null
+  valid_successor_state: null
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: read
+  result_contract: null
+  errors:
+  - UNKNOWN_OPERATION
+  - INVALID_INPUT
+  - UNKNOWN_INPUT
+  - INPUT_SIZE_EXCEEDED
+  protocol_version: '1.0'
 - name: workspace.read
   description: Bounded workspace file read (authorized-root-scoped; root_ref selects a granted root)
   inputs:

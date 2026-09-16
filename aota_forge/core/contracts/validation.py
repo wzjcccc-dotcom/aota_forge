@@ -27,6 +27,15 @@ testable):
 * container nesting depth <= 8
 * total params keys <= 128
 * total serialized params <= 256 KiB
+
+AF #59 M2/W3 bounded large-text exception: the Plan-bound GitHub governance
+mutations legitimately carry a whole normative Portable Plan body or a
+managed comment body whose canonical form exceeds the generic 4096-character
+projection. These declared (operation, input) pairs get an explicit larger
+character bound here; the provider layer independently bounds the same
+content in bytes (``MAX_UPDATE_BODY_BYTES``). This is a per-operation
+declared bound, never a global relaxation and never a second schema
+authority.
 """
 
 from __future__ import annotations
@@ -45,6 +54,15 @@ from aota_forge.core.contracts.errors import (
 )
 
 MAX_STRING_LENGTH = 4096
+# AF #59 M2/W3: declared large-text bounds for the Plan-bound GitHub
+# governance mutations (whole normative Plan body / managed comment body).
+# The provider layer independently bounds the same content in bytes.
+MAX_GOVERNANCE_BODY_LENGTH = 64 * 1024
+LARGE_TEXT_INPUT_BOUNDS: dict[tuple[str, str], int] = {
+    ("github.issue.update", "body"): MAX_GOVERNANCE_BODY_LENGTH,
+    ("github.issue.update", "section_content"): MAX_GOVERNANCE_BODY_LENGTH,
+    ("github.issue.comment.update", "body"): MAX_GOVERNANCE_BODY_LENGTH,
+}
 MAX_INT_BITS = 63
 MAX_LIST_ITEMS = 256
 MAX_DICT_KEYS = 64
@@ -181,7 +199,7 @@ def _bounded_json_value(value: object, name: str, depth: int) -> None:
     raise InputTypeError(f"input contains unsupported value type: {name}")
 
 
-def _check_declared(type_text: str, value: object, name: str) -> None:
+def _check_declared(type_text: str, value: object, name: str, *, string_bound: int | None = None) -> None:
     """Validate one declared semantic input against its spec type."""
     base = _base_type(type_text)
     optional = _is_optional(type_text)
@@ -192,7 +210,8 @@ def _check_declared(type_text: str, value: object, name: str) -> None:
     if base == "str":
         if not isinstance(value, str):
             raise InputTypeError(f"input must be str: {name}")
-        if len(value) > MAX_STRING_LENGTH:
+        bound = MAX_STRING_LENGTH if string_bound is None else string_bound
+        if len(value) > bound:
             raise InputSizeError(f"input string too large: {name}")
         return
     if base == "int":
@@ -249,7 +268,12 @@ def validate_inputs(
     for key, value in params.items():
         spec = spec_by_name.get(key)
         if spec is not None:
-            _check_declared(spec.type, value, key)
+            _check_declared(
+                spec.type,
+                value,
+                key,
+                string_bound=LARGE_TEXT_INPUT_BOUNDS.get((descriptor.name, key)),
+            )
             validated[key] = value
         elif key in TRUSTED_ADAPTER_KEYS:
             _check_trusted(key, value)

@@ -133,22 +133,27 @@ _TASK_START_EXAMPLE = {"role": "coder", "handoff_ref": "<ref from handoff.write>
 # project-steward) per canonical role policy.
 _THIN_NORMAL_PATH_FLOW = (
     "choose child role and Plan Work identity -> handoff.write(mode=work_item, "
-    "payload = semantic intent) -> task.start(role=<same role>, handoff_ref=<ref>)"
+    "plan_ref + payload = semantic intent) -> task.start(role=<same role>, handoff_ref=<ref>)"
 )
 # AF #54 M2/W2: thin affordance ONLY. The canonical detailed handoff procedure
 # (semantic fields, work identity rules, typed-error recovery) lives in the
 # task-main Role Skill; this note keeps the single first-use invariant that
 # prevents the historical role/handoff mismatch, and the example now carries
 # the explicit Plan/Work semantic identity the thin grounding requires.
+# AF #59 M2: the ordinary task-main session is unbound — the canonical
+# plan_ref locator is supplied per operation (it locates the server-side
+# authority; it is never authority itself).
 _THIN_HANDOFF_WRITE_NOTE = (
-    "normal step 1; mode=work_item; payload carries the semantic child role "
-    "(payload.work_role) and the authoritative Plan Work identity "
-    "(work_item_ref, milestone_ref) per the task-main Skill; "
-    "payload.work_role MUST equal the subsequent task.start.role; "
-    "mechanical envelope fields are filled by AF"
+    "normal step 1; mode=work_item; supply the canonical plan_ref locator; "
+    "payload carries the semantic child role (payload.work_role) and the "
+    "authoritative Plan Work identity (work_item_ref, milestone_ref) per the "
+    "task-main Skill; payload.work_role MUST equal the subsequent "
+    "task.start.role; remaining envelope fields are filled by AF"
 )
+_PLAN_REF_EXAMPLE = "owner/repo#<plan-number>"
 _THIN_HANDOFF_WRITE_EXAMPLE = {
     "mode": "work_item",
+    "plan_ref": _PLAN_REF_EXAMPLE,
     "payload": {
         "work_role": "reviewer",
         "work_item_ref": "W1",
@@ -159,9 +164,14 @@ _THIN_HANDOFF_WRITE_EXAMPLE = {
 }
 _THIN_TASK_START_NOTE = (
     "normal step 2; role MUST equal the grounded durable handoff payload.work_role; "
-    "missing semantic work_role/work identity fails closed (typed) before dispatch"
+    "supply the same plan_ref locator; missing semantic work_role/work identity "
+    "fails closed (typed) before dispatch"
 )
-_THIN_TASK_START_EXAMPLE = {"role": "reviewer", "handoff_ref": "<ref from handoff.write>"}
+_THIN_TASK_START_EXAMPLE = {
+    "plan_ref": _PLAN_REF_EXAMPLE,
+    "role": "reviewer",
+    "handoff_ref": "<ref from handoff.write>",
+}
 
 # AF #54 M5/W1-W2: thin primitive contracts for the governed lifecycle
 # surfaces. Mechanics only — the semantic procedure (which comment is which,
@@ -169,27 +179,32 @@ _THIN_TASK_START_EXAMPLE = {"role": "reviewer", "handoff_ref": "<ref from handof
 # in the progressive aota-task-main-governance Skill; never duplicate it
 # here.
 _THIN_GIT_NOTE = (
-    "bounded git on the trusted worktree (targets never model-supplied); "
-    "reads eager; checkpoint/integrate/push require configured trusted "
-    "task-main lifecycle authority"
+    "bounded git on the trusted worktree located by the canonical plan_ref "
+    "locator (targets never model-supplied); reads eager; "
+    "checkpoint/integrate/push additionally require the current Plan approval "
+    "and configured trusted lifecycle authority; FF-only, never force"
 )
 _THIN_GIT_EXAMPLE = {
-    "git.status": {},
-    "git.diff": {"max_entries": "int?<=100"},
-    "git.checkpoint": {"message": "str", "expected_head": "sha40?"},
-    "git.integrate": {"expected_old_sha": "sha40 (FF-only CAS)"},
-    "git.push": {"expected_remote_sha": "sha40? (never force)"},
+    "git.status": {"plan_ref": _PLAN_REF_EXAMPLE},
+    "git.diff": {"plan_ref": _PLAN_REF_EXAMPLE, "max_entries": "int?<=100"},
+    "git.checkpoint": {"plan_ref": _PLAN_REF_EXAMPLE, "message": "str", "expected_head": "sha40?"},
+    "git.integrate": {"plan_ref": _PLAN_REF_EXAMPLE, "expected_old_sha": "sha40 (FF-only CAS)"},
+    "git.push": {"plan_ref": _PLAN_REF_EXAMPLE, "expected_remote_sha": "sha40? (never force)"},
 }
 _THIN_GITHUB_NOTE = (
-    "Plan-bound GitHub governance on the trusted bound-Plan Issue only "
-    "(plan_ref grounded at launch; repo/owner/issue are NOT model inputs); "
-    "reads are card-first with by_ref hydration; mutations task-main-only, "
-    "read-before-write CAS; comment roles are task-main semantics"
+    "Plan-bound GitHub governance on the Plan Issue located by the canonical "
+    "plan_ref locator (repo/owner/issue are NOT model inputs); reads are "
+    "card-first with by_ref hydration; mutations are task-main-only and "
+    "read-before-write CAS; github.issue.update.body is a WHOLE BODY "
+    "REPLACEMENT (never patch/merge/append) — prefer section_marker + "
+    "section_content for bounded Plan-state changes and state=closed for "
+    "closure; comment roles are task-main semantics"
 )
 _THIN_GITHUB_EXAMPLE = {
-    "github.issue.read": {"view": "card|full?"},
-    "github.issue.comments.read": {"max_comments": "int?"},
+    "github.issue.read": {"plan_ref": _PLAN_REF_EXAMPLE, "view": "card|full?"},
+    "github.issue.comments.read": {"plan_ref": _PLAN_REF_EXAMPLE, "max_comments": "int?"},
     "github.issue.update": {
+        "plan_ref": _PLAN_REF_EXAMPLE,
         "body?": "str", "section_marker?+section_content?": "str",
         "state?": "open|closed", "expected_updated_at": "str (required)",
     },
@@ -283,7 +298,10 @@ def build_thin_task_main_operation_guidance() -> dict[str, dict[str, object]]:
         },
         "governance_procedure": (
             "open the aota-task-main-governance progressive Skill before "
-            "governance mutations or milestone/plan close"
+            "governance mutations or milestone/plan close. Never probe "
+            "mutation schemas against live authoritative Plan data: read the "
+            "Skill, then help(operation=...), then proceed or stop with "
+            "needs_input."
         ),
     }
 
