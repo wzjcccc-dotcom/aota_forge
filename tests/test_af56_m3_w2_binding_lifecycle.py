@@ -307,19 +307,27 @@ def test_wrapper_resolves_task_main_binding(tmp_path, monkeypatch) -> None:
     assert captured["env"]["AOTA_TASK_MAIN_BOOTSTRAP"] == str(Path(pointer["bootstrap_path"]))
 
 
-def test_wrapper_fails_closed_without_pointer(tmp_path, monkeypatch) -> None:
+def test_wrapper_starts_unbound_mcp_without_pointer(tmp_path, monkeypatch) -> None:
+    """AF #59 M1: no pointer => ordinary workspace mode (always-available MCP).
+
+    MCP availability is not authority: the unbound mode resolves operation
+    authority from canonical refs at the operation boundary.
+    """
     root = _make_worktree(tmp_path)
     instance = instance_directory(root, worker_instance_key("t:1"))
     module = _load_wrapper()
-    with pytest.raises(SystemExit):
-        _run_wrapper_capture(
-            module,
-            monkeypatch,
-            {
-                "AOTA_OPENCODE_MCP_INSTANCE_DIR": str(instance),
-                "AOTA_FORGE_REPO_ROOT": str(REPO_ROOT),
-            },
-        )
+    captured = _run_wrapper_capture(
+        module,
+        monkeypatch,
+        {
+            "AOTA_OPENCODE_MCP_INSTANCE_DIR": str(instance),
+            "AOTA_FORGE_REPO_ROOT": str(REPO_ROOT),
+        },
+    )
+    assert captured["argv"][-1] == "--mcp-server"
+    assert captured["env"]["AOTA_GLOBAL_MCP"] == "1"
+    assert "AOTA_PRE_RESOLVED_BINDING" not in captured["env"]
+    assert "AOTA_TASK_MAIN_BOOTSTRAP" not in captured["env"]
 
 
 def test_wrapper_fails_closed_on_cross_instance_envelope(tmp_path, monkeypatch) -> None:

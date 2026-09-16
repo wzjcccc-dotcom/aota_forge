@@ -838,6 +838,23 @@ class TestNoSecondAuthority:
             assert _mt.INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY is False
             assert _mt.INTERACTIVE_APPROVAL_GATED_OPERATIONS <= set(_mt.SUPPORTED_OPERATIONS)
             return
+        if "59-M1/native-session-thin-host" in branch or "issue-59" in branch:
+            # AF #59 M1 removes the #58 session-carried approval gate and adds
+            # the always-available unbound host transport entry (operation-time
+            # ref-scoped authority). No new MCP tool, no new operation, no
+            # second authority/gateway/session system; single-entry invariants
+            # and exposure-not-authority must still hold.
+            import aota_forge.mcp_transport as _mt
+
+            assert _mt.MCP_PUBLIC_TOOL_COUNT == 1
+            assert _mt.MCP_TRANSPORT_TOOL_COUNT == 1
+            assert _mt.ONE_SHARED_AOTA_MCP is True
+            assert _mt.AGENT_FACING_AOTA_TOOL == "aota.invoke"
+            assert _mt.EXPOSURE_IS_NOT_AUTHORITY is True
+            assert _mt.APPROVAL_IS_SESSION_STATE is False
+            assert _mt.APPROVAL_IS_CURRENT_SERVER_SIDE_FACT is True
+            assert not hasattr(_mt, "INTERACTIVE_APPROVAL_GATED_OPERATIONS")
+            return
         assert "aota_forge/mcp_transport.py" not in changed
 
     def test_hermes_tools_not_mutated(self):

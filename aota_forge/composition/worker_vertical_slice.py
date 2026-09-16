@@ -1284,6 +1284,29 @@ async def _serve_mcp_child() -> None:
     """Run the actual W2 server used by Hermes, with server-side binding."""
     from aota_forge import mcp_transport
 
+    # AF #59 M1: ordinary host session with no trusted binding. One
+    # always-available AOTA MCP; MCP availability is not authority and every
+    # side effect resolves its authority from canonical refs at the operation
+    # boundary (no session/instance/active_binding.json requirement).
+    if (
+        not os.environ.get(PRE_RESOLVED_BINDING_ENV, "").strip()
+        and os.environ.get(mcp_transport.GLOBAL_MCP_ENV) == "1"
+    ):
+        repo_root = os.environ.get(MCP_REPO_ROOT_ENV, "").strip()
+        if not repo_root:
+            raise MissingRuntimeContextError(
+                f"unbound host MCP requires {MCP_REPO_ROOT_ENV} (operator-owned repo root)"
+            )
+        context = mcp_transport.UnboundHostContext(
+            repo_root=repo_root,
+            registry_path=os.environ.get("AOTA_FORGE_REGISTRY", "").strip(),
+            runtime_config_path=os.environ.get("AOTA_FORGE_RUNTIME_CONFIG", "").strip(),
+            origin_session_ref=os.environ.get("AOTA_MCP_ORIGIN_SESSION_REF", "").strip(),
+        )
+        server = mcp_transport.create_unbound_mcp_server(context)
+        await server.run_stdio_async()
+        return
+
     # Exclusive discrimination: exactly one valid context is used; both or
     # neither fail closed. No task-main-first priority remains.
     selected = select_runtime_context()

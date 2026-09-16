@@ -587,6 +587,8 @@ contracts:
     type: str
   - name: root_ref
     type: str?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -614,6 +616,8 @@ contracts:
   - name: root_ref
     type: str?
   - name: scope
+    type: str?
+  - name: plan_ref
     type: str?
   required_context: []
   optional_context: []
@@ -799,6 +803,8 @@ contracts:
     type: str
   - name: payload
     type: dict
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -865,6 +871,8 @@ contracts:
     type: str
   - name: handoff_ref
     type: str
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1060,6 +1068,8 @@ contracts:
   inputs:
   - name: view
     type: str?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1085,6 +1095,8 @@ contracts:
   inputs:
   - name: max_comments
     type: int?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1118,6 +1130,8 @@ contracts:
     type: str?
   - name: expected_updated_at
     type: str
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1147,6 +1161,8 @@ contracts:
   - name: body
     type: str
   - name: expected_digest
+    type: str?
+  - name: plan_ref
     type: str?
   required_context: []
   optional_context: []

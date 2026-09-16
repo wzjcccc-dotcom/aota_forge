@@ -50,7 +50,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
 from aota_forge.core.context import TrustedContext
 from aota_forge.core.contracts.errors import ForgeError
@@ -381,28 +381,12 @@ if TASK_START_DESCRIPTOR is not None:
 if TASK_RETURN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_RETURN_DESCRIPTOR.name] = TASK_RETURN_DESCRIPTOR
 SUPPORTED_OPERATIONS: frozenset[str] = frozenset(LOGICAL_OPERATIONS)
-# AF #58 M2: bounded interactive approval gate. When a trusted binding carries
-# an interactive Plan state projection whose milestone user approval is not
-# satisfied (False or unknown), the model-facing single entry refuses the
-# construction/mutation operations before Core dispatch. This gate exists only
-# for bindings carrying ``trusted_plan_state`` (the interactive ingress
-# composition); headless/worker bindings are untouched.
-# The gate is derived from trusted Plan truth; it is not itself authority
-# (INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY=no).
-INTERACTIVE_APPROVAL_GATED_OPERATIONS: frozenset[str] = frozenset(
-    {
-        "task.start",
-        "workspace.write",
-        "restricted_shell.run",
-        "git.checkpoint",
-        "git.integrate",
-        "git.push",
-        "github.issue.update",
-        "github.issue.comment.update",
-    }
-)
-INTERACTIVE_APPROVAL_GATE_ENFORCED = True
-INTERACTIVE_APPROVAL_GATE_IS_AUTHORITY = False
+# AF #59 M1: the #58 session-carried interactive approval gate is removed.
+# Approval is a current server-side Plan fact re-read at the operation
+# boundary (see composition/ref_scoped_authority.py for the unbound host
+# session path); it is never carried by a session/instance binding.
+APPROVAL_IS_CURRENT_SERVER_SIDE_FACT = True
+APPROVAL_IS_SESSION_STATE = False
 # For backward compatibility, retain WORKSPACE_OPERATIONS alias but expanded set is canonical
 CANONICAL_SUPPORTED_OPERATIONS = SUPPORTED_OPERATIONS
 # W5 exposure/canonical relationship: role surfaces must remain a subset of the
@@ -696,34 +680,6 @@ def _governed_from_response(binding: TrustedWorkerBinding, operation: str, respo
     return _governed_projection_to_mcp(operation, projection)
 
 
-def _interactive_approval_gate_denial(
-    binding: TrustedWorkerBinding, operation: str
-) -> McpToolResult | None:
-    """Fail-closed interactive approval gate (AF #58 M2, I58-B001 repair).
-
-    Only applies when the binding carries an interactive trusted Plan state
-    projection (the interactive ingress composition) and the current
-    milestone user approval is not explicitly satisfied. The denial happens
-    before any Core dispatch, so no construction, source or governance
-    mutation can be authorized for an unapproved milestone.
-    """
-    if operation not in INTERACTIVE_APPROVAL_GATED_OPERATIONS:
-        return None
-    plan_state = getattr(binding, "trusted_plan_state", None)
-    if not isinstance(plan_state, Mapping):
-        return None
-    if plan_state.get("milestone_user_approval_satisfied") is True:
-        return None
-    milestone = str(plan_state.get("current_milestone") or "").strip() or "unknown"
-    return _governed_error(
-        binding,
-        operation,
-        "MILESTONE_APPROVAL_REQUIRED",
-        f"milestone {milestone} user approval is not satisfied; stop at the user "
-        "approval gate (no construction, no source or governance mutation)",
-    )
-
-
 def _governed_error(binding: TrustedWorkerBinding, operation: str, code: str, message: str) -> McpToolResult:
     """Governed typed error helper — preserves W1 error identity end-to-end."""
     err = {"code": code, "message": _bounded_failure_message(message)}
@@ -896,11 +852,34 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # the direct trusted binding (mechanical copies only).
         authorized_roots=getattr(binding, "authorized_roots", None),
         source_repository=str(getattr(binding, "source_repository", "") or ""),
-        # AF #58 M2: preserve the bounded interactive Plan state projection so
-        # Core-side role.bootstrap exposes the same trusted milestone/approval
-        # state the trusted binding carries (mechanical copy only).
-        trusted_plan_state=getattr(binding, "trusted_plan_state", None),
     )
+
+
+def _project_tool_response(binding: Any, operation: str, tool_response: ToolResponse) -> McpToolResult:
+    """Canonical result projection with the Core-owned hydrate special case.
+
+    ``result.hydrate`` success payloads are projected by the canonical
+    Core-owned whole-object hydration projection (inline, bounded by
+    HYDRATE_WHOLE_OBJECT_MAX_BYTES); every other response uses the governed
+    bounded projection. Shared mechanically by the trusted and unbound
+    transports (no second projection ontology).
+    """
+    if operation == "result.hydrate" and getattr(tool_response, "ok", False):
+        try:
+            from aota_forge.work_plane.result_hydrate import (
+                project_hydrate_result_for_transport as _core_hydrate_project,
+            )
+
+            projected = _core_hydrate_project(tool_response)
+            if isinstance(projected, dict) and "__governed_failure__" in projected:
+                return _governed_from_response(
+                    binding, operation, projected["__governed_failure__"]
+                )
+            if isinstance(projected, dict):
+                return projected  # type: ignore[return-value]
+        except Exception:
+            pass
+    return _governed_from_response(binding, operation, tool_response)
 
 
 class _SharedAotaMcpAdapter:
@@ -968,10 +947,6 @@ class _SharedAotaMcpAdapter:
             arguments = {}
         if not isinstance(arguments, dict):
             return _governed_error(self.binding, operation, "INPUT_TYPE_INVALID", f"arguments must be object, got {type(arguments).__name__}")
-        # AF #58 M2 interactive approval gate (fail closed before dispatch).
-        gate_denial = _interactive_approval_gate_denial(self.binding, operation)
-        if gate_denial is not None:
-            return gate_denial
         # Canonical dispatch via Core (owns validation + provider selection).
         try:
             from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
@@ -984,22 +959,7 @@ class _SharedAotaMcpAdapter:
         # Hydrate whole-object projection owned by Core result governance (D5):
         # delegate to the canonical helper; this adapter performs only protocol
         # projection and never decides durability/kind/digest/bounds/mode.
-        if operation == "result.hydrate" and getattr(tool_response, "ok", False):
-            try:
-                from aota_forge.work_plane.result_hydrate import (
-                    project_hydrate_result_for_transport as _core_hydrate_project,
-                )
-
-                projected = _core_hydrate_project(tool_response)
-                if isinstance(projected, dict) and "__governed_failure__" in projected:
-                    return _governed_from_response(
-                        self.binding, operation, projected["__governed_failure__"]
-                    )
-                if isinstance(projected, dict):
-                    return projected  # type: ignore[return-value]
-            except Exception:
-                pass
-        return _governed_from_response(self.binding, operation, tool_response)
+        return _project_tool_response(self.binding, operation, tool_response)
 
     def _invoke_task_main(self, operation: str, validated: dict[str, Any], descriptor: Any) -> McpToolResult:
         """Deprecated transport seam (W1 convergence).
@@ -1018,6 +978,353 @@ class _SharedAotaMcpAdapter:
         except Exception as exc:  # noqa: BLE001
             return _governed_error(self.binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
         return _governed_from_response(self.binding, operation, tool_response)
+
+
+# ---------------------------------------------------------------------------
+# AF #59 M1 — always-available unbound host transport.
+#
+# Ordinary OpenCode/OpenChamber sessions have no session/instance/Plan binding.
+# The AOTA MCP must still start and expose the single entry ``aota.invoke``.
+# MCP availability is NOT authority (MCP_AVAILABILITY_IS_NOT_AUTHORITY=yes):
+# reads/discussion stay usable without a binding, and every side effect
+# resolves its authority from the canonical refs at the operation boundary
+# (composition/ref_scoped_authority.py). No session token, no lease, no second
+# authority engine.
+# ---------------------------------------------------------------------------
+
+GLOBAL_MCP_ENV = "AOTA_GLOBAL_MCP"
+UNBOUND_HOST_TARGET_DEFAULT = "opencode-unbound-chat"
+MCP_AVAILABILITY_IS_NOT_AUTHORITY = True
+SESSION_BINDING_REQUIRED_FOR_MCP = False
+UNBOUND_OPERATIONS_REQUIRE_CANONICAL_REFS = True
+
+
+@dataclass(frozen=True)
+class UnboundHostContext:
+    """Mechanical carrier for an ordinary host session with no binding.
+
+    Contains only operator/process construction inputs (repo root, operator
+    registry/runtime-config locators, bounded origin transport destination).
+    It grants nothing: authority is resolved per operation from canonical
+    refs. Never model-supplied.
+    """
+
+    repo_root: str
+    registry_path: str = ""
+    runtime_config_path: str = ""
+    origin_session_ref: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.repo_root, str) or not self.repo_root.strip():
+            raise TrustedBindingError("unbound host context requires a repo_root")
+        if len(self.repo_root) > 4096:
+            raise TrustedBindingError("unbound host context repo_root exceeds bound")
+
+
+class RefScopedHydrateError(ValueError):
+    """Typed fail-closed hydration scope error for unbound host sessions."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
+def _unbound_governed_error(operation: str, code: str, message: str) -> McpToolResult:
+    """Typed fail-closed result for unbound operations without a sandbox.
+
+    Mirrors the canonical governed shape; no sandbox-dependent projection is
+    possible or needed for a pre-dispatch denial.
+    """
+    err = {"code": code, "message": _bounded_failure_message(message)}
+    return {
+        "ok": False,
+        "operation": operation,
+        "payload": None,
+        "error": err,
+        "output_mode": "inline",
+        "is_truncated": False,
+        "complete": False,
+        "outcome": "failure",
+        "is_success": False,
+        "capability_name": operation,
+        "output_digest": "0" * 64,
+        "output_byte_length": 0,
+        "inline_output": "",
+        "output_ref": None,
+        "hydration": None,
+    }
+
+
+def _unbound_agent_visible_operations() -> tuple[str, ...]:
+    """Unbound host operations the model can actually use (honest catalog).
+
+    Ref-scoped Plan operations + hydration + optional role.bootstrap. Legacy
+    workflow-brain operations (task_main.*) stay off the thin normal path.
+    """
+    from aota_forge.composition.ref_scoped_authority import (
+        PLAN_REF_SCOPED_OPERATIONS,
+    )
+
+    return tuple(sorted(set(PLAN_REF_SCOPED_OPERATIONS) | {"result.hydrate", "role.bootstrap"}))
+
+
+def _unbound_role_bootstrap_payload() -> dict[str, Any]:
+    """Bounded unbound role.bootstrap payload (optional useful operation).
+
+    No trusted role/task context exists without a binding; this payload
+    reports the ordinary host session state and the Agent-visible operations
+    so the model can proceed with ref-scoped operations. It carries no
+    Plan/session approval state (never session-scoped authority).
+    """
+    return {
+        "ROLE": "task-main",
+        "HOST_SESSION": "unbound",
+        "AOTA_MCP": {
+            "available": True,
+            "tool": AGENT_FACING_AOTA_TOOL,
+            "tool_count": MCP_PUBLIC_TOOL_COUNT,
+            "operations": list(_unbound_agent_visible_operations()),
+        },
+        "SESSION_BINDING_PRESENT": False,
+        "SESSION_BINDING_REQUIRED": False,
+        "ROLE_BOOTSTRAP_REQUIRED_FOR_CHAT": False,
+        "LEGACY_WORKFLOW_OPERATIONS_EXPOSED": False,
+        "AUTHORITY_SOURCE": "ref_scoped_operation_boundary",
+        "GUIDANCE": (
+            "Ordinary host session: no Plan/task binding is carried. Discussion, "
+            "analysis and Plan review need no binding. For Plan-bound operations "
+            "supply the canonical plan_ref (owner/repo#number); for execution "
+            "supply the related handoff_ref. AOTA Forge revalidates authority, "
+            "project, scope and approval from the authoritative record at the "
+            "operation boundary."
+        ),
+        "IS_AUTHORITY": False,
+    }
+
+
+class _UnboundAotaAdapter:
+    """Single-entry transport for ordinary unbound host sessions.
+
+    Owns only: envelope checks, exposure gating, operation-time ref-scoped
+    authority resolution (delegated to the canonical resolver) and protocol
+    projection. Resolution/validation/provider selection stay in core_ingress.
+    """
+
+    def __init__(self, context: UnboundHostContext) -> None:
+        self.context = context
+        self._resolver: Any | None = None
+
+    def _authority_resolver(self) -> Any:
+        if self._resolver is None:
+            from aota_forge.composition.ref_scoped_authority import (
+                RefScopedAuthorityResolver,
+            )
+
+            self._resolver = RefScopedAuthorityResolver(
+                repo_root=self.context.repo_root,
+                registry_path=self.context.registry_path or None,
+                runtime_config_path=self.context.runtime_config_path or None,
+            )
+        return self._resolver
+
+    def _dispatch_with_binding(
+        self, binding: TrustedWorkerBinding, operation: str, arguments: dict[str, Any]
+    ) -> McpToolResult:
+        try:
+            from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
+
+            canonical = _to_canonical_binding(binding)
+            tool_response = _core_dispatch(operation, arguments, canonical)
+        except ForgeError as exc:
+            return _governed_error(binding, operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _governed_error(binding, operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        return _project_tool_response(binding, operation, tool_response)
+
+    def _invoke_ref_scoped(self, operation: str, arguments: dict[str, Any]) -> McpToolResult:
+        from aota_forge.composition.ref_scoped_authority import (
+            PLAN_REF_SCOPED_OPERATIONS,
+            READ_CLASSIFIED_OPERATIONS,
+            RefScopedAuthorityError,
+        )
+
+        plan_ref = arguments.get("plan_ref")
+        if not isinstance(plan_ref, str) or not plan_ref.strip():
+            return _unbound_governed_error(
+                operation,
+                "PLAN_REF_REQUIRED",
+                "this operation requires a canonical plan_ref (owner/repo#number) to "
+                "locate the authoritative Plan; no session/instance binding is used",
+            )
+        plan_ref = plan_ref.strip()
+        resolver = self._authority_resolver()
+        try:
+            if operation not in READ_CLASSIFIED_OPERATIONS:
+                # Operation boundary: approval is the CURRENT server-side Plan
+                # fact, re-read now (never session-carried).
+                resolver.require_plan_approval(plan_ref)
+            # task.start uses the process-bound production dispatcher; refresh
+            # the composition so the dispatcher/worker resolver provably match
+            # the Plan being started (no cross-Plan stale binding reuse).
+            binding = resolver.task_main_binding_for_plan_ref(
+                plan_ref, refresh=(operation == "task.start")
+            )
+        except RefScopedAuthorityError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+        except Exception as exc:  # noqa: BLE001 - resolution fails closed
+            return _unbound_governed_error(
+                operation, "AUTHORITY_RESOLUTION_FAILED", _bounded_failure_message(str(exc))
+            )
+        dispatched_arguments = dict(arguments)
+        return self._dispatch_with_binding(binding, operation, dispatched_arguments)
+
+    def _registry_sandbox(self, project_id: str, worktree_id: str) -> Any:
+        """Canonical sandbox located by the hydrate ref's project/worktree ids.
+
+        The ref carries the canonical ToolOutputRef identity (project_id +
+        worktree_id); the operator workspace registry locates the trusted
+        project root. Payload metadata (project/worktree/ref/digest) is still
+        verified by result governance against this sandbox.
+        """
+        from aota_forge.composition.project_binding import resolve_trusted_project_binding
+        from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
+
+        if not _SAFE_ID.fullmatch(project_id) or not _SAFE_ID.fullmatch(worktree_id):
+            raise RefScopedHydrateError("HYDRATE_SCOPE_INVALID", "project_id/worktree_id must be canonical identifiers")
+        try:
+            binding = resolve_trusted_project_binding(
+                project_id=project_id,
+                registry_path=self.context.registry_path or None,
+                workspace_root=self.context.repo_root if not self.context.registry_path else None,
+            )
+        except Exception as exc:  # noqa: BLE001 - unknown project fails closed
+            raise RefScopedHydrateError("UNKNOWN_PROJECT", f"project {project_id!r} could not be resolved") from exc
+        evidence = getattr(binding, "resolution", None)
+        candidates = getattr(evidence, "candidates", ()) or ()
+        if getattr(evidence, "status", "") != "RESOLVED" or len(candidates) != 1:
+            raise RefScopedHydrateError("UNKNOWN_PROJECT", f"project {project_id!r} resolution is not singular")
+        return bind_worktree_sandbox(
+            evidence,
+            worktree_id,
+            candidates[0].project_root,
+            expected_project_id=project_id,
+        )
+
+    def _invoke_registry_hydrate(self, arguments: dict[str, Any]) -> McpToolResult:
+        """result.hydrate in unbound mode: scope from the ref's own identity."""
+        from types import SimpleNamespace
+
+        from aota_forge.core_ingress import CanonicalDispatchBinding, dispatch_tool_operation
+
+        project_id = arguments.get("project_id")
+        worktree_id = arguments.get("worktree_id")
+        if not isinstance(project_id, str) or not project_id.strip():
+            return _unbound_governed_error("result.hydrate", "HYDRATE_SCOPE_INVALID", "project_id must be a canonical identifier")
+        if not isinstance(worktree_id, str) or not worktree_id.strip():
+            return _unbound_governed_error("result.hydrate", "HYDRATE_SCOPE_INVALID", "worktree_id must be a canonical identifier")
+        try:
+            sandbox = self._registry_sandbox(project_id.strip(), worktree_id.strip())
+        except RefScopedHydrateError as exc:
+            return _unbound_governed_error("result.hydrate", exc.code, str(exc))
+        except Exception as exc:  # noqa: BLE001 - resolution fails closed
+            return _unbound_governed_error("result.hydrate", "HYDRATE_SCOPE_INVALID", _bounded_failure_message(str(exc)))
+        canonical = CanonicalDispatchBinding(
+            project_id=project_id.strip(),
+            worktree_id=worktree_id.strip(),
+            sandbox=sandbox,
+            unbound_host_session=True,
+        )
+        try:
+            response = dispatch_tool_operation("result.hydrate", arguments, canonical)
+        except ForgeError as exc:
+            return _unbound_governed_error("result.hydrate", getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _unbound_governed_error("result.hydrate", "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        return _project_tool_response(SimpleNamespace(sandbox=sandbox), "result.hydrate", response)
+
+    def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
+        from aota_forge.composition.ref_scoped_authority import (
+            PLAN_REF_SCOPED_OPERATIONS,
+        )
+
+        if not isinstance(operation, str):
+            return _unbound_governed_error(
+                "unknown", "UNKNOWN_OPERATION", f"operation must be string, got {type(operation).__name__}"
+            )
+        try:
+            from aota_forge.core_ingress import resolve_descriptor as _core_resolve
+
+            _core_resolve(operation)
+        except ForgeError as exc:
+            return _unbound_governed_error(operation, getattr(exc, "code", "UNKNOWN_OPERATION"), str(exc))
+        except Exception as exc:  # pragma: no cover - defensive
+            return _unbound_governed_error(operation, "GOVERNED_OPERATION_FAILURE", str(exc))
+        if operation not in SUPPORTED_OPERATIONS:
+            return _unbound_governed_error(operation, "UNKNOWN_OPERATION", f"unknown operation: {operation!r}")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            return _unbound_governed_error(
+                operation, "INPUT_TYPE_INVALID", f"arguments must be object, got {type(arguments).__name__}"
+            )
+        # Optional useful operation: bounded unbound bootstrap (no binding).
+        if operation == "role.bootstrap":
+            return {
+                "ok": True,
+                "operation": operation,
+                "payload": _unbound_role_bootstrap_payload(),
+                "error": None,
+                "output_mode": "inline",
+                "is_truncated": False,
+                "complete": True,
+                "outcome": "success",
+                "is_success": True,
+                "capability_name": operation,
+                "output_digest": "0" * 64,
+                "output_byte_length": 0,
+                "inline_output": None,
+                "output_ref": None,
+                "hydration": None,
+            }
+        # Durable by_ref hydration in unbound mode: scope from the ref identity.
+        if operation == "result.hydrate":
+            return self._invoke_registry_hydrate(arguments)
+        # Ref-scoped operations: PLAN_REF_SCOPED_OPERATIONS.
+        if operation in PLAN_REF_SCOPED_OPERATIONS:
+            return self._invoke_ref_scoped(operation, arguments)
+        # Everything else has no unbound authority path: canonical Core
+        # dispatch with an empty unbound binding fails closed per operation
+        # (no sandbox/authority/role => AUTHORITY_DENIED or typed equivalent).
+        from aota_forge.core_ingress import CanonicalDispatchBinding
+
+        return self._dispatch_with_binding_unbound(operation, arguments, CanonicalDispatchBinding(unbound_host_session=True))
+
+    def _dispatch_with_binding_unbound(
+        self, operation: str, arguments: dict[str, Any], canonical: Any
+    ) -> McpToolResult:
+        try:
+            from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
+
+            response = _core_dispatch(operation, arguments, canonical)
+        except ForgeError as exc:
+            return _unbound_governed_error(operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _unbound_governed_error(operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        if response.ok:
+            # Should not happen without authorities; fail closed on any
+            # unexpected success so no unbound mutation can slip through.
+            return _unbound_governed_error(
+                operation,
+                "AUTHORITY_DENIED",
+                "operation requires a trusted Plan/task ref or an AF-bound session",
+            )
+        err = dict(response.error or {})
+        return _unbound_governed_error(
+            operation,
+            str(err.get("code") or "GOVERNED_OPERATION_FAILURE"),
+            str(err.get("message") or "governed operation failed"),
+        )
+
 
 def create_aota_invoke_dispatch(trusted_binding: TrustedWorkerBinding):
     """Public factory binding the canonical single-entry ``aota.invoke`` path.
@@ -1052,8 +1359,25 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
         raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
     if not isinstance(trusted_binding, TrustedWorkerBinding):
         raise TrustedBindingError("trusted server-side binding is required")
+    return _build_shared_mcp_server(_SharedAotaMcpAdapter(trusted_binding).invoke)
 
-    adapter = _SharedAotaMcpAdapter(trusted_binding)
+
+def create_unbound_mcp_server(context: UnboundHostContext):
+    """Create the single-entry MCP server for an ordinary unbound host session.
+
+    The server is always available; operation authority is resolved per
+    operation from canonical refs at the operation boundary. No session,
+    instance directory, active_binding.json or preparation state participates
+    in MCP availability (MCP_AVAILABILITY_IS_NOT_AUTHORITY=yes).
+    """
+    if MCPServer is None or ToolAnnotations is None:
+        raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
+    if not isinstance(context, UnboundHostContext):
+        raise TrustedBindingError("unbound host context is required")
+    return _build_shared_mcp_server(_UnboundAotaAdapter(context).invoke)
+
+
+def _build_shared_mcp_server(invoke_callable: Callable[[str, dict[str, Any] | None], McpToolResult]):
     server = MCPServer(
         "aota",
         instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority. Single entry: aota.invoke(operation, arguments).",
@@ -1183,7 +1507,7 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
     )
     def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
         """Single-entry AOTA dispatch: exact operation resolution → existing descriptor → validate_inputs → existing authority → existing provider."""
-        mcp_result = adapter.invoke(operation, arguments if arguments is not None else {})
+        mcp_result = invoke_callable(operation, arguments if arguments is not None else {})
         # FastMCP double-emission repair: return explicit CallToolResult so
         # lowlevel server does not re-emit the same dict as both TextContent
         # and structuredContent. This keeps one canonical copy in
@@ -1251,5 +1575,10 @@ __all__ = [
     "TrustedTaskMainRuntimeContext",
     "create_aota_invoke_dispatch",
     "create_shared_mcp_server",
+    "create_unbound_mcp_server",
+    "UnboundHostContext",
+    "GLOBAL_MCP_ENV",
+    "MCP_AVAILABILITY_IS_NOT_AUTHORITY",
+    "SESSION_BINDING_REQUIRED_FOR_MCP",
     "run_shared_mcp_server",
 ]

@@ -515,7 +515,6 @@ def compose_thin_task_main_host(
     registry_path: str | PathLike[str] | None = None,
     governance_base: str | PathLike[str] | None = None,
     plan_id: str | None = None,
-    trusted_plan_state: Mapping[str, Any] | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -558,22 +557,6 @@ def compose_thin_task_main_host(
                 "(an Issue number, worktree, branch, repository or title is "
                 "never a Plan identity)"
             )
-    # AF #58 M2: bounded trusted Plan state projection (interactive bindings
-    # only). Mechanical guidance carrier; validated before it can ride the
-    # binding.
-    normalized_plan_state: dict[str, Any] | None = None
-    if trusted_plan_state is not None:
-        from aota_forge.interactive_ingress.contract import (
-            validate_trusted_plan_state,
-        )
-
-        try:
-            normalized_plan_state = validate_trusted_plan_state(trusted_plan_state)
-        except Exception as exc:
-            raise TrustedBindingError(
-                f"thin host trusted_plan_state invalid: {exc}"
-            ) from exc
-
     config_path = Path(runtime_config_path)
     if not config_path.is_file():
         raise TrustedBindingError(f"thin host runtime config missing: {config_path!r}")
@@ -734,9 +717,6 @@ def compose_thin_task_main_host(
         # above) and the task-main authorized root set. Mechanical carriers.
         source_repository=str(trusted_project_context.get("source_repository", "") or ""),
         authorized_roots=authorized_roots,
-        # AF #58 M2: bounded trusted Plan state projection (interactive
-        # bindings only; None for headless/legacy and worker bindings).
-        trusted_plan_state=normalized_plan_state,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 

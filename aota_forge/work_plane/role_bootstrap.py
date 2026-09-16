@@ -578,34 +578,10 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
             "authority_ref": str(getattr(plan_authority_binding, "authority_ref", "") or ""),
             "IS_AUTHORITY": False,
         }
-    # AF #58 M2: bounded trusted Plan state projection carried by an
-    # interactive trusted binding (current milestone + approval truth + Plan
-    # revision identity, read from the live Plan before the first model
-    # prompt). Mechanical context only: approval truth is still owned by the
-    # live Plan; this projection is never a substitute for reading it.
-    trusted_plan_state = getattr(binding, "trusted_plan_state", None)
-    if trusted_plan_state:
-        result["TRUSTED_PLAN_STATE"] = dict(trusted_plan_state)
-        result["TRUSTED_PLAN_STATE_IS_AUTHORITY"] = False
-        # AF #58 M2 (I58-B001 repair): an unsatisfied milestone user approval
-        # is an explicit, model-visible stop gate. The same condition is
-        # mechanically enforced by the transport before dispatch; this block
-        # makes the required behavior unambiguous to the model.
-        if trusted_plan_state.get("milestone_user_approval_satisfied") is not True:
-            milestone = str(trusted_plan_state.get("current_milestone") or "").strip() or "current"
-            result["APPROVAL_GATE"] = {
-                "required": True,
-                "current_milestone": milestone,
-                "milestone_user_approval_satisfied": trusted_plan_state.get(
-                    "milestone_user_approval_satisfied"
-                ),
-                "instruction": (
-                    f"milestone {milestone} user approval is not satisfied: stop at the "
-                    "user approval gate. Do not call task.start, do not dispatch workers, "
-                    "and do not mutate source or governance. Report the gate and wait."
-                ),
-                "MECHANICAL_GATE_ENFORCED": True,
-            }
+    # AF #59 M1: the #58 session-carried Plan state projection and its
+    # model-visible approval gate are removed. Approval is re-read from the
+    # current authoritative Plan at the operation boundary; role.bootstrap
+    # never carries session-scoped approval truth.
     # AF #55 M2 §8: trusted project context projection. PLAN_AUTHORITY
     # (plan_ref + governing repository), IMPLEMENTATION_PROJECT (project_id +
     # SOURCE_REPOSITORY + project-main root ref) and ACTIVE_WORKTREE are

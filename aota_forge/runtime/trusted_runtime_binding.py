@@ -208,12 +208,6 @@ class TrustedWorkerBinding:
     # when present it must be the trusted sandbox's own roots and must match
     # every read/mutation authority's root set.
     authorized_roots: AuthorizedRootSet | None = None
-    # AF #58 M2: bounded trusted Plan state projection carried by an
-    # interactive task-main binding (current milestone + approval truth + Plan
-    # revision identity, mechanically projected from the already-read live
-    # Plan). Mechanical carrier only: it grants nothing. Headless launches and
-    # worker bindings keep None.
-    trusted_plan_state: Any | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -534,21 +528,8 @@ class TrustedWorkerBinding:
                         "mutation authority authorized root set does not match the binding's authorized roots"
                     )
 
-        # AF #58 M2: bounded trusted Plan state projection (mechanical
-        # guidance carrier only; task-main composition only).
-        if self.trusted_plan_state is not None:
-            from aota_forge.interactive_ingress.contract import (
-                validate_trusted_plan_state,
-            )  # type: ignore
-
-            try:
-                validate_trusted_plan_state(self.trusted_plan_state)
-            except Exception as exc:
-                raise TrustedBindingError(f"trusted_plan_state invalid: {exc}") from exc
-            if self.handoff.work_role.value != "task-main":
-                raise TrustedBindingError(
-                    "trusted_plan_state may only be carried by a task-main binding"
-                )
+        # AF #59 M1: the #58 interactive Plan-state carrier is removed; the
+        # binding never carries session-scoped Plan approval state.
 
     @property
     def effective_authorized_roots(self) -> AuthorizedRootSet:

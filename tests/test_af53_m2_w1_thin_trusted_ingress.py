@@ -870,10 +870,17 @@ class TestT6ModelCannotInjectTrustedIdentity:
         assert recording.packages == []
 
     def test_model_facing_surface_is_only_role_and_handoff_ref(self) -> None:
+        # AF #59 M1: the canonical task.start schema additionally carries the
+        # optional ``plan_ref`` REF LOCATOR (owner/repo#number) used by the
+        # unbound host session to locate server-side Plan authority at the
+        # operation boundary. It is a locator, never authority, and is
+        # correlation-only for trusted bindings.
         assert tuple(spec.name for spec in TASK_START_DESCRIPTOR.inputs) == (
             "role",
             "handoff_ref",
+            "plan_ref",
         )
+        assert TASK_START_DESCRIPTOR.inputs[-1].type == "str?"
         params = inspect.signature(task_start).parameters
         for trusted_field in (
             "project_id",

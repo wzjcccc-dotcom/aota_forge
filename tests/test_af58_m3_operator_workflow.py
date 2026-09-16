@@ -6,11 +6,9 @@ import pytest
 
 from aota_forge.adapters.opencode import executor as EX, host_client as HC, session_reentry as SR
 from aota_forge.core.execution import package as EP, roles as ER
-from aota_forge.interactive_ingress import contract as ic
-from aota_forge.mcp_transport import _interactive_approval_gate_denial as gate
 from aota_forge.runtime import config as CFG
 from aota_forge.runtime.task_main import reconciliation as R
-from aota_forge.work_plane import af_roles as AR, worktree_sandbox as WS
+from aota_forge.work_plane import af_roles as AR
 
 SES, DIR, PLAN = "ses_m3parent000000000001", "/tmp/af58m3", "wzjcccc-dotcom/aota-hermes-tools#58"
 EXE = os.path.realpath(sys.executable)
@@ -64,22 +62,3 @@ def test_reentry_exact_session_204_not_ack():
           R_(200, [{"info": {"role": "assistant"}}]), R_(200, {}))
     r = RE(t).reenter(SES, "e")
     assert (r.outcome, r.ack_observed, r.error_code) == ("completed", False, "ACK_NOT_OBSERVED")
-
-
-def test_milestone_gate_blocks_construction():
-    sb = WS.WorktreeSandboxBoundary("ws", DIR, "p", DIR, "wt", DIR, "0" * 64, "0" * 64)
-    box = type("B", (), {"sandbox": sb, "trusted_plan_state": {
-        "plan_ref": PLAN, "plan_id": ic.derive_interactive_plan_id(PLAN),
-        "source_kind": "github_issue", "milestone_user_approval_satisfied": False}})()
-    d = gate(box, "task.start")
-    assert d["ok"] is False and d["error"]["code"] == "MILESTONE_APPROVAL_REQUIRED"
-    box.trusted_plan_state = None
-    assert gate(box, "task.start") is None
-
-
-def test_ingress_invariants():
-    assert ic.extract_canonical_plan_refs(f"{PLAN} {PLAN}") == (PLAN,)
-    with pytest.raises(ic.InteractiveIngressError) as e:
-        ic.require_single_plan_ref(f"{PLAN} wzjcccc-dotcom/aota-hermes-tools#57")
-    assert e.value.code == "PLAN_REF_AMBIGUOUS"
-    assert ic.SESSION_ALREADY_BOUND_DIFFERENT_PLAN == "SESSION_ALREADY_BOUND_DIFFERENT_PLAN"

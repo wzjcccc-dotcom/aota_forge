@@ -231,7 +231,6 @@ def materialize_thin_task_main_bootstrap(
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
     plan_id: str | None = None,
-    trusted_plan_state: Mapping[str, Any] | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -252,11 +251,6 @@ def materialize_thin_task_main_bootstrap(
     for the source-neutral PlanAuthorityBinding. It is validated mechanically
     here and never inferred from the Issue, worktree, branch or repository.
 
-    AF #58 M2: ``trusted_plan_state`` is the optional bounded trusted Plan
-    projection (current milestone + approval truth + Plan revision identity)
-    read by the interactive ingress from the live Plan through the accepted
-    Plan-authority read path. It is a mechanical guidance carrier only: it
-    grants nothing and is absent for every headless launch.
     """
     root = _validate_worktree_root(worktree_root)
     pid = _validate_identifier(project_id, "project_id")
@@ -375,21 +369,6 @@ def materialize_thin_task_main_bootstrap(
                 f"thin bootstrap registry_path must be an existing trusted file: {registry!r}"
             )
         payload["registry_path"] = str(registry)
-    # AF #58 M2: bounded trusted Plan state projection for interactive
-    # task-main bindings. Validated mechanically here; absent for every
-    # headless launch (the headless path reads no Plan at launch).
-    if trusted_plan_state is not None:
-        from aota_forge.interactive_ingress.contract import (
-            validate_trusted_plan_state,
-        )
-
-        try:
-            validated_state = validate_trusted_plan_state(trusted_plan_state)
-        except Exception as exc:
-            raise TaskMainRuntimeSelectionError(
-                f"thin bootstrap trusted_plan_state invalid: {exc}"
-            ) from exc
-        payload["trusted_plan_state"] = validated_state
     # AF #55 M2: the static authorized root_ref contract carried by the trusted
     # operator bootstrap. Ref names are fixed; the child re-materializes the
     # authorized root set from the resolved trusted sandbox and fails closed
@@ -513,21 +492,6 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
     # operator-owned bootstrap channel (digest-covered). Absent => the launch
     # stays plan-less/legacy; never inferred from the Issue or the worktree.
     plan_id = str(content.get("plan_id") or "").strip() or None
-    # AF #58 M2: bounded trusted Plan state projection (interactive bindings
-    # only; digest-covered by the same envelope). Validated child-side too.
-    raw_plan_state = content.get("trusted_plan_state")
-    trusted_plan_state: dict[str, Any] | None = None
-    if raw_plan_state is not None:
-        from aota_forge.interactive_ingress.contract import (
-            validate_trusted_plan_state,
-        )
-
-        try:
-            trusted_plan_state = validate_trusted_plan_state(raw_plan_state)
-        except Exception as exc:
-            raise TrustedBindingError(
-                f"thin bootstrap trusted_plan_state invalid: {exc}"
-            ) from exc
     # AF #55 M2: the bootstrap's static authorized root_ref declaration must
     # match the canonical contract exactly (fail closed on drift). The actual
     # authorized root set is re-materialized child-side from the resolved
@@ -562,7 +526,6 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         registry_path=registry_path,
         governance_base=governance_base,
         plan_id=plan_id,
-        trusted_plan_state=trusted_plan_state,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

@@ -216,11 +216,11 @@ class CanonicalDispatchBinding:
     # project-main root/source-repository facts; carriers only, never authority.
     authorized_roots: Any | None = None
     source_repository: str = ""
-    # AF #58 M2: bounded interactive trusted Plan state projection (current
-    # milestone + approval truth). Mechanical carrier only; without this copy
-    # the Core-side role.bootstrap handler cannot expose the interactive Plan
-    # state (I58-B001 repair).
-    trusted_plan_state: Any | None = None
+    # AF #59 M1: unbound host-session marker. True only for the always-available
+    # global MCP mode where no trusted session/instance binding exists; the
+    # transport resolves operation authority from canonical refs at the
+    # operation boundary before Core dispatch. It grants nothing by itself.
+    unbound_host_session: bool = False
 
     @property
     def effective_authorized_roots(self) -> Any | None:
