@@ -431,6 +431,8 @@ contracts:
   inputs:
   - name: max_entries
     type: int?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -453,6 +455,8 @@ contracts:
   inputs:
   - name: max_entries
     type: int?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -988,6 +992,8 @@ contracts:
     type: str
   - name: expected_head
     type: str?
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1015,6 +1021,8 @@ contracts:
   inputs:
   - name: expected_old_sha
     type: str
+  - name: plan_ref
+    type: str?
   required_context: []
   optional_context: []
   internal_ids_required: []
@@ -1040,6 +1048,8 @@ contracts:
   description: Synchronize the configured integration branch frontier to the configured trusted remote FF-only (never force; expected-remote CAS when supplied)
   inputs:
   - name: expected_remote_sha
+    type: str?
+  - name: plan_ref
     type: str?
   required_context: []
   optional_context: []

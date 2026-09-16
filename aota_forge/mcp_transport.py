@@ -997,6 +997,16 @@ UNBOUND_HOST_TARGET_DEFAULT = "opencode-unbound-chat"
 MCP_AVAILABILITY_IS_NOT_AUTHORITY = True
 SESSION_BINDING_REQUIRED_FOR_MCP = False
 UNBOUND_OPERATIONS_REQUIRE_CANONICAL_REFS = True
+# AF #59 M1 acceptance repair R2: the canonical read-only introspection
+# operations (registered in the single YAML registry and bound to Core ingress
+# handlers) are available in an ordinary task-main session without any
+# Plan/session binding. They read host/registry state and grant nothing:
+# EXPOSURE_IS_NOT_AUTHORITY=yes, READ_AUTHORITY_IS_WRITE_AUTHORITY=no.
+UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = (
+    "host.status",
+    "operations.list",
+    "runtime.status",
+)
 
 
 @dataclass(frozen=True)
@@ -1055,27 +1065,98 @@ def _unbound_governed_error(operation: str, code: str, message: str) -> McpToolR
     }
 
 
+def _unbound_inline_success(operation: str, payload: dict[str, Any]) -> McpToolResult:
+    """Bounded inline success result for unbound read-only operations.
+
+    Mirrors the governed shape without a sandbox-dependent projection: these
+    operations carry no result store scope (no project/worktree sandbox) and
+    return already-bounded payloads only.
+    """
+    return {
+        "ok": True,
+        "operation": operation,
+        "payload": payload,
+        "error": None,
+        "output_mode": "inline",
+        "is_truncated": False,
+        "complete": True,
+        "outcome": "success",
+        "is_success": True,
+        "capability_name": operation,
+        "output_digest": "0" * 64,
+        "output_byte_length": 0,
+        "inline_output": None,
+        "output_ref": None,
+        "hydration": None,
+    }
+
+
 def _unbound_agent_visible_operations() -> tuple[str, ...]:
     """Unbound host operations the model can actually use (honest catalog).
 
-    Ref-scoped Plan operations + hydration + optional role.bootstrap. Legacy
-    workflow-brain operations (task_main.*) stay off the thin normal path.
+    Ref-scoped Plan operations (Git reads + governed lifecycle included) +
+    hydration + optional role.bootstrap + read-only Progress introspection +
+    read-only Skill access. Legacy workflow-brain operations (task_main.*)
+    stay off the thin normal path.
     """
     from aota_forge.composition.ref_scoped_authority import (
         PLAN_REF_SCOPED_OPERATIONS,
     )
 
-    return tuple(sorted(set(PLAN_REF_SCOPED_OPERATIONS) | {"result.hydrate", "role.bootstrap"}))
+    return tuple(
+        sorted(
+            set(PLAN_REF_SCOPED_OPERATIONS)
+            | {"result.hydrate", "role.bootstrap", "skill.open"}
+            | set(UNBOUND_READ_INTROSPECTION_OPERATIONS)
+        )
+    )
+
+
+def _unbound_task_main_skill_metadata() -> dict[str, list[dict[str, Any]]]:
+    """Trusted task-main Skill identity/ref metadata from the AF catalog.
+
+    Reuses the existing single AF Role/Skill catalog
+    (``_ROLE_SKILL_DEFS`` -> ``AllowedSkillUniverse`` / ``StaticSkillRegistry``
+    via the canonical ``af_roles`` helpers). No second Skill registry is
+    created; the bound role.bootstrap composes the same catalog.
+    """
+    from aota_forge.work_plane.af_roles import (
+        AF_SKILL_REGISTRY,
+        eager_skill_refs_for_role,
+        progressive_skill_metadata,
+    )
+
+    role = "task-main"
+    eager_entries: list[dict[str, Any]] = []
+    for ref in eager_skill_refs_for_role(role):
+        skill_id = ref.rsplit("@", 1)[0]
+        entry = AF_SKILL_REGISTRY.get(role, skill_id, "1.0.0")
+        eager_entries.append(
+            {
+                "skill_id": skill_id,
+                "ref": ref,
+                "digest": entry.identity.digest if entry is not None else "",
+                "provenance": "aota_forge",
+                "delivery": "eager",
+            }
+        )
+    return {
+        "BASE_SKILLS": eager_entries,
+        "PROGRESSIVE_SKILLS": list(progressive_skill_metadata(role)),
+    }
 
 
 def _unbound_role_bootstrap_payload() -> dict[str, Any]:
     """Bounded unbound role.bootstrap payload (optional useful operation).
 
     No trusted role/task context exists without a binding; this payload
-    reports the ordinary host session state and the Agent-visible operations
-    so the model can proceed with ref-scoped operations. It carries no
-    Plan/session approval state (never session-scoped authority).
+    reports the ordinary host session state, the Agent-visible operations and
+    the trusted task-main Skill identity/ref metadata (from the one AF
+    catalog) so the model can proceed with ref-scoped operations and open
+    Skills via ``skill.open``. It carries no Plan/session approval state
+    (never session-scoped authority).
     """
+    skills = _unbound_task_main_skill_metadata()
     return {
         "ROLE": "task-main",
         "HOST_SESSION": "unbound",
@@ -1084,6 +1165,13 @@ def _unbound_role_bootstrap_payload() -> dict[str, Any]:
             "tool": AGENT_FACING_AOTA_TOOL,
             "tool_count": MCP_PUBLIC_TOOL_COUNT,
             "operations": list(_unbound_agent_visible_operations()),
+        },
+        "BASE_SKILLS": skills["BASE_SKILLS"],
+        "PROGRESSIVE_SKILLS": skills["PROGRESSIVE_SKILLS"],
+        "SKILL_ACCESS": {
+            "operation": "skill.open",
+            "argument": "ref",
+            "IS_AUTHORITY": False,
         },
         "SESSION_BINDING_PRESENT": False,
         "SESSION_BINDING_REQUIRED": False,
@@ -1259,7 +1347,7 @@ class _UnboundAotaAdapter:
             return _unbound_governed_error(operation, getattr(exc, "code", "UNKNOWN_OPERATION"), str(exc))
         except Exception as exc:  # pragma: no cover - defensive
             return _unbound_governed_error(operation, "GOVERNED_OPERATION_FAILURE", str(exc))
-        if operation not in SUPPORTED_OPERATIONS:
+        if operation not in SUPPORTED_OPERATIONS and operation not in UNBOUND_READ_INTROSPECTION_OPERATIONS:
             return _unbound_governed_error(operation, "UNKNOWN_OPERATION", f"unknown operation: {operation!r}")
         if arguments is None:
             arguments = {}
@@ -1269,23 +1357,13 @@ class _UnboundAotaAdapter:
             )
         # Optional useful operation: bounded unbound bootstrap (no binding).
         if operation == "role.bootstrap":
-            return {
-                "ok": True,
-                "operation": operation,
-                "payload": _unbound_role_bootstrap_payload(),
-                "error": None,
-                "output_mode": "inline",
-                "is_truncated": False,
-                "complete": True,
-                "outcome": "success",
-                "is_success": True,
-                "capability_name": operation,
-                "output_digest": "0" * 64,
-                "output_byte_length": 0,
-                "inline_output": None,
-                "output_ref": None,
-                "hydration": None,
-            }
+            return _unbound_inline_success(operation, _unbound_role_bootstrap_payload())
+        # Read-only Skill guidance: same AF catalog/universe as bound sessions.
+        if operation == "skill.open":
+            return self._invoke_unbound_skill_open(arguments)
+        # Read-only Progress introspection: canonical Core ingress handlers.
+        if operation in UNBOUND_READ_INTROSPECTION_OPERATIONS:
+            return self._invoke_read_introspection(operation, arguments)
         # Durable by_ref hydration in unbound mode: scope from the ref identity.
         if operation == "result.hydrate":
             return self._invoke_registry_hydrate(arguments)
@@ -1298,6 +1376,74 @@ class _UnboundAotaAdapter:
         from aota_forge.core_ingress import CanonicalDispatchBinding
 
         return self._dispatch_with_binding_unbound(operation, arguments, CanonicalDispatchBinding(unbound_host_session=True))
+
+    def _invoke_unbound_skill_open(self, arguments: dict[str, Any]) -> McpToolResult:
+        """Read-only skill.open in an ordinary task-main session.
+
+        The ordinary host session has the task-main profile; the Role Skill
+        universe and registry are exactly the existing AF catalog
+        (``_ROLE_SKILL_DEFS`` -> ``AllowedSkillUniverse`` /
+        ``StaticSkillRegistry``). No second Skill system exists and no
+        Milestone construction approval is required: opening guidance grants
+        nothing (SKILL_IS_AUTHORITY=no). The authorized reader is rooted at the
+        operator-configured AF repo root (AOTA_FORGE_REPO_ROOT); no
+        model-supplied path participates.
+        """
+        from types import SimpleNamespace
+
+        from aota_forge.work_plane.role_bootstrap import handle_skill_open
+
+        unbound_task_main_identity = SimpleNamespace(
+            handoff=SimpleNamespace(work_role="task-main"),
+            sandbox=SimpleNamespace(worktree_root=self.context.repo_root),
+        )
+        try:
+            payload = handle_skill_open(unbound_task_main_identity, arguments)
+        except Exception as exc:  # noqa: BLE001 - typed fail-closed
+            return _unbound_governed_error(
+                "skill.open",
+                getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"),
+                _bounded_failure_message(str(exc)),
+            )
+        return _unbound_inline_success("skill.open", dict(payload))
+
+    def _invoke_read_introspection(self, operation: str, arguments: dict[str, Any]) -> McpToolResult:
+        """Canonical read-only Progress introspection (no authority needed).
+
+        ``operations.list`` / ``host.status`` / ``runtime.status`` are
+        canonical general operations bound to Core ingress handlers and are
+        read-only by descriptor; they resolve no provider authority and grant
+        nothing. Delegates to the canonical ``dispatch_via_core`` seam (same
+        resolution/validation/ingress path), never a second dispatch plane.
+        """
+        from aota_forge.core_ingress import dispatch_via_core
+
+        try:
+            envelope = dispatch_via_core(operation, dict(arguments))
+        except ForgeError as exc:
+            return _unbound_governed_error(operation, getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _unbound_governed_error(operation, "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
+        if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+            error = envelope.get("error") if isinstance(envelope, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            message = error.get("message") if isinstance(error, dict) else None
+            return _unbound_governed_error(
+                operation,
+                str(code or "GOVERNED_OPERATION_FAILURE"),
+                _bounded_failure_message(str(message or "governed operation failed")),
+            )
+        payload: dict[str, Any] = {}
+        data = envelope.get("data")
+        if isinstance(data, dict):
+            payload["data"] = data
+        evidence = envelope.get("evidence")
+        if isinstance(evidence, dict) and evidence:
+            payload["evidence"] = evidence
+        warnings = envelope.get("warnings")
+        if isinstance(warnings, list) and warnings:
+            payload["warnings"] = list(warnings)
+        return _unbound_inline_success(operation, payload)
 
     def _dispatch_with_binding_unbound(
         self, operation: str, arguments: dict[str, Any], canonical: Any
@@ -1580,5 +1726,6 @@ __all__ = [
     "GLOBAL_MCP_ENV",
     "MCP_AVAILABILITY_IS_NOT_AUTHORITY",
     "SESSION_BINDING_REQUIRED_FOR_MCP",
+    "UNBOUND_READ_INTROSPECTION_OPERATIONS",
     "run_shared_mcp_server",
 ]

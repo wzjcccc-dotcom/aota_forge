@@ -250,13 +250,17 @@ def test_unbound_operations_without_ref_fail_closed(fixture_project):
     result = adapter.invoke("github.issue.read", {})
     assert result["ok"] is False
     assert result["error"]["code"] == "PLAN_REF_REQUIRED"
-    for operation, arguments in (
-        ("git.status", {}),
-        ("workspace.write", {"path": "x.txt", "content": "x", "mode": "create"}),
-    ):
-        denied = adapter.invoke(operation, arguments)
-        assert denied["ok"] is False, operation
-        assert denied["error"]["code"] == "AUTHORITY_DENIED", operation
+    # AF #59 M1 acceptance repair R4: the ref-scoped Git reads also require the
+    # canonical plan_ref locator; without it they fail closed (never a bare or
+    # session-derived repo target).
+    git_without_ref = adapter.invoke("git.status", {})
+    assert git_without_ref["ok"] is False
+    assert git_without_ref["error"]["code"] == "PLAN_REF_REQUIRED"
+    denied = adapter.invoke(
+        "workspace.write", {"path": "x.txt", "content": "x", "mode": "create"}
+    )
+    assert denied["ok"] is False
+    assert denied["error"]["code"] == "AUTHORITY_DENIED"
 
 
 # ---------------------------------------------------------------------------

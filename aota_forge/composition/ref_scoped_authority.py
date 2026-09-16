@@ -9,6 +9,14 @@ boundary:
                  -> trusted project binding (operator workspace registry)
                  -> canonical thin task-main host composition (reused as-is)
 
+The same locator scopes the task-main Git surface: ``git.status`` / ``git.diff``
+resolve to the canonical project root and the existing bounded read authority
+(usable without milestone approval), and ``git.checkpoint`` / ``git.integrate``
+/ ``git.push`` additionally re-read the current milestone approval and use the
+existing governed Git lifecycle providers with the operator-configured
+integration branch/remote. No caller repo path, no session authority, no new
+capability token.
+
 Hard invariants
 ---------------
 * SESSION_BINDING_REQUIRED=no — no session token, lease, preparation record or
@@ -51,6 +59,11 @@ SECOND_MCP_SERVER_CREATED = False
 # Operations whose unbound authority is located by the canonical ``plan_ref``
 # input (the smallest existing-ref carrier; added to these canonical
 # descriptors in .aota/contracts/operations.yaml).
+# AF #59 M1 acceptance repair R4/R5: the task-main Git inspection reads and
+# the governed Git lifecycle mutations are ref-scoped the same way; the Git
+# mechanics themselves (trusted worktree, expected-head/CAS, FF-only
+# integration, configured integration branch/remote) stay exactly the
+# existing task-main providers.
 PLAN_REF_SCOPED_OPERATIONS: frozenset[str] = frozenset(
     {
         "github.issue.read",
@@ -62,11 +75,17 @@ PLAN_REF_SCOPED_OPERATIONS: frozenset[str] = frozenset(
         "task.start",
         "workspace.read",
         "workspace.search",
+        "git.status",
+        "git.diff",
+        "git.checkpoint",
+        "git.integrate",
+        "git.push",
     }
 )
 
 # Read-classified ref-scoped operations never require milestone approval
 # (discussion/analysis stays free); every side effect does.
+# Read-only Git must stay usable while the current Milestone approval is no.
 READ_CLASSIFIED_OPERATIONS: frozenset[str] = frozenset(
     {
         "github.issue.read",
@@ -74,6 +93,8 @@ READ_CLASSIFIED_OPERATIONS: frozenset[str] = frozenset(
         "handoff.open",
         "workspace.read",
         "workspace.search",
+        "git.status",
+        "git.diff",
     }
 )
 
@@ -81,6 +102,14 @@ REGISTRY_ENV = "AOTA_FORGE_REGISTRY"
 RUNTIME_CONFIG_ENV = "AOTA_FORGE_RUNTIME_CONFIG"
 ORIGIN_SESSION_REF_ENV = "AOTA_MCP_ORIGIN_SESSION_REF"
 DEFAULT_ORIGIN_SESSION_REF = "opencode-unbound-chat"
+# AF #59 M1 acceptance repair R5: trusted operator configuration for the
+# bounded Git lifecycle family (integration branch + remote). These are
+# Control-Plane facts supplied by the operator process environment, exactly
+# like the registry/runtime-config locators above; the model can never supply
+# or widen them. Absent => the lifecycle mutations have no authority and fail
+# closed at dispatch after the approval gate.
+GIT_INTEGRATION_BRANCH_ENV = "AOTA_GIT_INTEGRATION_BRANCH"
+GIT_REMOTE_ENV = "AOTA_GIT_REMOTE"
 
 _PLAN_ID_SANITIZE_RE = re.compile(r"[^a-z0-9]+")
 
@@ -269,7 +298,10 @@ class RefScopedAuthorityResolver:
 
     One resolver instance per MCP child process. It composes the canonical
     thin task-main binding lazily, once per Plan ref; the approval gate itself
-    always re-reads the live Plan (never cached).
+    always re-reads the live Plan (never cached). The trusted Git lifecycle
+    configuration (integration branch/remote) comes from the operator process
+    environment (or explicit trusted construction input), never from the
+    model.
     """
 
     def __init__(
@@ -279,6 +311,8 @@ class RefScopedAuthorityResolver:
         registry_path: str | Path | None = None,
         runtime_config_path: str | Path | None = None,
         plan_loader: Callable[[str], Any] | None = None,
+        git_integration_branch: str | None = None,
+        git_remote: str | None = None,
     ) -> None:
         self._repo_root = Path(repo_root).resolve()
         self._registry_path = (
@@ -290,6 +324,14 @@ class RefScopedAuthorityResolver:
             else os.environ.get(RUNTIME_CONFIG_ENV, "")
         )
         self._plan_loader = plan_loader
+        self._git_integration_branch = (
+            git_integration_branch
+            if git_integration_branch is not None
+            else os.environ.get(GIT_INTEGRATION_BRANCH_ENV, "")
+        )
+        self._git_remote = (
+            git_remote if git_remote is not None else os.environ.get(GIT_REMOTE_ENV, "")
+        )
         self._bindings: dict[str, Any] = {}
 
     # -- live Plan facts (re-read every operation) ---------------------------
@@ -349,6 +391,13 @@ class RefScopedAuthorityResolver:
                 source_repository=source_repository,
                 registry_path=self._registry_path or None,
                 plan_id=plan_id,
+                # Trusted operator configuration (env or explicit construction
+                # input): the bounded Git lifecycle family gains authority only
+                # when the operator configured the integration branch (and
+                # remote for push). Unconfigured => authorities absent => the
+                # existing dispatch fails closed.
+                git_integration_branch=self._git_integration_branch or None,
+                git_remote=self._git_remote or None,
             )
         except Exception as exc:  # noqa: BLE001 - composition fails closed
             raise RefScopedAuthorityError(
@@ -375,6 +424,8 @@ __all__ = [
     "RUNTIME_CONFIG_ENV",
     "ORIGIN_SESSION_REF_ENV",
     "DEFAULT_ORIGIN_SESSION_REF",
+    "GIT_INTEGRATION_BRANCH_ENV",
+    "GIT_REMOTE_ENV",
     "RefScopedAuthorityError",
     "RefScopedAuthorityResolver",
     "derive_plan_id_from_ref",
