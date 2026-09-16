@@ -21,9 +21,11 @@ Both reuse existing contracts:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from aota_forge.core.contracts.canonical import canonical_json
 from aota_forge.work_plane.roles import AgentWorkRole, parse_agent_work_role
 from aota_forge.work_plane.soul import Soul
 from aota_forge.work_plane.bootstrap import BootstrapBudget, BootstrapBundle, BootstrapComponent
@@ -94,6 +96,17 @@ BY_REF_BOOTSTRAP_CONSUMABLE_VIA_RESULT_HYDRATE = True
 MODEL_CAN_DETERMINISTICALLY_HYDRATE_BY_REF = True
 HYDRATION_GUIDANCE_IS_RUNTIME_OWNED = True
 BOOTSTRAP_HYDRATION_REQUIRES_OPERATOR_INTERVENTION = False
+
+# AF #57 M2/W2: compact progressive Governance context exposure.  It is a
+# derived projection (Cards / Context Route / ephemeral working set) carried by
+# the existing role.bootstrap composition; never authority, never an Agent
+# Tool, never an eager full Plan/Architecture/AGENTS load.  The optional
+# carrier is trusted server-side input only.
+GOVERNANCE_CONTEXT_EXPOSED = True
+GOVERNANCE_CONTEXT_IS_AUTHORITY = False
+GOVERNANCE_CONTEXT_CARRIER_TRUSTED_ONLY = True
+FULL_PLAN_EAGER_HYDRATION = False
+FULL_AGENTS_EAGER_LOAD = False
 
 # Error helpers — typed semantic identity originates here (AF #46 M1/W2, D3).
 # No new ontology: codes reuse existing canonical result/error contracts
@@ -239,15 +252,81 @@ def _authorized_reader_for_binding(binding: Any) -> Any:
             return target.read_text(encoding="utf-8")
         return reader
 
-def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dict[str, Any]:
+MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES = 128 * 1024
+
+
+def _validated_governance_context_carrier(carrier: Any) -> dict[str, Any]:
+    """Validate the trusted prebuilt Governance-context carrier for bootstrap.
+
+    AF #57 M2/W2: the compact progressive Governance context is a derived
+    projection (accepted W1 Cards + deterministic Context Route + optional
+    ephemeral working set) composed by the trusted runtime through the
+    Governance layer's ``build_bootstrap_governance_context`` (see
+    ``aota_forge.governance.context_route``).  ``role.bootstrap`` only embeds
+    the already-composed, already-bounded payload:
+
+        GOVERNANCE_CONTEXT_IS_AUTHORITY=no
+        FULL_PLAN_EAGER_HYDRATION=no
+        FULL_AGENTS_EAGER_LOAD=no
+
+    The carrier is trusted server-side input; it is never model-supplied.  It
+    must be a plain mapping carrying explicit non-authority markers, and it is
+    normalized to plain JSON so no live object can enter the bootstrap result.
+    No Governance module is imported here: the work-plane bootstrap path stays
+    free of the Governance projection/legacy-state import closure.
+    """
+    if not isinstance(carrier, Mapping):
+        raise RoleBootstrapError(
+            f"governance_context must be the prebuilt trusted mapping payload, got {type(carrier).__name__}",
+            code="INVALID_INPUT",
+        )
+    if carrier.get("IS_AUTHORITY") is not False or carrier.get("GOVERNANCE_CONTEXT_IS_AUTHORITY") is not False:
+        raise RoleBootstrapError(
+            "governance_context must declare non-authority markers",
+            code="INVALID_INPUT",
+        )
+    route = carrier.get("CONTEXT_ROUTE")
+    if not isinstance(route, Mapping) or route.get("is_authority") is not False:
+        raise RoleBootstrapError(
+            "governance_context.CONTEXT_ROUTE must be a derived non-authority projection",
+            code="INVALID_INPUT",
+        )
+    if type(carrier.get("CARDS_PRESENT")) is not bool:
+        raise RoleBootstrapError("governance_context.CARDS_PRESENT must be a bool", code="INVALID_INPUT")
+    try:
+        normalized = json.loads(canonical_json(dict(carrier)))
+    except (TypeError, ValueError) as exc:
+        raise RoleBootstrapError(
+            f"governance_context must be bounded plain data: {exc}",
+            code="INVALID_INPUT",
+        ) from exc
+    if len(canonical_json(normalized).encode("utf-8")) > MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES:
+        raise RoleBootstrapError(
+            f"governance_context exceeds the bounded carrier size {MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES}",
+            code="INVALID_INPUT",
+        )
+    return normalized
+
+
+def handle_role_bootstrap(
+    binding: Any,
+    arguments: dict[str, Any] | None,
+    *,
+    governance_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Trusted role.bootstrap handler.
 
     Args:
         binding: TrustedWorkerBinding or task-main TrustedWorkerBinding (must contain handoff, sandbox, etc.)
         arguments: must be empty dict
+        governance_context: optional trusted server-side prebuilt Governance
+            context payload (see ``_validated_governance_context_carrier``).
+            Never model-supplied.
 
     Returns:
         Bounded dict containing ROLE, SOUL, BASE_SKILLS, PROGRESSIVE_SKILLS, TOOL_SURFACE, TASK_HANDOFF
+        and, when a trusted prebuilt Governance context is supplied, the compact
+        GOVERNANCE_CONTEXT payload.
     """
     if arguments is None:
         arguments = {}
@@ -632,6 +711,14 @@ def handle_role_bootstrap(binding: Any, arguments: dict[str, Any] | None) -> dic
             )
         except Exception:
             pass
+    # AF #57 M2/W2: compact progressive Governance context for a trusted
+    # task-main session, when the trusted runtime supplies the prebuilt
+    # bounded payload.  Derived Cards + deterministic Context Route +
+    # optional ephemeral working set only; no eager full Plan/Architecture/
+    # AGENTS hydration and no new public operation.  Absent when no trusted
+    # payload is supplied.
+    if role_str == "task-main" and governance_context is not None:
+        result["GOVERNANCE_CONTEXT"] = _validated_governance_context_carrier(governance_context)
     # Attach degraded only if non-empty to keep bounded
     if degraded:
         result["DEGRADED_RECOMMENDED"] = degraded

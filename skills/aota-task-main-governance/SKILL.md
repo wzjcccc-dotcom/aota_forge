@@ -88,6 +88,35 @@ authoritative read when a mutation/CAS needs current truth; do not repeat
 `skill.open` / the same search / the same hydrate without a real freshness
 reason.
 
+## Progressive Governance context (Governance 2.0, card-first)
+
+```text
+CONTEXT_ROUTE_IS_AUTHORITY=no
+GOVERNANCE_CARD_IS_AUTHORITY=no
+CARD_FIRST=yes
+SEMANTIC_SECTION_FIRST=yes
+FULL_PLAN_EAGER_HYDRATION=no
+SEMANTIC_REUSE_BYPASSES_AUTHORITY_CHECK=no
+```
+
+When the runtime exposes compact Governance Cards (Project / Plan / Milestone /
+Architecture / Progress) and a Context Route in bootstrap, treat them as
+derived navigation only: they summarize current truth and point at deeper
+refs; they never authorize and never replace the authoritative read. Use them
+to choose what to retrieve, then read the exact ref.
+
+Retrieve the authoritative Plan body section-first: locate the semantic
+section carrying the fact and read/write that bounded section
+(`section_marker` + `section_content` upsert) instead of traversing by blind
+offsets. Unknown Plan/AGENTS content starts from the card or its bounded
+policy ref; do not eagerly hydrate the whole Plan or the whole AGENTS policy
+set.
+
+Semantic reuse only means "keep reasoning from still-valid context". It never
+satisfies a mutation precondition: before any governed write you still re-read
+the exact authoritative state and use the CAS token from that read
+(`CONTROL_COMMENT_READ_BEFORE_WRITE=yes`, `SEMANTIC_REUSE_BYPASSES_AUTHORITY_CHECK=no`).
+
 ## Destructive body semantics (M2/W3 — explicit)
 
 ```text

@@ -79,6 +79,36 @@ KNOWN_CONTEXT_REUSE_FIRST=yes
 This is usage guidance only: no context registry, Skill-open cache, retrieval
 cache or session-state authority exists or may be assumed.
 
+## Retrieval policy (card-first, section-first)
+
+```text
+CARD_FIRST=yes
+OBSERVATION_REUSE_FIRST=yes
+SEMANTIC_SECTION_FIRST=yes
+FIXED_CONTINUATION_IS_FALLBACK=yes
+LLM_OWNS_RETRIEVAL_INTENT=yes
+NO_ARBITRARY_TOKEN_THRESHOLD=yes
+```
+
+For an unknown document/source, inspect the compact card/result facts first —
+size where known, structure where known, completeness, snapshot
+revision/digest, navigable refs — then choose how to retrieve. You own that
+choice; the runtime never selects it from a size/byte threshold:
+
+```text
+known exact ref              -> exact bounded read/hydrate
+unknown document/source      -> CARD first, then decide
+whole document, manageable   -> FULL once
+large/structured document    -> SECTION traversal
+focused question             -> QUERY / SECTION, then HYDRATE selected refs
+```
+
+Governance Markdown is retrieved section-first: locate the heading/section
+carrying the fact and read that bounded slice; blind offset continuation is
+the fallback, not the default. Compact Governance Cards and the Context Route
+are derived navigation, never authority: use them to orient, then read the
+authoritative source through its exact ref when detail is required.
+
 ## Production model (thin, LLM-first)
 
 You own plan interpretation, workflow strategy, sequencing, delegation,

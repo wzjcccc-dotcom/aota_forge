@@ -142,6 +142,16 @@ def _require_logical_ref(value: Any, label: str, *, max_length: int = MAX_CARD_R
     return text
 
 
+def require_logical_ref(value: Any, label: str, *, max_length: int = MAX_CARD_REF_LENGTH) -> str:
+    """Public bounded logical-ref validator shared by the Governance layer.
+
+    M2/W2: the Context Route and ephemeral Working Set use the same logical-ref
+    contract as Cards (no host paths, no drive paths, bounded length).  This is
+    the one shared validator — no second ref dialect is introduced.
+    """
+    return _require_logical_ref(value, label, max_length=max_length)
+
+
 def _normalize_marker_tuple(value: Any, label: str, *, max_entries: int) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -157,6 +167,11 @@ def _normalize_marker_tuple(value: Any, label: str, *, max_entries: int) -> tupl
     if len(items) > max_entries:
         raise GovernanceCardError("INVALID_FIELD", f"{label} exceeds maximum {max_entries} entries")
     return tuple(sorted(items))
+
+
+def require_marker_tuple(value: Any, label: str, *, max_entries: int) -> tuple[str, ...]:
+    """Public bounded marker-tuple validator (same shape as card missing facts)."""
+    return _normalize_marker_tuple(value, label, max_entries=max_entries)
 
 
 @dataclass(frozen=True)
@@ -817,4 +832,6 @@ __all__ = [
     "PlanLifecycleFact",
     "ProgressCard",
     "ProjectCard",
+    "require_logical_ref",
+    "require_marker_tuple",
 ]
