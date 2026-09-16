@@ -112,7 +112,11 @@ CP_DOES_NOT_ASK_WHY_TASK_IS_STARTED = True
 TASK_START_OPERATION = "task.start"
 
 # The only semantic inputs the LLM supplies.
-TASK_START_LLM_SUPPLIED: tuple[str, ...] = ("role", "handoff_ref")
+# AF #59 M1: ``plan_ref`` is an optional REF LOCATOR (owner/repo#number) used
+# by the unbound host session to locate the server-side Plan authority at the
+# operation boundary. It is a locator, never authority, and is
+# correlation-only for already-trusted bindings.
+TASK_START_LLM_SUPPLIED: tuple[str, ...] = ("role", "handoff_ref", "plan_ref")
 
 # Trusted runtime information mechanically derived server-side.
 TASK_START_CONTROL_PLANE_ENRICHES: tuple[str, ...] = (

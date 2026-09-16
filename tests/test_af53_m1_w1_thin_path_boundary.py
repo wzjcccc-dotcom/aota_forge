@@ -161,8 +161,10 @@ class TestLifecycleStateSeparation:
 
 class TestTaskStartSemanticSurface:
     def test_llm_supplies_only_role_and_handoff_ref(self):
+        # AF #59 M1 adds the optional ``plan_ref`` REF LOCATOR (a locator,
+        # never authority) for the unbound host session path.
         assert tpb.TASK_START_OPERATION == "task.start"
-        assert tpb.TASK_START_LLM_SUPPLIED == ("role", "handoff_ref")
+        assert tpb.TASK_START_LLM_SUPPLIED == ("role", "handoff_ref", "plan_ref")
 
     def test_canonical_descriptor_matches_contract(self):
         from aota_forge.work_plane.task_main_descriptors import TASK_START_DESCRIPTOR

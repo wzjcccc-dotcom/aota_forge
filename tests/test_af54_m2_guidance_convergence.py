@@ -333,10 +333,13 @@ class TestG7ToolSchemaStaysSharedAndThin:
         # thin shared shapes: handoff.write stays {mode, payload}; task.start
         # stays {role, handoff_ref} — M2 must not have invented a second
         # handoff schema or fattened the tool schema with tutorials.
+        # AF #59 M1: each additionally carries the optional ``plan_ref`` REF
+        # LOCATOR (owner/repo#number) for the unbound host session; it is a
+        # locator, never authority, and no second handoff schema was created.
         hw = {s.name: s.type for s in ops["handoff.write"].inputs}
-        assert hw == {"mode": "str", "payload": "dict"}
+        assert hw == {"mode": "str", "payload": "dict", "plan_ref": "str?"}
         ts = {s.name: s.type for s in ops["task.start"].inputs}
-        assert ts == {"role": "str", "handoff_ref": "str"}
+        assert ts == {"role": "str", "handoff_ref": "str", "plan_ref": "str?"}
 
     def test_no_procedural_text_entered_operation_descriptions(self) -> None:
         from aota_forge.core.contracts.loader import (
