@@ -9,9 +9,10 @@ Deterministic local-only proofs:
 * unknown / path-shaped root_ref fail closed with typed codes
 * capability enforcement: write on project-main denied
 * forged sibling roots fail mechanical sandbox validation
-* prepared Governance 2.0 refs (authorized-evidence) are not instantiable;
-  AF #57 M1/W2 supersedes the local-governance half: that root now requires
-  the trusted project-scoped governance binding and is never model-grantable
+* prepared Governance 2.0 refs require their trusted bindings; AF #57 M1/W2
+  supersedes the local-governance half and AF #57 M2/W4 supersedes the
+  authorized-evidence half: both roots are now instantiable only through
+  their trusted project-scoped bindings and are never model-grantable
 * §8 trusted projection separates plan / project / worktree and carries
   bounded root refs only (no physical paths)
 """
@@ -79,12 +80,14 @@ def test_flags_freeze() -> None:
     assert ar.SECOND_SANDBOX_SUBSYSTEM_CREATED is False
     assert ar.SECOND_AUTHORITY_ENGINE_CREATED is False
     assert ar.GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED is False
-    # AF #57 M1/W2 supersedes the W1-era pin: the local-governance root is
-    # now instantiable through the trusted project-scoped governance binding
-    # (see test_af57_m1_w2_local_governance_authority.py); authorized-evidence
-    # remains a prepared, never-instantiated abstraction.
+    # AF #57 M2/W4 supersedes the remaining W1-era pin: authorized-evidence is
+    # now instantiable through the trusted project-scoped evidence binding
+    # (see test_af57_m2_w4_governed_read_extensions.py); a bare construction
+    # without that trusted source still fails closed.
     assert ar.LOCAL_GOVERNANCE_ROOT_SUPPORTED is True
-    assert ar.PREPARED_ROOT_REFS_INSTANTIATED is False
+    assert ar.AUTHORIZED_EVIDENCE_ROOT_SUPPORTED is True
+    assert ar.PREPARED_ROOT_REFS == ()
+    assert ar.PREPARED_ROOT_REFS_INSTANTIATED is True
 
 
 def test_task_main_roots(tmp_path: Path) -> None:
@@ -187,16 +190,33 @@ def test_write_capability_not_constructible_on_project_main(tmp_path: Path) -> N
 
 def test_prepared_governance_roots_require_trusted_binding(tmp_path: Path) -> None:
     sandbox = _sandbox(tmp_path, shared_root=True)
-    # authorized-evidence remains a prepared abstraction: never instantiable.
-    for prepared in ("authorized-evidence",):
-        with pytest.raises(ar.AuthorizedRootSetError):
-            ar.AuthorizedRoot(
-                root_ref=prepared,
-                root_kind=prepared,
-                root_path=sandbox.worktree_root,
-                capabilities=frozenset({"read"}),
-                project_id=sandbox.project_id,
-            )
+    # AF #57 M2/W4: authorized-evidence is instantiable only from the trusted
+    # project-scoped evidence binding; a bare sandbox-path construction is
+    # still rejected (and never model-grantable).
+    with pytest.raises(ar.AuthorizedRootSetError):
+        ar.AuthorizedRoot(
+            root_ref="authorized-evidence",
+            root_kind="authorized-evidence",
+            root_path=sandbox.worktree_root,
+            capabilities=frozenset({"read"}),
+            project_id=sandbox.project_id,
+        )
+    bare_evidence = ar.AuthorizedRoot(
+        root_ref="authorized-evidence",
+        root_kind="authorized-evidence",
+        root_path=sandbox.worktree_root,
+        capabilities=frozenset({"read"}),
+        project_id=sandbox.project_id,
+        source=ar.SOURCE_TRUSTED_EVIDENCE,
+    )
+    with pytest.raises(ar.AuthorizedEvidenceRootError):
+        ar.validate_authorized_evidence_root(
+            bare_evidence, project_id=sandbox.project_id, binding=None
+        )
+    with pytest.raises(ar.AuthorizedRootSetError):
+        ar.AuthorizedRootSet(
+            session_kind=ar.ROOT_SET_SESSION_TASK_MAIN, roots=(bare_evidence,)
+        )
     # AF #57 M1/W2: local-governance is instantiable only from the trusted
     # project-scoped governance binding; a bare sandbox-path construction is
     # still rejected by the separate governance validation seam.

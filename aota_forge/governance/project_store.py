@@ -36,6 +36,14 @@ The one local SQLite adapter lives in
 ``aota_forge.governance.sqlite_store`` and is exposed through the bounded
 composition seam ``aota_forge.composition.project_governance``.  Cross-cutting
 runtime wiring is W4 (not W3).
+
+AF #57 M2/W4 additive extension: the durable bounded cross-project grant
+record (``governance.cross_project_grant``) is owned by this same store.  The
+plan core schema version intentionally stays 1: the accepted W1/W3 contract
+pins (``PROJECT_GOVERNANCE_SCHEMA_VERSION == 1`` and the fresh v1 table set)
+must remain unchanged, and the grant table is a bounded additive table
+materialized on first grant write rather than a versioned migration.  There
+is no generic migration framework, no ORM and no second grant database.
 """
 
 from __future__ import annotations
@@ -66,7 +74,9 @@ GOVERNANCE_SUBSYSTEM_OWNS_EXECUTION_STATE = False
 GOVERNANCE_SUBSYSTEM_OWNS_TASK_MAIN_COORDINATOR_STATE = False
 
 # Minimal reopen safety only; no migration framework and no speculative
-# future schemas are implied by this number.
+# future schemas are implied by this number.  AF #57 M2/W4 keeps the plan
+# core at v1 and uses a bounded additive grant table in the same database
+# (see the sqlite adapter); no version bump is required or made.
 PROJECT_GOVERNANCE_SCHEMA_VERSION = 1
 
 # Minimum Plan-level governance lifecycle for the M1 local Plan binding proof.

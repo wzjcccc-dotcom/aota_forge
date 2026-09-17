@@ -21,6 +21,14 @@ Mechanics:
 The store owns project / Plan governance only.  It does not create tables or
 fields for execution attempts, worker results, work progression, completion
 queue, or Human Brake (see the negative guards in ``project_store``).
+
+AF #57 M2/W4 additive extension: the bounded cross-project grant record
+(``cross_project_grant``) is durable in this same store.  It is *not* a
+second grant database and not a schema-version bump: the plan core keeps its
+v1 table/version/handling unchanged, while the grant table is a bounded
+additive table materialized on first grant write and revalidated fail-closed
+whenever it exists.  Grants are never written to ``project_plan_governance``
+as fake Plan rows.
 """
 
 from __future__ import annotations
@@ -29,12 +37,22 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterator
 
 from aota_forge.adapters.plan_authority.binding import (
     PlanAuthorityBinding,
     PlanAuthorityBindingError,
+)
+from aota_forge.governance.cross_project_grant import (
+    GRANT_STATE_ACTIVE,
+    GRANT_STATE_REVOKED,
+    CrossProjectGrant,
+    CrossProjectGrantAlreadyExistsError,
+    CrossProjectGrantNotFoundError,
+    CrossProjectGrantRecordError,
+    StaleCrossProjectGrantRevisionError,
 )
 from aota_forge.governance.project_store import (
     PROJECT_GOVERNANCE_SCHEMA_VERSION,
@@ -82,6 +100,63 @@ _UPDATE_SQL = (
     f"UPDATE {_TABLE} SET lifecycle_state = ?, source_kind = ?, authority_ref = ?, "
     "source_revision = ?, source_digest = ?, revision = ? "
     "WHERE project_id = ? AND plan_id = ? AND revision = ?"
+)
+
+# AF #57 M2/W4 additive bounded grant table (same store, no version bump; the
+# plan core table, version marker, and semantics are unchanged).
+_GRANT_TABLE = "cross_project_grants"
+_GRANT_COLUMNS = (
+    "grant_id",
+    "requesting_project",
+    "target_project",
+    "root_kind",
+    "capabilities",
+    "bounded_scope",
+    "authority_basis",
+    "authority_anchor_plan_id",
+    "authority_ref",
+    "authority_digest",
+    "end_condition",
+    "bound_plan_id",
+    "target_resolution_project_id",
+    "target_resolution_digest",
+    "state",
+    "revision",
+)
+_GRANT_CREATE_TABLE_SQL = f"""
+CREATE TABLE IF NOT EXISTS {_GRANT_TABLE} (
+    grant_id TEXT NOT NULL PRIMARY KEY,
+    requesting_project TEXT NOT NULL,
+    target_project TEXT NOT NULL,
+    root_kind TEXT NOT NULL,
+    capabilities TEXT NOT NULL,
+    bounded_scope TEXT NOT NULL,
+    authority_basis TEXT NOT NULL,
+    authority_anchor_plan_id TEXT NOT NULL,
+    authority_ref TEXT NOT NULL,
+    authority_digest TEXT NOT NULL,
+    end_condition TEXT NOT NULL,
+    bound_plan_id TEXT,
+    target_resolution_project_id TEXT NOT NULL,
+    target_resolution_digest TEXT NOT NULL,
+    state TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1)
+)
+"""
+_GRANT_INSERT_SQL = (
+    f"INSERT INTO {_GRANT_TABLE} ({', '.join(_GRANT_COLUMNS)}) "
+    f"VALUES ({', '.join('?' for _ in _GRANT_COLUMNS)})"
+)
+_GRANT_SELECT_ONE_SQL = (
+    f"SELECT {', '.join(_GRANT_COLUMNS)} FROM {_GRANT_TABLE} WHERE grant_id = ?"
+)
+_GRANT_SELECT_PROJECT_SQL = (
+    f"SELECT {', '.join(_GRANT_COLUMNS)} FROM {_GRANT_TABLE} "
+    "WHERE requesting_project = ? ORDER BY grant_id"
+)
+_GRANT_REVOKE_SQL = (
+    f"UPDATE {_GRANT_TABLE} SET state = ?, revision = ? "
+    "WHERE grant_id = ? AND revision = ?"
 )
 
 # SQLite error codes that mean the persisted bytes are not a usable database.
@@ -207,6 +282,37 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
             ) from exc
         for row in rows:
             self._row_to_record(row)
+        if self._grants_table_exists():
+            try:
+                grant_rows = self._connection.execute(
+                    f"SELECT {', '.join(_GRANT_COLUMNS)} FROM {_GRANT_TABLE}"
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise ProjectGovernanceCorruptStateError(
+                    f"cannot read governance grant records: {exc}"
+                ) from exc
+            for grant_row in grant_rows:
+                self._row_to_grant(grant_row)
+
+    def _grants_table_exists(self) -> bool:
+        try:
+            row = self._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (_GRANT_TABLE,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise ProjectGovernanceCorruptStateError(
+                f"cannot inspect governance grant schema: {exc}"
+            ) from exc
+        return row is not None
+
+    def _ensure_grants_table(self) -> None:
+        try:
+            self._connection.execute(_GRANT_CREATE_TABLE_SQL)
+        except sqlite3.Error as exc:
+            raise ProjectGovernancePersistenceError(
+                f"cannot materialize the bounded governance grant table: {exc}"
+            ) from exc
 
     # -- transaction mechanics -------------------------------------------------
 
@@ -283,6 +389,86 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
         except (PlanAuthorityBindingError, ProjectGovernanceRecordError, ValueError, TypeError) as exc:
             raise ProjectGovernanceCorruptStateError(
                 f"corrupted governance record for project {project_id!r} plan {plan_id!r}: {exc}"
+            ) from exc
+
+    # -- grant row / record conversion (AF #57 M2/W4) ---------------------------
+
+    @staticmethod
+    def _encode_capabilities(record: CrossProjectGrant) -> str:
+        return json.dumps(sorted(record.capabilities), ensure_ascii=True, separators=(",", ":"))
+
+    @staticmethod
+    def _decode_capabilities(value: Any) -> frozenset[str]:
+        if not isinstance(value, str):
+            raise CrossProjectGrantRecordError("stored capabilities must be TEXT")
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise CrossProjectGrantRecordError("stored capabilities are not JSON") from exc
+        if not isinstance(decoded, list) or not all(
+            isinstance(item, str) for item in decoded
+        ):
+            raise CrossProjectGrantRecordError("stored capabilities must be a JSON string list")
+        return frozenset(decoded)
+
+    @classmethod
+    def _grant_params(cls, record: CrossProjectGrant) -> tuple[Any, ...]:
+        return (
+            record.grant_id,
+            record.requesting_project,
+            record.target_project,
+            record.root_kind,
+            cls._encode_capabilities(record),
+            record.bounded_scope,
+            record.authority.basis,
+            record.authority.anchor_plan_id,
+            record.authority.authority_ref,
+            record.authority.authority_digest,
+            record.end_condition,
+            record.bound_plan_id or None,
+            record.target_resolution.project_id,
+            record.target_resolution.resolution_digest,
+            record.state,
+            record.revision,
+        )
+
+    @staticmethod
+    def _row_to_grant(row: sqlite3.Row) -> CrossProjectGrant:
+        grant_id = row["grant_id"]
+        try:
+            return CrossProjectGrant.from_dict(
+                {
+                    "grant_id": grant_id,
+                    "requesting_project": row["requesting_project"],
+                    "target_project": row["target_project"],
+                    "root_kind": row["root_kind"],
+                    "capabilities": sorted(
+                        SQLiteProjectGovernanceStore._decode_capabilities(row["capabilities"])
+                    ),
+                    "bounded_scope": row["bounded_scope"],
+                    "authority": {
+                        "basis": row["authority_basis"],
+                        "anchor_plan_id": row["authority_anchor_plan_id"],
+                        "authority_ref": row["authority_ref"],
+                        "authority_digest": row["authority_digest"],
+                    },
+                    "end_condition": row["end_condition"],
+                    "bound_plan_id": row["bound_plan_id"] or "",
+                    "target_resolution": {
+                        "project_id": row["target_resolution_project_id"],
+                        "status": "RESOLVED",
+                        "candidate_count": 1,
+                        "resolution_digest": row["target_resolution_digest"],
+                    },
+                    "state": row["state"],
+                    "revision": row["revision"],
+                }
+            )
+        except ProjectGovernanceCorruptStateError:
+            raise
+        except Exception as exc:
+            raise ProjectGovernanceCorruptStateError(
+                f"corrupted governance grant record {grant_id!r}: {exc}"
             ) from exc
 
     # -- port --------------------------------------------------------------------
@@ -405,6 +591,124 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                 if cursor.rowcount != 1:
                     raise StalePlanRevisionError(
                         f"plan record {project_id}/{plan_id} changed during mutation; fail closed"
+                    )
+                self._inject_write_failure()
+        return candidate
+
+    # -- cross-project grants (AF #57 M2/W4) -------------------------------------
+
+    def put_cross_project_grant(self, record: CrossProjectGrant) -> CrossProjectGrant:
+        if not isinstance(record, CrossProjectGrant):
+            raise CrossProjectGrantRecordError("record must be a CrossProjectGrant")
+        if record.revision != 1:
+            raise CrossProjectGrantRecordError(
+                "put_cross_project_grant creates a new record at revision 1; "
+                "revocation is the only mutation"
+            )
+        with self._lock:
+            self._require_open()
+            with self._write_transaction():
+                self._ensure_grants_table()
+                try:
+                    self._connection.execute(_GRANT_INSERT_SQL, self._grant_params(record))
+                except sqlite3.IntegrityError as exc:
+                    raise CrossProjectGrantAlreadyExistsError(
+                        f"cross-project grant already exists: {record.grant_id}"
+                    ) from exc
+                except sqlite3.Error as exc:
+                    raise ProjectGovernancePersistenceError(
+                        f"grant write failed: {exc}"
+                    ) from exc
+                self._inject_write_failure()
+        return record
+
+    def get_cross_project_grant(self, grant_id: str) -> CrossProjectGrant | None:
+        with self._lock:
+            self._require_open()
+            if not self._grants_table_exists():
+                return None
+            try:
+                row = self._connection.execute(
+                    _GRANT_SELECT_ONE_SQL, (grant_id,)
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise ProjectGovernancePersistenceError(
+                    f"grant read failed: {exc}"
+                ) from exc
+            if row is None:
+                return None
+            return self._row_to_grant(row)
+
+    def list_cross_project_grants(
+        self, requesting_project: str, *, active_only: bool = False
+    ) -> tuple[CrossProjectGrant, ...]:
+        with self._lock:
+            self._require_open()
+            if not self._grants_table_exists():
+                return ()
+            try:
+                rows = self._connection.execute(
+                    _GRANT_SELECT_PROJECT_SQL, (requesting_project,)
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise ProjectGovernancePersistenceError(
+                    f"grant read failed: {exc}"
+                ) from exc
+            grants = tuple(self._row_to_grant(row) for row in rows)
+            if active_only:
+                grants = tuple(
+                    grant for grant in grants if grant.state == GRANT_STATE_ACTIVE
+                )
+            return grants
+
+    def revoke_cross_project_grant(
+        self, grant_id: str, expected_revision: int
+    ) -> CrossProjectGrant:
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 1
+        ):
+            raise CrossProjectGrantRecordError("expected_revision must be a positive integer")
+        with self._lock:
+            self._require_open()
+            with self._write_transaction():
+                self._ensure_grants_table()
+                try:
+                    row = self._connection.execute(
+                        _GRANT_SELECT_ONE_SQL, (grant_id,)
+                    ).fetchone()
+                except sqlite3.Error as exc:
+                    raise ProjectGovernancePersistenceError(
+                        f"grant read failed: {exc}"
+                    ) from exc
+                if row is None:
+                    raise CrossProjectGrantNotFoundError(
+                        f"cross-project grant not found: {grant_id}"
+                    )
+                current = self._row_to_grant(row)
+                if current.revision != expected_revision:
+                    raise StaleCrossProjectGrantRevisionError(
+                        f"cross-project grant {grant_id} revision {current.revision} "
+                        f"does not match expected revision {expected_revision}"
+                    )
+                if current.state != GRANT_STATE_ACTIVE:
+                    raise CrossProjectGrantRecordError(
+                        f"cross-project grant {grant_id} is already {current.state}"
+                    )
+                candidate = replace(current, state=GRANT_STATE_REVOKED, revision=current.revision + 1)
+                try:
+                    cursor = self._connection.execute(
+                        _GRANT_REVOKE_SQL,
+                        (candidate.state, candidate.revision, grant_id, expected_revision),
+                    )
+                except sqlite3.Error as exc:
+                    raise ProjectGovernancePersistenceError(
+                        f"grant write failed: {exc}"
+                    ) from exc
+                if cursor.rowcount != 1:
+                    raise StaleCrossProjectGrantRevisionError(
+                        f"cross-project grant {grant_id} changed during mutation; fail closed"
                     )
                 self._inject_write_failure()
         return candidate
