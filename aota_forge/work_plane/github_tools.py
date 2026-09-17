@@ -328,19 +328,11 @@ def _digest(body: str) -> str:
 # ``PLAN_BODY_INVALID`` diagnostic in the message.
 # ---------------------------------------------------------------------------
 
-_PORTABLE_PLAN_KIND_TOKENS = frozenset({"portable_plan"})
-_PLAN_KIND_MARKER_RE = re.compile(r"^\s*PLAN_(?:TYPE|KIND)\s*=\s*portable_plan\s*$", re.MULTILINE)
-
-
-def _plan_kind_tokens(fields: Mapping[str, Any]) -> str:
-    values = [
-        value.strip()
-        for key in ("PLAN_TYPE", "PLAN_KIND")
-        if isinstance(value := fields.get(key), str) and value.strip()
-    ]
-    if len(set(values)) > 1:
-        return ""
-    return values[0] if values else ""
+_PLAN_FIELD_NAMES = frozenset(
+    {"PLAN_TYPE", "PLAN_KIND", "PROJECT_ID", "PLAN_STATUS", "CURRENT_MILESTONE"}
+)
+_PLAN_IDENTITY_FIELD_NAMES = ("PLAN_TYPE", "PLAN_KIND", "PROJECT_ID")
+_NON_AUTHORITATIVE_PLAN_SECTION_KINDS = frozenset({"appendix", "control", "historical"})
 
 
 def _plan_kind_aliases_conflict(fields: Mapping[str, Any]) -> bool:
@@ -352,78 +344,177 @@ def _plan_kind_aliases_conflict(fields: Mapping[str, Any]) -> bool:
     return len(set(values)) > 1
 
 
-def _is_portable_plan_body(body: str) -> bool:
-    """Bounded recognition of a Portable Plan Issue body.
+def _plan_field_values(body: str) -> dict[str, tuple[str, ...]]:
+    """Collect canonical Plan fields through the existing section parser.
 
-    The current authoritative body is recognized when it normalizes as a
-    Portable Plan (``PLAN_TYPE``/``PLAN_KIND`` = ``portable_plan``) or, for a
-    malformed body, when it declares the canonical kind markers. Non-Plan
-    Issues are not constrained by the guard.
+    Governance 2.0 keeps its normative identity in a governance section,
+    while the older Portable Plan shape keeps it in current state.  The
+    normalizer already parses both shapes; this helper only retains bounded
+    observations so candidate identity conflicts cannot hide in a merged
+    section subsection.
     """
-    from aota_forge.core.plan.normalize import PlanNormalizationError, normalize_portable_plan
+    from aota_forge.core.plan.sections import parse_body_sections
 
+    observed: dict[str, list[str]] = {key: [] for key in _PLAN_FIELD_NAMES}
     try:
-        doc = normalize_portable_plan(body)
-    except PlanNormalizationError:
-        return bool(_PLAN_KIND_MARKER_RE.search(body))
+        sections = parse_body_sections(body)
     except Exception:
-        return bool(_PLAN_KIND_MARKER_RE.search(body))
+        return {key: () for key in _PLAN_FIELD_NAMES}
+    for section in sections:
+        if section.kind in _NON_AUTHORITATIVE_PLAN_SECTION_KINDS:
+            continue
+        for key in _PLAN_FIELD_NAMES:
+            value = section.key_values.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            value = value.strip()
+            if value not in observed[key]:
+                observed[key].append(value)
+        for key, duplicate_values in section.duplicates:
+            if key not in observed:
+                continue
+            for value in duplicate_values:
+                if isinstance(value, str) and value.strip() and value.strip() not in observed[key]:
+                    observed[key].append(value.strip())
+    return {key: tuple(values) for key, values in observed.items()}
+
+
+def _normalized_plan_fields(document: Any) -> dict[str, str]:
+    """Return the canonical Plan fields from either normalized field domain."""
+    fields: dict[str, str] = {}
+    for source in (getattr(document, "current_fields", {}), getattr(document, "governance", {})):
+        if not isinstance(source, Mapping):
+            continue
+        for key in _PLAN_FIELD_NAMES:
+            value = source.get(key)
+            if key not in fields and isinstance(value, str) and value.strip():
+                fields[key] = value.strip()
+    return fields
+
+
+def _recognized_plan_shape(fields: Mapping[str, Any]) -> bool:
+    """Recognize a governed Plan from canonical fields, not presentation labels."""
+    plan_type = fields.get("PLAN_TYPE")
+    plan_kind = fields.get("PLAN_KIND")
     return (
-        _plan_kind_aliases_conflict(doc.current_fields)
-        or _plan_kind_tokens(doc.current_fields) in _PORTABLE_PLAN_KIND_TOKENS
+        isinstance(plan_type, str)
+        and plan_type.strip() == "portable_plan"
+        and (plan_kind is None or (isinstance(plan_kind, str) and bool(plan_kind.strip())))
+        and any(
+            isinstance(fields.get(key), str) and bool(fields[key].strip())
+            for key in ("PLAN_STATUS", "CURRENT_MILESTONE")
+        )
     )
 
 
+def _is_portable_plan_body(body: str) -> bool:
+    """Bounded recognition of a governed Portable Plan Issue body.
+
+    Both the established current-state Portable Plan shape and the
+    Governance 2.0 normative shape are recognized through canonical fields
+    emitted by ``normalize_portable_plan``.  A title, Issue number, or a
+    governance-looking word alone is never sufficient.
+    """
+    from aota_forge.core.plan.normalize import PlanNormalizationError, normalize_portable_plan
+
+    values = _plan_field_values(body)
+    try:
+        doc = normalize_portable_plan(body)
+    except PlanNormalizationError:
+        fields = {key: entries[0] for key, entries in values.items() if entries}
+        return _recognized_plan_shape(fields)
+    except Exception:
+        fields = {key: entries[0] for key, entries in values.items() if entries}
+        return _recognized_plan_shape(fields)
+    return _recognized_plan_shape(_normalized_plan_fields(doc))
+
+
+def _plan_document_error(
+    body: str,
+    document: Any,
+    *,
+    label: str,
+) -> tuple[str | None, dict[str, str]]:
+    """Validate one normalized governed Plan candidate and return its identity."""
+    fields = _normalized_plan_fields(document)
+    values = _plan_field_values(body)
+
+    # Preserve the established Portable Plan alias-conflict diagnostic.  A
+    # Governance 2.0 body stores PLAN_KIND=architecture_successor in its
+    # governance section, so that valid shape is intentionally not treated as
+    # a conflict between the two canonical fields.
+    current_fields = getattr(document, "current_fields", {})
+    if isinstance(current_fields, Mapping) and _plan_kind_aliases_conflict(current_fields):
+        return f"{label} Plan PLAN_TYPE and PLAN_KIND conflict", fields
+
+    for key in _PLAN_IDENTITY_FIELD_NAMES:
+        if len(values.get(key, ())) > 1:
+            return f"{label} Plan {key} has conflicting canonical values", fields
+
+    plan_type = fields.get("PLAN_TYPE", "")
+    plan_kind = fields.get("PLAN_KIND", "") or (plan_type if plan_type == "portable_plan" else "")
+    fields = {**fields, "PLAN_KIND": plan_kind}
+    if plan_type != "portable_plan" or not plan_kind:
+        if label == "candidate":
+            return "candidate is missing PLAN_TYPE=portable_plan / PLAN_KIND=portable_plan", fields
+        return f"{label} Plan is missing PLAN_TYPE=portable_plan and PLAN_KIND", fields
+    if not fields.get("PROJECT_ID", ""):
+        return f"{label} is missing PROJECT_ID", fields
+    plan_status = fields.get("PLAN_STATUS", "")
+    if not plan_status:
+        return f"{label} is missing PLAN_STATUS", fields
+    if plan_status == "active" and not fields.get("CURRENT_MILESTONE", ""):
+        return f"active {label} is missing CURRENT_MILESTONE", fields
+    return None, fields
+
+
 def _portable_plan_replacement_error(cur_body: str, candidate: str) -> str | None:
-    """Return a bounded diagnostic when a whole-body replacement must fail.
+    """Return a bounded diagnostic when a governed Plan candidate must fail.
 
     ``None`` means the candidate may proceed to the existing CAS/provider
-    path. Applies only to a target recognized as a Portable Plan Issue; an
-    invalid or incomplete candidate returns a diagnostic BEFORE any GitHub
-    mutation.
+    path. Applies only to a target recognized as a governed Plan Issue; an
+    invalid, incomplete, or identity-changing full candidate returns a
+    diagnostic BEFORE any GitHub mutation.
     """
     if not _is_portable_plan_body(cur_body):
         return None
     from aota_forge.core.plan.normalize import PlanNormalizationError, normalize_portable_plan
 
     try:
-        doc = normalize_portable_plan(candidate)
+        current_doc = normalize_portable_plan(cur_body)
+    except PlanNormalizationError as exc:
+        return f"current Plan does not normalize as a Portable Plan ({exc.diagnostic_code})"
+    except ForgeError as exc:
+        return f"current Plan does not normalize as a Portable Plan ({exc.code})"
+    except Exception as exc:
+        return f"current Plan does not normalize as a Portable Plan ({type(exc).__name__})"
+
+    current_error, current_fields = _plan_document_error(cur_body, current_doc, label="current")
+    if current_error is not None:
+        return current_error
+
+    try:
+        candidate_doc = normalize_portable_plan(candidate)
     except PlanNormalizationError as exc:
         return f"candidate does not normalize as a Portable Plan ({exc.diagnostic_code})"
     except ForgeError as exc:
         return f"candidate does not normalize as a Portable Plan ({exc.code})"
+    except Exception as exc:
+        return f"candidate does not normalize as a Portable Plan ({type(exc).__name__})"
+    candidate_error, candidate_fields = _plan_document_error(candidate, candidate_doc, label="candidate")
+    if candidate_error is not None:
+        return candidate_error
 
-    fields = doc.current_fields
-    if _plan_kind_aliases_conflict(fields):
-        return "candidate PLAN_TYPE and PLAN_KIND conflict"
-    kind = _plan_kind_tokens(fields)
-    if kind not in _PORTABLE_PLAN_KIND_TOKENS:
-        return "candidate is missing PLAN_TYPE=portable_plan / PLAN_KIND=portable_plan"
-    if not (fields.get("PROJECT_ID") or "").strip():
-        return "candidate is missing PROJECT_ID"
-    if not (doc.plan_status or "").strip():
-        return "candidate is missing PLAN_STATUS"
-    if doc.plan_status == "active" and not (doc.current_milestone or "").strip():
-        return "active candidate is missing CURRENT_MILESTONE"
-
-    try:
-        current_doc = normalize_portable_plan(cur_body)
-    except Exception:
-        current_doc = None
-    if current_doc is not None:
-        cur_fields = current_doc.current_fields
-        if _plan_kind_aliases_conflict(cur_fields):
-            return "current Plan PLAN_TYPE and PLAN_KIND conflict"
-        cur_project = (cur_fields.get("PROJECT_ID") or "").strip()
-        candidate_project = (fields.get("PROJECT_ID") or "").strip()
-        if cur_project and cur_project != candidate_project:
-            return (
-                "candidate PROJECT_ID does not preserve the current Plan identity "
-                f"({candidate_project!r} != {cur_project!r})"
-            )
-        cur_kind = _plan_kind_tokens(cur_fields)
-        if cur_kind and cur_kind != kind:
-            return "candidate PLAN_TYPE/PLAN_KIND does not preserve the current Plan kind"
+    for key in _PLAN_IDENTITY_FIELD_NAMES:
+        current_value = current_fields.get(key, "")
+        candidate_value = candidate_fields.get(key, "")
+        if current_value != candidate_value:
+            if key == "PROJECT_ID":
+                return (
+                    "candidate PROJECT_ID does not preserve the current Plan identity "
+                    f"({candidate_value!r} != {current_value!r})"
+                )
+            return f"candidate {key} does not preserve the current Plan identity"
     return None
 
 
