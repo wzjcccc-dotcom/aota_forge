@@ -252,13 +252,24 @@ class GitHubAuthorityAdapter(PlanAuthorityMutationPort):
         self,
         store: GitHubStoreProtocol,
         auth_preflight: Callable[[], bool] | None = None,
+        plan_authority: str | None = None,
     ) -> None:
         self._store = store
         self._auth_preflight = auth_preflight or _default_auth_preflight
+        self._plan_authority = (
+            plan_authority.strip()
+            if isinstance(plan_authority, str) and plan_authority.strip()
+            else None
+        )
         # Idempotency memory: idempotency_key -> complete_identity_fingerprint
         self._idempotency_map: dict[str, str] = {}
         # No semantic decision maker
         self.GITHUB_ADAPTER_IS_SEMANTIC_DECISION_MAKER = "no"
+
+    @property
+    def plan_authority(self) -> str | None:
+        """Return the trusted operator-bound GitHub authority reference."""
+        return self._plan_authority
 
     # -----------------------------------------------------------------------
     # Port contract: read_raw_authority

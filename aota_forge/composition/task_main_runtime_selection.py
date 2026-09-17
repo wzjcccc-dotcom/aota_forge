@@ -113,6 +113,7 @@ THIN_BOOTSTRAP_VERSION = 1
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _MAX_ORIGIN_LEN = 512
+_MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES = 128 * 1024
 
 
 class TaskMainRuntimeSelectionError(ValueError):
@@ -195,6 +196,45 @@ def _validate_origin_session(value: Any) -> str:
     return candidate
 
 
+def _normalize_governance_context(value: Any) -> dict[str, Any]:
+    """Normalize a trusted prebuilt context carrier for bootstrap storage."""
+    if not isinstance(value, Mapping):
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_context must be a mapping"
+        )
+    try:
+        normalized = json.loads(
+            json.dumps(
+                dict(value),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise TaskMainRuntimeSelectionError(
+            f"thin bootstrap governance_context must be bounded JSON data: {exc}"
+        ) from exc
+    if not isinstance(normalized, dict):
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_context must normalize to an object"
+        )
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > _MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES:
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_context exceeds the bounded carrier size "
+            f"{_MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES}"
+        )
+    return normalized
+
+
 def _validate_worktree_root(value: Any) -> Path:
     if not isinstance(value, (str, PathLike)):
         raise TaskMainRuntimeSelectionError(
@@ -214,6 +254,29 @@ def _validate_worktree_root(value: Any) -> Path:
     return root
 
 
+def _validate_governance_store_path(value: Any) -> Path:
+    if not isinstance(value, (str, PathLike)) or not str(value).strip():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_store_path must be a filesystem path"
+        )
+    raw_path = Path(value)
+    if raw_path.is_symlink():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_store_path must not be a symlink"
+        )
+    try:
+        path = raw_path.resolve(strict=True)
+    except OSError as exc:
+        raise TaskMainRuntimeSelectionError(
+            f"thin bootstrap governance_store_path inaccessible: {exc}"
+        ) from exc
+    if not path.is_file():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap governance_store_path must be an existing file"
+        )
+    return path
+
+
 def materialize_thin_task_main_bootstrap(
     *,
     worktree_root: str | PathLike[str],
@@ -231,6 +294,9 @@ def materialize_thin_task_main_bootstrap(
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
     plan_id: str | None = None,
+    governance_base: str | PathLike[str] | None = None,
+    governance_store_path: str | PathLike[str] | None = None,
+    governance_context: Mapping[str, Any] | None = None,
 ) -> Path:
     """Write the operator-owned thin task-main bootstrap (0600, digest-bound later).
 
@@ -238,7 +304,9 @@ def materialize_thin_task_main_bootstrap(
     operator RuntimeConfig locator, exact origin session, execution store and
     the explicit ``runtime_path=thin`` marker. It never contains
     MilestonePlanView, coordinator store, TaskMainControlService, review
-    state or task_main.advance_once.
+    state or task_main.advance_once. An optional bounded prebuilt Governance
+    context projection may ride alongside that identity; no raw Plan body is
+    materialized here.
 
     AF #55 M1/W4: optional trusted Plan project identity —
     ``source_repository`` (Plan SOURCE_REPOSITORY assertion) and
@@ -278,6 +346,12 @@ def materialize_thin_task_main_bootstrap(
 
     if not isinstance(executor_id, str) or not executor_id.strip():
         raise TaskMainRuntimeSelectionError("thin bootstrap executor_id invalid")
+
+    normalized_governance_context = (
+        _normalize_governance_context(governance_context)
+        if governance_context is not None
+        else None
+    )
 
     dest = root / THIN_BOOTSTRAP_RELPATH
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -344,6 +418,39 @@ def materialize_thin_task_main_bootstrap(
                 "thin bootstrap plan_id must be one canonical internal Plan ID"
             )
         payload["plan_id"] = candidate_plan_id
+    # AF #57 M3/W1: carry the trusted governance base through the same
+    # digest-covered operator bootstrap channel. The project-scoped root is
+    # re-derived by the thin host; the base itself is never an authorized root.
+    if governance_base is not None and str(governance_base).strip():
+        candidate_governance_base = str(governance_base).strip()
+        if len(candidate_governance_base) > 4096 or "\x00" in candidate_governance_base:
+            raise TaskMainRuntimeSelectionError("thin bootstrap governance_base invalid")
+        raw_governance_base = Path(candidate_governance_base)
+        if raw_governance_base.is_symlink():
+            raise TaskMainRuntimeSelectionError(
+                "thin bootstrap governance_base must not be a symlink"
+            )
+        try:
+            resolved_governance_base = raw_governance_base.resolve()
+        except OSError as exc:
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap governance_base inaccessible: {exc}"
+            ) from exc
+        if not resolved_governance_base.is_dir():
+            raise TaskMainRuntimeSelectionError(
+                "thin bootstrap governance_base must be an existing directory"
+            )
+        payload["governance_base"] = str(resolved_governance_base)
+    if governance_store_path is not None and str(governance_store_path).strip():
+        payload["governance_store_path"] = str(
+            _validate_governance_store_path(governance_store_path)
+        )
+    # AF #57 M3/W1: the trusted runtime may carry an already-composed bounded
+    # Governance projection through the digest-covered bootstrap. This is a
+    # carrier only; role.bootstrap remains responsible for semantic validation
+    # and non-authority projection.
+    if normalized_governance_context is not None:
+        payload["governance_context"] = normalized_governance_context
     # AF #55 M1/W4: optional trusted Plan project identity. A malformed
     # declared SOURCE_REPOSITORY fails closed at materialization (before any
     # session launch); the registry path must be an existing trusted file.
@@ -488,10 +595,21 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
     # local-governance read/search root. Trusted server-side construction
     # input only; absent means the accepted #55 root set is unchanged.
     governance_base = str(content.get("governance_base") or "").strip() or None
+    raw_governance_store_path = str(content.get("governance_store_path") or "").strip()
+    governance_store_path = (
+        str(_validate_governance_store_path(raw_governance_store_path))
+        if raw_governance_store_path
+        else None
+    )
     # AF #57 M1/W4: trusted internal Plan identity carried by the same
     # operator-owned bootstrap channel (digest-covered). Absent => the launch
     # stays plan-less/legacy; never inferred from the Issue or the worktree.
     plan_id = str(content.get("plan_id") or "").strip() or None
+    governance_context = content.get("governance_context")
+    if governance_context is not None and not isinstance(governance_context, Mapping):
+        raise TrustedBindingError(
+            "thin task-main bootstrap governance_context must be a mapping"
+        )
     # AF #55 M2: the bootstrap's static authorized root_ref declaration must
     # match the canonical contract exactly (fail closed on drift). The actual
     # authorized root set is re-materialized child-side from the resolved
@@ -525,7 +643,9 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         source_repository=source_repository,
         registry_path=registry_path,
         governance_base=governance_base,
+        governance_store_path=governance_store_path,
         plan_id=plan_id,
+        governance_context=governance_context,
     )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:

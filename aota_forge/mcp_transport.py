@@ -866,6 +866,9 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # the direct trusted binding (mechanical copies only).
         authorized_roots=getattr(binding, "authorized_roots", None),
         source_repository=str(getattr(binding, "source_repository", "") or ""),
+        # AF #57 M3/W1: preserve the trusted prebuilt Governance projection
+        # for the canonical role.bootstrap consumer.
+        governance_context=getattr(binding, "governance_context", None),
     )
 
 

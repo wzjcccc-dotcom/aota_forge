@@ -834,6 +834,10 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        plan_id: str | None = None,
+        governance_base: Path | str | None = None,
+        governance_store_path: Path | str | None = None,
+        governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
     ) -> DailyLaunchContext:
@@ -858,6 +862,10 @@ class DailyTaskMainLauncher:
         transports that durable projection. Normal startup therefore needs
         only project binding + plan identity/source + user gate / runtime
         config, without work_semantics.
+
+        ``governance_context`` is an optional trusted prebuilt projection. The
+        thin path carries it through the digest-covered bootstrap; it is not
+        constructed or interpreted by this launcher.
         """
         worktree_root = Path(worktree_root).resolve()
         if not worktree_root.is_dir():
@@ -881,6 +889,11 @@ class DailyTaskMainLauncher:
         # handoff content, Plan prose, startup prompt and aota.invoke arguments
         # can never select or override it.
         runtime_path = select_task_main_runtime_path(runtime_config)
+
+        if governance_context is not None and runtime_path != TASK_MAIN_RUNTIME_PATH_THIN:
+            raise RuntimeError(
+                "governance_context requires the thin task-main runtime path"
+            )
 
         if runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
             # Thin production candidate: trusted operator bootstrap only. No
@@ -929,6 +942,10 @@ class DailyTaskMainLauncher:
                 git_integration_branch=git_integration_branch,
                 git_remote=git_remote,
                 plan_ref=plan_ref,
+                plan_id=plan_id,
+                governance_base=governance_base,
+                governance_store_path=governance_store_path,
+                governance_context=governance_context,
                 source_repository=source_repository,
                 registry_path=registry_path,
             )
@@ -1055,6 +1072,10 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        plan_id: str | None = None,
+        governance_base: Path | str | None = None,
+        governance_store_path: Path | str | None = None,
+        governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
     ) -> DailyLaunchContext:
@@ -1070,6 +1091,10 @@ class DailyTaskMainLauncher:
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
+            plan_id=plan_id,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+            governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
         )
@@ -1104,11 +1129,10 @@ class DailyTaskMainLauncher:
                 bootstrap_path=bootstrap_path,
             )
             envelope_locator = str(envelope_path)
-        except Exception:
-            # If envelope creation fails, fall back to bootstrap path alone
-            # (fail-closed at MCP will still require envelope, so this path
-            # will be rejected there; we preserve bootstrap for 0600 audit)
-            envelope_locator = str(bootstrap_path.resolve())
+        except Exception as exc:
+            raise TaskMainSessionContinuationError(
+                f"task-main binding envelope creation failed: {exc}; refusing launch"
+            ) from exc
 
         env = {
             "PYTHONPATH": repo_root + (os.pathsep + os.environ.get("PYTHONPATH", "") if os.environ.get("PYTHONPATH") else ""),
@@ -1160,6 +1184,10 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        plan_id: str | None = None,
+        governance_base: Path | str | None = None,
+        governance_store_path: Path | str | None = None,
+        governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
     ) -> tuple[DailyLaunchContext, str]:
@@ -1224,6 +1252,10 @@ class DailyTaskMainLauncher:
                 git_integration_branch=git_integration_branch,
                 git_remote=git_remote,
                 plan_ref=plan_ref,
+                plan_id=plan_id,
+                governance_base=governance_base,
+                governance_store_path=governance_store_path,
+                governance_context=governance_context,
                 source_repository=source_repository,
                 registry_path=registry_path,
                 trace_path=trace_path,
@@ -1240,6 +1272,12 @@ class DailyTaskMainLauncher:
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
+            plan_id=plan_id,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+            governance_context=governance_context,
+            source_repository=source_repository,
+            registry_path=registry_path,
         )
         env = self.build_env(ctx_pending, trace_path=trace_path)
         hermes_env = {**os.environ, **env}
@@ -1292,6 +1330,12 @@ class DailyTaskMainLauncher:
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
+            plan_id=plan_id,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+            governance_context=governance_context,
+            source_repository=source_repository,
+            registry_path=registry_path,
         )
         continuation = self._continue_exact_session(
             ctx=ctx,
@@ -1504,6 +1548,10 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None,
         git_remote: str | None,
         plan_ref: str | None,
+        plan_id: str | None,
+        governance_base: Path | str | None,
+        governance_store_path: Path | str | None,
+        governance_context: Mapping[str, Any] | None,
         source_repository: str | None,
         registry_path: Path | str | None,
         trace_path: Path | None,
@@ -1592,6 +1640,10 @@ class DailyTaskMainLauncher:
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
+            plan_id=plan_id,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+            governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
         )
@@ -1916,6 +1968,10 @@ class DailyTaskMainLauncher:
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
         plan_ref: str | None = None,
+        plan_id: str | None = None,
+        governance_base: Path | str | None = None,
+        governance_store_path: Path | str | None = None,
+        governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
     ) -> Any:
@@ -1944,6 +2000,10 @@ class DailyTaskMainLauncher:
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
+            plan_id=plan_id,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+            governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
         )
@@ -1979,6 +2039,10 @@ def launch_daily_task_main(
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
     plan_ref: str | None = None,
+    plan_id: str | None = None,
+    governance_base: str | os.PathLike[str] | None = None,
+    governance_store_path: str | os.PathLike[str] | None = None,
+    governance_context: Mapping[str, Any] | None = None,
     source_repository: str | None = None,
     registry_path: str | os.PathLike[str] | None = None,
 ) -> tuple[DailyLaunchContext, str]:
@@ -2004,6 +2068,10 @@ def launch_daily_task_main(
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
         plan_ref=plan_ref,
+        plan_id=plan_id,
+        governance_base=governance_base,
+        governance_store_path=governance_store_path,
+        governance_context=governance_context,
         source_repository=source_repository,
         registry_path=registry_path,
     )

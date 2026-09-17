@@ -333,10 +333,23 @@ _PLAN_KIND_MARKER_RE = re.compile(r"^\s*PLAN_(?:TYPE|KIND)\s*=\s*portable_plan\s
 
 
 def _plan_kind_tokens(fields: Mapping[str, Any]) -> str:
-    kind = fields.get("PLAN_KIND")
-    if not isinstance(kind, str) or not kind.strip():
-        kind = fields.get("PLAN_TYPE")
-    return kind.strip() if isinstance(kind, str) else ""
+    values = [
+        value.strip()
+        for key in ("PLAN_TYPE", "PLAN_KIND")
+        if isinstance(value := fields.get(key), str) and value.strip()
+    ]
+    if len(set(values)) > 1:
+        return ""
+    return values[0] if values else ""
+
+
+def _plan_kind_aliases_conflict(fields: Mapping[str, Any]) -> bool:
+    values = [
+        value.strip()
+        for key in ("PLAN_TYPE", "PLAN_KIND")
+        if isinstance(value := fields.get(key), str) and value.strip()
+    ]
+    return len(set(values)) > 1
 
 
 def _is_portable_plan_body(body: str) -> bool:
@@ -355,7 +368,10 @@ def _is_portable_plan_body(body: str) -> bool:
         return bool(_PLAN_KIND_MARKER_RE.search(body))
     except Exception:
         return bool(_PLAN_KIND_MARKER_RE.search(body))
-    return _plan_kind_tokens(doc.current_fields) in _PORTABLE_PLAN_KIND_TOKENS
+    return (
+        _plan_kind_aliases_conflict(doc.current_fields)
+        or _plan_kind_tokens(doc.current_fields) in _PORTABLE_PLAN_KIND_TOKENS
+    )
 
 
 def _portable_plan_replacement_error(cur_body: str, candidate: str) -> str | None:
@@ -378,6 +394,8 @@ def _portable_plan_replacement_error(cur_body: str, candidate: str) -> str | Non
         return f"candidate does not normalize as a Portable Plan ({exc.code})"
 
     fields = doc.current_fields
+    if _plan_kind_aliases_conflict(fields):
+        return "candidate PLAN_TYPE and PLAN_KIND conflict"
     kind = _plan_kind_tokens(fields)
     if kind not in _PORTABLE_PLAN_KIND_TOKENS:
         return "candidate is missing PLAN_TYPE=portable_plan / PLAN_KIND=portable_plan"
@@ -394,6 +412,8 @@ def _portable_plan_replacement_error(cur_body: str, candidate: str) -> str | Non
         current_doc = None
     if current_doc is not None:
         cur_fields = current_doc.current_fields
+        if _plan_kind_aliases_conflict(cur_fields):
+            return "current Plan PLAN_TYPE and PLAN_KIND conflict"
         cur_project = (cur_fields.get("PROJECT_ID") or "").strip()
         candidate_project = (fields.get("PROJECT_ID") or "").strip()
         if cur_project and cur_project != candidate_project:
@@ -716,14 +736,6 @@ class BoundedGitHubToolProvider:
         cur_state = current.get("state")
         candidate_body: str | None = None
         if body is not None:
-            # AF #59 M2/W3: a full replacement of a recognized Portable Plan
-            # Issue must be a structurally valid Portable Plan preserving the
-            # Plan identity — fail BEFORE any provider mutation otherwise.
-            plan_body_error = _portable_plan_replacement_error(cur_body, body)
-            if plan_body_error is not None:
-                return ToolResponse.failure(
-                    {"code": "INVALID_INPUT", "message": f"PLAN_BODY_INVALID: {plan_body_error}"}
-                )
             candidate_body = body
         elif section_marker is not None:
             # Mechanical marker-delimited subsection upsert (idempotent; the
@@ -737,6 +749,14 @@ class BoundedGitHubToolProvider:
                 candidate_body = upsert_proof_subsection(cur_body, section_marker, section_content)
             except (TypeError, ValueError) as exc:
                 return ToolResponse.failure({"code": "INVALID_INPUT", "message": f"section upsert rejected: {str(exc)[:200]}"})
+        # AF #59 M2/W3: validate the final body after either a full replacement
+        # or a section merge, before the provider mutation boundary.
+        if candidate_body is not None:
+            plan_body_error = _portable_plan_replacement_error(cur_body, candidate_body)
+            if plan_body_error is not None:
+                return ToolResponse.failure(
+                    {"code": "INVALID_INPUT", "message": f"PLAN_BODY_INVALID: {plan_body_error}"}
+                )
         state_changed = state is not None and state != cur_state
         already = (candidate_body is None or candidate_body == cur_body) and not state_changed
         if already:

@@ -50,6 +50,7 @@ model-facing ``aota.invoke`` argument can provide or override them
 
 from __future__ import annotations
 
+import importlib
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -63,10 +64,14 @@ from aota_forge.composition.execution import (
     create_opencode_completion_delivery_transport,
     create_production_execution_dispatcher,
 )
-from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
 from aota_forge.composition.plan_authority import (
     PlanAuthorityCompositionError,
     compose_plan_authority_binding,
+    resolve_bound_plan_authority,
 )
 from aota_forge.composition.project_binding import (
     resolve_trusted_project_binding,
@@ -83,6 +88,9 @@ from aota_forge.core.execution.durable_state import (
     OriginSessionRef,
     is_bound_origin_session_ref,
 )
+from aota_forge.core.identity.ids import make_id
+from aota_forge.core.identity.kinds import IdKind, SubjectKind
+from aota_forge.core.identity.refs import object_ref_subject
 from aota_forge.core.ingress import bind_execution_dispatcher
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.mcp_transport import create_aota_invoke_dispatch
@@ -459,6 +467,14 @@ class ThinTaskMainHost:
     # materialized (None for a plan-less legacy launch). Mechanical carrier
     # only: it decides no policy and grants no authority by itself.
     plan_authority_binding: PlanAuthorityBinding | None = None
+    # AF #57 M3/W1: trusted prebuilt Governance-context projection carried
+    # into the existing role.bootstrap composition. It is derived context,
+    # never authority and never model-supplied.
+    governance_context: Mapping[str, Any] | None = None
+    # AF #57 M3/W1: optional resolved authority read boundary. It is populated
+    # only when trusted durable lookup inputs were explicitly supplied.
+    plan_authority_reader: Any | None = None
+    governance_store: Any | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -488,7 +504,11 @@ class ThinTaskMainHost:
         """
         from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
 
-        return handle_role_bootstrap(self.trusted_binding, {})
+        return handle_role_bootstrap(
+            self.trusted_binding,
+            {},
+            governance_context=self.trusted_binding.governance_context,
+        )
 
     def create_mcp_server(self) -> Any:
         """Existing single-entry MCP server over this host's trusted binding."""
@@ -515,6 +535,9 @@ def compose_thin_task_main_host(
     registry_path: str | PathLike[str] | None = None,
     governance_base: str | PathLike[str] | None = None,
     plan_id: str | None = None,
+    governance_context: Mapping[str, Any] | None = None,
+    governance_store_path: str | PathLike[str] | None = None,
+    plan_authority_reader: Any | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -543,6 +566,17 @@ def compose_thin_task_main_host(
     local-governance root (``local_governance``). Both at once fail closed
     (no silent dual authority); neither fails closed when an identity is
     declared. When absent, the launch stays plan-less/legacy and unchanged.
+
+    AF #57 M3/W1: ``governance_context`` is an optional prebuilt trusted
+    server-side projection. This composition only carries it through the
+    existing binding and role.bootstrap path; it does not build Cards, read a
+    Plan, or make projection data authoritative.
+
+    AF #57 M3/W1: when ``governance_store_path`` is supplied for a local
+    binding, the durable Plan record is resolved before exposing the local
+    read adapter. A supplied GitHub source reader is accepted only when its
+    operator-bound authority reference matches the launch binding. Omitting
+    these optional inputs preserves the existing side-by-side launch shape.
     """
     pid = _validate_identifier(project_id, "project_id")
     wid = _validate_identifier(worktree_id, "worktree_id")
@@ -614,10 +648,6 @@ def compose_thin_task_main_host(
     if host_client_factory is not None:
         dispatcher_kwargs["host_client_factory"] = host_client_factory
     dispatcher = create_production_execution_dispatcher(**dispatcher_kwargs)
-    # Bind the existing canonical Core ingress dispatcher seam (same seam the
-    # legacy host bootstrap uses) so the thin task.start/task.return lifecycle
-    # resolves the real production dispatcher above.
-    bind_execution_dispatcher(dispatcher)
 
     # AF #56 M3/W1: mechanical host-completion-transport selection by the SAME
     # operator RuntimeConfig executor authority (shared trusted preparation,
@@ -678,6 +708,62 @@ def compose_thin_task_main_host(
         except PlanAuthorityCompositionError as exc:
             raise TrustedBindingError(str(exc)) from exc
 
+    resolved_plan_authority: Any | None = None
+    resolved_governance_store: Any | None = None
+    if plan_authority_binding is not None:
+        try:
+            if plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+                if plan_authority_reader is not None:
+                    raise TrustedBindingError(
+                        "local Plan authority cannot also receive a GitHub source reader"
+                    )
+                if governance_store_path is not None:
+                    if local_governance_binding is None or normalized_plan_id is None:
+                        raise TrustedBindingError(
+                            "local Plan authority resolution requires a trusted governance root"
+                        )
+                    # Keep the default thin-host import closure free of the
+                    # governance package's legacy projection imports. This
+                    # branch is the explicit durable local-authority path.
+                    governance_composition = importlib.import_module(
+                        "aota_forge.composition.project_governance"
+                    )
+                    resolved_governance_store = (
+                        governance_composition.open_project_governance_store(
+                            governance_store_path
+                        )
+                    )
+                    local_target = object_ref_subject(
+                        make_id(
+                            IdKind.SUBJECT,
+                            normalized_plan_id,
+                            sub_kind=SubjectKind.PLAN,
+                        )
+                    )
+                    from aota_forge.adapters.plan_authority.local_governance import (
+                        LocalPlanAuthorityDestination,
+                    )
+
+                    local_destination = LocalPlanAuthorityDestination(
+                        governance_root=local_governance_binding,
+                        plan_id=normalized_plan_id,
+                        expected_ref=local_target,
+                    )
+                    resolved_plan_authority = resolve_bound_plan_authority(
+                        plan_authority_binding,
+                        local_destination=local_destination,
+                        governance_store=resolved_governance_store,
+                    )
+            elif plan_authority_reader is not None:
+                resolved_plan_authority = resolve_bound_plan_authority(
+                    plan_authority_binding,
+                    source_reader=plan_authority_reader,
+                )
+        except (PlanAuthorityCompositionError, TrustedBindingError) as exc:
+            if resolved_governance_store is not None:
+                resolved_governance_store.close()
+            raise TrustedBindingError(str(exc)) from exc
+
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
         project_id=pid,
@@ -717,6 +803,7 @@ def compose_thin_task_main_host(
         # above) and the task-main authorized root set. Mechanical carriers.
         source_repository=str(trusted_project_context.get("source_repository", "") or ""),
         authorized_roots=authorized_roots,
+        governance_context=governance_context,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 
@@ -733,6 +820,10 @@ def compose_thin_task_main_host(
         governing_repository=plan_binding.repo if plan_binding is not None else "",
         source_repository=source_repository_value,
     )
+
+    # Bind the existing canonical Core ingress dispatcher seam only after every
+    # trusted authority lookup and host construction check has succeeded.
+    bind_execution_dispatcher(dispatcher)
 
     return ThinTaskMainHost(
         project_id=pid,
@@ -761,6 +852,9 @@ def compose_thin_task_main_host(
         context_projection=context_projection,
         local_governance_binding=local_governance_binding,
         plan_authority_binding=plan_authority_binding,
+        plan_authority_reader=resolved_plan_authority,
+        governance_store=resolved_governance_store,
+        governance_context=governance_context,
     )
 
 

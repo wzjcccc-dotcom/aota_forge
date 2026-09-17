@@ -293,12 +293,16 @@ class FixtureGitHubStore(GitHubStoreProtocol):
 class FakeGitHubAuthorityAdapter(GitHubAuthorityAdapter):
     """Fake adapter wrapping FixtureGitHubStore for deterministic tests — no production injector."""
 
-    def __init__(self, store: FixtureGitHubStore | None = None, hooks: InjectionHooks | None = None, auth_preflight: Callable[[], bool] | None = None) -> None:
+    def __init__(self, store: FixtureGitHubStore | None = None, hooks: InjectionHooks | None = None, auth_preflight: Callable[[], bool] | None = None, plan_authority: str | None = None) -> None:
         self.fixture_store = store or FixtureGitHubStore(hooks=hooks)
         # Pass hooks to store if supplied separately
         if hooks is not None:
             self.fixture_store._hooks = hooks
-        super().__init__(store=self.fixture_store, auth_preflight=auth_preflight)
+        super().__init__(
+            store=self.fixture_store,
+            auth_preflight=auth_preflight,
+            plan_authority=plan_authority,
+        )
         self.mutate_call_count = 0
         self.read_call_count = 0
         self.verify_call_count = 0

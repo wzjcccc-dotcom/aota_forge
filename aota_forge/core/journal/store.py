@@ -168,11 +168,32 @@ class DurableJournalEntry:
             original_raw_digest=data.get("original_raw_digest"),
             evidence=dict(data.get("_evidence", data.get("evidence", {}))),
         )
+        journal_revision = data.get("_journal_revision")
+        if (
+            isinstance(journal_revision, bool)
+            or not isinstance(journal_revision, int)
+            or journal_revision < 1
+        ):
+            raise ValueError("_journal_revision must be a positive integer")
+        durable_schema_version = data.get("_durable_schema_version")
+        if durable_schema_version != DURABLE_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported durable journal schema version: {durable_schema_version!r}"
+            )
+        journal_revision_token = data.get("_journal_revision_token")
+        expected_token = _compute_revision_token(
+            record.journal_id,
+            journal_revision,
+            record.journal_state,
+            record.observed_raw_digest,
+        )
+        if journal_revision_token != expected_token:
+            raise ValueError("durable journal revision token does not match the record")
         return cls(
             record=record,
-            journal_revision=int(data.get("_journal_revision", 1)),
-            journal_revision_token=str(data.get("_journal_revision_token", "")),
-            durable_schema_version=int(data.get("_durable_schema_version", DURABLE_SCHEMA_VERSION)),
+            journal_revision=journal_revision,
+            journal_revision_token=journal_revision_token,
+            durable_schema_version=durable_schema_version,
             created_at=str(data.get("_created_at", _now_iso())),
             updated_at=str(data.get("_updated_at", _now_iso())),
         )
@@ -221,6 +242,22 @@ class DurableJournalStore(ABC):
         Validates transition via is_valid_transition; increments revision and token.
         Returns (success, current_entry). On stale/invalid, raises or returns failure.
         Implementations must use durable store state, not only in-memory mutex.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def cas_update_evidence(
+        self,
+        journal_id: str,
+        expected_revision: int,
+        *,
+        evidence: Dict[str, Any],
+    ) -> Tuple[bool, DurableJournalEntry]:
+        """CAS bounded evidence without changing the journal state.
+
+        This is used when a cross-store lifecycle binding has completed after
+        the external mutation already reached a terminal journal state. It is
+        metadata-only and never authorizes another external attempt.
         """
         raise NotImplementedError
 
@@ -387,6 +424,48 @@ class InMemoryDurableJournalStore(DurableJournalStore):
 
     def get(self, journal_id: str) -> Optional[DurableJournalEntry]:
         return self._store.get(journal_id)
+
+    def cas_update_evidence(
+        self,
+        journal_id: str,
+        expected_revision: int,
+        *,
+        evidence: Dict[str, Any],
+    ) -> Tuple[bool, DurableJournalEntry]:
+        if self._closed:
+            raise JournalPersistenceFailureError("store closed")
+        if not isinstance(evidence, dict):
+            raise JournalPersistenceFailureError("evidence update must be a mapping")
+        lock = self._lock_for(journal_id)
+        with lock:
+            current = self._store.get(journal_id)
+            if current is None:
+                raise JournalNotFoundError(f"journal not found: {journal_id}")
+            if current.journal_revision != expected_revision:
+                raise StaleJournalRevisionError(
+                    f"stale evidence update: expected rev {expected_revision} but current "
+                    f"rev {current.journal_revision}"
+                )
+            merged = {**dict(current.record.evidence), **evidence}
+            if merged == dict(current.record.evidence):
+                return (True, current)
+            new_revision = current.journal_revision + 1
+            new_record = replace(current.record, evidence=merged)
+            new_entry = DurableJournalEntry(
+                record=new_record,
+                journal_revision=new_revision,
+                journal_revision_token=_compute_revision_token(
+                    journal_id,
+                    new_revision,
+                    new_record.journal_state,
+                    new_record.observed_raw_digest,
+                ),
+                durable_schema_version=current.durable_schema_version,
+                created_at=current.created_at,
+                updated_at=_now_iso(),
+            )
+            self._store[journal_id] = new_entry
+            return (True, new_entry)
 
     def scan_requiring_recovery(self) -> List[DurableJournalEntry]:
         eligible = {JournalState.PREPARED, JournalState.APPLYING, JournalState.OUTCOME_UNKNOWN, JournalState.RECONCILING}
@@ -610,6 +689,57 @@ class FileBackedDurableJournalStore(DurableJournalStore):
         with self._global_lock:
             self._load()
             return self._store.get(journal_id)
+
+    def cas_update_evidence(
+        self,
+        journal_id: str,
+        expected_revision: int,
+        *,
+        evidence: Dict[str, Any],
+    ) -> Tuple[bool, DurableJournalEntry]:
+        if self._closed:
+            raise JournalPersistenceFailureError("store closed")
+        if not isinstance(evidence, dict):
+            raise JournalPersistenceFailureError("evidence update must be a mapping")
+        lock = self._lock_for(journal_id)
+        with lock:
+            self._load()
+            current = self._store.get(journal_id)
+            if current is None:
+                raise JournalNotFoundError(f"journal not found: {journal_id}")
+            if current.journal_revision != expected_revision:
+                raise StaleJournalRevisionError(
+                    f"stale evidence update: expected rev {expected_revision} but current "
+                    f"rev {current.journal_revision}"
+                )
+            merged = {**dict(current.record.evidence), **evidence}
+            if merged == dict(current.record.evidence):
+                return (True, current)
+            new_revision = current.journal_revision + 1
+            new_record = replace(current.record, evidence=merged)
+            new_entry = DurableJournalEntry(
+                record=new_record,
+                journal_revision=new_revision,
+                journal_revision_token=_compute_revision_token(
+                    journal_id,
+                    new_revision,
+                    new_record.journal_state,
+                    new_record.observed_raw_digest,
+                ),
+                durable_schema_version=current.durable_schema_version,
+                created_at=current.created_at,
+                updated_at=_now_iso(),
+            )
+            self._store[journal_id] = new_entry
+            try:
+                self._persist()
+            except JournalPersistenceFailureError:
+                self._store[journal_id] = current
+                raise
+            except Exception as exc:
+                self._store[journal_id] = current
+                raise JournalPersistenceFailureError(f"persist failed: {exc}") from exc
+            return (True, new_entry)
 
     def scan_requiring_recovery(self) -> List[DurableJournalEntry]:
         eligible = {JournalState.PREPARED, JournalState.APPLYING, JournalState.OUTCOME_UNKNOWN, JournalState.RECONCILING}

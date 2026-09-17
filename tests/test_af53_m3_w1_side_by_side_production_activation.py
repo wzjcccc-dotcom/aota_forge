@@ -75,6 +75,7 @@ from aota_forge.adapters.hermes.session_reentry import (
     PersistedSessionToolSurface,
 )
 from aota_forge.adapters.plan_authority import StaticPlanAuthorityAdapter
+from aota_forge.adapters.plan_authority.binding import PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
 from aota_forge.composition import task_main_daily_launcher as launcher_mod
 from aota_forge.composition.task_main_daily_launcher import (
     PHASE1_SESSION_BOOTSTRAP_PROMPT,
@@ -293,7 +294,14 @@ def _prepare_legacy(tmp_path: Path, cfg: Path):
     return launcher, root, ctx
 
 
-def _prepare_thin(tmp_path: Path, cfg: Path, *, worktree_id: str = "wt-thin", project_id: str = PROJECT_ID):
+def _prepare_thin(
+    tmp_path: Path,
+    cfg: Path,
+    *,
+    worktree_id: str = "wt-thin",
+    project_id: str = PROJECT_ID,
+    governance_context=None,
+):
     root = _make_project_root(tmp_path, project_id)
     launcher = DailyTaskMainLauncher(plan_adapter=None)
     ctx = launcher.prepare(
@@ -303,6 +311,7 @@ def _prepare_thin(tmp_path: Path, cfg: Path, *, worktree_id: str = "wt-thin", pr
         runtime_config_path=cfg,
         plan_adapter=None,
         origin_task_main_session_ref="20260913_af53_m3w1_thin_session",
+        governance_context=governance_context,
     )
     return launcher, root, ctx
 
@@ -382,6 +391,111 @@ class TestADefaultSelection:
 
 
 class TestBExplicitTrustedThinSelection:
+    def test_launcher_round_trips_explicit_plan_authority_inputs(
+        self, tmp_path: Path, test_hermes_executable: Path
+    ) -> None:
+        cfg = _write_runtime_config(
+            tmp_path, test_hermes_executable, name="runtime-thin.json", runtime_path="thin"
+        )
+        root = _make_project_root(tmp_path)
+        governance_base = tmp_path / "plans"
+        (governance_base / PROJECT_ID).mkdir(parents=True)
+        plan_id = "plan_af53_m3w1"
+        launcher = DailyTaskMainLauncher(plan_adapter=None)
+
+        ctx = launcher.prepare(
+            worktree_root=root,
+            project_id=PROJECT_ID,
+            worktree_id="wt-thin-authority",
+            runtime_config_path=cfg,
+            origin_task_main_session_ref="20260913_af53_m3w1_authority_session",
+            plan_id=plan_id,
+            governance_base=governance_base,
+        )
+
+        payload = json.loads((root / THIN_BOOTSTRAP_RELPATH).read_text(encoding="utf-8"))
+        assert payload["plan_id"] == plan_id
+        assert payload["governance_base"] == str(governance_base.resolve())
+        binding = _load_binding(launcher, ctx)
+        assert binding.plan_authority_binding is not None
+        assert binding.plan_authority_binding.plan_id == plan_id
+        assert binding.plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        assert binding.authorized_roots is not None
+        assert binding.authorized_roots.get("local-governance").root_path == str(
+            (governance_base / PROJECT_ID).resolve()
+        )
+
+    def test_launcher_without_plan_id_preserves_github_legacy_binding(
+        self, tmp_path: Path, test_hermes_executable: Path
+    ) -> None:
+        cfg = _write_runtime_config(
+            tmp_path, test_hermes_executable, name="runtime-thin.json", runtime_path="thin"
+        )
+        root = _make_project_root(tmp_path)
+        launcher = DailyTaskMainLauncher(plan_adapter=None)
+
+        ctx = launcher.prepare(
+            worktree_root=root,
+            project_id=PROJECT_ID,
+            worktree_id="wt-thin-legacy-plan",
+            runtime_config_path=cfg,
+            origin_task_main_session_ref="20260913_af53_m3w1_legacy_session",
+            plan_ref="wzjcccc-dotcom/aota-hermes-tools#57",
+        )
+
+        binding = _load_binding(launcher, ctx)
+        assert binding.plan_authority_binding is None
+        assert binding.plan_binding is not None
+        assert binding.plan_binding.plan_ref == "wzjcccc-dotcom/aota-hermes-tools#57"
+
+    def test_launcher_plan_id_without_authority_source_fails_closed(
+        self, tmp_path: Path, test_hermes_executable: Path
+    ) -> None:
+        cfg = _write_runtime_config(
+            tmp_path, test_hermes_executable, name="runtime-thin.json", runtime_path="thin"
+        )
+        root = _make_project_root(tmp_path)
+        launcher = DailyTaskMainLauncher(plan_adapter=None)
+
+        ctx = launcher.prepare(
+            worktree_root=root,
+            project_id=PROJECT_ID,
+            worktree_id="wt-thin-missing-authority",
+            runtime_config_path=cfg,
+            origin_task_main_session_ref="20260913_af53_m3w1_missing_authority_session",
+            plan_id="plan_af53_m3w1",
+        )
+
+        with pytest.raises(TrustedBindingError) as excinfo:
+            _load_binding(launcher, ctx)
+        assert "PLAN_AUTHORITY_SOURCE_UNAVAILABLE" in str(excinfo.value)
+
+    def test_launcher_github_and_local_authority_fail_closed(
+        self, tmp_path: Path, test_hermes_executable: Path
+    ) -> None:
+        cfg = _write_runtime_config(
+            tmp_path, test_hermes_executable, name="runtime-thin.json", runtime_path="thin"
+        )
+        root = _make_project_root(tmp_path)
+        governance_base = tmp_path / "plans"
+        (governance_base / PROJECT_ID).mkdir(parents=True)
+        launcher = DailyTaskMainLauncher(plan_adapter=None)
+
+        ctx = launcher.prepare(
+            worktree_root=root,
+            project_id=PROJECT_ID,
+            worktree_id="wt-thin-dual-authority",
+            runtime_config_path=cfg,
+            origin_task_main_session_ref="20260913_af53_m3w1_dual_authority_session",
+            plan_id="plan_af53_m3w1",
+            plan_ref="wzjcccc-dotcom/aota-hermes-tools#57",
+            governance_base=governance_base,
+        )
+
+        with pytest.raises(TrustedBindingError) as excinfo:
+            _load_binding(launcher, ctx)
+        assert "PLAN_AUTHORITY_SOURCE_AMBIGUOUS" in str(excinfo.value)
+
     def test_operator_selects_thin_production_candidate(
         self, tmp_path: Path, test_hermes_executable: Path
     ) -> None:
@@ -806,6 +920,39 @@ class TestHHardProjectBoundary:
         with pytest.raises(TrustedBindingError):
             load_binding_from_envelope(envelope)
         assert not (root / BOOTSTRAP_RELPATH).exists()
+
+    def test_thin_bootstrap_round_trips_trusted_governance_context(
+        self, tmp_path: Path, test_hermes_executable: Path
+    ) -> None:
+        cfg = _write_runtime_config(
+            tmp_path, test_hermes_executable, name="runtime-thin.json", runtime_path="thin"
+        )
+        context = {
+            "CONTEXT_ROUTE": {"is_authority": False},
+            "CARDS_PRESENT": False,
+            "IS_AUTHORITY": False,
+            "GOVERNANCE_CONTEXT_IS_AUTHORITY": False,
+        }
+        launcher, root, ctx = _prepare_thin(
+            tmp_path, cfg, governance_context=context
+        )
+        bootstrap = json.loads(
+            (root / THIN_BOOTSTRAP_RELPATH).read_text(encoding="utf-8")
+        )
+        assert bootstrap["governance_context"] == context
+
+        binding = _load_binding(launcher, ctx)
+        assert binding.governance_context == context
+        dispatch = create_aota_invoke_dispatch(binding)
+        response = dispatch("role.bootstrap", {})
+        assert response["is_success"] is True, response
+        if response["payload"] is not None:
+            payload = response["payload"]
+        else:
+            hydrated = dispatch("result.hydrate", dict(response["output_ref"]))
+            assert hydrated["is_success"] is True, hydrated
+            payload = json.loads(hydrated["payload"]["content"])
+        assert payload["GOVERNANCE_CONTEXT"] == context
 
 
 # ---------------------------------------------------------------------------

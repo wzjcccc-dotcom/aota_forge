@@ -37,10 +37,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
     PlanAuthorityBinding,
+)
+from aota_forge.adapters.plan_authority.local_governance import (
+    LocalPlanAuthorityDestination,
+    LocalPlanAuthorityReadAdapter,
 )
 from aota_forge.core.plan.validation import is_plan_id
 
@@ -143,6 +148,86 @@ def compose_plan_authority_binding(
     )
 
 
+def resolve_bound_plan_authority(
+    binding: PlanAuthorityBinding,
+    *,
+    local_destination: LocalPlanAuthorityDestination | None = None,
+    governance_store: Any | None = None,
+    source_reader: PlanAuthorityReadAdapter | None = None,
+) -> PlanAuthorityReadAdapter:
+    """Resolve the already-bound Plan source without inferring authority.
+
+    Local resolution requires the durable Project Governance record and the
+    trusted destination to agree exactly. GitHub resolution only returns the
+    explicitly injected read adapter after checking its operator-bound ref.
+    No source is selected from a path, title, or model input.
+    """
+    if not isinstance(binding, PlanAuthorityBinding):
+        raise PlanAuthorityCompositionError("binding must be a PlanAuthorityBinding")
+    if binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+        if local_destination is None or governance_store is None:
+            raise PlanAuthorityCompositionError(
+                "local_governance resolution requires a trusted destination and "
+                "durable Project Governance Store"
+            )
+        if (
+            local_destination.plan_id != binding.plan_id
+            or local_destination.authority_ref != binding.authority_ref
+        ):
+            raise PlanAuthorityCompositionError(
+                "local destination does not match the bound local authority",
+                code=PLAN_AUTHORITY_COMPOSITION_INVALID,
+            )
+        record = governance_store.get_plan(local_destination.project_id, binding.plan_id)
+        if record is None:
+            raise PlanAuthorityCompositionError(
+                "durable local Plan record is missing",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
+        if record.lifecycle_state != "active":
+            raise PlanAuthorityCompositionError(
+                "durable local Plan record is not active",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
+        if (
+            record.authority.plan_id != binding.plan_id
+            or record.authority.source_kind != binding.source_kind
+            or record.authority.authority_ref != binding.authority_ref
+            or (
+                binding.source_revision is not None
+                and record.authority.source_revision != binding.source_revision
+            )
+            or (
+                binding.source_digest is not None
+                and record.authority.source_digest != binding.source_digest
+            )
+        ):
+            raise PlanAuthorityCompositionError(
+                "durable local Plan record does not match the bound authority",
+                code=PLAN_AUTHORITY_COMPOSITION_INVALID,
+            )
+        return LocalPlanAuthorityReadAdapter(local_destination, binding=record.authority)
+
+    if binding.source_kind == PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE:
+        if source_reader is None:
+            raise PlanAuthorityCompositionError(
+                "github_issue resolution requires an explicit read adapter",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
+        actual_ref = getattr(source_reader, "plan_authority", None)
+        if not isinstance(actual_ref, str) or actual_ref.strip() != binding.authority_ref:
+            raise PlanAuthorityCompositionError(
+                "source reader does not expose the exact bound GitHub authority",
+                code=PLAN_AUTHORITY_COMPOSITION_INVALID,
+            )
+        return source_reader
+
+    raise PlanAuthorityCompositionError(
+        f"unsupported Plan authority source kind: {binding.source_kind!r}",
+        code=PLAN_AUTHORITY_COMPOSITION_INVALID,
+    )
+
+
 __all__ = [
     "PLAN_AUTHORITY_COMPOSITION_INVALID",
     "PLAN_AUTHORITY_SOURCE_AMBIGUOUS",
@@ -152,4 +237,5 @@ __all__ = [
     "LOCAL_GOVERNANCE_PATH_IS_AUTHORITY",
     "PlanAuthorityCompositionError",
     "compose_plan_authority_binding",
+    "resolve_bound_plan_authority",
 ]

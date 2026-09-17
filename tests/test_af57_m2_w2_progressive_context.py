@@ -296,6 +296,7 @@ def _compose_host(
     *,
     plan_ref: str | None = PLAN_REF,
     plan_id: str | None = PLAN_A,
+    governance_context=None,
 ):
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
@@ -314,6 +315,7 @@ def _compose_host(
         registry_path=registry,
         plan_ref=plan_ref,
         plan_id=plan_id,
+        governance_context=governance_context,
     )
 
 
@@ -811,6 +813,34 @@ class TestBootstrapV2:
         host = _compose_host(tmp_path, plan_ref=None, plan_id=None)
         result = handle_role_bootstrap(host.trusted_binding, {})
         assert "GOVERNANCE_CONTEXT" not in result
+
+    def test_production_host_carries_context_through_canonical_dispatch(self, tmp_path: Path):
+        seed_root = tmp_path / "seed"
+        seed_root.mkdir()
+        source_host = _compose_host(seed_root)
+        bundle = _bundle(binding=_binding(PLAN_A, source_kind="github_issue"))
+        payload = _governance_payload(source_host, bundle=bundle)
+
+        bound_root = tmp_path / "bound"
+        bound_root.mkdir()
+        host = _compose_host(bound_root, governance_context=payload)
+        assert host.governance_context == payload
+        assert host.trusted_binding.governance_context == payload
+
+        direct = host.role_guidance()
+        assert direct["GOVERNANCE_CONTEXT"]["CONTEXT_ROUTE"]["projection_id"] == payload["CONTEXT_ROUTE"]["projection_id"]
+
+        response = host.invoke("role.bootstrap", {})
+        assert response["ok"] is True, response
+        if response["payload"] is not None:
+            projected = response["payload"]
+        else:
+            assert response["output_mode"] == "by_ref"
+            hydrated = host.invoke("result.hydrate", dict(response["output_ref"]))
+            assert hydrated["ok"] is True, hydrated
+            content = hydrated["payload"].get("content")
+            projected = json.loads(content) if isinstance(content, str) else hydrated["payload"]
+        assert projected["GOVERNANCE_CONTEXT"]["CONTEXT_ROUTE"]["projection_id"] == payload["CONTEXT_ROUTE"]["projection_id"]
 
     def test_invalid_carrier_fails_closed(self, tmp_path: Path):
         host = _compose_host(tmp_path)

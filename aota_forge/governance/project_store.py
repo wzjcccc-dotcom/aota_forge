@@ -50,6 +50,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
+import hashlib
+import re
 from typing import Any, Mapping
 
 from aota_forge.adapters.plan_authority.binding import (
@@ -88,6 +90,9 @@ PLAN_LIFECYCLE_RETIRED = "retired"
 PLAN_LIFECYCLE_STATES = frozenset({PLAN_LIFECYCLE_ACTIVE, PLAN_LIFECYCLE_RETIRED})
 
 MAX_PROJECT_REFERENCE_LENGTH = 96
+MAX_GOVERNANCE_METADATA_LENGTH = 256
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_METADATA_REFERENCE_RE = re.compile(r"^[^\x00\r\n]+$")
 
 PROJECT_GOVERNANCE_STORE_ERROR = "PROJECT_GOVERNANCE_STORE_ERROR"
 PROJECT_GOVERNANCE_RECORD_INVALID = "PROJECT_GOVERNANCE_RECORD_INVALID"
@@ -137,6 +142,18 @@ class ProjectGovernancePersistenceError(ProjectGovernanceStoreError):
 
 class ProjectGovernanceCorruptStateError(ProjectGovernanceStoreError):
     code = PROJECT_GOVERNANCE_CORRUPT_STATE
+
+
+class GovernanceMetadataAlreadyExistsError(ProjectGovernanceStoreError):
+    code = PROJECT_GOVERNANCE_PLAN_EXISTS
+
+
+class GovernanceMetadataNotFoundError(ProjectGovernanceStoreError):
+    code = PROJECT_GOVERNANCE_PLAN_NOT_FOUND
+
+
+class StaleGovernanceMetadataRevisionError(ProjectGovernanceStoreError):
+    code = PROJECT_GOVERNANCE_STALE_REVISION
 
 
 @dataclass(frozen=True)
@@ -219,6 +236,301 @@ class ProjectPlanRecord:
         )
 
 
+def _metadata_text(value: object, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or type(value) is not str
+        or not value.strip()
+        or value != value.strip()
+        or len(value) > MAX_GOVERNANCE_METADATA_LENGTH
+        or not _METADATA_REFERENCE_RE.fullmatch(value)
+    ):
+        raise ProjectGovernanceRecordError(
+            f"{label} must be a bounded single-line governance reference"
+        )
+    return value
+
+
+def _metadata_digest(value: object, label: str) -> str:
+    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
+        raise ProjectGovernanceRecordError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _metadata_optional_text(value: object, label: str) -> str | None:
+    if value is None:
+        return None
+    return _metadata_text(value, label)
+
+
+USER_GATE_STATE_REQUIRED = "required"
+USER_GATE_STATE_SATISFIED = "satisfied"
+USER_GATE_STATE_REVOKED = "revoked"
+USER_GATE_STATES = frozenset(
+    {USER_GATE_STATE_REQUIRED, USER_GATE_STATE_SATISFIED, USER_GATE_STATE_REVOKED}
+)
+
+
+@dataclass(frozen=True)
+class ProjectPlanUserGateRecord:
+    """Durable linkage to one already-issued operator user-gate fact.
+
+    This record stores provenance and CAS metadata only. It does not mint an
+    approval, evaluate policy, or contain workflow/dispatch state.
+    """
+
+    project_id: str
+    plan_id: str
+    gate_kind: str
+    gate_scope: str
+    approval_ref: str
+    approval_digest: str
+    state: str = USER_GATE_STATE_SATISFIED
+    revision: int = 1
+
+    @classmethod
+    def from_approval(
+        cls,
+        project_id: str,
+        plan_id: str,
+        gate_kind: str,
+        gate_scope: str,
+        approval: Any,
+        *,
+        state: str = USER_GATE_STATE_SATISFIED,
+    ) -> "ProjectPlanUserGateRecord":
+        """Persist an existing typed ``UserGateApproval`` fact, never a raw ref."""
+        from aota_forge.governance.cross_project_grant import UserGateApproval
+
+        if not isinstance(approval, UserGateApproval):
+            raise ProjectGovernanceRecordError(
+                "user-gate linkage requires an existing UserGateApproval fact"
+            )
+        return cls(
+            project_id=project_id,
+            plan_id=plan_id,
+            gate_kind=gate_kind,
+            gate_scope=gate_scope,
+            approval_ref=approval.approval_ref,
+            approval_digest=approval.approval_digest,
+            state=state,
+        )
+
+    @property
+    def is_satisfied(self) -> bool:
+        return self.state == USER_GATE_STATE_SATISFIED
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.project_id, str) or not PROJECT_ID_RE.fullmatch(self.project_id):
+            raise ProjectGovernanceRecordError("user-gate project_id is not canonical")
+        if not is_plan_id(self.plan_id):
+            raise ProjectGovernanceRecordError("user-gate plan_id is not canonical")
+        for value, label in (
+            (self.gate_kind, "gate_kind"),
+            (self.gate_scope, "gate_scope"),
+            (self.approval_ref, "approval_ref"),
+        ):
+            _metadata_text(value, label)
+        _metadata_digest(self.approval_digest, "approval_digest")
+        if self.state not in USER_GATE_STATES:
+            raise ProjectGovernanceRecordError(
+                f"user-gate state must be one of {sorted(USER_GATE_STATES)}"
+            )
+        if isinstance(self.revision, bool) or not isinstance(self.revision, int) or self.revision < 1:
+            raise ProjectGovernanceRecordError("user-gate revision must be positive")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "plan_id": self.plan_id,
+            "gate_kind": self.gate_kind,
+            "gate_scope": self.gate_scope,
+            "approval_ref": self.approval_ref,
+            "approval_digest": self.approval_digest,
+            "state": self.state,
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ProjectPlanUserGateRecord":
+        if not isinstance(data, Mapping):
+            raise ProjectGovernanceRecordError("user-gate payload must be a mapping")
+        required = {
+            "project_id",
+            "plan_id",
+            "gate_kind",
+            "gate_scope",
+            "approval_ref",
+            "approval_digest",
+            "state",
+        }
+        extra = set(data) - required - {"revision"}
+        if extra:
+            raise ProjectGovernanceRecordError(f"unknown user-gate field(s): {sorted(extra)}")
+        missing = required - set(data)
+        if missing:
+            raise ProjectGovernanceRecordError(f"missing user-gate field(s): {sorted(missing)}")
+        return cls(**{key: data[key] for key in required}, revision=data.get("revision", 1))
+
+
+def architecture_authority_reference(project_id: str) -> str:
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+        raise ProjectGovernanceRecordError("architecture project_id is not canonical")
+    return f"local-governance/{project_id}/ARCHITECTURE.md"
+
+
+@dataclass(frozen=True)
+class ArchitectureMetadataRecord:
+    """Minimal durable metadata for the accepted local Architecture Card source."""
+
+    project_id: str
+    current_version: str
+    current_digest: str
+    accepted_delta_ref: str | None = None
+    accepted_delta_digest: str | None = None
+    promotion_receipt_ref: str = ""
+    revision: int = 1
+
+    @property
+    def authority_ref(self) -> str:
+        return architecture_authority_reference(self.project_id)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.project_id, str) or not PROJECT_ID_RE.fullmatch(self.project_id):
+            raise ProjectGovernanceRecordError("architecture project_id is not canonical")
+        _metadata_text(self.current_version, "current_version")
+        _metadata_digest(self.current_digest, "current_digest")
+        if (self.accepted_delta_ref is None) != (self.accepted_delta_digest is None):
+            raise ProjectGovernanceRecordError(
+                "accepted architecture delta ref and digest must be supplied together"
+            )
+        _metadata_optional_text(self.accepted_delta_ref, "accepted_delta_ref")
+        if self.accepted_delta_digest is not None:
+            _metadata_digest(self.accepted_delta_digest, "accepted_delta_digest")
+        _metadata_text(self.promotion_receipt_ref, "promotion_receipt_ref")
+        if isinstance(self.revision, bool) or not isinstance(self.revision, int) or self.revision < 1:
+            raise ProjectGovernanceRecordError("architecture revision must be positive")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "current_version": self.current_version,
+            "current_digest": self.current_digest,
+            "accepted_delta_ref": self.accepted_delta_ref,
+            "accepted_delta_digest": self.accepted_delta_digest,
+            "promotion_receipt_ref": self.promotion_receipt_ref,
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ArchitectureMetadataRecord":
+        if not isinstance(data, Mapping):
+            raise ProjectGovernanceRecordError("architecture metadata payload must be a mapping")
+        required = {"project_id", "current_version", "current_digest", "promotion_receipt_ref"}
+        allowed = required | {"accepted_delta_ref", "accepted_delta_digest", "revision"}
+        extra = set(data) - allowed
+        if extra:
+            raise ProjectGovernanceRecordError(
+                f"unknown architecture metadata field(s): {sorted(extra)}"
+            )
+        missing = required - set(data)
+        if missing:
+            raise ProjectGovernanceRecordError(
+                f"missing architecture metadata field(s): {sorted(missing)}"
+            )
+        return cls(
+            project_id=data["project_id"],
+            current_version=data["current_version"],
+            current_digest=data["current_digest"],
+            accepted_delta_ref=data.get("accepted_delta_ref"),
+            accepted_delta_digest=data.get("accepted_delta_digest"),
+            promotion_receipt_ref=data["promotion_receipt_ref"],
+            revision=data.get("revision", 1),
+        )
+
+
+STEWARD_REPLAY_STATE_ACTIVE = "active"
+STEWARD_REPLAY_STATE_COMPLETED = "completed"
+STEWARD_REPLAY_STATE_FAILED_CLOSED = "failed_closed"
+STEWARD_REPLAY_STATE_CONFLICT = "conflict"
+STEWARD_REPLAY_STATES = frozenset(
+    {
+        STEWARD_REPLAY_STATE_ACTIVE,
+        STEWARD_REPLAY_STATE_COMPLETED,
+        STEWARD_REPLAY_STATE_FAILED_CLOSED,
+        STEWARD_REPLAY_STATE_CONFLICT,
+    }
+)
+
+
+@dataclass(frozen=True)
+class StewardLogicalReplayRecord:
+    """Durable mechanical replay lineage; it makes no dispatch decision."""
+
+    project_id: str
+    plan_id: str
+    lineage_id: str
+    request_digest: str
+    checkpoint_ref: str
+    checkpoint_digest: str
+    state: str = STEWARD_REPLAY_STATE_ACTIVE
+    revision: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.project_id, str) or not PROJECT_ID_RE.fullmatch(self.project_id):
+            raise ProjectGovernanceRecordError("replay project_id is not canonical")
+        if not is_plan_id(self.plan_id):
+            raise ProjectGovernanceRecordError("replay plan_id is not canonical")
+        _metadata_text(self.lineage_id, "lineage_id")
+        _metadata_digest(self.request_digest, "request_digest")
+        _metadata_text(self.checkpoint_ref, "checkpoint_ref")
+        _metadata_digest(self.checkpoint_digest, "checkpoint_digest")
+        if self.state not in STEWARD_REPLAY_STATES:
+            raise ProjectGovernanceRecordError(
+                f"replay state must be one of {sorted(STEWARD_REPLAY_STATES)}"
+            )
+        if isinstance(self.revision, bool) or not isinstance(self.revision, int) or self.revision < 1:
+            raise ProjectGovernanceRecordError("replay revision must be positive")
+
+    @property
+    def replay_id(self) -> str:
+        payload = f"{self.project_id}:{self.plan_id}:{self.lineage_id}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "plan_id": self.plan_id,
+            "lineage_id": self.lineage_id,
+            "request_digest": self.request_digest,
+            "checkpoint_ref": self.checkpoint_ref,
+            "checkpoint_digest": self.checkpoint_digest,
+            "state": self.state,
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "StewardLogicalReplayRecord":
+        if not isinstance(data, Mapping):
+            raise ProjectGovernanceRecordError("replay payload must be a mapping")
+        required = {
+            "project_id",
+            "plan_id",
+            "lineage_id",
+            "request_digest",
+            "checkpoint_ref",
+            "checkpoint_digest",
+            "state",
+        }
+        extra = set(data) - required - {"revision"}
+        if extra:
+            raise ProjectGovernanceRecordError(f"unknown replay field(s): {sorted(extra)}")
+        missing = required - set(data)
+        if missing:
+            raise ProjectGovernanceRecordError(f"missing replay field(s): {sorted(missing)}")
+        return cls(**{key: data[key] for key in required}, revision=data.get("revision", 1))
+
+
 class ProjectGovernanceStore(ABC):
     """Storage-neutral Project Governance Store port (AF #57 M1/W3).
 
@@ -251,6 +563,70 @@ class ProjectGovernanceStore(ABC):
         authority: PlanAuthorityBinding | None = None,
     ) -> ProjectPlanRecord:
         """Atomically mutate one Plan record if ``expected_revision`` still holds."""
+        raise NotImplementedError
+
+    # AF #57 M3/W1: bounded additive foundation records. These are explicit
+    # methods rather than a generic metadata dictionary or workflow database.
+    def put_user_gate(self, record: ProjectPlanUserGateRecord) -> ProjectPlanUserGateRecord:
+        raise NotImplementedError
+
+    def get_user_gate(self, project_id: str, plan_id: str) -> ProjectPlanUserGateRecord | None:
+        raise NotImplementedError
+
+    def compare_and_swap_user_gate(
+        self,
+        project_id: str,
+        plan_id: str,
+        expected_revision: int,
+        *,
+        state: str | None = None,
+        approval_ref: str | None = None,
+        approval_digest: str | None = None,
+    ) -> ProjectPlanUserGateRecord:
+        raise NotImplementedError
+
+    def put_architecture_metadata(
+        self, record: ArchitectureMetadataRecord
+    ) -> ArchitectureMetadataRecord:
+        raise NotImplementedError
+
+    def get_architecture_metadata(self, project_id: str) -> ArchitectureMetadataRecord | None:
+        raise NotImplementedError
+
+    def compare_and_swap_architecture_metadata(
+        self,
+        project_id: str,
+        expected_revision: int,
+        *,
+        current_version: str | None = None,
+        current_digest: str | None = None,
+        accepted_delta_ref: str | None = None,
+        accepted_delta_digest: str | None = None,
+        promotion_receipt_ref: str | None = None,
+    ) -> ArchitectureMetadataRecord:
+        raise NotImplementedError
+
+    def put_steward_replay(
+        self, record: StewardLogicalReplayRecord
+    ) -> StewardLogicalReplayRecord:
+        raise NotImplementedError
+
+    def get_steward_replay(
+        self, project_id: str, plan_id: str, lineage_id: str
+    ) -> StewardLogicalReplayRecord | None:
+        raise NotImplementedError
+
+    def compare_and_swap_steward_replay(
+        self,
+        project_id: str,
+        plan_id: str,
+        lineage_id: str,
+        expected_revision: int,
+        *,
+        state: str | None = None,
+        checkpoint_ref: str | None = None,
+        checkpoint_digest: str | None = None,
+    ) -> StewardLogicalReplayRecord:
         raise NotImplementedError
 
     @abstractmethod

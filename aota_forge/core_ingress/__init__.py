@@ -216,6 +216,9 @@ class CanonicalDispatchBinding:
     # project-main root/source-repository facts; carriers only, never authority.
     authorized_roots: Any | None = None
     source_repository: str = ""
+    # AF #57 M3/W1: mechanical copy of the trusted prebuilt Governance
+    # projection consumed by task-main role.bootstrap; never authority.
+    governance_context: Any | None = None
     # AF #59 M1: unbound host-session marker. True only for the always-available
     # global MCP mode where no trusted session/instance binding exists; the
     # transport resolves operation authority from canonical refs at the
@@ -1528,7 +1531,11 @@ def _dispatch_tool_operation_inner(
             from aota_forge.work_plane.role_bootstrap import handle_role_bootstrap
 
             try:
-                payload = handle_role_bootstrap(binding, validated)
+                payload = handle_role_bootstrap(
+                    binding,
+                    validated,
+                    governance_context=binding.governance_context,
+                )
             except Exception as exc:
                 # D3: typed identity from the semantic owner (exc.code),
                 # never str(exc) classification.

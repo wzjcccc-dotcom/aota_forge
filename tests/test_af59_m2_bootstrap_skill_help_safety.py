@@ -630,6 +630,23 @@ class TestW3PlanBodySafety:
         error = _portable_plan_replacement_error(current, candidate)
         assert error is not None and "identity" in error
 
+    def test_plan_kind_alias_conflict_rejected(self):
+        from aota_forge.work_plane.github_tools import _portable_plan_replacement_error
+
+        current = _plan_fixture_body()
+        candidate = current.replace("PLAN_KIND=portable_plan", "PLAN_KIND=other_kind")
+        error = _portable_plan_replacement_error(current, candidate)
+        assert error is not None and "conflict" in error
+
+    def test_plan_kind_alias_conflict_on_current_body_rejected(self):
+        from aota_forge.work_plane.github_tools import _portable_plan_replacement_error
+
+        current = _plan_fixture_body().replace(
+            "PLAN_KIND=portable_plan", "PLAN_KIND=other_kind"
+        )
+        error = _portable_plan_replacement_error(current, _plan_fixture_body())
+        assert error is not None and "current Plan" in error
+
     def test_non_plan_target_not_constrained(self):
         from aota_forge.work_plane.github_tools import _portable_plan_replacement_error
 

@@ -160,6 +160,10 @@ class LocalPlanAuthorityDestination:
             raise LocalGovernanceAdapterError("destination expected_ref must be a subject ref")
         if self.expected_ref.internal_id.sub_kind != SubjectKind.PLAN:
             raise LocalGovernanceAdapterError("destination expected_ref must be a Plan subject ref")
+        if self.expected_ref.internal_id.value != self.plan_id:
+            raise LocalGovernanceAdapterError(
+                "destination expected_ref must identify the destination plan_id"
+            )
 
     @property
     def project_id(self) -> str:
@@ -211,7 +215,17 @@ def _read_raw_document(destination: LocalPlanAuthorityDestination) -> tuple[str 
         raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
     if size > MAX_PLAN_BYTES:
         raise LocalGovernanceAdapterError("local Plan document exceeds the bounded Plan size")
-    body = document.read_text(encoding="utf-8")
+    try:
+        with document.open("rb") as handle:
+            raw_body = handle.read(MAX_PLAN_BYTES + 1)
+    except OSError as exc:
+        raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
+    if len(raw_body) > MAX_PLAN_BYTES:
+        raise LocalGovernanceAdapterError("local Plan document exceeds the bounded Plan size")
+    try:
+        body = raw_body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise LocalGovernanceAdapterError("local Plan document must be valid UTF-8") from exc
     digest = _digest(body)
     return (digest, digest, body)
 
@@ -391,7 +405,21 @@ class LocalPlanAuthorityAdapter(PlanAuthorityMutationPort):
                 "KNOWN_REJECTION",
                 "plan_init requires candidate_raw_body for local materialization",
             )
-        body_digest = _digest(body)
+        try:
+            encoded_body = body.encode("utf-8")
+        except UnicodeEncodeError:
+            return _rejection(
+                request,
+                "KNOWN_REJECTION",
+                "candidate_raw_body must be valid UTF-8 text",
+            )
+        if len(encoded_body) > MAX_PLAN_BYTES:
+            return _rejection(
+                request,
+                "KNOWN_REJECTION",
+                "candidate_raw_body exceeds the bounded Plan size",
+            )
+        body_digest = hashlib.sha256(encoded_body).hexdigest()
         if request.candidate_raw_digest is not None and request.candidate_raw_digest != body_digest:
             return _rejection(
                 request,

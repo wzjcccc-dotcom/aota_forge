@@ -208,6 +208,10 @@ class TrustedWorkerBinding:
     # when present it must be the trusted sandbox's own roots and must match
     # every read/mutation authority's root set.
     authorized_roots: AuthorizedRootSet | None = None
+    # AF #57 M3/W1: trusted prebuilt Governance-context projection for the
+    # task-main bootstrap. Mechanical carrier only; role.bootstrap validates
+    # and normalizes it before model exposure. Workers carry none.
+    governance_context: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -527,6 +531,19 @@ class TrustedWorkerBinding:
                     raise TrustedBindingError(
                         "mutation authority authorized root set does not match the binding's authorized roots"
                     )
+
+        # AF #57 M3/W1: the Governance context is a trusted server-side
+        # projection carrier, never model input or authority. Its semantic and
+        # bounded-data validation remains in role.bootstrap, the sole consumer.
+        if self.governance_context is not None:
+            if not isinstance(self.governance_context, Mapping):
+                raise TrustedBindingError(
+                    "governance_context must be a trusted mapping or None"
+                )
+            if self.handoff.work_role.value != "task-main":
+                raise TrustedBindingError(
+                    "governance_context may only be carried by a task-main binding"
+                )
 
         # AF #59 M1: the #58 interactive Plan-state carrier is removed; the
         # binding never carries session-scoped Plan approval state.
