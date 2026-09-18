@@ -15,6 +15,7 @@ from aota_forge.core.execution.registry import ExecutorRegistry
 import aota_forge.runtime.task_main.runner as runner_module
 from aota_forge.runtime.task_main.control import AF_TASK_MAIN_ROLE
 from aota_forge.runtime.task_main.runner import (
+    DISPOSITION_BLOCKED,
     DISPOSITION_MILESTONE_CLOSURE_READY,
     RunnerOutcome,
 )
@@ -127,4 +128,44 @@ def test_production_control_service_reaches_w3_composition_for_both_paths(
     assert semantic.milestone_closure_ready is True
     assert len(calls) == 1
     assert list((tmp_path / ".aota" / "task_return_receipts").glob("*.json"))
+    governance.close()
+
+
+def test_failed_closed_stewardship_cannot_report_closure_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unknown_dispatch(_handoff):
+        raise RuntimeError("transport outcome unknown")
+
+    probe, governance, coordinator, live_view = _executor(tmp_path, unknown_dispatch)
+
+    def closure_ready(self, *, session_available=True):
+        return RunnerOutcome(
+            disposition=DISPOSITION_MILESTONE_CLOSURE_READY,
+            coordinator_id=self.coordinator_id,
+            coordinator_revision=1,
+            milestone_closure_ready=True,
+        )
+
+    monkeypatch.setattr(runner_module.TaskMainMilestoneRunner, "advance_once", closure_ready)
+    composed = create_task_main_runner(
+        coordinator_store=coordinator,
+        execution_store=InMemoryExecutionStateStore(),
+        execution_dispatcher=ExecutionDispatcher(ExecutorRegistry()),
+        live_plan_view=live_view,
+        handoff_resolver=lambda _ref: pytest.fail("legacy runner handoff path was unexpectedly used"),
+        coordinator_id=f"aota_forge:{MILESTONE}",
+        stewardship_checkpoint=_checkpoint(semantic=True),
+        stewardship_dispatch=unknown_dispatch,
+        stewardship_sandbox=_sandbox(tmp_path),
+        stewardship_finalizer=probe.finalizer,
+        governance_store=governance,
+    )
+
+    outcome = composed.advance_once()
+
+    assert outcome.disposition == DISPOSITION_BLOCKED
+    assert outcome.milestone_closure_ready is False
+    assert composed.stewardship_outcome is not None
+    assert composed.stewardship_outcome.execution_state.value == "FAILED_CLOSED"
     governance.close()

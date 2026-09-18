@@ -14,6 +14,7 @@ no per-role MCP).
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +24,13 @@ from aota_forge.composition.stewardship import (
     LegacyStewardshipExecutor,
     LegacyStewardshipOutcome,
     StewardshipProductionError,
+    StewardshipExecutionState,
     create_legacy_stewardship_executor,
 )
-from aota_forge.governance.project_store import ProjectGovernanceStore
+from aota_forge.governance.project_store import (
+    ProjectGovernanceStore,
+    StewardLogicalReplayRecord,
+)
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.governance.stewardship import StewardshipCheckpoint
 from aota_forge.runtime.completion import DurableCompletionCoordinator
@@ -48,6 +53,8 @@ from aota_forge.runtime.task_main.reconciliation import (
     reconcile_worker_completion,
 )
 from aota_forge.runtime.task_main.runner import (
+    DISPOSITION_BLOCKED,
+    RunnerOutcome,
     TaskMainMilestoneRunner,
     advance_milestone_once,
 )
@@ -181,20 +188,37 @@ class StewardshipTaskMainComposition:
     def __init__(
         self,
         legacy_runner: TaskMainMilestoneRunner,
-        stewardship_checkpoint: StewardshipCheckpoint,
-        stewardship_executor: LegacyStewardshipExecutor,
+        stewardship_checkpoint: StewardshipCheckpoint | None,
+        stewardship_executor: LegacyStewardshipExecutor | None,
         owned_governance_store: ProjectGovernanceStore | None = None,
+        *,
+        stewardship_checkpoint_resolver: Callable[[RunnerOutcome], StewardshipCheckpoint] | None = None,
+        stewardship_executor_factory: Callable[[StewardshipCheckpoint], LegacyStewardshipExecutor] | None = None,
     ) -> None:
         if not isinstance(legacy_runner, TaskMainMilestoneRunner):
             raise TypeError("legacy_runner must be TaskMainMilestoneRunner")
-        if not isinstance(stewardship_checkpoint, StewardshipCheckpoint):
-            raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint")
-        if not isinstance(stewardship_executor, LegacyStewardshipExecutor):
-            raise TypeError("stewardship_executor must be LegacyStewardshipExecutor")
+        if stewardship_checkpoint is not None and not isinstance(
+            stewardship_checkpoint, StewardshipCheckpoint
+        ):
+            raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint or None")
+        if stewardship_executor is not None and not isinstance(
+            stewardship_executor, LegacyStewardshipExecutor
+        ):
+            raise TypeError("stewardship_executor must be LegacyStewardshipExecutor or None")
+        if stewardship_checkpoint is not None and stewardship_checkpoint_resolver is not None:
+            raise TypeError("stewardship_checkpoint and stewardship_checkpoint_resolver are mutually exclusive")
+        if stewardship_checkpoint is None and not callable(stewardship_checkpoint_resolver):
+            raise TypeError("a stewardship checkpoint or trusted checkpoint resolver is required")
+        if stewardship_executor is not None and stewardship_executor_factory is not None:
+            raise TypeError("stewardship_executor and stewardship_executor_factory are mutually exclusive")
+        if stewardship_executor is None and not callable(stewardship_executor_factory):
+            raise TypeError("a stewardship executor or trusted executor factory is required")
         self._legacy_runner = legacy_runner
         self._stewardship_checkpoint = stewardship_checkpoint
         self._stewardship_executor = stewardship_executor
         self._owned_governance_store = owned_governance_store
+        self._stewardship_checkpoint_resolver = stewardship_checkpoint_resolver
+        self._stewardship_executor_factory = stewardship_executor_factory
         self._last_stewardship_outcome: LegacyStewardshipOutcome | None = None
 
     @property
@@ -202,7 +226,7 @@ class StewardshipTaskMainComposition:
         return self._legacy_runner.coordinator_id
 
     @property
-    def stewardship_executor(self) -> LegacyStewardshipExecutor:
+    def stewardship_executor(self) -> LegacyStewardshipExecutor | None:
         return self._stewardship_executor
 
     @property
@@ -216,9 +240,32 @@ class StewardshipTaskMainComposition:
     def advance_once(self, *, session_available: bool = True):
         runner_outcome = self._legacy_runner.advance_once(session_available=session_available)
         if runner_outcome.milestone_closure_ready:
-            self._last_stewardship_outcome = self._stewardship_executor.execute(
-                self._stewardship_checkpoint
-            )
+            checkpoint = self._stewardship_checkpoint
+            if self._stewardship_checkpoint_resolver is not None:
+                checkpoint = self._stewardship_checkpoint_resolver(runner_outcome)
+            if not isinstance(checkpoint, StewardshipCheckpoint):
+                raise StewardshipProductionError(
+                    "CHECKPOINT_RESOLUTION_FAILED",
+                    "trusted production checkpoint resolver did not return StewardshipCheckpoint",
+                )
+            executor = self._stewardship_executor
+            if self._stewardship_executor_factory is not None:
+                executor = self._stewardship_executor_factory(checkpoint)
+            if not isinstance(executor, LegacyStewardshipExecutor):
+                raise StewardshipProductionError(
+                    "EXECUTOR_RESOLUTION_FAILED",
+                    "trusted production executor factory did not return LegacyStewardshipExecutor",
+                )
+            self._last_stewardship_outcome = executor.execute(checkpoint)
+            if self._last_stewardship_outcome.execution_state is StewardshipExecutionState.FAILED_CLOSED:
+                error_ref = self._last_stewardship_outcome.error_code or "STEWARD_FAILED_CLOSED"
+                return replace(
+                    runner_outcome,
+                    disposition=DISPOSITION_BLOCKED,
+                    milestone_closure_ready=False,
+                    blocked=runner_outcome.blocked + (error_ref,),
+                    reasons=runner_outcome.reasons + ("Project Steward execution failed closed",),
+                )
         return runner_outcome
 
     def update_live_plan_view(self, view: MilestonePlanView) -> None:
@@ -228,6 +275,11 @@ class StewardshipTaskMainComposition:
         self._legacy_runner.update_next_milestone_view(view)
 
     def update_stewardship_checkpoint(self, checkpoint: StewardshipCheckpoint) -> None:
+        if self._stewardship_checkpoint_resolver is not None:
+            raise StewardshipProductionError(
+                "CHECKPOINT_RESOLVER_ACTIVE",
+                "a resolver-owned production checkpoint cannot be replaced manually",
+            )
         if not isinstance(checkpoint, StewardshipCheckpoint):
             raise TypeError("checkpoint must be StewardshipCheckpoint")
         self._stewardship_checkpoint = checkpoint
@@ -287,7 +339,14 @@ def create_task_main_runner(
     coordinator_id: str | None = None,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
     stewardship_checkpoint: StewardshipCheckpoint | None = None,
+    stewardship_checkpoint_resolver: Callable[[RunnerOutcome], StewardshipCheckpoint] | None = None,
     stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
+    stewardship_dispatch_factory: Callable[
+        [StewardshipCheckpoint], Callable[[TaskHandoff], StewardResult | None]
+    ] | None = None,
+    stewardship_result_task_id_resolver_factory: Callable[
+        [StewardshipCheckpoint], Callable[[StewardLogicalReplayRecord], str]
+    ] | None = None,
     stewardship_sandbox: WorktreeSandboxBoundary | None = None,
     stewardship_finalizer: TrustedStewardFinalizer | None = None,
     stewardship_repo_path: str | Path | None = None,
@@ -314,10 +373,23 @@ def create_task_main_runner(
         coordinator_id=coordinator_id,
         reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
     )
-    if stewardship_checkpoint is None:
+    if stewardship_checkpoint is None and stewardship_checkpoint_resolver is None:
         return legacy_runner
-    if not isinstance(stewardship_checkpoint, StewardshipCheckpoint):
+    if stewardship_checkpoint is not None and stewardship_checkpoint_resolver is not None:
+        raise TypeError("stewardship_checkpoint and stewardship_checkpoint_resolver are mutually exclusive")
+    if stewardship_checkpoint is not None and not isinstance(
+        stewardship_checkpoint, StewardshipCheckpoint
+    ):
         raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint")
+    if stewardship_checkpoint_resolver is not None and not callable(stewardship_checkpoint_resolver):
+        raise TypeError("stewardship_checkpoint_resolver must be callable or None")
+    if stewardship_dispatch_factory is not None and not callable(stewardship_dispatch_factory):
+        raise TypeError("stewardship_dispatch_factory must be callable or None")
+    if (
+        stewardship_result_task_id_resolver_factory is not None
+        and not callable(stewardship_result_task_id_resolver_factory)
+    ):
+        raise TypeError("stewardship_result_task_id_resolver_factory must be callable or None")
     if stewardship_sandbox is None:
         raise StewardshipProductionError(
             "RESULT_SANDBOX_REQUIRED",
@@ -325,23 +397,7 @@ def create_task_main_runner(
         )
     if not isinstance(stewardship_sandbox, WorktreeSandboxBoundary):
         raise TypeError("stewardship_sandbox must be WorktreeSandboxBoundary")
-    if stewardship_sandbox.project_id != stewardship_checkpoint.project_id:
-        raise StewardshipProductionError(
-            "RESULT_OWNER_PROJECT_MISMATCH",
-            "Steward checkpoint and trusted result sandbox belong to different projects",
-        )
     state = store.get(legacy_runner.coordinator_id)
-    if state is not None:
-        if state.project_id != stewardship_checkpoint.project_id:
-            raise StewardshipProductionError(
-                "CHECKPOINT_PROJECT_MISMATCH",
-                "Steward checkpoint project does not match the active coordinator project",
-            )
-        if state.milestone_id != stewardship_checkpoint.trusted_plan.milestone_ref:
-            raise StewardshipProductionError(
-                "CHECKPOINT_MILESTONE_MISMATCH",
-                "Steward checkpoint milestone does not match the active coordinator milestone",
-            )
     governance, owns_governance = _open_stewardship_governance_store(
         governance_store, coordinator_store
     )
@@ -362,18 +418,51 @@ def create_task_main_runner(
     origin_session_ref = stewardship_origin_session_ref
     if origin_session_ref is None and state is not None:
         origin_session_ref = state.origin_task_main_session_ref
-    try:
-        executor = create_legacy_stewardship_executor(
+    def build_executor(checkpoint: StewardshipCheckpoint) -> LegacyStewardshipExecutor:
+        if not isinstance(checkpoint, StewardshipCheckpoint):
+            raise TypeError("trusted checkpoint factory must return StewardshipCheckpoint")
+        if stewardship_sandbox.project_id != checkpoint.project_id:
+            raise StewardshipProductionError(
+                "RESULT_OWNER_PROJECT_MISMATCH",
+                "Steward checkpoint and trusted result sandbox belong to different projects",
+            )
+        current_state = store.get(legacy_runner.coordinator_id)
+        if current_state is not None:
+            if current_state.project_id != checkpoint.project_id:
+                raise StewardshipProductionError(
+                    "CHECKPOINT_PROJECT_MISMATCH",
+                    "Steward checkpoint project does not match the active coordinator project",
+                )
+            if current_state.milestone_id != checkpoint.trusted_plan.milestone_ref:
+                raise StewardshipProductionError(
+                    "CHECKPOINT_MILESTONE_MISMATCH",
+                    "Steward checkpoint milestone does not match the active coordinator milestone",
+                )
+        selected_dispatch = dispatch
+        if stewardship_dispatch_factory is not None:
+            selected_dispatch = stewardship_dispatch_factory(checkpoint)
+        if not callable(selected_dispatch):
+            raise TypeError("trusted stewardship dispatch factory must return a callable")
+        result_task_id_resolver = None
+        if stewardship_result_task_id_resolver_factory is not None:
+            result_task_id_resolver = stewardship_result_task_id_resolver_factory(checkpoint)
+            if not callable(result_task_id_resolver):
+                raise TypeError("trusted result task id factory must return a callable")
+        return create_legacy_stewardship_executor(
             runtime_path=TASK_MAIN_RUNTIME_PATH_LEGACY,
             governance_store=governance,
             coordinator_store=store,
             coordinator_id=legacy_runner.coordinator_id,
             live_plan_view=live_plan_view,
             finalizer=finalizer,
-            semantic_dispatch=dispatch,
+            semantic_dispatch=selected_dispatch,
             result_sandbox=stewardship_sandbox,
+            result_task_id_resolver=result_task_id_resolver,
             origin_session_ref=origin_session_ref,
         )
+
+    try:
+        executor = build_executor(stewardship_checkpoint) if stewardship_checkpoint is not None else None
     except Exception:
         if owns_governance:
             governance.close()
@@ -383,6 +472,8 @@ def create_task_main_runner(
         stewardship_checkpoint=stewardship_checkpoint,
         stewardship_executor=executor,
         owned_governance_store=governance if owns_governance else None,
+        stewardship_checkpoint_resolver=stewardship_checkpoint_resolver,
+        stewardship_executor_factory=build_executor if stewardship_checkpoint_resolver is not None else None,
     )
 
 
@@ -393,7 +484,14 @@ def create_task_main_control_service(
     execution_dispatcher: ExecutionDispatcher,
     completion_coordinator: DurableCompletionCoordinator | None = None,
     stewardship_checkpoint: StewardshipCheckpoint | None = None,
+    stewardship_checkpoint_resolver: Callable[[RunnerOutcome], StewardshipCheckpoint] | None = None,
     stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
+    stewardship_dispatch_factory: Callable[
+        [StewardshipCheckpoint], Callable[[TaskHandoff], StewardResult | None]
+    ] | None = None,
+    stewardship_result_task_id_resolver_factory: Callable[
+        [StewardshipCheckpoint], Callable[[StewardLogicalReplayRecord], str]
+    ] | None = None,
     stewardship_sandbox: WorktreeSandboxBoundary | None = None,
     stewardship_finalizer: TrustedStewardFinalizer | None = None,
     stewardship_repo_path: str | Path | None = None,
@@ -411,7 +509,10 @@ def create_task_main_control_service(
         return create_task_main_runner(
             **runner_inputs,
             stewardship_checkpoint=stewardship_checkpoint,
+            stewardship_checkpoint_resolver=stewardship_checkpoint_resolver,
             stewardship_dispatch=stewardship_dispatch,
+            stewardship_dispatch_factory=stewardship_dispatch_factory,
+            stewardship_result_task_id_resolver_factory=stewardship_result_task_id_resolver_factory,
             stewardship_sandbox=stewardship_sandbox,
             stewardship_finalizer=stewardship_finalizer,
             stewardship_repo_path=stewardship_repo_path,

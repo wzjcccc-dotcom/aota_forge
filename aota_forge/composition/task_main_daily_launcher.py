@@ -840,6 +840,7 @@ class DailyTaskMainLauncher:
         governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
+        stewardship_semantic_facts: Mapping[str, Any] | None = None,
     ) -> DailyLaunchContext:
         """Trusted bootstrap materialization (create or refresh).
 
@@ -896,6 +897,10 @@ class DailyTaskMainLauncher:
             )
 
         if runtime_path == TASK_MAIN_RUNTIME_PATH_THIN:
+            if stewardship_semantic_facts is not None:
+                raise RuntimeError(
+                    "stewardship_semantic_facts requires the legacy task-main runtime path"
+                )
             # Thin production candidate: trusted operator bootstrap only. No
             # Plan read/interpretation, no MilestonePlanView, no coordinator
             # store, no TaskMainControlService, no review/READY state.
@@ -1033,7 +1038,12 @@ class DailyTaskMainLauncher:
             live_plan_view=live_view,
             next_milestone_view=next_view,
             coordinator_id=coordinator_id,
+            plan_id=plan_id,
+            governance_store_path=Path(governance_store_path).resolve()
+            if governance_store_path is not None
+            else None,
             work_semantics=work_semantics,
+            stewardship_semantic_facts=stewardship_semantic_facts,
         )
 
         bootstrap_path = worktree_root / BOOTSTRAP_RELPATH
@@ -1078,6 +1088,7 @@ class DailyTaskMainLauncher:
         governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
+        stewardship_semantic_facts: Mapping[str, Any] | None = None,
     ) -> DailyLaunchContext:
         """Refresh bootstrap from current live Plan truth (post-user-gate, recovery)."""
         return self.prepare(
@@ -1097,6 +1108,7 @@ class DailyTaskMainLauncher:
             governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
+            stewardship_semantic_facts=stewardship_semantic_facts,
         )
 
     def build_env(self, ctx: DailyLaunchContext, *, trace_path: Path | None = None) -> dict[str, str]:
@@ -1190,6 +1202,7 @@ class DailyTaskMainLauncher:
         governance_context: Mapping[str, Any] | None = None,
         source_repository: str | None = None,
         registry_path: Path | str | None = None,
+        stewardship_semantic_facts: Mapping[str, Any] | None = None,
     ) -> tuple[DailyLaunchContext, str]:
         """Two-phase production task-main launch (AF #49 M1/W6).
 
@@ -1238,6 +1251,10 @@ class DailyTaskMainLauncher:
             config_path=str(Path(effective_config_path).resolve())
         )
         if effective_config.executor == EXECUTOR_OPENCODE:
+            if stewardship_semantic_facts is not None:
+                raise RuntimeError(
+                    "stewardship_semantic_facts requires the legacy task-main runtime path"
+                )
             return self._launch_opencode_task_main(
                 worktree_root=Path(worktree_root),
                 project_id=project_id,
@@ -1278,6 +1295,7 @@ class DailyTaskMainLauncher:
             governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
+            stewardship_semantic_facts=stewardship_semantic_facts,
         )
         env = self.build_env(ctx_pending, trace_path=trace_path)
         hermes_env = {**os.environ, **env}
@@ -1336,6 +1354,7 @@ class DailyTaskMainLauncher:
             governance_context=governance_context,
             source_repository=source_repository,
             registry_path=registry_path,
+            stewardship_semantic_facts=stewardship_semantic_facts,
         )
         continuation = self._continue_exact_session(
             ctx=ctx,

@@ -615,7 +615,8 @@ def task_start(
     # work_role. Mechanical integrity validation ONLY (no workflow position,
     # review strategy or Milestone state) and fail closed before compile or
     # dispatch, so a mismatch can create zero durable child execution.
-    _validate_role_handoff_consistency(role, _grounded_handoff_work_role(task_handoff))
+    grounded_role = _grounded_handoff_work_role(task_handoff)
+    _validate_role_handoff_consistency(role, grounded_role)
     # Compile/reuse existing execution-start inputs
     from aota_forge.work_plane.compiler import TrustedExecutionBinding, compile_handoff_to_execution_package
 
@@ -626,33 +627,47 @@ def task_start(
     # The historical M1/W1 literal remains a legacy-only tail and is never a
     # thin-path fabrication; the Worker binding resolver's consistency gate
     # requires canonical_task_id to carry the grounded Milestone/Work identity.
-    artifact_id = envelope.get("artifact_id", uuid.uuid4().hex)
-    grounded_milestone = task_handoff.milestone_ref.ref if task_handoff.milestone_ref is not None else None
-    grounded_work_item = task_handoff.work_item_ref.ref if task_handoff.work_item_ref is not None else None
-    milestone_id = envelope.get("milestone_id") or grounded_milestone or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE
-    work_item_id = envelope.get("work_item_id") or grounded_work_item or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM
-    # task_id for execution is distinct from handoff artifact_id.
-    # AF #57 M1/W4: the trusted runtime may supply the explicit internal Plan
-    # identity (source-neutral PlanAuthorityBinding). When present, the
-    # canonical identity carries it at the explicit Plan position. When absent
-    # (existing Governance 1.x launch) the bounded legacy plan-less form is
-    # preserved byte-identically; no Plan identity is inferred or fabricated.
-    if plan_id is not None:
-        if not is_plan_id(plan_id):
-            raise MalformedTaskIdentityError(
-                "plan_id must be one canonical internal Plan ID when supplied "
-                "by the trusted runtime; the Control Plane never infers it from "
-                "an Issue number, worktree, branch, repository or title"
-            )
-        canonical_task_id = format_plan_aware_task_id(
-            project_id=sandbox.project_id,
-            plan_id=plan_id,
-            milestone_id=milestone_id,
-            work_item_id=work_item_id,
-            tail=(artifact_id[:8], uuid.uuid4().hex[:8]),
+    if plan_id is not None and not is_plan_id(plan_id):
+        raise MalformedTaskIdentityError(
+            "plan_id must be one canonical internal Plan ID when supplied "
+            "by the trusted runtime; the Control Plane never infers it from "
+            "an Issue number, worktree, branch, repository or title"
         )
+    trusted_steward_task_id = envelope.get("task_id")
+    if (
+        grounded_role == "project-steward"
+        and envelope.get("target_role") == grounded_role
+        and isinstance(trusted_steward_task_id, str)
+        and trusted_steward_task_id.startswith("steward:")
+    ):
+        # The legacy production Steward path binds its stable task identity in
+        # the trusted handoff envelope. It is durable with the handoff and is
+        # therefore safe to reuse after a task-main process restart.
+        if len(trusted_steward_task_id) > 256:
+            raise MalformedTaskIdentityError("trusted Steward task identity exceeds 256 characters")
+        canonical_task_id = trusted_steward_task_id
     else:
-        canonical_task_id = f"{sandbox.project_id}:{milestone_id}:{work_item_id}:{artifact_id[:8]}:{uuid.uuid4().hex[:8]}"
+        artifact_id = envelope.get("artifact_id", uuid.uuid4().hex)
+        grounded_milestone = task_handoff.milestone_ref.ref if task_handoff.milestone_ref is not None else None
+        grounded_work_item = task_handoff.work_item_ref.ref if task_handoff.work_item_ref is not None else None
+        milestone_id = envelope.get("milestone_id") or grounded_milestone or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_MILESTONE
+        work_item_id = envelope.get("work_item_id") or grounded_work_item or LEGACY_PATH_MISSING_WORK_IDENTITY_DEFAULT_WORK_ITEM
+        # task_id for execution is distinct from handoff artifact_id.
+        # AF #57 M1/W4: the trusted runtime may supply the explicit internal Plan
+        # identity (source-neutral PlanAuthorityBinding). When present, the
+        # canonical identity carries it at the explicit Plan position. When absent
+        # (existing Governance 1.x launch) the bounded legacy plan-less form is
+        # preserved byte-identically; no Plan identity is inferred or fabricated.
+        if plan_id is not None:
+            canonical_task_id = format_plan_aware_task_id(
+                project_id=sandbox.project_id,
+                plan_id=plan_id,
+                milestone_id=milestone_id,
+                work_item_id=work_item_id,
+                tail=(artifact_id[:8], uuid.uuid4().hex[:8]),
+            )
+        else:
+            canonical_task_id = f"{sandbox.project_id}:{milestone_id}:{work_item_id}:{artifact_id[:8]}:{uuid.uuid4().hex[:8]}"
     # Use sandbox project_id as binding project
     binding = TrustedExecutionBinding(canonical_task_id=canonical_task_id, project_id=sandbox.project_id)
     package = compile_handoff_to_execution_package(task_handoff, binding)

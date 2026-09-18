@@ -29,13 +29,13 @@ the normal worker binding path is used.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 from typing import Any, Mapping
 
 from aota_forge.core.context import bind_trusted_context
-from aota_forge.core.plan.normalize import normalize_portable_plan
-from aota_forge.core.plan.read_model import portable_plan_digest
+from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
@@ -69,8 +69,30 @@ from aota_forge.work_plane.workspace_tools import (
 from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
 from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
 from aota_forge.work_plane.progression import FocusedValidationEvidence, FocusedValidationVerdict
-from aota_forge.runtime.task_main.reconciliation import GovernedWorkItemEvidence, GovernedReviewEvidence
-from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle, ReviewFindingEvidence, ReviewFindingClassification
+from aota_forge.runtime.task_main.reconciliation import (
+    COMPLETION_KIND_REVIEW,
+    DISPOSITION_REVIEW_READY_FOR_STEWARD,
+    CompletionReconciliationReceipt,
+    GovernedReviewEvidence,
+    GovernedWorkItemEvidence,
+)
+from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
+from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
+from aota_forge.governance.stewardship import (
+    GovernanceCheckpointKind,
+    MaterializationRequest,
+    SemanticFactSet,
+    StewardshipCheckpoint,
+    build_semantic_steward_handoff,
+    evaluate_checkpoint,
+)
+from aota_forge.work_plane.steward_finalizer import (
+    ClosurePhase,
+    TrustedPlanIdentity,
+    TrustedProjectBinding,
+    TrustedUserGateState,
+)
+from aota_forge.work_plane.github_tools import parse_plan_ref
 from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
 from aota_forge.composition.project_binding import (
     resolve_trusted_project_binding,
@@ -80,9 +102,6 @@ from aota_forge.composition.completion_evidence import (
     create_automatic_governed_evidence_resolver,
     derive_governed_review_evidence,
 )
-from aota_forge.work_plane.agents_applicability import AgentsPolicyCandidate
-from aota_forge.work_plane.workspace_mutation import WORKSPACE_WRITE_DESCRIPTOR, create_workspace_mutation_authority
-from aota_forge.work_plane.restricted_shell import RESTRICTED_SHELL_DESCRIPTOR, create_restricted_shell_authority
 
 BOOTSTRAP_ENV_ROOT = "AOTA_W3_MCP_ROOT"
 BOOTSTRAP_RELPATH = ".aota/task-main-bootstrap.json"
@@ -216,6 +235,306 @@ def _view_from_dict(d: dict[str, Any]) -> MilestonePlanView:
         work_semantics=tuple(ws_views),
         work_source_slices=tuple(wss_views),
     )
+
+
+def _semantic_facts_from_bootstrap(data: Mapping[str, Any]) -> SemanticFactSet:
+    """Rebuild optional semantic residual facts from the operator bootstrap."""
+    raw = data.get("stewardship_semantic_facts")
+    if raw is None:
+        return SemanticFactSet()
+    if not isinstance(raw, Mapping):
+        raise TrustedBindingError("bootstrap stewardship_semantic_facts must be a mapping")
+    allowed = {
+        "unresolved_defect_refs",
+        "conflicting_artifact_refs",
+        "ambiguous_governance_reason_refs",
+        "architecture_question_refs",
+        "plan_change_question_refs",
+        "review_evidence_refs",
+        "narrative_reconciliation_required",
+        "recorded_semantic_question_refs",
+        "declared_kind",
+        "declared_reason",
+    }
+    extra = set(raw) - allowed
+    if extra:
+        raise TrustedBindingError(
+            f"bootstrap stewardship_semantic_facts has unknown field(s): {sorted(extra)}"
+        )
+    kwargs: dict[str, Any] = {}
+    for field in sorted(allowed - {"narrative_reconciliation_required", "declared_kind", "declared_reason"}):
+        value = raw.get(field, ())
+        if value is None:
+            value = ()
+        if not isinstance(value, (tuple, list)):
+            raise TrustedBindingError(
+                f"bootstrap stewardship_semantic_facts.{field} must be a tuple/list"
+            )
+        kwargs[field] = tuple(value)
+    kwargs["narrative_reconciliation_required"] = raw.get(
+        "narrative_reconciliation_required", False
+    )
+    kwargs["declared_kind"] = raw.get("declared_kind")
+    kwargs["declared_reason"] = raw.get("declared_reason")
+    try:
+        return SemanticFactSet(**kwargs)
+    except Exception as exc:
+        raise TrustedBindingError(
+            f"bootstrap stewardship_semantic_facts invalid: {exc}"
+        ) from exc
+
+
+def _trusted_plan_identity_from_bootstrap(
+    live_view: MilestonePlanView,
+    data: Mapping[str, Any],
+) -> TrustedPlanIdentity:
+    try:
+        governing_repo, _owner, issue_number = parse_plan_ref(live_view.plan_authority)
+    except Exception as exc:
+        raise TrustedBindingError(
+            f"bootstrap live Plan authority is not a canonical Plan reference: {exc}"
+        ) from exc
+    raw_comments = data.get("managed_comments", {})
+    if raw_comments is None:
+        raw_comments = {}
+    if not isinstance(raw_comments, Mapping):
+        raise TrustedBindingError("bootstrap managed_comments must be a mapping")
+    try:
+        return TrustedPlanIdentity(
+            governing_repo=governing_repo,
+            plan_issue_number=issue_number,
+            milestone_ref=live_view.milestone_id,
+            plan_ref=live_view.plan_authority,
+            managed_comments=dict(raw_comments),
+        )
+    except Exception as exc:
+        raise TrustedBindingError(
+            f"bootstrap trusted Plan identity invalid: {exc}"
+        ) from exc
+
+
+def _readiness_from_durable_state(
+    state: Any,
+    *,
+    coordinator_id: str,
+    live_view: MilestonePlanView,
+) -> MilestoneClosureReadiness:
+    """Rebuild authority-negative closure readiness from durable review evidence."""
+    if state is None:
+        raise TrustedBindingError("stewardship checkpoint requires an existing coordinator state")
+    if state.coordinator_id != coordinator_id:
+        raise TrustedBindingError("coordinator state identity does not match the trusted runner")
+    review_receipts: list[CompletionReconciliationReceipt] = []
+    for key, raw in sorted(state.reconciled_completions.items()):
+        try:
+            receipt = CompletionReconciliationReceipt.from_dict(raw)
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"durable reconciliation receipt {key!r} is invalid: {exc}"
+            ) from exc
+        if receipt.coordinator_id != state.coordinator_id:
+            raise TrustedBindingError("durable reconciliation receipt has a foreign coordinator")
+        if receipt.plan_authority != live_view.plan_authority:
+            raise TrustedBindingError("durable reconciliation receipt has a foreign Plan authority")
+        if receipt.milestone_id != live_view.milestone_id:
+            raise TrustedBindingError("durable reconciliation receipt has a foreign Milestone")
+        if receipt.completion_kind == COMPLETION_KIND_REVIEW:
+            review_receipts.append(receipt)
+    if not review_receipts:
+        raise TrustedBindingError(
+            "closure-ready runner outcome has no durable milestone review receipt"
+        )
+    receipt = max(
+        review_receipts,
+        key=lambda item: (item.next_coordinator_revision, item.canonical_task_id),
+    )
+    if receipt.progression_disposition != DISPOSITION_REVIEW_READY_FOR_STEWARD:
+        raise TrustedBindingError(
+            "latest durable milestone review receipt is not ready for Project Steward"
+        )
+    if receipt.governed_evidence.get("closure_ready") is not True:
+        raise TrustedBindingError(
+            "latest durable milestone review receipt does not prove closure readiness"
+        )
+    raw_review = receipt.governed_evidence.get("review_evidence")
+    try:
+        review = MilestoneReviewEvidence.from_dict(raw_review)
+    except Exception as exc:
+        raise TrustedBindingError(
+            f"durable milestone review evidence is invalid: {exc}"
+        ) from exc
+    if review.milestone_ref.ref != live_view.milestone_id:
+        raise TrustedBindingError("durable review evidence has a foreign Milestone")
+    if review.review_result_ref.ref != receipt.result_handoff_ref:
+        raise TrustedBindingError("durable review result ref disagrees with reconciliation receipt")
+    if review.review_result_digest != receipt.card_digest:
+        raise TrustedBindingError("durable review result digest disagrees with reconciliation receipt")
+    return MilestoneClosureReadiness(
+        milestone_ref=review.milestone_ref,
+        ready_for_project_steward=True,
+        final_review_cycle=review.review_cycle,
+        reviewed_frontier_ref=review.reviewed_frontier_ref,
+        supporting_evidence_refs=(
+            receipt.receipt_digest,
+            receipt.result_handoff_ref,
+            review.digest,
+        ),
+        blocking_reasons=(),
+    )
+
+
+def _build_stewardship_checkpoint(
+    *,
+    runner_outcome: Any,
+    state: Any,
+    live_view: MilestonePlanView,
+    sandbox: Any,
+    trusted_plan: TrustedPlanIdentity,
+    semantic_facts: SemanticFactSet,
+    plan_id: str | None,
+) -> StewardshipCheckpoint:
+    if getattr(runner_outcome, "milestone_closure_ready", False) is not True:
+        raise TrustedBindingError(
+            "stewardship checkpoint requested before a trusted closure-ready outcome"
+        )
+    if state.project_id != sandbox.project_id:
+        raise TrustedBindingError("coordinator project does not match the trusted sandbox")
+    if state.plan_authority != live_view.plan_authority or state.plan_digest != live_view.plan_digest:
+        raise TrustedBindingError("coordinator Plan identity does not match the trusted Plan view")
+    if state.milestone_id != live_view.milestone_id:
+        raise TrustedBindingError("coordinator Milestone does not match the trusted Plan view")
+    readiness = _readiness_from_durable_state(
+        state,
+        coordinator_id=state.coordinator_id,
+        live_view=live_view,
+    )
+    identity_material = ":".join(
+        (
+            state.coordinator_id,
+            str(state.coordinator_revision),
+            state.revision_token,
+            readiness.digest,
+            repr(semantic_facts),
+        )
+    )
+    checkpoint_id = f"stewardship:{hashlib.sha256(identity_material.encode('utf-8')).hexdigest()}"
+    return StewardshipCheckpoint(
+        checkpoint_id=checkpoint_id,
+        kind=GovernanceCheckpointKind.MILESTONE_CLOSE,
+        project_id=state.project_id,
+        trusted_binding=TrustedProjectBinding(
+            project_id=sandbox.project_id,
+            binding_ref=f"worktree:{sandbox.worktree_id}",
+            binding_digest=sandbox.digest,
+        ),
+        trusted_plan=trusted_plan,
+        plan_id=plan_id,
+        milestone_ref=state.milestone_id,
+        closure_phase=ClosurePhase.REVIEWED_CLOSURE,
+        readiness=readiness,
+        user_gate=TrustedUserGateState(
+            user_approval_satisfied=state.user_approval_satisfied,
+        ),
+        materialization=MaterializationRequest(),
+        semantic_facts=semantic_facts,
+        open_blocker_refs=state.open_blockers,
+        plan_authority_ref=state.plan_authority,
+    )
+
+
+def _canonical_steward_handoff(checkpoint: StewardshipCheckpoint) -> TaskHandoff:
+    evaluation = evaluate_checkpoint(checkpoint)
+    if evaluation.residual is None:
+        raise RuntimeError("semantic Steward dispatch requires a typed semantic residual")
+    return build_semantic_steward_handoff(checkpoint, evaluation.residual)
+
+
+def _steward_task_id(checkpoint: StewardshipCheckpoint, handoff: TaskHandoff) -> str:
+    if checkpoint.plan_id is None:
+        raise RuntimeError("durable Steward task identity requires the trusted internal Plan ID")
+    task_id_material = ":".join(
+        (checkpoint.project_id, checkpoint.plan_id, checkpoint.checkpoint_id, handoff.handoff_digest)
+    )
+    return f"steward:{hashlib.sha256(task_id_material.encode('utf-8')).hexdigest()}"
+
+
+def _production_steward_dispatch_factory(
+    *,
+    dispatcher: Any,
+    sandbox: Any,
+    plan_id: str | None,
+):
+    """Build the legacy semantic dispatch through the existing task-start seam."""
+    def factory(checkpoint: StewardshipCheckpoint):
+        from aota_forge.work_plane.task_facade import task_start
+        from aota_forge.work_plane.handoff_store import HANDOFF_CONTROL_FIELDS, handoff_write
+
+        if checkpoint.plan_id is None or checkpoint.plan_id != plan_id:
+            raise RuntimeError("semantic Steward dispatch requires the trusted internal Plan ID")
+        handoff = _canonical_steward_handoff(checkpoint)
+
+        def semantic_payload(value: TaskHandoff) -> dict[str, Any]:
+            # TaskHandoff is semantic, but the durable handoff store reserves
+            # overlapping names such as plan_ref for its control envelope.
+            return {
+                key: item
+                for key, item in value.to_dict().items()
+                if key not in HANDOFF_CONTROL_FIELDS
+            }
+
+        task_id = _steward_task_id(checkpoint, handoff)
+
+        def dispatch(received_handoff: TaskHandoff):
+            if received_handoff.handoff_digest != handoff.handoff_digest:
+                raise RuntimeError("semantic Steward handoff diverged from the trusted checkpoint")
+            handoff_ref = handoff_write(
+                mode="work_item",
+                semantic=semantic_payload(received_handoff),
+                caller_role="task-main",
+                sandbox=sandbox,
+                plan_ref=checkpoint.trusted_plan.plan_ref,
+                milestone_id=checkpoint.milestone_ref,
+                target_role="project-steward",
+                task_id=task_id,
+            )
+            started = task_start(
+                role="project-steward",
+                handoff_ref=handoff_ref,
+                caller_role="task-main",
+                sandbox=sandbox,
+                dispatcher=dispatcher,
+                plan_id=checkpoint.plan_id,
+            )
+            started_task_id = started.get("task_id") if isinstance(started, Mapping) else None
+            if not isinstance(started_task_id, str) or not started_task_id.strip():
+                raise RuntimeError("task.start returned no canonical Steward task ID")
+            if started_task_id.strip() != task_id:
+                raise RuntimeError("task.start returned a different canonical Steward task ID")
+            return None
+
+        return dispatch
+
+    return factory
+
+
+def _production_steward_result_task_id_resolver_factory(
+    execution_store: Any,
+):
+    def factory(checkpoint: StewardshipCheckpoint):
+        handoff = _canonical_steward_handoff(checkpoint)
+        task_id = _steward_task_id(checkpoint, handoff)
+
+        def resolve(_record: Any) -> str:
+            durable = execution_store.get(task_id)
+            if durable is None or getattr(durable, "canonical_task_id", None) != task_id:
+                raise RuntimeError(
+                    "durable Steward execution record is unavailable; refusing to guess its task ID"
+                )
+            return task_id
+
+        return resolve
+
+    return factory
 
 
 def _load_bootstrap_dict() -> dict[str, Any] | None:
@@ -387,6 +706,8 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
     coordinator_store_path = Path(str(data["coordinator_store_path"])).resolve()
     execution_store_path = Path(str(data["execution_store_path"])).resolve()
     runtime_config_path = Path(str(data["runtime_config_path"])).resolve()
+    raw_governance_store = str(data.get("governance_store_path") or "").strip()
+    governance_store_path = Path(raw_governance_store).resolve() if raw_governance_store else None
 
     # Bootstrap location must be derived from trusted env, not CWD or model path
     # Verify worktree_root matches the trusted env root (scope matching)
@@ -415,7 +736,13 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
             raise TrustedBindingError("bootstrap trusted root absent")
 
     # Store paths must be within worktree_root/.aota (bounded, no escape)
-    for p, label in ((coordinator_store_path, "coordinator_store_path"), (execution_store_path, "execution_store_path")):
+    store_paths = [
+        (coordinator_store_path, "coordinator_store_path"),
+        (execution_store_path, "execution_store_path"),
+    ]
+    if governance_store_path is not None:
+        store_paths.append((governance_store_path, "governance_store_path"))
+    for p, label in store_paths:
         try:
             p.relative_to(worktree_root)
         except ValueError:
@@ -483,11 +810,19 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     coordinator_store_path = Path(str(data["coordinator_store_path"])).resolve()
     execution_store_path = Path(str(data["execution_store_path"])).resolve()
     runtime_config_path = Path(str(data["runtime_config_path"])).resolve()
+    raw_governance_store = str(data.get("governance_store_path") or "").strip()
+    governance_store_path = Path(raw_governance_store).resolve() if raw_governance_store else None
     origin_session = str(data["origin_task_main_session_ref"])
     executor_id = str(data.get("executor_id", "hermes"))
     coordinator_id = data.get("coordinator_id")  # may be None
     live_view_dict = data["live_plan_view"]
     next_view_dict = data.get("next_milestone_view")
+    raw_plan_id = data.get("plan_id")
+    if raw_plan_id is not None and not is_plan_id(raw_plan_id):
+        raise TrustedBindingError(
+            "bootstrap plan_id must be a canonical internal Plan ID when supplied"
+        )
+    plan_id = raw_plan_id
     # AF #55 M1/W4: optional trusted Plan project identity from the
     # operator-owned bootstrap. Consumed by the canonical project binding;
     # never a model argument.
@@ -498,6 +833,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # Reconstruct typed views
     live_view = _view_from_dict(live_view_dict)
     next_view = _view_from_dict(next_view_dict) if next_view_dict else None
+    trusted_plan = _trusted_plan_identity_from_bootstrap(live_view, data)
+    semantic_facts = _semantic_facts_from_bootstrap(data)
 
     # Reconstruct stores (file-backed, durable)
     coord_store = FileBackedTaskMainCoordinatorStore(coordinator_store_path)
@@ -570,12 +907,6 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             else:
                 os.environ["AOTA_FORGE_RUNTIME_CONFIG"] = old_env
 
-    control_service = create_task_main_control_service(
-        coordinator_store=coord_store,
-        execution_store=exec_store,
-        execution_dispatcher=dispatcher,
-        completion_coordinator=completion,
-    )
     # M1/W2 production Worker explicit env wiring (F2 repair).
     # The dispatcher/host_client created above inherits the task-main process
     # env by default; without this seam every Worker supervisor would inherit
@@ -981,22 +1312,6 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         # Deterministic reviewer task id for this slice
         return f"{project_id}:{live_view.milestone_id}:RV1:attempt-1"
 
-    # Build the trusted task-main context (operator-owned)
-    ctx = TrustedTaskMainRuntimeContext(
-        control_service=control_service,
-        live_plan_view=live_view,
-        origin_task_main_session_ref=origin_session,
-        executor_id=executor_id,
-        handoff_resolver=handoff_resolver,
-        governed_evidence_resolver=governed_evidence_resolver,
-        reviewer_handoff_resolver=reviewer_handoff_resolver,
-        governed_review_resolver=governed_review_resolver,
-        reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
-        next_milestone_view=next_view,
-        session_available=True,
-        coordinator_id=coordinator_id,
-    )
-
     # Build the outer TrustedWorkerBinding for task-main (neutral AF principal).
     # D7: synthetic project evidence removed from production path
     # (SYNTHETIC_PROJECT_AUTHORITY_PRODUCTION_PATH=no). Missing canonical
@@ -1050,6 +1365,62 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # into the governed Worker env resolver closure. Construction-time trusted
     # object only; durable recovery always re-reads the durable handoff store.
     _w2_holder["sandbox"] = sandbox
+
+    # AF #57 M3/W3: the production legacy composition owns the trusted
+    # checkpoint reconstruction and semantic dispatch factory. Deterministic
+    # checkpoints never invoke the factory; semantic checkpoints use the
+    # existing handoff.write -> task.start -> durable result-owner path.
+    def stewardship_checkpoint_resolver(runner_outcome: Any) -> StewardshipCheckpoint:
+        current_coordinator_id = getattr(runner_outcome, "coordinator_id", None)
+        if not isinstance(current_coordinator_id, str) or not current_coordinator_id.strip():
+            raise TrustedBindingError("runner outcome carries no trusted coordinator identity")
+        current_state = coord_store.get(current_coordinator_id)
+        return _build_stewardship_checkpoint(
+            runner_outcome=runner_outcome,
+            state=current_state,
+            live_view=live_view,
+            sandbox=sandbox,
+            trusted_plan=trusted_plan,
+            semantic_facts=semantic_facts,
+            plan_id=plan_id,
+        )
+
+    stewardship_dispatch_factory = _production_steward_dispatch_factory(
+        dispatcher=dispatcher,
+        sandbox=sandbox,
+        plan_id=plan_id,
+    )
+    stewardship_result_task_id_resolver_factory = (
+        _production_steward_result_task_id_resolver_factory(exec_store)
+    )
+    control_service = create_task_main_control_service(
+        coordinator_store=coord_store,
+        execution_store=exec_store,
+        execution_dispatcher=dispatcher,
+        completion_coordinator=completion,
+        stewardship_checkpoint_resolver=stewardship_checkpoint_resolver,
+        stewardship_dispatch_factory=stewardship_dispatch_factory,
+        stewardship_result_task_id_resolver_factory=stewardship_result_task_id_resolver_factory,
+        stewardship_sandbox=sandbox,
+        stewardship_repo_path=worktree_root,
+        stewardship_origin_session_ref=origin_session,
+        governance_store=governance_store_path,
+    )
+    # Build the trusted task-main context (operator-owned)
+    ctx = TrustedTaskMainRuntimeContext(
+        control_service=control_service,
+        live_plan_view=live_view,
+        origin_task_main_session_ref=origin_session,
+        executor_id=executor_id,
+        handoff_resolver=handoff_resolver,
+        governed_evidence_resolver=governed_evidence_resolver,
+        reviewer_handoff_resolver=reviewer_handoff_resolver,
+        governed_review_resolver=governed_review_resolver,
+        reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+        next_milestone_view=next_view,
+        session_available=True,
+        coordinator_id=coordinator_id,
+    )
     handoff = TaskHandoff(
         work_role="task-main",
         task_kind="task-main-control",
@@ -1129,7 +1500,10 @@ def write_bootstrap_file(
     next_milestone_view: MilestonePlanView | None,
     executor_id: str = "hermes",
     coordinator_id: str | None = None,
+    plan_id: str | None = None,
+    governance_store_path: Path | None = None,
     work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
+    stewardship_semantic_facts: Mapping[str, Any] | SemanticFactSet | None = None,
 ) -> Path:
     """Operator helper to materialize the bootstrap JSON for the MCP child.
 
@@ -1199,6 +1573,31 @@ def write_bootstrap_file(
         "live_plan_view": view_to_dict(live_plan_view),
         "next_milestone_view": view_to_dict(next_milestone_view) if next_milestone_view else None,
     }
+    if plan_id is not None:
+        if not is_plan_id(plan_id):
+            raise ValueError("plan_id must be a canonical internal Plan ID when supplied")
+        payload["plan_id"] = plan_id
+    if governance_store_path is not None:
+        payload["governance_store_path"] = str(governance_store_path.resolve())
+    if stewardship_semantic_facts is not None:
+        if isinstance(stewardship_semantic_facts, SemanticFactSet):
+            facts = stewardship_semantic_facts
+        else:
+            facts = _semantic_facts_from_bootstrap(
+                {"stewardship_semantic_facts": stewardship_semantic_facts}
+            )
+        payload["stewardship_semantic_facts"] = {
+            "unresolved_defect_refs": list(facts.unresolved_defect_refs),
+            "conflicting_artifact_refs": list(facts.conflicting_artifact_refs),
+            "ambiguous_governance_reason_refs": list(facts.ambiguous_governance_reason_refs),
+            "architecture_question_refs": list(facts.architecture_question_refs),
+            "plan_change_question_refs": list(facts.plan_change_question_refs),
+            "review_evidence_refs": list(facts.review_evidence_refs),
+            "narrative_reconciliation_required": facts.narrative_reconciliation_required,
+            "recorded_semantic_question_refs": list(facts.recorded_semantic_question_refs),
+            "declared_kind": facts.declared_kind.value if facts.declared_kind is not None else None,
+            "declared_reason": facts.declared_reason,
+        }
     # M1/W1: trusted bounded Work semantics ride the existing operator-owned
     # bootstrap channel (no new store, no new authority). Keys must be
     # governed Work Items of the live Milestone graph; each projection is
