@@ -6,6 +6,7 @@ import hashlib
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -30,7 +31,11 @@ from aota_forge.governance import (
     StaleGovernanceMetadataRevisionError,
 )
 from aota_forge.governance.context_route import ContextRouteInput
-from aota_forge.governance.project_store import ProjectPlanRecord
+from aota_forge.governance.project_store import (
+    PLAN_LIFECYCLE_ACTIVE,
+    PLAN_LIFECYCLE_RETIRED,
+    ProjectPlanRecord,
+)
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.runtime.task_main.control import AF_TASK_MAIN_ROLE
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
@@ -43,6 +48,7 @@ from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 
 PROJECT_ID = "aota_forge"
 PLAN_ID = "plan_architecture_w2"
+BASELINE_ID = "AF-PROJECT-GOVERNANCE-2.0-FROZEN-v1"
 
 
 def _digest(value: str) -> str:
@@ -53,7 +59,7 @@ def _record() -> ProjectPlanRecord:
     return ProjectPlanRecord(
         project_id=PROJECT_ID,
         plan_id=PLAN_ID,
-        lifecycle_state="active",
+        lifecycle_state=PLAN_LIFECYCLE_ACTIVE,
         authority=PlanAuthorityBinding(
             plan_id=PLAN_ID,
             source_kind="local_governance",
@@ -71,7 +77,7 @@ def _source() -> GovernanceProjectionInput:
         plan_documents=(),
         architecture=ArchitectureStateInput(
             project_id=PROJECT_ID,
-            baseline_id="AF-PROJECT-GOVERNANCE-2.0-FROZEN-v1",
+            baseline_id=BASELINE_ID,
             baseline_status="approved",
             accepted_ref=f"local-governance/{PROJECT_ID}/ARCHITECTURE.md",
         ),
@@ -110,6 +116,34 @@ def _execution_record(task_id: str) -> DurableExecutionRecord:
     )
 
 
+def _trusted_plan_body(*, baseline_id: str = BASELINE_ID, baseline_status: str = "approved") -> str:
+    return "\n".join(
+        (
+            "# Architecture W2 Plan",
+            "",
+            "## Current state",
+            "",
+            "```text",
+            "PLAN_TYPE=portable_plan",
+            "PLAN_KIND=portable_plan",
+            f"PROJECT_ID={PROJECT_ID}",
+            "PLAN_STATUS=active",
+            "CURRENT_MILESTONE=M3",
+            f"FROZEN_BASELINE_ID={baseline_id}",
+            f"FROZEN_BASELINE_STATUS={baseline_status}",
+            "```",
+            "",
+        )
+    )
+
+
+def _write_trusted_plan(project_root: Path, *, baseline_id: str = BASELINE_ID) -> Path:
+    plan_path = project_root / PLAN_ID / "plan.md"
+    plan_path.parent.mkdir()
+    plan_path.write_text(_trusted_plan_body(baseline_id=baseline_id), encoding="utf-8")
+    return plan_path
+
+
 def _promotion_fixture(tmp_path: Path):
     governance_base = tmp_path / "plans"
     project_root = governance_base / PROJECT_ID
@@ -119,6 +153,7 @@ def _promotion_fixture(tmp_path: Path):
     target = "# Architecture v2\n"
     architecture_path = project_root / "ARCHITECTURE.md"
     architecture_path.write_text(baseline, encoding="utf-8")
+    _write_trusted_plan(project_root)
     store = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
     store.put_plan(_record())
     store.put_architecture_metadata(
@@ -260,9 +295,11 @@ def test_architecture_promotion_is_cas_bound_read_back_verified_and_recoverable(
     baseline = "# Architecture v1\n\nAccepted baseline.\n"
     target = "# Architecture v2\n\nAccepted delta.\n"
     (project_root / "ARCHITECTURE.md").write_text(baseline, encoding="utf-8")
+    _write_trusted_plan(project_root)
 
     database = tmp_path / "governance.sqlite3"
     store = SQLiteProjectGovernanceStore(database)
+    store.put_plan(_record())
     store.put_architecture_metadata(
         ArchitectureMetadataRecord(
             project_id=PROJECT_ID,
@@ -533,6 +570,82 @@ def test_invalid_accepted_baseline_fails_before_any_promotion_mutation(
                 projection_source=replace_source_architecture(architecture),
             )
         assert error.value.code == error_code
+        assert architecture_path.read_text(encoding="utf-8") == baseline
+        assert store.get_architecture_metadata(PROJECT_ID).revision == 1
+        assert not (project_root / ".architecture-promotion-receipt.json").exists()
+        assert not (project_root / ".architecture-promotion-stage.md").exists()
+    finally:
+        store.close()
+
+
+def test_retired_pgs_plan_rejects_forged_active_projection_without_mutation(tmp_path: Path):
+    lifecycle, store, project_root, architecture_path, baseline, request = _promotion_fixture(tmp_path)
+    try:
+        retired = store.compare_and_swap_plan(
+            PROJECT_ID,
+            PLAN_ID,
+            1,
+            lifecycle_state=PLAN_LIFECYCLE_RETIRED,
+        )
+        assert retired.lifecycle_state == PLAN_LIFECYCLE_RETIRED
+        before_revision = store.get_architecture_metadata(PROJECT_ID).revision
+        with (
+            patch("aota_forge.governance.projection_lifecycle.os.replace") as authority_replace,
+            patch.object(
+                store,
+                "compare_and_swap_architecture_metadata",
+                wraps=store.compare_and_swap_architecture_metadata,
+            ) as metadata_cas,
+        ):
+            with pytest.raises(ProjectionLifecycleError) as error:
+                lifecycle.promote_architecture(request, projection_source=_source())
+        assert error.value.code == "PROMOTION_PLAN_NOT_ACTIVE"
+        assert authority_replace.call_count == 0
+        assert metadata_cas.call_count == 0
+        assert architecture_path.read_text(encoding="utf-8") == baseline
+        assert store.get_architecture_metadata(PROJECT_ID).revision == before_revision
+        assert not (project_root / ".architecture-promotion-receipt.json").exists()
+        assert not (project_root / ".architecture-promotion-stage.md").exists()
+    finally:
+        store.close()
+
+
+def test_forged_approved_projection_baseline_cannot_override_trusted_plan(tmp_path: Path):
+    lifecycle, store, project_root, architecture_path, baseline, request = _promotion_fixture(tmp_path)
+    forged_baseline = "FORGED-BASELINE-v9"
+    forged_source = replace_source_architecture(
+        ArchitectureStateInput(
+            project_id=PROJECT_ID,
+            baseline_id=forged_baseline,
+            baseline_status="approved",
+            accepted_ref=f"local-governance/{PROJECT_ID}/ARCHITECTURE.md",
+        )
+    )
+    try:
+        with pytest.raises(ProjectionLifecycleError) as error:
+            lifecycle.promote_architecture(
+                replace_request(request, baseline_id=forged_baseline, baseline_status="approved"),
+                projection_source=forged_source,
+            )
+        assert error.value.code == "ARCHITECTURE_BASELINE_MISMATCH"
+        assert architecture_path.read_text(encoding="utf-8") == baseline
+        assert store.get_architecture_metadata(PROJECT_ID).revision == 1
+        assert not (project_root / ".architecture-promotion-receipt.json").exists()
+        assert not (project_root / ".architecture-promotion-stage.md").exists()
+    finally:
+        store.close()
+
+
+def test_stale_projection_plan_state_is_denied_without_provider_mutation(tmp_path: Path):
+    lifecycle, store, project_root, architecture_path, baseline, request = _promotion_fixture(tmp_path)
+    stale_source = replace(
+        _source(),
+        plan_records=(replace(_record(), lifecycle_state=PLAN_LIFECYCLE_RETIRED),),
+    )
+    try:
+        with pytest.raises(ProjectionLifecycleError) as error:
+            lifecycle.promote_architecture(request, projection_source=stale_source)
+        assert error.value.code == "PROMOTION_PLAN_BINDING_MISMATCH"
         assert architecture_path.read_text(encoding="utf-8") == baseline
         assert store.get_architecture_metadata(PROJECT_ID).revision == 1
         assert not (project_root / ".architecture-promotion-receipt.json").exists()

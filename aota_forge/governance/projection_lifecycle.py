@@ -22,8 +22,20 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+)
+from aota_forge.adapters.plan_authority.local_governance import (
+    LocalGovernanceAdapterError,
+    LocalPlanAuthorityDestination,
+    LocalPlanAuthorityReadAdapter,
+    load_local_portable_plan,
+)
 from aota_forge.core.contracts.canonical import canonical_json
 from aota_forge.core.execution.durable_state import ExecutionStateStore
+from aota_forge.core.identity.ids import make_id
+from aota_forge.core.identity.kinds import IdKind, SubjectKind
+from aota_forge.core.identity.refs import object_ref_subject
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.core.project.manifest import PROJECT_ID_RE
 from aota_forge.governance.context_route import (
@@ -38,6 +50,7 @@ from aota_forge.governance.generated_views import (
 )
 from aota_forge.governance.project_store import (
     ArchitectureMetadataRecord,
+    ProjectPlanRecord,
     ProjectGovernanceStore,
     ProjectGovernanceStoreError,
     PLAN_LIFECYCLE_ACTIVE,
@@ -52,7 +65,10 @@ from aota_forge.governance.projection import (
     GovernanceProjectionError,
     GovernanceProjectionInput,
     GovernanceProjectionBundle,
+    PlanDocumentInput,
     ProjectionRefreshRequest,
+    architecture_state_from_plan_document,
+    plan_document_input,
 )
 from aota_forge.runtime.task_main.coordinator_store import TaskMainCoordinatorStore
 from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
@@ -85,6 +101,10 @@ CONTEXT_ROUTE_REFRESH_AFTER_PROMOTION = True
 MAP_REFRESH_AFTER_PROMOTION = True
 STATUS_REFRESH_AFTER_PROMOTION = True
 PROMOTION_WITHOUT_PROJECTION_SOURCE_DENIED = True
+PGS_PLAN_STATE_RELOADED_DURING_PROMOTION = True
+FINAL_PROMOTION_PRECONDITIONS_FROM_TRUSTED_STATE = True
+CALLER_PROJECTION_SOURCE_IS_AUTHORITY = False
+CALLER_AUTHORITY_OVERRIDE_COUNT = 0
 PROGRESS_REFRESH_DEPENDS_ON_STEWARD = False
 SECOND_PROJECTION_ENGINE_CREATED = False
 GENERIC_WATCHER_CREATED = False
@@ -959,6 +979,221 @@ class GovernanceProjectionLifecycle:
         except ProjectGovernanceStoreError as exc:
             raise ProjectionLifecycleError("METADATA_READ_FAILED", str(exc)) from exc
 
+    def _promotion_plan_record(self, project_id: str, plan_id: str) -> ProjectPlanRecord:
+        """Read the live Plan record used by the promotion preflight."""
+        if self.governance_store is None:
+            raise ProjectionLifecycleError(
+                "TRUSTED_PROMOTION_DEPENDENCIES_REQUIRED",
+                "promotion requires the Project Governance Store",
+            )
+        try:
+            record = self.governance_store.get_plan(project_id, plan_id)
+        except ProjectGovernanceStoreError as exc:
+            raise ProjectionLifecycleError("PROMOTION_PLAN_READ_FAILED", str(exc)) from exc
+        if record is None:
+            raise ProjectionLifecycleError(
+                "PROMOTION_PLAN_MISSING",
+                f"no Project Governance Store Plan record exists for {project_id}/{plan_id}",
+            )
+        if record.project_id != project_id or record.plan_id != plan_id:
+            raise ProjectionLifecycleError(
+                "PROMOTION_PLAN_BINDING_MISMATCH",
+                "Project Governance Store returned a Plan record for a different identity",
+            )
+        if record.lifecycle_state != PLAN_LIFECYCLE_ACTIVE:
+            raise ProjectionLifecycleError(
+                "PROMOTION_PLAN_NOT_ACTIVE",
+                "Architecture promotion requires an active Project Governance Store Plan record",
+            )
+        return record
+
+    def _trusted_plan_baseline(
+        self,
+        record: ProjectPlanRecord,
+    ) -> tuple[str, str, PlanDocumentInput]:
+        """Read the canonical Plan authority bound by the live PGS record."""
+        if self.governance_root is None:
+            raise ProjectionLifecycleError(
+                "TRUSTED_PROMOTION_DEPENDENCIES_REQUIRED",
+                "promotion requires a trusted governance root",
+            )
+        if record.authority.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+            raise ProjectionLifecycleError(
+                "ARCHITECTURE_BASELINE_AUTHORITY_UNAVAILABLE",
+                "the bound Plan authority has no trusted local document reader",
+            )
+        try:
+            expected_ref = object_ref_subject(
+                make_id(IdKind.SUBJECT, record.plan_id, sub_kind=SubjectKind.PLAN)
+            )
+            destination = LocalPlanAuthorityDestination(
+                governance_root=self.governance_root,
+                plan_id=record.plan_id,
+                expected_ref=expected_ref,
+            )
+            if destination.authority_ref != record.authority.authority_ref:
+                raise ProjectionLifecycleError(
+                    "PROMOTION_PLAN_AUTHORITY_MISMATCH",
+                    "the live Plan record is not bound to its trusted local Plan authority",
+                )
+            document = load_local_portable_plan(
+                LocalPlanAuthorityReadAdapter(destination, binding=record.authority)
+            )
+        except ProjectionLifecycleError:
+            raise
+        except LocalGovernanceAdapterError as exc:
+            raise ProjectionLifecycleError("PROMOTION_PLAN_AUTHORITY_READ_FAILED", str(exc)) from exc
+        except Exception as exc:
+            raise ProjectionLifecycleError("PROMOTION_PLAN_AUTHORITY_READ_FAILED", str(exc)) from exc
+
+        if (
+            record.authority.source_revision is not None
+            and str(document.source_revision) != str(record.authority.source_revision)
+        ):
+            raise ProjectionLifecycleError(
+                "PROMOTION_PLAN_AUTHORITY_STALE",
+                "the canonical Plan document revision disagrees with the live Plan binding",
+            )
+        if (
+            record.authority.source_digest is not None
+            and document.source_digest != record.authority.source_digest
+        ):
+            raise ProjectionLifecycleError(
+                "PROMOTION_PLAN_AUTHORITY_STALE",
+                "the canonical Plan document digest disagrees with the live Plan binding",
+            )
+
+        trusted_input = plan_document_input(
+            plan_id=record.plan_id,
+            document=document,
+            authority=record.authority,
+        )
+        try:
+            baseline = self._accepted_baseline_binding(
+                project_id=record.project_id,
+                plan_id=record.plan_id,
+                plan_records=(record,),
+                plan_documents=(trusted_input,),
+                architecture=None,
+            )
+        except ProjectionLifecycleError:
+            raise
+        except Exception as exc:
+            raise ProjectionLifecycleError(
+                "ARCHITECTURE_BASELINE_BINDING_FAILED",
+                str(exc),
+            ) from exc
+        return baseline[0], baseline[1], trusted_input
+
+    def _validate_promotion_source(
+        self,
+        *,
+        source: GovernanceProjectionInput | None,
+        plan_record: ProjectPlanRecord,
+        trusted_baseline: tuple[str, str],
+        trusted_plan: PlanDocumentInput,
+        metadata: ArchitectureMetadataRecord,
+    ) -> None:
+        """Treat projection input as a consistency check, never as authority."""
+        if source is None:
+            raise ProjectionLifecycleError(
+                "PROMOTION_PROJECTION_SOURCE_REQUIRED",
+                "Architecture promotion requires a trusted projection refresh source",
+            )
+        if source.project_id != plan_record.project_id:
+            raise ProjectionLifecycleError(
+                "PROJECT_MISMATCH",
+                "projection source belongs to another project",
+            )
+
+        if source.plan_records is not None:
+            matching_records = tuple(
+                record for record in source.plan_records if record.plan_id == plan_record.plan_id
+            )
+            if matching_records and matching_records[0] != plan_record:
+                raise ProjectionLifecycleError(
+                    "PROMOTION_PLAN_BINDING_MISMATCH",
+                    "projection source Plan record disagrees with the live Project Governance Store record",
+                )
+            if source.plan_records and not matching_records:
+                raise ProjectionLifecycleError(
+                    "PROMOTION_PLAN_BINDING_MISMATCH",
+                    "projection source does not contain the promoted live Plan record",
+                )
+
+        matching_documents = tuple(
+            document for document in source.plan_documents if document.plan_id == plan_record.plan_id
+        )
+        if len(matching_documents) > 1:
+            raise ProjectionLifecycleError(
+                "ARCHITECTURE_BASELINE_BINDING_AMBIGUOUS",
+                "projection source contains more than one document for the promoted Plan",
+            )
+        if matching_documents:
+            plan_input = matching_documents[0]
+            if plan_input.authority != plan_record.authority:
+                raise ProjectionLifecycleError(
+                    "PROMOTION_PLAN_AUTHORITY_MISMATCH",
+                    "projection source Plan document is not bound to the live Plan authority",
+                )
+            if (
+                plan_input.document.source_revision != trusted_plan.document.source_revision
+                or plan_input.document.source_digest != trusted_plan.document.source_digest
+            ):
+                raise ProjectionLifecycleError(
+                    "PROMOTION_PLAN_AUTHORITY_STALE",
+                    "projection source Plan document is stale or forged",
+                )
+            try:
+                candidate = architecture_state_from_plan_document(
+                    project_id=plan_record.project_id,
+                    plan_id=plan_record.plan_id,
+                    document=plan_input.document,
+                    authority_ref=plan_record.authority.authority_ref,
+                )
+            except GovernanceProjectionError as exc:
+                raise ProjectionLifecycleError(exc.code, exc.message) from exc
+            candidate_binding = (candidate.baseline_id, candidate.baseline_status)
+            if candidate_binding != trusted_baseline:
+                if candidate.baseline_status not in _ACCEPTED_BASELINE_STATUSES:
+                    raise ProjectionLifecycleError(
+                        "ARCHITECTURE_BASELINE_NOT_ACCEPTED",
+                        f"baseline status {candidate.baseline_status!r} is not an accepted status",
+                    )
+                raise ProjectionLifecycleError(
+                    "ARCHITECTURE_BASELINE_MISMATCH",
+                    "projection source Plan document disagrees with the trusted baseline",
+                )
+
+        architecture = source.architecture
+        if architecture is not None:
+            candidate_binding = (architecture.baseline_id, architecture.baseline_status)
+            if (candidate_binding[0] is None) != (candidate_binding[1] is None):
+                raise ProjectionLifecycleError(
+                    "ARCHITECTURE_BASELINE_BINDING_MISSING",
+                    "projection source Architecture baseline identity and status must be complete",
+                )
+            if candidate_binding[0] is None:
+                raise ProjectionLifecycleError(
+                    "ARCHITECTURE_BASELINE_BINDING_MISSING",
+                    "projection source Architecture baseline identity and status are required",
+                )
+            if candidate_binding != trusted_baseline:
+                if architecture.baseline_status not in _ACCEPTED_BASELINE_STATUSES:
+                    raise ProjectionLifecycleError(
+                        "ARCHITECTURE_BASELINE_NOT_ACCEPTED",
+                        f"baseline status {architecture.baseline_status!r} is not an accepted status",
+                    )
+                raise ProjectionLifecycleError(
+                    "ARCHITECTURE_BASELINE_MISMATCH",
+                    "projection source Architecture disagrees with the trusted baseline",
+                )
+            if architecture.accepted_ref is not None and architecture.accepted_ref != metadata.authority_ref:
+                raise ProjectionLifecycleError(
+                    "ARCHITECTURE_AUTHORITY_REF_MISMATCH",
+                    "projection source is bound to a different Architecture authority",
+                )
+
     @staticmethod
     def _accepted_baseline_binding(
         *,
@@ -1107,12 +1342,14 @@ class GovernanceProjectionLifecycle:
                 "PROJECT_MISMATCH",
                 "projection source belongs to another project",
             )
-        baseline_id, baseline_status = self._accepted_baseline_binding(
-            project_id=request.project_id,
-            plan_id=request.plan_id,
-            plan_records=source.plan_records,
-            plan_documents=source.plan_documents,
-            architecture=source.architecture,
+        plan_record = self._promotion_plan_record(request.project_id, request.plan_id)
+        baseline_id, baseline_status, trusted_plan = self._trusted_plan_baseline(plan_record)
+        self._validate_promotion_source(
+            source=source,
+            plan_record=plan_record,
+            trusted_baseline=(baseline_id, baseline_status),
+            trusted_plan=trusted_plan,
+            metadata=metadata,
         )
         if request.baseline_id != baseline_id:
             raise ProjectionLifecycleError(
@@ -1123,15 +1360,6 @@ class GovernanceProjectionLifecycle:
             raise ProjectionLifecycleError(
                 "ARCHITECTURE_BASELINE_STATUS_MISMATCH",
                 "promotion baseline status does not match the accepted baseline status",
-            )
-        if (
-            source.architecture is not None
-            and source.architecture.accepted_ref is not None
-            and source.architecture.accepted_ref != metadata.authority_ref
-        ):
-            raise ProjectionLifecycleError(
-                "ARCHITECTURE_AUTHORITY_REF_MISMATCH",
-                "projection source is bound to a different Architecture authority",
             )
         state = ArchitectureStateInput(
             project_id=request.project_id,
@@ -1306,26 +1534,13 @@ class GovernanceProjectionLifecycle:
         *,
         context_route_input: ContextRouteInput | None = None,
     ) -> ProjectionRefreshResult | None:
-        self._prepare_promoted_source(
+        refreshed = self._prepare_promoted_source(
             request=request,
             source=source,
             metadata=metadata,
             architecture_digest=metadata.current_digest,
             context_route_input=context_route_input,
         )
-        baseline_id, baseline_status = self._accepted_baseline_binding(
-            project_id=request.project_id,
-            plan_id=request.plan_id,
-            plan_records=source.plan_records if source is not None else None,
-            plan_documents=source.plan_documents if source is not None else (),
-            architecture=source.architecture if source is not None else None,
-        )
-        architecture = self._architecture_state_from_authority(
-            metadata,
-            baseline_id=baseline_id,
-            baseline_status=baseline_status,
-        )
-        refreshed = replace(source, architecture=architecture)  # type: ignore[arg-type]
         return self.refresh_for_trigger(
             REFRESH_TRIGGER_ARCHITECTURE_PROMOTION,
             refreshed,
@@ -1348,12 +1563,14 @@ class GovernanceProjectionLifecycle:
             )
         if source.project_id != receipt.project_id:
             raise ProjectionLifecycleError("PROJECT_MISMATCH", "projection source belongs to another project")
-        baseline_id, baseline_status = self._accepted_baseline_binding(
-            project_id=receipt.project_id,
-            plan_id=receipt.plan_id,
-            plan_records=source.plan_records,
-            plan_documents=source.plan_documents,
-            architecture=source.architecture,
+        plan_record = self._promotion_plan_record(receipt.project_id, receipt.plan_id)
+        baseline_id, baseline_status, trusted_plan = self._trusted_plan_baseline(plan_record)
+        self._validate_promotion_source(
+            source=source,
+            plan_record=plan_record,
+            trusted_baseline=(baseline_id, baseline_status),
+            trusted_plan=trusted_plan,
+            metadata=metadata,
         )
         if baseline_id != receipt.baseline_id or baseline_status != receipt.baseline_status:
             raise ProjectionLifecycleError(
@@ -1399,11 +1616,15 @@ __all__ = [
     "ARCHITECTURE_RECEIPT_FILENAME",
     "ARCHITECTURE_STAGE_FILENAME",
     "BOUNDED_LIFECYCLE_TRIGGERS",
+    "CALLER_AUTHORITY_OVERRIDE_COUNT",
+    "CALLER_PROJECTION_SOURCE_IS_AUTHORITY",
     "CONTEXT_ROUTE_REFRESH_AFTER_PROMOTION",
     "EVENT_BUS_CREATED",
+    "FINAL_PROMOTION_PRECONDITIONS_FROM_TRUSTED_STATE",
     "GENERIC_WATCHER_CREATED",
     "MAP_REFRESH_AFTER_PROMOTION",
     "MAX_ARCHITECTURE_BYTES",
+    "PGS_PLAN_STATE_RELOADED_DURING_PROMOTION",
     "PROCESS_LOCAL_PROGRESS_AUTHORITY",
     "PROMOTION_WITHOUT_PROJECTION_SOURCE_DENIED",
     "PROJECTION_LIFECYCLE_IMPLEMENTED",
