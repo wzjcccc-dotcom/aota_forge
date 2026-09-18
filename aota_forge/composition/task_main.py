@@ -31,6 +31,7 @@ from aota_forge.governance.project_store import (
     ProjectGovernanceStore,
     StewardLogicalReplayRecord,
 )
+from aota_forge.governance.projection_lifecycle import GovernanceProjectionLifecycle
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.governance.stewardship import StewardshipCheckpoint
 from aota_forge.runtime.completion import DurableCompletionCoordinator
@@ -298,6 +299,50 @@ def _coordinator_storage_path(
     return Path(raw_path) if isinstance(raw_path, (str, Path)) else None
 
 
+def _default_projection_refresh_hook(
+    *,
+    coordinator_store: TaskMainCoordinatorStore,
+    execution_store: ExecutionStateStore,
+    governance_store: ProjectGovernanceStore | str | Path | None,
+) -> Callable[[], Any] | None:
+    """Compose the bounded post-mutation refresh from the existing owners."""
+    if governance_store is None:
+        return None
+    destination = _coordinator_storage_path(coordinator_store)
+    if destination is None:
+        return None
+    destination = destination.parent
+
+    def refresh() -> None:
+        owned_store = False
+        store = governance_store
+        if isinstance(governance_store, (str, Path)):
+            store = SQLiteProjectGovernanceStore(governance_store)
+            owned_store = True
+        if not isinstance(store, ProjectGovernanceStore):
+            raise TypeError("governance_store must be a ProjectGovernanceStore or storage path")
+        try:
+            states = coordinator_store.list_all()
+            project_ids = sorted({state.project_id for state in states})
+            if len(project_ids) != 1:
+                raise RuntimeError(
+                    "projection refresh requires exactly one durable task-main project"
+                )
+            GovernanceProjectionLifecycle(
+                governance_store=store,
+                coordinator_store=coordinator_store,
+                execution_store=execution_store,
+            ).refresh_from_durable_owners(
+                project_id=project_ids[0],
+                project_directory=destination,
+            )
+        finally:
+            if owned_store:
+                store.close()
+
+    return refresh
+
+
 def _open_stewardship_governance_store(
     governance_store: ProjectGovernanceStore | str | Path | None,
     coordinator_store: TaskMainCoordinatorStore | str | Path,
@@ -497,6 +542,7 @@ def create_task_main_control_service(
     stewardship_repo_path: str | Path | None = None,
     stewardship_origin_session_ref: str | None = None,
     governance_store: ProjectGovernanceStore | str | Path | None = None,
+    projection_refresh_hook: Callable[[], Any] | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
     store = (
@@ -520,12 +566,20 @@ def create_task_main_control_service(
             governance_store=governance_store,
         )
 
+    if projection_refresh_hook is None:
+        projection_refresh_hook = _default_projection_refresh_hook(
+            coordinator_store=store,
+            execution_store=execution_store,
+            governance_store=governance_store,
+        )
+
     return TaskMainControlService(
         coordinator_store=store,
         execution_store=execution_store,
         execution_dispatcher=execution_dispatcher,
         completion_coordinator=completion_coordinator,
         runner_factory=production_runner_factory,
+        projection_refresh_hook=projection_refresh_hook,
     )
 
 

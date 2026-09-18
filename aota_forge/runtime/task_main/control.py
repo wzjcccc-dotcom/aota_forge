@@ -119,6 +119,7 @@ class TaskMainControlService:
         execution_dispatcher: ExecutionDispatcher,
         completion_coordinator: DurableCompletionCoordinator | None = None,
         runner_factory: RunnerFactory | None = None,
+        projection_refresh_hook: Callable[[], Any] | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -133,6 +134,14 @@ class TaskMainControlService:
         if runner_factory is not None and not callable(runner_factory):
             raise TypeError("runner_factory must be callable or None")
         self._runner_factory = runner_factory or _legacy_runner_factory
+        if projection_refresh_hook is not None and not callable(projection_refresh_hook):
+            raise TypeError("projection_refresh_hook must be callable or None")
+        self._projection_refresh_hook = projection_refresh_hook
+
+    def _refresh_projection_after_transition(self) -> None:
+        """Refresh derived Governance views after durable task-main mutation."""
+        if self._projection_refresh_hook is not None:
+            self._projection_refresh_hook()
 
     # ---- canonical ownership seam (AF #46 M1/W2, D4) ----
     # Core/runtime owns Plan gate interpretation, coordinator identity
@@ -238,7 +247,7 @@ class TaskMainControlService:
         _require_task_main_profile(profile)
         if not isinstance(plan_view, MilestonePlanView):
             raise TypeError("plan_view must be MilestonePlanView")
-        return activate_milestone(
+        result = activate_milestone(
             store=self._coord_store,
             plan_view=plan_view,
             origin_task_main_session_ref=origin_task_main_session_ref,
@@ -248,6 +257,8 @@ class TaskMainControlService:
             project_id=project_id,
             coordinator_id=coordinator_id,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def recover_coordinator(
         self,
@@ -258,7 +269,7 @@ class TaskMainControlService:
         session_available: bool = True,
     ):
         _require_task_main_profile(profile)
-        return recover_coordinator(
+        result = recover_coordinator(
             store=self._coord_store,
             coordinator_id=coordinator_id,
             live_plan_view=live_plan_view,
@@ -266,6 +277,8 @@ class TaskMainControlService:
             completion_coordinator=self._completion,
             session_available=session_available,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def advance_once(
         self,
@@ -293,7 +306,9 @@ class TaskMainControlService:
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
         )
-        return runner.advance_once(session_available=session_available)
+        outcome = runner.advance_once(session_available=session_available)
+        self._refresh_projection_after_transition()
+        return outcome
 
     def submit_work_projection(
         self,
@@ -320,13 +335,15 @@ class TaskMainControlService:
         _require_task_main_profile(profile)
         if not isinstance(live_plan_view, MilestonePlanView):
             raise TypeError("live_plan_view must be MilestonePlanView")
-        return commit_task_main_work_projection(
+        result = commit_task_main_work_projection(
             store=self._coord_store,
             coordinator_id=coordinator_id,
             live_plan_view=live_plan_view,
             work_item_id=work_item_id,
             projection=projection,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def adopt_normal_path_task_start(
         self,
@@ -355,7 +372,7 @@ class TaskMainControlService:
         _require_task_main_profile(profile)
         if not isinstance(live_plan_view, MilestonePlanView):
             raise TypeError("live_plan_view must be MilestonePlanView")
-        return _adopt(
+        result = _adopt(
             store=self._coord_store,
             coordinator_id=coordinator_id,
             live_plan_view=live_plan_view,
@@ -366,6 +383,8 @@ class TaskMainControlService:
             handoff_ref=handoff_ref,
             handoff_digest=handoff_digest,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def get_projection_required_context(
         self,
@@ -454,7 +473,7 @@ class TaskMainControlService:
         handoff_resolver: Callable[[str], TaskHandoff] | None = None,
     ) -> ReconciliationOutcome:
         _require_task_main_profile(profile)
-        return reconcile_worker_completion(
+        result = reconcile_worker_completion(
             store=self._coord_store,
             execution_store=self._exec_store,
             coordinator_id=coordinator_id,
@@ -464,6 +483,8 @@ class TaskMainControlService:
             governed_evidence=governed_evidence,
             handoff_resolver=handoff_resolver,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def reconcile_review_completion(
         self,
@@ -476,7 +497,7 @@ class TaskMainControlService:
         governed_review: GovernedReviewEvidence,
     ) -> ReconciliationOutcome:
         _require_task_main_profile(profile)
-        return reconcile_review_completion(
+        result = reconcile_review_completion(
             store=self._coord_store,
             execution_store=self._exec_store,
             coordinator_id=coordinator_id,
@@ -485,6 +506,8 @@ class TaskMainControlService:
             live_plan_view=live_plan_view,
             governed_review=governed_review,
         )
+        self._refresh_projection_after_transition()
+        return result
 
     def create_runner(
         self,
