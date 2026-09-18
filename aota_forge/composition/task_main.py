@@ -285,6 +285,7 @@ def create_task_main_runner(
     next_milestone_view: MilestonePlanView | None = None,
     completion_coordinator: DurableCompletionCoordinator | None = None,
     coordinator_id: str | None = None,
+    reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
     stewardship_checkpoint: StewardshipCheckpoint | None = None,
     stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
     stewardship_sandbox: WorktreeSandboxBoundary | None = None,
@@ -311,6 +312,7 @@ def create_task_main_runner(
         next_milestone_view=next_milestone_view,
         completion_coordinator=completion_coordinator,
         coordinator_id=coordinator_id,
+        reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
     )
     if stewardship_checkpoint is None:
         return legacy_runner
@@ -390,6 +392,13 @@ def create_task_main_control_service(
     execution_store: ExecutionStateStore,
     execution_dispatcher: ExecutionDispatcher,
     completion_coordinator: DurableCompletionCoordinator | None = None,
+    stewardship_checkpoint: StewardshipCheckpoint | None = None,
+    stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
+    stewardship_sandbox: WorktreeSandboxBoundary | None = None,
+    stewardship_finalizer: TrustedStewardFinalizer | None = None,
+    stewardship_repo_path: str | Path | None = None,
+    stewardship_origin_session_ref: str | None = None,
+    governance_store: ProjectGovernanceStore | str | Path | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
     store = (
@@ -397,11 +406,25 @@ def create_task_main_control_service(
         if isinstance(coordinator_store, (str, Path))
         else coordinator_store
     )
+
+    def production_runner_factory(**runner_inputs: Any) -> Any:
+        return create_task_main_runner(
+            **runner_inputs,
+            stewardship_checkpoint=stewardship_checkpoint,
+            stewardship_dispatch=stewardship_dispatch,
+            stewardship_sandbox=stewardship_sandbox,
+            stewardship_finalizer=stewardship_finalizer,
+            stewardship_repo_path=stewardship_repo_path,
+            stewardship_origin_session_ref=stewardship_origin_session_ref,
+            governance_store=governance_store,
+        )
+
     return TaskMainControlService(
         coordinator_store=store,
         execution_store=execution_store,
         execution_dispatcher=execution_dispatcher,
         completion_coordinator=completion_coordinator,
+        runner_factory=production_runner_factory,
     )
 
 

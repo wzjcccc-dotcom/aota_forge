@@ -42,9 +42,17 @@ from aota_forge.runtime.task_main.reconciliation import (
 from aota_forge.runtime.task_main.runner import (
     RunnerOutcome,
     TaskMainMilestoneRunner,
-    advance_milestone_once,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
+
+
+RunnerFactory = Callable[..., Any]
+
+
+def _legacy_runner_factory(**runner_inputs: Any) -> TaskMainMilestoneRunner:
+    """Keep direct TaskMainControlService callers source-compatible."""
+    return TaskMainMilestoneRunner(**runner_inputs)
+
 
 # Host-edge mechanical Hermes profile names (not authority).
 # The mapping Hermes profile → neutral AF role is owned by the host adapter
@@ -110,6 +118,7 @@ class TaskMainControlService:
         execution_store: ExecutionStateStore,
         execution_dispatcher: ExecutionDispatcher,
         completion_coordinator: DurableCompletionCoordinator | None = None,
+        runner_factory: RunnerFactory | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -121,6 +130,9 @@ class TaskMainControlService:
         self._exec_store = execution_store
         self._dispatcher = execution_dispatcher
         self._completion = completion_coordinator
+        if runner_factory is not None and not callable(runner_factory):
+            raise TypeError("runner_factory must be callable or None")
+        self._runner_factory = runner_factory or _legacy_runner_factory
 
     # ---- canonical ownership seam (AF #46 M1/W2, D4) ----
     # Core/runtime owns Plan gate interpretation, coordinator identity
@@ -270,21 +282,18 @@ class TaskMainControlService:
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
     ) -> RunnerOutcome:
         _require_task_main_profile(profile)
-        return advance_milestone_once(
-            coordinator_store=self._coord_store,
-            execution_store=self._exec_store,
-            execution_dispatcher=self._dispatcher,
-            coordinator_id=coordinator_id,
+        runner = self.create_runner(
+            profile=profile,
             live_plan_view=live_plan_view,
             handoff_resolver=handoff_resolver,
             governed_evidence_resolver=governed_evidence_resolver,
             reviewer_handoff_resolver=reviewer_handoff_resolver,
             governed_review_resolver=governed_review_resolver,
             next_milestone_view=next_milestone_view,
-            completion_coordinator=self._completion,
-            session_available=session_available,
+            coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
         )
+        return runner.advance_once(session_available=session_available)
 
     def submit_work_projection(
         self,
@@ -489,9 +498,9 @@ class TaskMainControlService:
         next_milestone_view: MilestonePlanView | None = None,
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
-    ) -> TaskMainMilestoneRunner:
+    ) -> Any:
         _require_task_main_profile(profile)
-        return TaskMainMilestoneRunner(
+        runner = self._runner_factory(
             coordinator_store=self._coord_store,
             execution_store=self._exec_store,
             execution_dispatcher=self._dispatcher,
@@ -505,6 +514,9 @@ class TaskMainControlService:
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
         )
+        if not callable(getattr(runner, "advance_once", None)):
+            raise TypeError("runner_factory must return a runner with advance_once")
+        return runner
 
 
 def is_worker_allowed_to_call_task_main_control(profile: str) -> bool:

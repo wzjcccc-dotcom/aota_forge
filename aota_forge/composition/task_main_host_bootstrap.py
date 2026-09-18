@@ -40,7 +40,7 @@ from aota_forge.composition.execution import create_production_execution_dispatc
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
-from aota_forge.runtime.task_main.control import TaskMainControlService
+from aota_forge.composition.task_main import create_task_main_control_service
 from aota_forge.runtime.trusted_runtime_binding import (
     PRE_RESOLVED_BINDING_ENV,
     TrustedBindingError,
@@ -570,7 +570,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             else:
                 os.environ["AOTA_FORGE_RUNTIME_CONFIG"] = old_env
 
-    control_service = TaskMainControlService(
+    control_service = create_task_main_control_service(
         coordinator_store=coord_store,
         execution_store=exec_store,
         execution_dispatcher=dispatcher,
