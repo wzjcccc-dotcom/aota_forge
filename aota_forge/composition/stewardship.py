@@ -12,6 +12,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum, unique
+from pathlib import Path
 from typing import Any
 
 from aota_forge.core.contracts.canonical import canonical_json
@@ -28,6 +29,7 @@ from aota_forge.governance.stewardship import (
     StewardshipDisposition,
     StewardshipEvaluation,
     StewardshipOutcome,
+    SemanticResidual,
     build_finalizer_input,
     build_materialization_intent,
     evaluate_checkpoint,
@@ -35,18 +37,24 @@ from aota_forge.governance.stewardship import (
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_LEGACY
 from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.handoff_store import handoff_open
 from aota_forge.work_plane.materialization_receipt import MaterializationReceipt
 from aota_forge.work_plane.steward_dispatch import (
     StewardClosureVerdict,
     StewardResult,
 )
 from aota_forge.work_plane.steward_finalizer import (
+    FileBackedReceiptStore,
     FinalizerError,
     FinalizerInput,
     FinalizerReentryEvidence,
     TrustedStewardFinalizer,
     finalize_closure_via_coordinator,
 )
+from aota_forge.work_plane.task_return_receipt import (
+    read_task_return_receipt,
+)
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 # ---------------------------------------------------------------------------
 # Composition markers
@@ -65,6 +73,10 @@ STEWARDSHIP_REUSES_COORDINATOR_FINALIZER = True
 STEWARDSHIP_REPLAY_IS_DURABLE = True
 NO_LLM_DISPATCH_ON_DETERMINISTIC_PATH = True
 NO_BLIND_REDISPATCH_AFTER_UNKNOWN = True
+SEMANTIC_RESIDUAL_BOUND_TO_REPLAY_IDENTITY = True
+COMPLETED_REPLAY_HYDRATES_STEWARD_RESULT = True
+COMPLETED_REPLAY_HYDRATES_RECEIPT = True
+RECOVERABLE_PARTIAL_FINALIZATION_REENTERS = True
 
 SECOND_STEWARD_RESULT_TRANSPORT_CREATED = False
 SECOND_FINALIZATION_PROTOCOL = False
@@ -80,6 +92,113 @@ class StewardshipProductionError(RuntimeError):
         self.code = code
         self.detail = detail
         super().__init__(f"{code}: {detail}")
+
+
+def semantic_residual_digest(residual: SemanticResidual) -> str:
+    """Return the canonical digest of the accepted semantic residual contract."""
+    if not isinstance(residual, SemanticResidual):
+        raise TypeError("residual must be SemanticResidual")
+    payload = {
+        "kind": residual.kind.value,
+        "reason": residual.reason,
+        "checkpoint_id": residual.checkpoint_id,
+        "required_input_refs": list(residual.required_input_refs),
+    }
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class DurableStewardResultOwner:
+    """Adapter over the existing durable result handoff and task.return seams.
+
+    This class owns no storage or terminal-return authority.  It gives the
+    replay executor a stable task identity and reuses the existing governed
+    ``task_return_receipt`` plus ``handoff_store`` to hydrate a result that was
+    already written by the trusted ``task_facade.task_return`` path.
+    """
+
+    sandbox: WorktreeSandboxBoundary
+    task_id_resolver: Callable[[StewardLogicalReplayRecord], str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.sandbox, WorktreeSandboxBoundary):
+            raise TypeError("sandbox must be WorktreeSandboxBoundary")
+        if not callable(self.task_id_resolver):
+            raise TypeError("task_id_resolver must be callable")
+
+    @staticmethod
+    def default_task_id(record: StewardLogicalReplayRecord) -> str:
+        return f"steward:{record.project_id}:{record.plan_id}:{record.lineage_id}"
+
+    def task_id(self, record: StewardLogicalReplayRecord) -> str:
+        try:
+            task_id = self.task_id_resolver(record)
+        except Exception as exc:  # noqa: BLE001 - identity resolution fails closed
+            raise StewardshipProductionError(
+                "RESULT_TASK_ID_RESOLUTION_FAILED",
+                f"trusted result task identity resolver raised {type(exc).__name__}",
+            ) from exc
+        if not isinstance(task_id, str) or not task_id.strip() or len(task_id.strip()) > 256:
+            raise StewardshipProductionError(
+                "RESULT_TASK_ID_INVALID",
+                "trusted result task identity resolver returned an invalid task id",
+            )
+        return task_id.strip()
+
+    def resolve_steward_result(
+        self,
+        record: StewardLogicalReplayRecord,
+    ) -> StewardResult | None:
+        if not isinstance(record, StewardLogicalReplayRecord):
+            raise TypeError("record must be StewardLogicalReplayRecord")
+        if record.project_id != self.sandbox.project_id:
+            raise StewardshipProductionError(
+                "RESULT_OWNER_PROJECT_MISMATCH",
+                "durable result owner is bound to another project",
+            )
+        task_id = self.task_id(record)
+        receipt = read_task_return_receipt(self.sandbox, task_id)
+        if receipt is None:
+            return None
+        if receipt.canonical_task_id != task_id:
+            raise StewardshipProductionError(
+                "RESULT_RECEIPT_BINDING_MISMATCH",
+                "durable task.return receipt does not bind the replay task",
+            )
+        opened = handoff_open(receipt.result_ref, "full", sandbox=self.sandbox)
+        envelope = opened.get("envelope")
+        semantic = opened.get("semantic")
+        if opened.get("mode") != "result" or not isinstance(envelope, dict) or not isinstance(semantic, dict):
+            raise StewardshipProductionError(
+                "RESULT_HANDOFF_INVALID",
+                "durable StewardResult handoff is malformed",
+            )
+        if receipt.status == "failed":
+            raise StewardshipProductionError(
+                "RESULT_RETURN_FAILED",
+                "durable task.return evidence reports a failed semantic return",
+            )
+        if (
+            opened.get("digest") != receipt.result_digest
+            or envelope.get("digest") != receipt.result_digest
+            or envelope.get("project_id") != self.sandbox.project_id
+            or envelope.get("task_id") != task_id
+            or envelope.get("source_role") != "project-steward"
+        ):
+            raise StewardshipProductionError(
+                "RESULT_HANDOFF_BINDING_MISMATCH",
+                "durable StewardResult handoff or receipt binding is stale/foreign",
+            )
+        try:
+            result_payload = semantic.get("steward_result", semantic)
+            if not isinstance(result_payload, dict):
+                raise TypeError("steward_result wrapper must be a mapping")
+            return StewardResult.from_dict(result_payload)
+        except Exception as exc:  # noqa: BLE001 - persisted evidence fails closed
+            raise StewardshipProductionError(
+                "RESULT_HANDOFF_INVALID",
+                f"durable StewardResult could not be decoded: {type(exc).__name__}",
+            ) from exc
 
 
 @unique
@@ -170,6 +289,8 @@ class LegacyStewardshipExecutor:
     finalizer: TrustedStewardFinalizer
     semantic_dispatch: Callable[[TaskHandoff], StewardResult | None]
     result_resolver: Callable[[StewardLogicalReplayRecord], StewardResult | None] | None = None
+    result_owner: Any | None = None
+    result_sandbox: WorktreeSandboxBoundary | None = None
     origin_session_ref: str | None = None
 
     def __post_init__(self) -> None:
@@ -186,6 +307,15 @@ class LegacyStewardshipExecutor:
             raise TypeError("semantic_dispatch must be callable")
         if self.result_resolver is not None and not callable(self.result_resolver):
             raise TypeError("result_resolver must be callable or None")
+        if self.result_owner is not None and not any(
+            callable(getattr(self.result_owner, method, None))
+            for method in ("resolve_steward_result", "resolve_result", "get_steward_result")
+        ):
+            raise TypeError("result_owner must expose an existing result resolver seam")
+        if self.result_sandbox is not None and not isinstance(
+            self.result_sandbox, WorktreeSandboxBoundary
+        ):
+            raise TypeError("result_sandbox must be WorktreeSandboxBoundary or None")
         if self.origin_session_ref is not None and not _non_empty(self.origin_session_ref):
             raise ValueError("origin_session_ref must be a non-empty string when supplied")
         for label, store, methods in (
@@ -203,6 +333,11 @@ class LegacyStewardshipExecutor:
         """Execute exactly one trusted checkpoint through the legacy path."""
         if not isinstance(checkpoint, StewardshipCheckpoint):
             raise TypeError("checkpoint must be StewardshipCheckpoint")
+        if self.result_sandbox is not None and self.result_sandbox.project_id != checkpoint.project_id:
+            raise StewardshipProductionError(
+                "RESULT_OWNER_PROJECT_MISMATCH",
+                "durable result owner is bound to another project",
+            )
 
         evaluation = evaluate_checkpoint(checkpoint)
         if evaluation.disposition is StewardshipDisposition.DETERMINISTIC_FINALIZABLE:
@@ -303,6 +438,18 @@ class LegacyStewardshipExecutor:
                     execution_state=StewardshipExecutionState.IN_FLIGHT,
                     replay=record,
                 )
+            try:
+                self._persist_result(record, result)
+            except StewardshipProductionError as exc:
+                failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+                return LegacyStewardshipOutcome(
+                    checkpoint_outcome=dispatched,
+                    execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                    replay=failed,
+                    steward_result=result,
+                    error_code=exc.code,
+                    error_detail=exc.detail[:512],
+                )
             return self._complete_semantic_result(checkpoint, dispatched, record, result)
 
         if record.state == STEWARD_REPLAY_STATE_ACTIVE:
@@ -325,20 +472,28 @@ class LegacyStewardshipExecutor:
                 )
             return self._complete_semantic_result(checkpoint, base_outcome, record, resolved)
         if record.state == STEWARD_REPLAY_STATE_COMPLETED:
-            resolved: StewardResult | None = None
-            resolver_error: StewardshipProductionError | None = None
-            if self.result_resolver is not None:
-                try:
-                    resolved = self._resolve_result(record)
-                except StewardshipProductionError as exc:
-                    resolver_error = exc
-            return LegacyStewardshipOutcome(
-                checkpoint_outcome=base_outcome,
-                execution_state=StewardshipExecutionState.COMPLETED,
-                replay=record,
-                steward_result=resolved,
-                error_code=resolver_error.code if resolver_error is not None else None,
-                error_detail=resolver_error.detail[:512] if resolver_error is not None else None,
+            try:
+                resolved = self._resolve_result(record)
+                if resolved is None:
+                    raise StewardshipProductionError(
+                        "COMPLETED_RESULT_UNAVAILABLE",
+                        "completed replay has no durable StewardResult owner evidence",
+                    )
+            except StewardshipProductionError as exc:
+                failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+                return LegacyStewardshipOutcome(
+                    checkpoint_outcome=base_outcome,
+                    execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                    replay=failed,
+                    error_code=exc.code,
+                    error_detail=exc.detail[:512],
+                )
+            return self._complete_semantic_result(
+                checkpoint,
+                base_outcome,
+                record,
+                resolved,
+                transition_record=False,
             )
         return LegacyStewardshipOutcome(
             checkpoint_outcome=base_outcome,
@@ -353,21 +508,43 @@ class LegacyStewardshipExecutor:
         checkpoint: StewardshipCheckpoint,
         plan_id: str,
     ) -> StewardLogicalReplayRecord:
+        evaluation = evaluate_checkpoint(checkpoint)
+        residual = evaluation.residual
+        if residual is None:
+            raise StewardshipProductionError(
+                "REPLAY_RESIDUAL_REQUIRED",
+                "semantic replay identity requires a typed semantic residual",
+            )
         checkpoint_digest = checkpoint.digest()
+        residual_digest = semantic_residual_digest(residual)
+        readiness = checkpoint.readiness
+        target_lifecycle_revision = readiness.digest if readiness is not None else checkpoint_digest
+        accepted_frontier = (
+            readiness.reviewed_frontier_ref.ref
+            if readiness is not None and checkpoint.closure_phase is not None
+            and checkpoint.closure_phase.value == "ACCEPTED_CLOSURE"
+            else None
+        )
+        identity_material = {
+            "project_id": checkpoint.project_id,
+            "plan_id": plan_id,
+            "checkpoint_kind": checkpoint.kind.value,
+            "closure_phase": checkpoint.closure_phase.value if checkpoint.closure_phase is not None else None,
+            "checkpoint_digest": checkpoint_digest,
+            "target_lifecycle_revision": target_lifecycle_revision,
+            "accepted_frontier": accepted_frontier,
+            "semantic_residual_digest": residual_digest,
+        }
         request_digest = hashlib.sha256(
-            canonical_json(
-                {
-                    "project_id": checkpoint.project_id,
-                    "plan_id": plan_id,
-                    "checkpoint_id": checkpoint.checkpoint_id,
-                    "checkpoint_digest": checkpoint_digest,
-                }
-            ).encode("utf-8")
+            canonical_json(identity_material).encode("utf-8")
         ).hexdigest()
         return StewardLogicalReplayRecord(
             project_id=checkpoint.project_id,
             plan_id=plan_id,
-            lineage_id=f"checkpoint:{checkpoint.checkpoint_id}",
+            lineage_id=(
+                f"{checkpoint.kind.value}:residual:{residual_digest}:"
+                f"identity:{request_digest[:16]}"
+            ),
             request_digest=request_digest,
             checkpoint_ref=f"stewardship-checkpoint:{checkpoint.checkpoint_id}",
             checkpoint_digest=checkpoint_digest,
@@ -410,22 +587,144 @@ class LegacyStewardshipExecutor:
                 )
             return current, False
 
+    def _result_owner_candidates(self) -> tuple[Any, ...]:
+        candidates: list[Any] = []
+        if self.result_owner is not None:
+            candidates.append(self.result_owner)
+        for source in (self.semantic_dispatch, self.finalizer):
+            candidates.append(source)
+            nested = getattr(source, "result_owner", None)
+            if nested is not None:
+                candidates.append(nested)
+            nested = getattr(source, "result_store", None)
+            if nested is not None:
+                candidates.append(nested)
+        return tuple(candidates)
+
+    def _result_resolvers(
+        self,
+    ) -> tuple[Callable[[StewardLogicalReplayRecord], StewardResult | None], ...]:
+        resolvers: list[Callable[[StewardLogicalReplayRecord], StewardResult | None]] = []
+        if self.result_resolver is not None:
+            resolvers.append(self.result_resolver)
+        for owner in self._result_owner_candidates():
+            for method in ("resolve_steward_result", "resolve_result", "get_steward_result"):
+                resolver = getattr(owner, method, None)
+                if callable(resolver):
+                    if resolver not in resolvers:
+                        resolvers.append(resolver)
+        return tuple(resolvers)
+
+    def _persist_result(self, record: StewardLogicalReplayRecord, result: StewardResult) -> None:
+        for owner in self._result_owner_candidates():
+            for method in (
+                "persist_steward_result",
+                "put_steward_result",
+                "store_steward_result",
+            ):
+                persistor = getattr(owner, method, None)
+                if callable(persistor):
+                    try:
+                        persistor(record, result)
+                    except StewardshipProductionError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - owner failure is fail-closed
+                        raise StewardshipProductionError(
+                            "RESULT_PERSISTENCE_FAILED",
+                            f"durable StewardResult owner raised {type(exc).__name__}",
+                        ) from exc
+                    return
+
     def _resolve_result(self, record: StewardLogicalReplayRecord) -> StewardResult | None:
-        if self.result_resolver is None:
-            return None
-        try:
-            result = self.result_resolver(record)
-        except Exception as exc:  # noqa: BLE001 - resolver failure is fail-closed
+        for resolver in self._result_resolvers():
+            try:
+                result = resolver(record)
+            except Exception as exc:  # noqa: BLE001 - resolver failure is fail-closed
+                raise StewardshipProductionError(
+                    "RESULT_RESOLUTION_FAILED",
+                    f"durable StewardResult resolver raised {type(exc).__name__}",
+                ) from exc
+            if result is not None and not isinstance(result, StewardResult):
+                raise StewardshipProductionError(
+                    "RESULT_RESOLUTION_INVALID",
+                    "durable result resolver returned a non-StewardResult value",
+                )
+            if result is not None:
+                return result
+        return None
+
+    @staticmethod
+    def _steward_result_digest(result: StewardResult) -> str:
+        payload = {
+            "milestone_ref": result.milestone_ref,
+            "reviewed_frontier_ref": result.reviewed_frontier_ref,
+            "verdict": result.verdict.value,
+            "accepted_frontier_ref": result.accepted_frontier_ref,
+            "governance_evidence_refs": sorted(result.governance_evidence_refs),
+            "blocking_reasons": sorted(result.blocking_reasons),
+        }
+        return hashlib.sha256(
+            canonical_json(payload).encode("utf-8")
+        ).hexdigest()
+
+    def _validate_result_binding(
+        self,
+        checkpoint: StewardshipCheckpoint,
+        result: StewardResult,
+    ) -> None:
+        expected_milestone = checkpoint.trusted_plan.milestone_ref
+        if checkpoint.readiness is not None:
+            expected_milestone = checkpoint.readiness.milestone_ref.ref
+            if result.reviewed_frontier_ref != checkpoint.readiness.reviewed_frontier_ref.ref:
+                raise StewardshipProductionError(
+                    "RESULT_CHECKPOINT_MISMATCH",
+                    "StewardResult reviewed frontier does not match the checkpoint",
+                )
+        if result.milestone_ref != expected_milestone:
             raise StewardshipProductionError(
-                "RESULT_RESOLUTION_FAILED",
-                f"durable StewardResult resolver raised {type(exc).__name__}",
-            ) from exc
-        if result is not None and not isinstance(result, StewardResult):
-            raise StewardshipProductionError(
-                "RESULT_RESOLUTION_INVALID",
-                "durable result resolver returned a non-StewardResult value",
+                "RESULT_CHECKPOINT_MISMATCH",
+                "StewardResult milestone does not match the checkpoint",
             )
-        return result
+        if checkpoint.closure_phase is not None:
+            if checkpoint.closure_phase.value == "REVIEWED_CLOSURE" and result.accepted_frontier_ref is not None:
+                raise StewardshipProductionError(
+                    "RESULT_CHECKPOINT_MISMATCH",
+                    "reviewed checkpoint cannot hydrate an accepted frontier",
+                )
+            if checkpoint.closure_phase.value == "ACCEPTED_CLOSURE" and (
+                result.accepted_frontier_ref != result.reviewed_frontier_ref
+            ):
+                raise StewardshipProductionError(
+                    "RESULT_CHECKPOINT_MISMATCH",
+                    "accepted checkpoint result does not bind the reviewed frontier",
+                )
+
+    def _validate_receipt_binding(
+        self,
+        checkpoint: StewardshipCheckpoint,
+        result: StewardResult,
+        receipt: MaterializationReceipt,
+    ) -> None:
+        if not isinstance(receipt, MaterializationReceipt):
+            raise StewardshipProductionError(
+                "RECEIPT_INVALID",
+                "finalizer returned a non-MaterializationReceipt",
+            )
+        expected_milestone = checkpoint.trusted_plan.milestone_ref
+        if checkpoint.readiness is not None:
+            expected_milestone = checkpoint.readiness.milestone_ref.ref
+        if (
+            receipt.project_id != checkpoint.project_id
+            or receipt.plan_ref != checkpoint.trusted_plan.plan_ref
+            or receipt.milestone_ref != expected_milestone
+            or receipt.closure_phase != checkpoint.closure_phase.value
+            or receipt.steward_digest != self._steward_result_digest(result)
+            or receipt.receipt_digest != receipt.compute_digest()
+        ):
+            raise StewardshipProductionError(
+                "RECEIPT_CHECKPOINT_MISMATCH",
+                "persisted finalizer receipt does not bind the checkpoint/result",
+            )
 
     def _complete_semantic_result(
         self,
@@ -433,9 +732,27 @@ class LegacyStewardshipExecutor:
         checkpoint_outcome: StewardshipOutcome,
         record: StewardLogicalReplayRecord,
         result: StewardResult,
+        *,
+        transition_record: bool = True,
     ) -> LegacyStewardshipOutcome:
+        try:
+            self._validate_result_binding(checkpoint, result)
+        except StewardshipProductionError as exc:
+            failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+            return LegacyStewardshipOutcome(
+                checkpoint_outcome=checkpoint_outcome,
+                execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                replay=failed,
+                steward_result=result,
+                error_code=exc.code,
+                error_detail=exc.detail[:512],
+            )
+
+        def completed_record() -> StewardLogicalReplayRecord:
+            return self._transition(record, STEWARD_REPLAY_STATE_COMPLETED) if transition_record else record
+
         if result.verdict is StewardClosureVerdict.GOVERNANCE_BLOCKED:
-            completed = self._transition(record, STEWARD_REPLAY_STATE_COMPLETED)
+            completed = completed_record()
             return LegacyStewardshipOutcome(
                 checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
                 execution_state=StewardshipExecutionState.COMPLETED,
@@ -444,7 +761,7 @@ class LegacyStewardshipExecutor:
             )
 
         if checkpoint.readiness is None or checkpoint.closure_phase is None:
-            completed = self._transition(record, STEWARD_REPLAY_STATE_COMPLETED)
+            completed = completed_record()
             return LegacyStewardshipOutcome(
                 checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
                 execution_state=StewardshipExecutionState.COMPLETED,
@@ -472,6 +789,34 @@ class LegacyStewardshipExecutor:
                 finalizer_input=finalizer_input,
             )
         except FinalizerError as exc:
+            if exc.receipt is not None and exc.receipt.final_status == "PARTIAL":
+                try:
+                    self._validate_receipt_binding(checkpoint, result, exc.receipt)
+                except StewardshipProductionError as binding_error:
+                    failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+                    return LegacyStewardshipOutcome(
+                        checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
+                        execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                        replay=failed,
+                        steward_result=result,
+                        receipt=exc.receipt,
+                        error_code=binding_error.code,
+                        error_detail=binding_error.detail[:512],
+                    )
+                return LegacyStewardshipOutcome(
+                    checkpoint_outcome=replace(
+                        checkpoint_outcome,
+                        steward_result=result,
+                        receipt=exc.receipt,
+                        materialization_intent=intent,
+                    ),
+                    execution_state=StewardshipExecutionState.IN_FLIGHT,
+                    replay=record,
+                    steward_result=result,
+                    receipt=exc.receipt,
+                    error_code=exc.code.value,
+                    error_detail=f"finalizer partial receipt is recoverable: {exc.code.value}",
+                )
             failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
             return LegacyStewardshipOutcome(
                 checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
@@ -493,7 +838,20 @@ class LegacyStewardshipExecutor:
                 error_detail=f"finalization raised {type(exc).__name__}",
             )
 
-        completed = self._transition(record, STEWARD_REPLAY_STATE_COMPLETED)
+        try:
+            self._validate_receipt_binding(checkpoint, result, receipt)
+        except StewardshipProductionError as exc:
+            failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+            return LegacyStewardshipOutcome(
+                checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
+                execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                replay=failed,
+                steward_result=result,
+                receipt=receipt,
+                error_code=exc.code,
+                error_detail=exc.detail[:512],
+            )
+        completed = completed_record()
         return LegacyStewardshipOutcome(
             checkpoint_outcome=replace(
                 checkpoint_outcome,
@@ -539,6 +897,9 @@ def create_legacy_stewardship_executor(
     finalizer: TrustedStewardFinalizer,
     semantic_dispatch: Callable[[TaskHandoff], StewardResult | None],
     result_resolver: Callable[[StewardLogicalReplayRecord], StewardResult | None] | None = None,
+    result_owner: Any | None = None,
+    result_sandbox: WorktreeSandboxBoundary | None = None,
+    result_task_id_resolver: Callable[[StewardLogicalReplayRecord], str] | None = None,
     origin_session_ref: str | None = None,
 ) -> LegacyStewardshipExecutor:
     """Build the explicit trusted legacy bridge; thin never falls back here."""
@@ -547,6 +908,18 @@ def create_legacy_stewardship_executor(
             "LEGACY_RUNTIME_REQUIRED",
             f"legacy-only stewardship composition requires runtime_path='legacy', got {runtime_path!r}",
         )
+    if result_sandbox is not None:
+        if result_owner is None:
+            if result_task_id_resolver is None:
+                raise StewardshipProductionError(
+                    "RESULT_OWNER_REQUIRED",
+                    "result_sandbox requires a trusted existing result owner or task identity resolver",
+                )
+            result_owner = DurableStewardResultOwner(result_sandbox, result_task_id_resolver)
+        if finalizer.receipt_store is None:
+            finalizer.receipt_store = FileBackedReceiptStore(
+                Path(result_sandbox.worktree_root) / ".aota" / "materialization_receipts.json"
+            )
     return LegacyStewardshipExecutor(
         runtime_path=runtime_path,
         governance_store=governance_store,
@@ -556,6 +929,8 @@ def create_legacy_stewardship_executor(
         finalizer=finalizer,
         semantic_dispatch=semantic_dispatch,
         result_resolver=result_resolver,
+        result_owner=result_owner,
+        result_sandbox=result_sandbox,
         origin_session_ref=origin_session_ref,
     )
 
@@ -577,6 +952,7 @@ __all__ = [
     "LEGACY_STEWARD_PRODUCTION_PATH_ONLY",
     "LegacyStewardshipExecutor",
     "LegacyStewardshipOutcome",
+    "DurableStewardResultOwner",
     "NEW_EVENT_BUS_CREATED",
     "NEW_WORKFLOW_DATABASE_CREATED",
     "NO_BLIND_REDISPATCH_AFTER_UNKNOWN",
@@ -593,6 +969,7 @@ __all__ = [
     "StewardDispatchState",
     "StewardshipExecutionState",
     "StewardshipProductionError",
+    "semantic_residual_digest",
     "THIN_STEWARD_PRODUCTION_EXECUTION",
     "THIN_TASK_MAIN_HOST_MODIFIED",
     "create_legacy_stewardship_executor",

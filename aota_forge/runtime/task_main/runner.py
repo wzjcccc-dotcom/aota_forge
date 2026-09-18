@@ -41,7 +41,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aota_forge.composition.stewardship import (
+        LegacyStewardshipExecutor,
+        LegacyStewardshipOutcome,
+    )
+    from aota_forge.governance.stewardship import StewardshipCheckpoint
+else:
+    # Runtime imports are intentionally local in the W3 call site to avoid
+    # the existing governance/task-main package initialization cycle.
+    LegacyStewardshipOutcome = Any
+    LegacyStewardshipExecutor = Any
+    StewardshipCheckpoint = Any
 
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore
@@ -117,6 +130,8 @@ PRODUCTION_COMPLETION_TRIGGER_STAGES = (
     "completion_coordinator.recover_once",
     "completion_coordinator.deliver_pending_once",
 )
+STEWARDSHIP_PRODUCTION_CALLER_WIRED = True
+STEWARDSHIP_PRODUCTION_CALLER_PATH = "aota_forge/runtime/task_main/runner.py:advance_milestone_once"
 MANUAL_HARNESS_COMPLETION_TRIGGER_REQUIRED = False
 COMPLETION_TRIGGER_IS_BOUNDED_PASS = True
 COMPLETION_TRIGGER_BACKGROUND_LOOP_CREATED = False
@@ -216,6 +231,7 @@ class RunnerOutcome:
     blocked: tuple[str, ...] = ()
     reasons: tuple[str, ...] = ()
     receipt: CompletionReconciliationReceipt | None = None
+    stewardship_outcome: LegacyStewardshipOutcome | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "disposition", _require_non_empty_str(self.disposition, "disposition"))
@@ -253,6 +269,11 @@ class RunnerOutcome:
             _require_strict_bool(getattr(self, flag), flag)
         if type(self.physical_dispatch_attempts) is not int or self.physical_dispatch_attempts < 0:
             raise ValueError("physical_dispatch_attempts must be int >=0")
+        if self.stewardship_outcome is not None:
+            from aota_forge.composition.stewardship import LegacyStewardshipOutcome
+
+            if not isinstance(self.stewardship_outcome, LegacyStewardshipOutcome):
+                raise TypeError("stewardship_outcome must be LegacyStewardshipOutcome or None")
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +337,56 @@ def _production_completion_pass(
     recovery = completion_coordinator.recover_once()
     delivery = completion_coordinator.deliver_pending_once()
     return recovery, delivery
+
+
+def _run_bound_stewardship(
+    *,
+    state: TaskMainCoordinatorState,
+    checkpoint: StewardshipCheckpoint | None,
+    executor: LegacyStewardshipExecutor | None,
+) -> LegacyStewardshipOutcome | None:
+    """Run the typed W3 composition only at the trusted closure frontier."""
+    from aota_forge.composition.stewardship import (
+        LegacyStewardshipExecutor,
+        LegacyStewardshipOutcome,
+    )
+    from aota_forge.governance.stewardship import StewardshipCheckpoint
+
+    if checkpoint is None and executor is None:
+        return None
+    if checkpoint is None or executor is None:
+        raise TypeError("stewardship_checkpoint and stewardship_executor must be supplied together")
+    if not isinstance(checkpoint, StewardshipCheckpoint):
+        raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint")
+    if not isinstance(executor, LegacyStewardshipExecutor):
+        raise TypeError("stewardship_executor must be LegacyStewardshipExecutor")
+    if checkpoint.project_id != state.project_id:
+        raise ValueError(
+            "stewardship checkpoint project does not match the active coordinator project"
+        )
+    if checkpoint.trusted_plan.milestone_ref != state.milestone_id:
+        raise ValueError(
+            "stewardship checkpoint milestone does not match the active coordinator milestone"
+        )
+    outcome = executor.execute(checkpoint)
+    if not isinstance(outcome, LegacyStewardshipOutcome):
+        raise TypeError("stewardship_executor must return LegacyStewardshipOutcome")
+    return outcome
+
+
+def _stewardship_runner_projection(
+    outcome: LegacyStewardshipOutcome,
+) -> tuple[str | None, tuple[str, ...]]:
+    """Project W3's bounded execution state into existing runner dispositions."""
+    execution_state = getattr(outcome.execution_state, "value", outcome.execution_state)
+    if execution_state == "IN_FLIGHT":
+        return DISPOSITION_WAITING_FOR_WORKERS, ("Steward semantic result/finalization remains in flight",)
+    if execution_state == "FAILED_CLOSED":
+        detail = outcome.error_code or "STEWARD_FAILED_CLOSED"
+        return DISPOSITION_BLOCKED, (detail,)
+    if execution_state == "DETERMINISTIC_BLOCKED":
+        return DISPOSITION_BLOCKED, ("Steward deterministic checkpoint is blocked",)
+    return None, ()
 
 
 def _find_pending_worker_reconciliation(state: TaskMainCoordinatorState) -> str | None:
@@ -446,6 +517,8 @@ def advance_milestone_once(
     completion_coordinator: DurableCompletionCoordinator | None = None,
     session_available: bool = True,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+    stewardship_checkpoint: StewardshipCheckpoint | None = None,
+    stewardship_executor: LegacyStewardshipExecutor | None = None,
 ) -> RunnerOutcome:
     """Advance one bounded autonomous step for the governed current Milestone.
 
@@ -476,6 +549,16 @@ def advance_milestone_once(
         raise TypeError("reviewer_handoff_resolver must be callable or None")
     if governed_review_resolver is not None and not callable(governed_review_resolver):
         raise TypeError("governed_review_resolver must be callable or None")
+    if (stewardship_checkpoint is None) != (stewardship_executor is None):
+        raise TypeError("stewardship_checkpoint and stewardship_executor must be supplied together")
+    if stewardship_checkpoint is not None:
+        from aota_forge.composition.stewardship import LegacyStewardshipExecutor
+        from aota_forge.governance.stewardship import StewardshipCheckpoint
+
+        if not isinstance(stewardship_checkpoint, StewardshipCheckpoint):
+            raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint")
+        if not isinstance(stewardship_executor, LegacyStewardshipExecutor):
+            raise TypeError("stewardship_executor must be LegacyStewardshipExecutor")
     session_available = _require_strict_bool(session_available, "session_available")
 
     # ---- recover durable truth (fail-closed on drift / session loss) ----
@@ -568,6 +651,22 @@ def advance_milestone_once(
 
     # Next milestone gate: if current milestone is closure-ready and next milestone exists but unapproved, stop.
     if _is_closure_ready(state) and next_milestone_view is not None:  # noqa: SIM102
+        stewardship_outcome = _run_bound_stewardship(
+            state=state,
+            checkpoint=stewardship_checkpoint,
+            executor=stewardship_executor,
+        )
+        if stewardship_outcome is not None:
+            projected_disposition, projected_reasons = _stewardship_runner_projection(stewardship_outcome)
+            if projected_disposition is not None:
+                return RunnerOutcome(
+                    disposition=projected_disposition,
+                    coordinator_id=coordinator_id,
+                    coordinator_revision=state.coordinator_revision,
+                    milestone_closure_ready=True,
+                    stewardship_outcome=stewardship_outcome,
+                    reasons=projected_reasons,
+                )
         if next_milestone_view.milestone_id != state.milestone_id:
             # Next milestone must require explicit approval; runner must never auto activate.
             if not next_milestone_view.milestone_user_approval_satisfied or next_milestone_view.plan_amendment_required:
@@ -578,6 +677,7 @@ def advance_milestone_once(
                     milestone_closure_ready=True,
                     next_milestone_gate=True,
                     user_gate_required=True,
+                    stewardship_outcome=stewardship_outcome,
                     reasons=("NEXT_MILESTONE_REQUIRES_EXPLICIT_APPROVAL",),
                 )
             # If next milestone is approved, runner still stops: W3 never auto-activates next.
@@ -588,6 +688,7 @@ def advance_milestone_once(
                 milestone_closure_ready=True,
                 next_milestone_gate=True,
                 user_gate_required=False,
+                stewardship_outcome=stewardship_outcome,
                 reasons=("NEXT_MILESTONE_USER_GATE: current closure ready; next milestone requires explicit activation",),
             )
 
@@ -1002,6 +1103,22 @@ def advance_milestone_once(
         )
 
     if _is_closure_ready(state):
+        stewardship_outcome = _run_bound_stewardship(
+            state=state,
+            checkpoint=stewardship_checkpoint,
+            executor=stewardship_executor,
+        )
+        if stewardship_outcome is not None:
+            projected_disposition, projected_reasons = _stewardship_runner_projection(stewardship_outcome)
+            if projected_disposition is not None:
+                return RunnerOutcome(
+                    disposition=projected_disposition,
+                    coordinator_id=coordinator_id,
+                    coordinator_revision=state.coordinator_revision,
+                    milestone_closure_ready=True,
+                    stewardship_outcome=stewardship_outcome,
+                    reasons=projected_reasons,
+                )
         if next_milestone_view is not None:
             return RunnerOutcome(
                 disposition=DISPOSITION_NEXT_MILESTONE_USER_GATE,
@@ -1009,6 +1126,7 @@ def advance_milestone_once(
                 coordinator_revision=state.coordinator_revision,
                 milestone_closure_ready=True,
                 next_milestone_gate=True,
+                stewardship_outcome=stewardship_outcome,
                 reasons=("milestone closure ready; next milestone gate",),
             )
         return RunnerOutcome(
@@ -1016,6 +1134,7 @@ def advance_milestone_once(
             coordinator_id=coordinator_id,
             coordinator_revision=state.coordinator_revision,
             milestone_closure_ready=True,
+            stewardship_outcome=stewardship_outcome,
             reasons=("milestone closure ready",),
         )
 
@@ -1058,6 +1177,8 @@ class TaskMainMilestoneRunner:
         completion_coordinator: DurableCompletionCoordinator | None = None,
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+        stewardship_checkpoint: StewardshipCheckpoint | None = None,
+        stewardship_executor: LegacyStewardshipExecutor | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -1065,6 +1186,18 @@ class TaskMainMilestoneRunner:
             raise TypeError("execution_store must be ExecutionStateStore")
         if not isinstance(execution_dispatcher, ExecutionDispatcher):
             raise TypeError("execution_dispatcher must be ExecutionDispatcher")
+        if (stewardship_checkpoint is None) != (stewardship_executor is None):
+            raise TypeError("stewardship_checkpoint and stewardship_executor must be supplied together")
+        if stewardship_checkpoint is not None:
+            from aota_forge.governance.stewardship import StewardshipCheckpoint
+
+            if not isinstance(stewardship_checkpoint, StewardshipCheckpoint):
+                raise TypeError("stewardship_checkpoint must be StewardshipCheckpoint")
+        if stewardship_executor is not None:
+            from aota_forge.composition.stewardship import LegacyStewardshipExecutor
+
+            if not isinstance(stewardship_executor, LegacyStewardshipExecutor):
+                raise TypeError("stewardship_executor must be LegacyStewardshipExecutor")
         if coordinator_id is None:
             # Project-aware deterministic fallback: scan for durable coordinator with same milestone + plan authority.
             found: str | None = None
@@ -1089,6 +1222,8 @@ class TaskMainMilestoneRunner:
         self._governed_review_resolver = governed_review_resolver
         self._next_view = next_milestone_view
         self._reviewer_cid_resolver = reviewer_canonical_task_id_resolver
+        self._stewardship_checkpoint = stewardship_checkpoint
+        self._stewardship_executor = stewardship_executor
         # If caller supplied a placeholder before activation, re-resolve to the durable id that now exists.
         state = self._store.get(coordinator_id)
         if state is None:
@@ -1117,6 +1252,8 @@ class TaskMainMilestoneRunner:
             completion_coordinator=self._completion,
             session_available=session_available,
             reviewer_canonical_task_id_resolver=self._reviewer_cid_resolver,
+            stewardship_checkpoint=self._stewardship_checkpoint,
+            stewardship_executor=self._stewardship_executor,
         )
 
     def update_live_plan_view(self, view: MilestonePlanView) -> None:
@@ -1128,6 +1265,13 @@ class TaskMainMilestoneRunner:
         if view is not None and not isinstance(view, MilestonePlanView):
             raise TypeError("view must be MilestonePlanView or None")
         self._next_view = view
+
+    def update_stewardship_checkpoint(self, checkpoint: StewardshipCheckpoint) -> None:
+        from aota_forge.governance.stewardship import StewardshipCheckpoint
+
+        if not isinstance(checkpoint, StewardshipCheckpoint):
+            raise TypeError("checkpoint must be StewardshipCheckpoint")
+        self._stewardship_checkpoint = checkpoint
 
 
 __all__ = [
@@ -1173,6 +1317,8 @@ __all__ = [
     "PRODUCTION_COMPLETION_TRIGGER_PATH",
     "PRODUCTION_COMPLETION_TRIGGER_STAGES",
     "RUNNER_DISPOSITIONS",
+    "STEWARDSHIP_PRODUCTION_CALLER_PATH",
+    "STEWARDSHIP_PRODUCTION_CALLER_WIRED",
     "TASK_MAIN_CAN_CROSS_NEXT_MILESTONE_GATE",
     "TASK_MAIN_CAN_CROSS_USER_GATE",
     "TASK_MAIN_CAN_SET_USER_APPROVAL",
