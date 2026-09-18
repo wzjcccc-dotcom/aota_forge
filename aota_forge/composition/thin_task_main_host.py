@@ -463,6 +463,9 @@ class ThinTaskMainHost:
     # Mechanical carrier only: the binding grants the task-main read/search
     # root; it is never model-visible and never a write capability.
     local_governance_binding: LocalGovernanceRootBinding | None = None
+    # AF #57 M3/W4: trusted project-scoped evidence binding activated for this
+    # task-main launch. It is never model-visible and never a write capability.
+    evidence_binding: Any | None = None
     # AF #57 M1/W4: the one source-neutral PlanAuthorityBinding this launch
     # materialized (None for a plan-less legacy launch). Mechanical carrier
     # only: it decides no policy and grants no authority by itself.
@@ -534,6 +537,7 @@ def compose_thin_task_main_host(
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
     governance_base: str | PathLike[str] | None = None,
+    evidence_base: str | PathLike[str] | None = None,
     plan_id: str | None = None,
     governance_context: Mapping[str, Any] | None = None,
     governance_store_path: str | PathLike[str] | None = None,
@@ -577,6 +581,10 @@ def compose_thin_task_main_host(
     read adapter. A supplied GitHub source reader is accepted only when its
     operator-bound authority reference matches the launch binding. Omitting
     these optional inputs preserves the existing side-by-side launch shape.
+
+    AF #57 M3/W4: ``evidence_base`` is a trusted operator evidence base. The
+    host derives exactly the current project's ``authorized-evidence`` root;
+    the global base and sibling project evidence remain unreachable.
     """
     pid = _validate_identifier(project_id, "project_id")
     wid = _validate_identifier(worktree_id, "worktree_id")
@@ -617,9 +625,53 @@ def compose_thin_task_main_host(
         local_governance_binding = LocalGovernanceRootBinding.from_trusted_base(
             governance_base, project_id=pid
         )
+    evidence_binding: Any | None = None
+    if evidence_base is not None and str(evidence_base).strip():
+        governed_read_composition = importlib.import_module(
+            "aota_forge.composition.governed_read"
+        )
+        evidence_binding = governed_read_composition.bind_authorized_evidence_root(
+            evidence_base=evidence_base,
+            project_id=pid,
+        )
+
+    resolved_governance_store: Any | None = None
+    if governance_store_path is not None and str(governance_store_path).strip():
+        try:
+            governance_composition = importlib.import_module(
+                "aota_forge.composition.project_governance"
+            )
+            resolved_governance_store = governance_composition.open_project_governance_store(
+                governance_store_path
+            )
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"thin host governance store open failed: {exc}"
+            ) from exc
+
     authorized_roots = authorized_roots_for_task_main(
-        sandbox, governance_binding=local_governance_binding
+        sandbox,
+        governance_binding=local_governance_binding,
+        evidence_binding=evidence_binding,
     )
+    if resolved_governance_store is not None:
+        try:
+            governed_read_composition = importlib.import_module(
+                "aota_forge.composition.governed_read"
+            )
+            authorized_roots = (
+                governed_read_composition.materialize_live_cross_project_read_roots_from_registry(
+                    sandbox=sandbox,
+                    roots=authorized_roots,
+                    store=resolved_governance_store,
+                    registry_path=registry_path,
+                )
+            )
+        except Exception as exc:
+            resolved_governance_store.close()
+            raise TrustedBindingError(
+                f"thin host governed-read activation failed: {exc}"
+            ) from exc
 
     store: ExecutionStateStore = (
         execution_store if execution_store is not None else _default_execution_store(root)
@@ -706,10 +758,11 @@ def compose_thin_task_main_host(
                 local_governance_enabled=local_governance_binding is not None,
             )
         except PlanAuthorityCompositionError as exc:
+            if resolved_governance_store is not None:
+                resolved_governance_store.close()
             raise TrustedBindingError(str(exc)) from exc
 
     resolved_plan_authority: Any | None = None
-    resolved_governance_store: Any | None = None
     if plan_authority_binding is not None:
         try:
             if plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
@@ -722,17 +775,10 @@ def compose_thin_task_main_host(
                         raise TrustedBindingError(
                             "local Plan authority resolution requires a trusted governance root"
                         )
-                    # Keep the default thin-host import closure free of the
-                    # governance package's legacy projection imports. This
-                    # branch is the explicit durable local-authority path.
-                    governance_composition = importlib.import_module(
-                        "aota_forge.composition.project_governance"
-                    )
-                    resolved_governance_store = (
-                        governance_composition.open_project_governance_store(
-                            governance_store_path
+                    if resolved_governance_store is None:
+                        raise TrustedBindingError(
+                            "local Plan authority requires an opened governance store"
                         )
-                    )
                     local_target = object_ref_subject(
                         make_id(
                             IdKind.SUBJECT,
@@ -851,6 +897,7 @@ def compose_thin_task_main_host(
         authorized_roots=authorized_roots,
         context_projection=context_projection,
         local_governance_binding=local_governance_binding,
+        evidence_binding=evidence_binding,
         plan_authority_binding=plan_authority_binding,
         plan_authority_reader=resolved_plan_authority,
         governance_store=resolved_governance_store,

@@ -295,6 +295,7 @@ def materialize_thin_task_main_bootstrap(
     registry_path: str | PathLike[str] | None = None,
     plan_id: str | None = None,
     governance_base: str | PathLike[str] | None = None,
+    evidence_base: str | PathLike[str] | None = None,
     governance_store_path: str | PathLike[str] | None = None,
     governance_context: Mapping[str, Any] | None = None,
 ) -> Path:
@@ -445,6 +446,26 @@ def materialize_thin_task_main_bootstrap(
         payload["governance_store_path"] = str(
             _validate_governance_store_path(governance_store_path)
         )
+    # AF #57 M3/W4: carry the trusted evidence base through the same
+    # digest-covered operator bootstrap channel. The child derives only the
+    # current project's project-scoped authorized-evidence root.
+    if evidence_base is not None and str(evidence_base).strip():
+        raw_evidence_base = Path(str(evidence_base))
+        if raw_evidence_base.is_symlink():
+            raise TaskMainRuntimeSelectionError(
+                "thin bootstrap evidence_base must not be a symlink"
+            )
+        try:
+            resolved_evidence_base = raw_evidence_base.resolve(strict=True)
+        except OSError as exc:
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap evidence_base inaccessible: {exc}"
+            ) from exc
+        if not resolved_evidence_base.is_dir():
+            raise TaskMainRuntimeSelectionError(
+                "thin bootstrap evidence_base must be an existing directory"
+            )
+        payload["evidence_base"] = str(resolved_evidence_base)
     # AF #57 M3/W1: the trusted runtime may carry an already-composed bounded
     # Governance projection through the digest-covered bootstrap. This is a
     # carrier only; role.bootstrap remains responsible for semantic validation
@@ -601,6 +622,7 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         if raw_governance_store_path
         else None
     )
+    evidence_base = str(content.get("evidence_base") or "").strip() or None
     # AF #57 M1/W4: trusted internal Plan identity carried by the same
     # operator-owned bootstrap channel (digest-covered). Absent => the launch
     # stays plan-less/legacy; never inferred from the Issue or the worktree.
@@ -643,6 +665,7 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         source_repository=source_repository,
         registry_path=registry_path,
         governance_base=governance_base,
+        evidence_base=evidence_base,
         governance_store_path=governance_store_path,
         plan_id=plan_id,
         governance_context=governance_context,

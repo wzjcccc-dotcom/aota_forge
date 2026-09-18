@@ -228,6 +228,39 @@ def materialize_live_cross_project_read_roots(
     return materialized
 
 
+def materialize_live_cross_project_read_roots_from_registry(
+    *,
+    sandbox: WorktreeSandboxBoundary,
+    roots: AuthorizedRootSet,
+    store: CrossProjectGrantStore,
+    registry_path: Path | str | None,
+) -> AuthorizedRootSet:
+    """Materialize live grants using fresh bindings from the trusted registry.
+
+    Production task-main does not receive target paths. It derives target
+    project identities from the existing governance store, then resolves each
+    target through the canonical trusted registry before the existing root
+    materialization seam is called.
+    """
+    grants = store.list_cross_project_grants(sandbox.project_id, active_only=True)
+    if grants and registry_path is None:
+        raise CrossProjectGrantRootError(
+            "live cross-project grants require the trusted workspace registry"
+        )
+    target_bindings: dict[str, TrustedProjectBindingEvidence] = {}
+    for grant in grants:
+        target_bindings[grant.target_project] = resolve_cross_project_target_project(
+            project_id=grant.target_project,
+            registry_path=registry_path,
+        )
+    return materialize_live_cross_project_read_roots(
+        sandbox=sandbox,
+        roots=roots,
+        store=store,
+        target_bindings=target_bindings,
+    )
+
+
 __all__ = [
     "GOVERNED_READ_COMPOSITION_IMPLEMENTED",
     "GRANT_MATERIALIZATION_REUSES_TRUSTED_REGISTRY",
@@ -244,4 +277,5 @@ __all__ = [
     "bind_authorized_evidence_root",
     "materialize_cross_project_grant_binding",
     "materialize_live_cross_project_read_roots",
+    "materialize_live_cross_project_read_roots_from_registry",
 ]

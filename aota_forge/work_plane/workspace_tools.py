@@ -96,6 +96,7 @@ from aota_forge.work_plane.authorized_roots import (
     AuthorizedRootSet,
     CAPABILITY_READ,
     CAPABILITY_SEARCH,
+    SOURCE_TRUSTED_SANDBOX,
     authorized_roots_single_root,
     resolve_authorized_root,
     validate_root_set_against_sandbox,
@@ -837,10 +838,16 @@ class BoundedWorkspaceToolProvider:
             resolution_sandbox = self._sandbox
         else:
             # Resolution-only sandbox projection: the trusted binding's granted
-            # root re-anchors path containment for this root. Project/worktree
-            # identity is unchanged; no second sandbox or resolver is created.
+            # root re-anchors path containment for this root. A foreign grant
+            # also carries its trusted target project identity; the synthetic
+            # worktree id is used only by the existing resolver's typed
+            # evidence and is never exposed as a real target checkout id.
             resolution_sandbox = dataclass_replace(
-                self._sandbox, worktree_root=root_obj.root_path
+                self._sandbox,
+                project_id=root_obj.project_id,
+                project_root=root_obj.root_path,
+                worktree_id=root_obj.worktree_id or root_obj.root_ref,
+                worktree_root=root_obj.root_path,
             )
         selected_root_canonical = Path(root_obj.root_path)
 
@@ -931,14 +938,25 @@ class BoundedWorkspaceToolProvider:
             "returned_bytes": len(sliced),
             "offset": offset,
             "truncated": truncated,
-            "project_id": resolution_sandbox.project_id,
-            "worktree_id": resolution_sandbox.worktree_id,
+            "project_id": self._sandbox.project_id,
+            "worktree_id": self._sandbox.worktree_id,
             # AF #55 M2: the granted root this read resolved through (bounded
             # name; never a model-supplied path).
             "root_ref": root_obj.root_ref,
             "canonical_path": str(canonical_path),
             # Note: canonical_path is physical layer path holder, not authority; included for traceability but not as authority grant
         }
+        # Caller identity remains the trusted task-main session. Add source
+        # identity only when the selected root is an explicit governed
+        # projection, preserving the default root response contract.
+        if root_obj.source != SOURCE_TRUSTED_SANDBOX or root_obj.project_id != self._sandbox.project_id:
+            payload.update(
+                {
+                    "source_project_id": root_obj.project_id,
+                    "source_worktree_id": root_obj.worktree_id,
+                    "source_root_kind": root_obj.root_kind,
+                }
+            )
         # Enforce total output bound (operational safety)
         # Serialize payload deterministically and check size
         try:
@@ -1014,6 +1032,13 @@ class BoundedWorkspaceToolProvider:
             scanned = self._search_single_root(
                 root=Path(root_obj.root_path),
                 root_ref=root_obj.root_ref,
+                source_root_kind=root_obj.root_kind,
+                source_project_id=root_obj.project_id,
+                source_worktree_id=root_obj.worktree_id,
+                include_source_identity=(
+                    root_obj.source != SOURCE_TRUSTED_SANDBOX
+                    or root_obj.project_id != self._sandbox.project_id
+                ),
                 scope=scope,
                 query=query,
                 max_results=max_results,
@@ -1032,6 +1057,17 @@ class BoundedWorkspaceToolProvider:
             truncated = True
         else:
             truncated = False
+        source_identities = [
+            {
+                "root_ref": root_obj.root_ref,
+                "root_kind": root_obj.root_kind,
+                "project_id": root_obj.project_id,
+                "worktree_id": root_obj.worktree_id,
+            }
+            for root_obj in ordered
+            if root_obj.source != SOURCE_TRUSTED_SANDBOX
+            or root_obj.project_id != self._sandbox.project_id
+        ]
         payload = {
             "query": query,
             "scope": scope,
@@ -1044,6 +1080,8 @@ class BoundedWorkspaceToolProvider:
             # set is the AF-authorized root set (never cwd / host tree).
             "root_refs": [root_obj.root_ref for root_obj in ordered],
         }
+        if source_identities:
+            payload["source_identities"] = source_identities
         # Final total output bound check
         try:
             payload_size = len(canonical_json(payload).encode("utf-8"))
@@ -1059,6 +1097,10 @@ class BoundedWorkspaceToolProvider:
         *,
         root: Path,
         root_ref: str,
+        source_root_kind: str,
+        source_project_id: str,
+        source_worktree_id: str,
+        include_source_identity: bool,
         scope: str,
         query: str,
         max_results: int,
@@ -1180,6 +1222,14 @@ class BoundedWorkspaceToolProvider:
                         "match_offset": idx,
                         "root_ref": root_ref,
                     }
+                    if include_source_identity:
+                        result.update(
+                            {
+                                "root_kind": source_root_kind,
+                                "project_id": source_project_id,
+                                "worktree_id": source_worktree_id,
+                            }
+                        )
                     results.append(result)
                     # Bound total output; drop the last result and stop when hit
                     est = len(canonical_json(results).encode("utf-8"))
