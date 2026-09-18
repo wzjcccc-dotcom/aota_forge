@@ -37,7 +37,7 @@ from aota_forge.governance.stewardship import (
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_LEGACY
 from aota_forge.work_plane.handoff import TaskHandoff
-from aota_forge.work_plane.handoff_store import handoff_open
+from aota_forge.work_plane.handoff_store import handoff_open, handoff_write
 from aota_forge.work_plane.materialization_receipt import MaterializationReceipt
 from aota_forge.work_plane.steward_dispatch import (
     StewardClosureVerdict,
@@ -46,14 +46,17 @@ from aota_forge.work_plane.steward_dispatch import (
 from aota_forge.work_plane.steward_finalizer import (
     FileBackedReceiptStore,
     FinalizerError,
+    FinalizerFailure,
     FinalizerInput,
     FinalizerReentryEvidence,
     TrustedStewardFinalizer,
+    compute_idempotency_key,
     finalize_closure_via_coordinator,
 )
 from aota_forge.work_plane.task_return_receipt import (
     read_task_return_receipt,
 )
+from aota_forge.work_plane.task_facade import task_return
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 # ---------------------------------------------------------------------------
@@ -103,6 +106,18 @@ def semantic_residual_digest(residual: SemanticResidual) -> str:
         "reason": residual.reason,
         "checkpoint_id": residual.checkpoint_id,
         "required_input_refs": list(residual.required_input_refs),
+    }
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _steward_result_digest(result: StewardResult) -> str:
+    payload = {
+        "milestone_ref": result.milestone_ref,
+        "reviewed_frontier_ref": result.reviewed_frontier_ref,
+        "verdict": result.verdict.value,
+        "accepted_frontier_ref": result.accepted_frontier_ref,
+        "governance_evidence_refs": sorted(result.governance_evidence_refs),
+        "blocking_reasons": sorted(result.blocking_reasons),
     }
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -173,17 +188,19 @@ class DurableStewardResultOwner:
                 "RESULT_HANDOFF_INVALID",
                 "durable StewardResult handoff is malformed",
             )
-        if receipt.status == "failed":
+        if receipt.status != "completed":
             raise StewardshipProductionError(
                 "RESULT_RETURN_FAILED",
-                "durable task.return evidence reports a failed semantic return",
+                "durable task.return evidence is not a completed semantic return",
             )
         if (
-            opened.get("digest") != receipt.result_digest
+            receipt.result_ref != opened.get("ref")
+            or opened.get("digest") != receipt.result_digest
             or envelope.get("digest") != receipt.result_digest
             or envelope.get("project_id") != self.sandbox.project_id
             or envelope.get("task_id") != task_id
             or envelope.get("source_role") != "project-steward"
+            or envelope.get("plan_ref") != record.plan_id
         ):
             raise StewardshipProductionError(
                 "RESULT_HANDOFF_BINDING_MISMATCH",
@@ -193,12 +210,76 @@ class DurableStewardResultOwner:
             result_payload = semantic.get("steward_result", semantic)
             if not isinstance(result_payload, dict):
                 raise TypeError("steward_result wrapper must be a mapping")
-            return StewardResult.from_dict(result_payload)
+            result = StewardResult.from_dict(result_payload)
+            if (
+                semantic.get("steward_replay_id") != record.replay_id
+                or semantic.get("steward_project_id") != record.project_id
+                or semantic.get("steward_plan_id") != record.plan_id
+                or semantic.get("steward_checkpoint_ref") != record.checkpoint_ref
+                or semantic.get("steward_checkpoint_digest") != record.checkpoint_digest
+                or semantic.get("steward_result_digest") != _steward_result_digest(result)
+            ):
+                raise StewardshipProductionError(
+                    "RESULT_REPLAY_BINDING_MISMATCH",
+                    "durable StewardResult metadata does not bind the logical replay",
+                )
+            return result
         except Exception as exc:  # noqa: BLE001 - persisted evidence fails closed
             raise StewardshipProductionError(
                 "RESULT_HANDOFF_INVALID",
                 f"durable StewardResult could not be decoded: {type(exc).__name__}",
             ) from exc
+
+    def persist_steward_result(
+        self,
+        record: StewardLogicalReplayRecord,
+        result: StewardResult,
+    ) -> None:
+        """Persist the typed result through the existing handoff/return owners."""
+        if not isinstance(record, StewardLogicalReplayRecord):
+            raise TypeError("record must be StewardLogicalReplayRecord")
+        if not isinstance(result, StewardResult):
+            raise TypeError("result must be StewardResult")
+        task_id = self.task_id(record)
+        existing = read_task_return_receipt(self.sandbox, task_id)
+        if existing is not None:
+            resolved = self.resolve_steward_result(record)
+            if resolved != result:
+                raise StewardshipProductionError(
+                    "RESULT_PERSISTENCE_CONFLICT",
+                    "durable task.return evidence already contains a different StewardResult",
+                )
+            return
+        result_ref = handoff_write(
+            mode="result",
+            semantic={
+                "summary": "durable StewardResult",
+                "steward_result": result.to_dict(),
+                "steward_result_digest": _steward_result_digest(result),
+                "steward_replay_id": record.replay_id,
+                "steward_project_id": record.project_id,
+                "steward_plan_id": record.plan_id,
+                "steward_checkpoint_ref": record.checkpoint_ref,
+                "steward_checkpoint_digest": record.checkpoint_digest,
+            },
+            caller_role="project-steward",
+            sandbox=self.sandbox,
+            plan_ref=record.plan_id,
+            task_id=task_id,
+        )
+        task_return(
+            status="completed",
+            result_ref=result_ref,
+            caller_role="project-steward",
+            caller_task_id=task_id,
+            sandbox=self.sandbox,
+        )
+        resolved = self.resolve_steward_result(record)
+        if resolved != result:
+            raise StewardshipProductionError(
+                "RESULT_PERSISTENCE_VERIFY_FAILED",
+                "durable StewardResult did not verify after persistence",
+            )
 
 
 @unique
@@ -372,6 +453,18 @@ class LegacyStewardshipExecutor:
             finalizer=self.finalizer,
             finalizer_input=finalizer_input,
         )
+        try:
+            receipt = self._persist_finalizer_receipt(
+                checkpoint,
+                finalizer_input.steward_result,
+                receipt,
+            )
+        except StewardshipProductionError as exc:
+            raise FinalizerError(
+                FinalizerFailure.MATERIALIZATION_PARTIAL_FAILURE,
+                exc.detail,
+                receipt=receipt,
+            ) from exc
         checkpoint_outcome = StewardshipOutcome(
             checkpoint_id=checkpoint.checkpoint_id,
             kind=checkpoint.kind,
@@ -487,6 +580,38 @@ class LegacyStewardshipExecutor:
                     replay=failed,
                     error_code=exc.code,
                     error_detail=exc.detail[:512],
+                )
+            if resolved.verdict is not StewardClosureVerdict.GOVERNANCE_BLOCKED and (
+                checkpoint.readiness is not None and checkpoint.closure_phase is not None
+            ):
+                try:
+                    receipt = self._resolve_finalizer_receipt(checkpoint, resolved)
+                    if receipt is None:
+                        raise StewardshipProductionError(
+                            "COMPLETED_RECEIPT_UNAVAILABLE",
+                            "completed replay has no durable finalization receipt",
+                        )
+                except StewardshipProductionError as exc:
+                    failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+                    return LegacyStewardshipOutcome(
+                        checkpoint_outcome=base_outcome,
+                        execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                        replay=failed,
+                        steward_result=resolved,
+                        error_code=exc.code,
+                        error_detail=exc.detail[:512],
+                    )
+                return LegacyStewardshipOutcome(
+                    checkpoint_outcome=replace(
+                        base_outcome,
+                        steward_result=resolved,
+                        receipt=receipt,
+                        materialization_intent=build_materialization_intent(checkpoint),
+                    ),
+                    execution_state=StewardshipExecutionState.FINALIZED,
+                    replay=record,
+                    steward_result=resolved,
+                    receipt=receipt,
                 )
             return self._complete_semantic_result(
                 checkpoint,
@@ -616,6 +741,7 @@ class LegacyStewardshipExecutor:
         return tuple(resolvers)
 
     def _persist_result(self, record: StewardLogicalReplayRecord, result: StewardResult) -> None:
+        persisted = False
         for owner in self._result_owner_candidates():
             for method in (
                 "persist_steward_result",
@@ -633,7 +759,21 @@ class LegacyStewardshipExecutor:
                             "RESULT_PERSISTENCE_FAILED",
                             f"durable StewardResult owner raised {type(exc).__name__}",
                         ) from exc
-                    return
+                    persisted = True
+                    break
+            if persisted:
+                break
+        if not persisted:
+            raise StewardshipProductionError(
+                "RESULT_PERSISTENCE_OWNER_REQUIRED",
+                "semantic StewardResult has no trusted durable persistence owner",
+            )
+        resolved = self._resolve_result(record)
+        if resolved != result:
+            raise StewardshipProductionError(
+                "RESULT_PERSISTENCE_VERIFY_FAILED",
+                "persisted StewardResult could not be resolved with trusted metadata",
+            )
 
     def _resolve_result(self, record: StewardLogicalReplayRecord) -> StewardResult | None:
         for resolver in self._result_resolvers():
@@ -655,17 +795,76 @@ class LegacyStewardshipExecutor:
 
     @staticmethod
     def _steward_result_digest(result: StewardResult) -> str:
-        payload = {
-            "milestone_ref": result.milestone_ref,
-            "reviewed_frontier_ref": result.reviewed_frontier_ref,
-            "verdict": result.verdict.value,
-            "accepted_frontier_ref": result.accepted_frontier_ref,
-            "governance_evidence_refs": sorted(result.governance_evidence_refs),
-            "blocking_reasons": sorted(result.blocking_reasons),
-        }
-        return hashlib.sha256(
-            canonical_json(payload).encode("utf-8")
-        ).hexdigest()
+        return _steward_result_digest(result)
+
+    def _persist_finalizer_receipt(
+        self,
+        checkpoint: StewardshipCheckpoint,
+        result: StewardResult,
+        receipt: MaterializationReceipt,
+    ) -> MaterializationReceipt:
+        store = getattr(self.finalizer, "receipt_store", None)
+        if store is None or not callable(getattr(store, "put", None)) or not callable(
+            getattr(store, "get", None)
+        ):
+            raise StewardshipProductionError(
+                "RECEIPT_PERSISTENCE_OWNER_REQUIRED",
+                "finalizer has no trusted durable receipt owner",
+            )
+        try:
+            stored = store.put(receipt)
+            verified = store.get(receipt.idempotency_key)
+        except Exception as exc:  # noqa: BLE001 - receipt persistence fails closed
+            raise StewardshipProductionError(
+                "RECEIPT_PERSISTENCE_FAILED",
+                f"durable finalizer receipt owner raised {type(exc).__name__}",
+            ) from exc
+        if not isinstance(stored, MaterializationReceipt):
+            raise StewardshipProductionError(
+                "RECEIPT_PERSISTENCE_VERIFY_FAILED",
+                "finalizer receipt owner returned an invalid receipt",
+            )
+        if not isinstance(verified, MaterializationReceipt):
+            raise StewardshipProductionError(
+                "RECEIPT_PERSISTENCE_VERIFY_FAILED",
+                "finalizer receipt was not readable after persistence",
+            )
+        self._validate_receipt_binding(checkpoint, result, verified)
+        return verified
+
+    def _resolve_finalizer_receipt(
+        self,
+        checkpoint: StewardshipCheckpoint,
+        result: StewardResult,
+    ) -> MaterializationReceipt | None:
+        if checkpoint.readiness is None or checkpoint.closure_phase is None:
+            return None
+        store = getattr(self.finalizer, "receipt_store", None)
+        if store is None or not callable(getattr(store, "get", None)):
+            return None
+        try:
+            intent = build_materialization_intent(checkpoint)
+            receipt = store.get(
+                compute_idempotency_key(
+                    project_id=checkpoint.project_id,
+                    plan_ref=checkpoint.trusted_plan.plan_ref,
+                    milestone_ref=checkpoint.readiness.milestone_ref.ref,
+                    closure_phase=checkpoint.closure_phase,
+                    steward_digest=self._steward_result_digest(result),
+                    reviewed_frontier=checkpoint.readiness.reviewed_frontier_ref.ref,
+                    accepted_frontier=result.accepted_frontier_ref,
+                    scope=intent.scope_dict(),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - receipt resolution fails closed
+            raise StewardshipProductionError(
+                "RECEIPT_RESOLUTION_FAILED",
+                f"durable finalizer receipt owner raised {type(exc).__name__}",
+            ) from exc
+        if receipt is None:
+            return None
+        self._validate_receipt_binding(checkpoint, result, receipt)
+        return receipt
 
     def _validate_result_binding(
         self,
@@ -803,17 +1002,32 @@ class LegacyStewardshipExecutor:
                         error_code=binding_error.code,
                         error_detail=binding_error.detail[:512],
                     )
+                try:
+                    partial_receipt = self._persist_finalizer_receipt(
+                        checkpoint, result, exc.receipt
+                    )
+                except StewardshipProductionError as persist_error:
+                    failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+                    return LegacyStewardshipOutcome(
+                        checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
+                        execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                        replay=failed,
+                        steward_result=result,
+                        receipt=exc.receipt,
+                        error_code=persist_error.code,
+                        error_detail=persist_error.detail[:512],
+                    )
                 return LegacyStewardshipOutcome(
                     checkpoint_outcome=replace(
                         checkpoint_outcome,
                         steward_result=result,
-                        receipt=exc.receipt,
+                        receipt=partial_receipt,
                         materialization_intent=intent,
                     ),
                     execution_state=StewardshipExecutionState.IN_FLIGHT,
                     replay=record,
                     steward_result=result,
-                    receipt=exc.receipt,
+                    receipt=partial_receipt,
                     error_code=exc.code.value,
                     error_detail=f"finalizer partial receipt is recoverable: {exc.code.value}",
                 )
@@ -840,6 +1054,19 @@ class LegacyStewardshipExecutor:
 
         try:
             self._validate_receipt_binding(checkpoint, result, receipt)
+        except StewardshipProductionError as exc:
+            failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
+            return LegacyStewardshipOutcome(
+                checkpoint_outcome=replace(checkpoint_outcome, steward_result=result),
+                execution_state=StewardshipExecutionState.FAILED_CLOSED,
+                replay=failed,
+                steward_result=result,
+                receipt=receipt,
+                error_code=exc.code,
+                error_detail=exc.detail[:512],
+            )
+        try:
+            receipt = self._persist_finalizer_receipt(checkpoint, result, receipt)
         except StewardshipProductionError as exc:
             failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
             return LegacyStewardshipOutcome(
@@ -910,12 +1137,10 @@ def create_legacy_stewardship_executor(
         )
     if result_sandbox is not None:
         if result_owner is None:
-            if result_task_id_resolver is None:
-                raise StewardshipProductionError(
-                    "RESULT_OWNER_REQUIRED",
-                    "result_sandbox requires a trusted existing result owner or task identity resolver",
-                )
-            result_owner = DurableStewardResultOwner(result_sandbox, result_task_id_resolver)
+            result_owner = DurableStewardResultOwner(
+                result_sandbox,
+                result_task_id_resolver or DurableStewardResultOwner.default_task_id,
+            )
         if finalizer.receipt_store is None:
             finalizer.receipt_store = FileBackedReceiptStore(
                 Path(result_sandbox.worktree_root) / ".aota" / "materialization_receipts.json"

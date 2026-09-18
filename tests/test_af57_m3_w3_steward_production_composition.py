@@ -7,13 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from aota_forge.core.execution.dispatcher import ExecutionDispatcher
+from aota_forge.core.execution.durable_state import InMemoryExecutionStateStore
+from aota_forge.core.execution.registry import ExecutorRegistry
 from aota_forge.composition.stewardship import (
-    DurableStewardResultOwner,
     LEGACY_STEWARD_PRODUCTION_PATH_ONLY,
     StewardshipExecutionState,
     StewardshipProductionError,
     create_legacy_stewardship_executor,
 )
+from aota_forge.composition.task_main import create_task_main_runner
 from aota_forge.governance.project_store import (
     STEWARD_REPLAY_STATE_ACTIVE,
     STEWARD_REPLAY_STATE_COMPLETED,
@@ -28,11 +31,14 @@ from aota_forge.governance.stewardship import (
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_LEGACY, TASK_MAIN_RUNTIME_PATH_THIN
 import aota_forge.runtime.task_main.runner as runner_module
+from aota_forge.runtime.task_main.runner import (
+    DISPOSITION_MILESTONE_CLOSURE_READY,
+    RunnerOutcome,
+)
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.coordinator_state import TaskMainCoordinatorState
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
 from aota_forge.work_plane.handoff import SemanticReference
-from aota_forge.work_plane.handoff_store import handoff_write
 from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
 from aota_forge.work_plane.milestone_review import ReviewCycle
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
@@ -50,7 +56,6 @@ from aota_forge.work_plane.steward_finalizer import (
     make_trusted_binding_for_test,
 )
 from aota_forge.work_plane.materialization_receipt import MaterializationReceipt
-from aota_forge.work_plane.task_facade import task_return
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 PROJECT_ID = "aota_forge"
@@ -134,14 +139,14 @@ def _executor(
     tmp_path: Path,
     dispatch,
     *,
-    result_resolver=None,
     governance_store=None,
     coordinator_store=None,
     live_plan_view=None,
     result_sandbox=None,
-    result_task_id_resolver=None,
     finalizer=None,
 ):
+    if result_sandbox is None:
+        result_sandbox = _sandbox(tmp_path)
     if governance_store is None:
         governance_store = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
     if coordinator_store is None or live_plan_view is None:
@@ -160,9 +165,7 @@ def _executor(
         live_plan_view=live_plan_view,
         finalizer=finalizer,
         semantic_dispatch=dispatch,
-        result_resolver=result_resolver,
         result_sandbox=result_sandbox,
-        result_task_id_resolver=result_task_id_resolver,
         origin_session_ref="session:w3",
     )
     return executor, governance_store, coordinator_store, live_plan_view
@@ -243,6 +246,7 @@ def test_active_replay_reentry_resolves_result_without_blind_redispatch(tmp_path
     assert first_outcome.execution_state is StewardshipExecutionState.IN_FLIGHT
     assert first_outcome.replay is not None
     assert first_outcome.replay.state == STEWARD_REPLAY_STATE_ACTIVE
+    first.result_owner.persist_steward_result(first_outcome.replay, _steward_result())
 
     governance.close()
     reopened = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
@@ -255,7 +259,6 @@ def test_active_replay_reentry_resolves_result_without_blind_redispatch(tmp_path
     second, reopened, *_ = _executor(
         tmp_path,
         second_dispatch,
-        result_resolver=lambda _record: _steward_result(),
         governance_store=reopened,
         coordinator_store=coordinator,
         live_plan_view=live_view,
@@ -307,26 +310,45 @@ def test_thin_runtime_is_rejected_without_fallback(tmp_path: Path) -> None:
     governance.close()
 
 
-def test_legacy_task_main_runner_calls_typed_steward_composition(tmp_path: Path) -> None:
+def test_production_factory_owns_steward_composition_at_closure_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls: list[object] = []
 
     def dispatch(handoff):
         calls.append(handoff)
         return _steward_result()
 
-    executor, governance, coordinator, _ = _executor(tmp_path, dispatch)
-    state = coordinator.get(f"{PROJECT_ID}:{MILESTONE}")
-    assert state is not None
-    outcome = runner_module._run_bound_stewardship(
-        state=state,
-        checkpoint=_checkpoint(semantic=True),
-        executor=executor,
+    _executor_probe, governance, coordinator, live_view = _executor(tmp_path, dispatch)
+    sandbox = _sandbox(tmp_path)
+
+    def closure_ready(self, *, session_available=True):
+        return RunnerOutcome(
+            disposition=DISPOSITION_MILESTONE_CLOSURE_READY,
+            coordinator_id=self.coordinator_id,
+            coordinator_revision=1,
+            milestone_closure_ready=True,
+        )
+
+    monkeypatch.setattr(runner_module.TaskMainMilestoneRunner, "advance_once", closure_ready)
+    composed = create_task_main_runner(
+        coordinator_store=coordinator,
+        execution_store=InMemoryExecutionStateStore(),
+        execution_dispatcher=ExecutionDispatcher(ExecutorRegistry()),
+        live_plan_view=live_view,
+        handoff_resolver=lambda _ref: pytest.fail("legacy dispatch must not run in closure seam"),
+        coordinator_id=f"{PROJECT_ID}:{MILESTONE}",
+        stewardship_checkpoint=_checkpoint(semantic=True),
+        stewardship_dispatch=dispatch,
+        stewardship_sandbox=sandbox,
+        stewardship_finalizer=_executor_probe.finalizer,
+        governance_store=governance,
     )
 
-    assert runner_module.STEWARDSHIP_PRODUCTION_CALLER_WIRED is True
-    assert runner_module.STEWARDSHIP_PRODUCTION_CALLER_PATH.endswith("advance_milestone_once")
-    assert outcome is not None
-    assert outcome.execution_state is StewardshipExecutionState.FINALIZED
+    outcome = composed.advance_once()
+    assert outcome.milestone_closure_ready is True
+    assert composed.stewardship_outcome is not None
+    assert composed.stewardship_outcome.execution_state is StewardshipExecutionState.FINALIZED
     assert len(calls) == 1
     governance.close()
 
@@ -361,29 +383,7 @@ def test_completed_replay_hydrates_durable_result_without_redispatch(tmp_path: P
         tmp_path,
         first_dispatch,
         result_sandbox=sandbox,
-        result_task_id_resolver=DurableStewardResultOwner.default_task_id,
     )
-    expected = first._new_replay_record(checkpoint, PLAN_ID)
-    task_id = DurableStewardResultOwner.default_task_id(expected)
-    result_ref = handoff_write(
-        mode="result",
-        semantic={
-            "summary": "durable StewardResult",
-            "steward_result": _steward_result().to_dict(),
-        },
-        caller_role="project-steward",
-        sandbox=sandbox,
-        plan_ref=PLAN_ID,
-        task_id=task_id,
-    )
-    task_return(
-        status="completed",
-        result_ref=result_ref,
-        caller_role="project-steward",
-        caller_task_id=task_id,
-        sandbox=sandbox,
-    )
-
     first_outcome = first.execute(checkpoint)
     assert first_outcome.execution_state is StewardshipExecutionState.FINALIZED
     governance.close()
@@ -401,7 +401,6 @@ def test_completed_replay_hydrates_durable_result_without_redispatch(tmp_path: P
         coordinator_store=coordinator,
         live_plan_view=live_view,
         result_sandbox=sandbox,
-        result_task_id_resolver=DurableStewardResultOwner.default_task_id,
     )
     second_outcome = second.execute(checkpoint)
 
@@ -422,6 +421,8 @@ def test_completed_replay_without_durable_result_fails_closed(tmp_path: Path) ->
     first, governance, coordinator, live_view = _executor(tmp_path, first_dispatch)
     first_outcome = first.execute(checkpoint)
     assert first_outcome.execution_state is StewardshipExecutionState.FINALIZED
+    for receipt_path in (tmp_path / ".aota" / "task_return_receipts").glob("*.json"):
+        receipt_path.unlink()
     governance.close()
     reopened = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
     second_calls: list[object] = []
@@ -489,6 +490,7 @@ def _receipt_for(
 def test_partial_finalizer_receipt_reenters_without_redispatch(tmp_path: Path) -> None:
     result = _steward_result()
     probe, governance, coordinator, live_view = _executor(tmp_path, lambda _handoff: result)
+    sandbox = _sandbox(tmp_path)
     partial = _receipt_for(probe, result, final_status="PARTIAL", receipt_id="partial-w3")
     completed = _receipt_for(probe, result, final_status="APPLIED", receipt_id="complete-w3")
     finalizer = _PartialThenCompleteFinalizer(partial, completed)
@@ -506,7 +508,7 @@ def test_partial_finalizer_receipt_reenters_without_redispatch(tmp_path: Path) -
         live_plan_view=live_view,
         finalizer=finalizer,
         semantic_dispatch=dispatch,
-        result_resolver=lambda _record: result,
+        result_sandbox=sandbox,
         origin_session_ref="session:w3",
     )
     checkpoint = _checkpoint(semantic=True)
