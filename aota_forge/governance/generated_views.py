@@ -27,6 +27,7 @@ from aota_forge.governance.cards import (
 
 MAP_AUTHORITY = False
 STATUS_AUTHORITY = False
+STATUS_IS_DERIVED = True
 MAP_GENERATED = True
 STATUS_GENERATED = True
 MANUAL_MAP_PROGRESS_TRUTH = False
@@ -130,6 +131,14 @@ def _render_architecture(lines: list[str], card: ArchitectureCard | None) -> Non
         lines.append(f"- accepted_ref: {card.accepted_ref}")
     if card.plan_delta_ref:
         lines.append(f"- plan_delta_ref: {card.plan_delta_ref}")
+    if card.current_version:
+        lines.append(f"- current_version: {card.current_version}")
+    if card.current_digest:
+        lines.append(f"- current_digest: {card.current_digest}")
+    if card.promotion_receipt_ref:
+        lines.append(f"- promotion_receipt_ref: {card.promotion_receipt_ref}")
+    if card.promoted_by_plan_id:
+        lines.append(f"- promoted_by_plan_id: {card.promoted_by_plan_id}")
     lines.append(_completeness_line(card.complete, card.missing_facts))
     lines.append(f"- projection_id: {card.projection_id()}")
     lines.append("")
@@ -263,6 +272,7 @@ __all__ = [
     "MAP_FILENAME",
     "MAP_GENERATED",
     "STATUS_AUTHORITY",
+    "STATUS_IS_DERIVED",
     "STATUS_FILENAME",
     "STATUS_GENERATED",
     "VIEWS_ARE_SOURCE_AUTHORITY",

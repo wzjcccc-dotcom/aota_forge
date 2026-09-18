@@ -192,6 +192,10 @@ class ArchitectureStateInput:
     plan_delta_ref: str | None = None
     source_revision: str | None = None
     source_digest: str | None = None
+    current_version: str | None = None
+    current_digest: str | None = None
+    promotion_receipt_ref: str | None = None
+    promoted_by_plan_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_id", _clean_project_id(self.project_id))
@@ -215,6 +219,26 @@ class ArchitectureStateInput:
             if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
                 raise GovernanceProjectionError("INVALID_INPUT", "source_digest must be 64 lowercase hex")
             object.__setattr__(self, "source_digest", digest)
+        object.__setattr__(
+            self,
+            "current_version",
+            _clean_optional(self.current_version, "current_version", max_length=256),
+        )
+        if self.current_digest is not None:
+            digest = _clean_text(self.current_digest, "current_digest", max_length=64)
+            if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+                raise GovernanceProjectionError("INVALID_INPUT", "current_digest must be 64 lowercase hex")
+            object.__setattr__(self, "current_digest", digest)
+        if self.promotion_receipt_ref is not None:
+            object.__setattr__(
+                self,
+                "promotion_receipt_ref",
+                _clean_logical_ref(self.promotion_receipt_ref, "promotion_receipt_ref"),
+            )
+        if self.promoted_by_plan_id is not None and not is_plan_id(self.promoted_by_plan_id):
+            raise GovernanceProjectionError(
+                "INVALID_PLAN_ID", "promoted_by_plan_id must be one canonical internal Plan ID"
+            )
 
 
 @dataclass(frozen=True)
@@ -747,6 +771,10 @@ class GovernanceProjectionEngine:
             plan_delta_ref=state.plan_delta_ref,
             source_revision=state.source_revision,
             source_digest=state.source_digest,
+            current_version=state.current_version,
+            current_digest=state.current_digest,
+            promotion_receipt_ref=state.promotion_receipt_ref,
+            promoted_by_plan_id=state.promoted_by_plan_id,
             source_refs=tuple(source_refs),
             navigation_refs=tuple(navigation),
             complete=not missing,

@@ -46,6 +46,8 @@ CARD_DIGEST_IS_AUTHORITY = False
 CARD_REF_IS_AUTHORITY = False
 GOVERNANCE_PROJECTION_DETERMINISTIC = True
 PROGRESS_CARD_IS_AUTHORITY = False
+PROGRESS_CARD_IS_DERIVED = True
+SECOND_PROGRESS_STORE_CREATED = False
 PROJECT_GOVERNANCE_STORE_OWNS_EXECUTION_STATE = False
 PROJECT_GOVERNANCE_STORE_OWNS_COORDINATOR_STATE = False
 PROJECT_GOVERNANCE_STATE_DUPLICATED = False
@@ -536,6 +538,10 @@ class ArchitectureCard(GovernanceCard):
     plan_delta_ref: str | None = None
     source_revision: str | None = None
     source_digest: str | None = None
+    current_version: str | None = None
+    current_digest: str | None = None
+    promotion_receipt_ref: str | None = None
+    promoted_by_plan_id: str | None = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -546,7 +552,22 @@ class ArchitectureCard(GovernanceCard):
         if self.plan_delta_ref is not None:
             object.__setattr__(self, "plan_delta_ref", _require_logical_ref(self.plan_delta_ref, "plan_delta_ref", max_length=512))
         object.__setattr__(self, "source_revision", _optional_text(self.source_revision, "source_revision", max_length=128))
-        object.__setattr__(self, "source_digest", _optional_text(self.source_digest, "source_digest", max_length=64))
+        for label in ("source_digest", "current_digest"):
+            value = getattr(self, label)
+            if value is not None:
+                digest = _require_text(value, label, max_length=64)
+                if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+                    raise GovernanceCardError("INVALID_FIELD", f"{label} must be 64 lowercase hex")
+                object.__setattr__(self, label, digest)
+        object.__setattr__(self, "current_version", _optional_text(self.current_version, "current_version", max_length=256))
+        if self.promotion_receipt_ref is not None:
+            object.__setattr__(
+                self,
+                "promotion_receipt_ref",
+                _require_logical_ref(self.promotion_receipt_ref, "promotion_receipt_ref", max_length=512),
+            )
+        if self.promoted_by_plan_id is not None and not is_plan_id(self.promoted_by_plan_id):
+            raise GovernanceCardError("INVALID_PLAN_ID", "promoted_by_plan_id must be a canonical Plan ID")
 
     def _payload_fields(self) -> dict[str, Any]:
         return {
@@ -556,6 +577,10 @@ class ArchitectureCard(GovernanceCard):
             "plan_delta_ref": self.plan_delta_ref,
             "source_revision": self.source_revision,
             "source_digest": self.source_digest,
+            "current_version": self.current_version,
+            "current_digest": self.current_digest,
+            "promotion_receipt_ref": self.promotion_receipt_ref,
+            "promoted_by_plan_id": self.promoted_by_plan_id,
         }
 
 
@@ -814,6 +839,8 @@ __all__ = [
     "CARD_REF_IS_AUTHORITY",
     "GOVERNANCE_PROJECTION_DETERMINISTIC",
     "PROGRESS_CARD_IS_AUTHORITY",
+    "PROGRESS_CARD_IS_DERIVED",
+    "SECOND_PROGRESS_STORE_CREATED",
     "PROJECT_GOVERNANCE_STATE_DUPLICATED",
     "PROJECT_GOVERNANCE_STORE_OWNS_COORDINATOR_STATE",
     "PROJECT_GOVERNANCE_STORE_OWNS_EXECUTION_STATE",

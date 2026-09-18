@@ -157,6 +157,7 @@ _ARCHITECTURE_COLUMNS = (
     "accepted_delta_digest",
     "promotion_receipt_ref",
     "revision",
+    "promoted_by_plan_id",
 )
 _ARCHITECTURE_CREATE_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS {_ARCHITECTURE_TABLE} (
@@ -166,7 +167,8 @@ CREATE TABLE IF NOT EXISTS {_ARCHITECTURE_TABLE} (
     accepted_delta_ref TEXT,
     accepted_delta_digest TEXT,
     promotion_receipt_ref TEXT NOT NULL,
-    revision INTEGER NOT NULL CHECK (revision >= 1)
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    promoted_by_plan_id TEXT
 )
 """
 _ARCHITECTURE_INSERT_SQL = (
@@ -179,7 +181,8 @@ _ARCHITECTURE_SELECT_SQL = (
 )
 _ARCHITECTURE_UPDATE_SQL = (
     f"UPDATE {_ARCHITECTURE_TABLE} SET current_version = ?, current_digest = ?, "
-    "accepted_delta_ref = ?, accepted_delta_digest = ?, promotion_receipt_ref = ?, revision = ? "
+    "accepted_delta_ref = ?, accepted_delta_digest = ?, promotion_receipt_ref = ?, "
+    "revision = ?, promoted_by_plan_id = ? "
     "WHERE project_id = ? AND revision = ?"
 )
 
@@ -386,6 +389,7 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
             raise ProjectGovernanceCorruptStateError(
                 "governance store table is missing for the declared schema version; fail closed"
             )
+        self._ensure_architecture_table_schema()
 
     def _initialize_schema(self) -> None:
         try:
@@ -495,6 +499,41 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                 f"cannot materialize governance foundation table {table_name}: {exc}"
             ) from exc
 
+    def _ensure_architecture_table_schema(self) -> None:
+        """Add the one bounded W2 metadata column to an existing W1 table.
+
+        Foundation tables are intentionally not managed by a migration
+        framework.  This narrow compatibility step preserves already-created
+        W1 stores while rejecting any unrelated schema drift.
+        """
+        if not self._table_exists(_ARCHITECTURE_TABLE):
+            return
+        try:
+            rows = self._connection.execute(
+                f"PRAGMA table_info({_ARCHITECTURE_TABLE})"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise ProjectGovernanceCorruptStateError(
+                f"cannot inspect architecture metadata schema: {exc}"
+            ) from exc
+        columns = tuple(row[1] for row in rows)
+        expected = tuple(_ARCHITECTURE_COLUMNS)
+        if columns == expected:
+            return
+        if columns == expected[:-1]:
+            try:
+                self._connection.execute(
+                    f"ALTER TABLE {_ARCHITECTURE_TABLE} ADD COLUMN promoted_by_plan_id TEXT"
+                )
+            except sqlite3.Error as exc:
+                raise ProjectGovernancePersistenceError(
+                    f"cannot extend architecture metadata schema: {exc}"
+                ) from exc
+            return
+        raise ProjectGovernanceCorruptStateError(
+            "architecture metadata table has an unsupported schema; fail closed"
+        )
+
     # -- transaction mechanics -------------------------------------------------
 
     @contextmanager
@@ -602,6 +641,7 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                 accepted_delta_digest=row["accepted_delta_digest"],
                 promotion_receipt_ref=row["promotion_receipt_ref"],
                 revision=row["revision"],
+                promoted_by_plan_id=row["promoted_by_plan_id"],
             )
         except Exception as exc:
             raise ProjectGovernanceCorruptStateError(
@@ -991,6 +1031,7 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                             record.accepted_delta_digest,
                             record.promotion_receipt_ref,
                             record.revision,
+                            record.promoted_by_plan_id,
                         ),
                     )
                 except sqlite3.IntegrityError as exc:
@@ -1026,11 +1067,14 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
         project_id: str,
         expected_revision: int,
         *,
+        expected_current_version: str | None = None,
+        expected_current_digest: str | None = None,
         current_version: str | None = None,
         current_digest: str | None = None,
         accepted_delta_ref: str | None = None,
         accepted_delta_digest: str | None = None,
         promotion_receipt_ref: str | None = None,
+        promoted_by_plan_id: str | None = None,
     ) -> ArchitectureMetadataRecord:
         if (
             isinstance(expected_revision, bool)
@@ -1038,6 +1082,34 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
             or expected_revision < 1
         ):
             raise ProjectGovernanceRecordError("expected_revision must be positive")
+        for value, label in (
+            (expected_current_version, "expected_current_version"),
+            (current_version, "current_version"),
+        ):
+            if value is not None and (
+                not isinstance(value, str)
+                or not value.strip()
+                or value != value.strip()
+                or len(value) > 256
+                or "\x00" in value
+                or "\n" in value
+                or "\r" in value
+            ):
+                raise ProjectGovernanceRecordError(
+                    f"{label} must be a bounded single-line governance reference"
+                )
+        for value, label in (
+            (expected_current_digest, "expected_current_digest"),
+            (current_digest, "current_digest"),
+        ):
+            if value is not None and (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)
+            ):
+                raise ProjectGovernanceRecordError(
+                    f"{label} must be a lowercase SHA-256 digest"
+                )
         with self._lock:
             self._require_open()
             if not self._table_exists(_ARCHITECTURE_TABLE):
@@ -1063,10 +1135,29 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                         f"architecture metadata revision {current.revision} does not match "
                         f"expected revision {expected_revision}"
                     )
+                if (
+                    expected_current_version is not None
+                    and current.current_version != expected_current_version
+                ):
+                    raise StaleGovernanceMetadataRevisionError(
+                        f"architecture metadata version {current.current_version!r} does not "
+                        f"match expected version {expected_current_version!r}"
+                    )
+                if (
+                    expected_current_digest is not None
+                    and current.current_digest != expected_current_digest
+                ):
+                    raise StaleGovernanceMetadataRevisionError(
+                        "architecture metadata digest does not match the expected digest"
+                    )
                 candidate = ArchitectureMetadataRecord(
                     project_id=current.project_id,
-                    current_version=current_version or current.current_version,
-                    current_digest=current_digest or current.current_digest,
+                    current_version=(
+                        current_version if current_version is not None else current.current_version
+                    ),
+                    current_digest=(
+                        current_digest if current_digest is not None else current.current_digest
+                    ),
                     accepted_delta_ref=(
                         accepted_delta_ref
                         if accepted_delta_ref is not None
@@ -1077,22 +1168,40 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                         if accepted_delta_digest is not None
                         else current.accepted_delta_digest
                     ),
-                    promotion_receipt_ref=promotion_receipt_ref or current.promotion_receipt_ref,
+                    promotion_receipt_ref=(
+                        promotion_receipt_ref
+                        if promotion_receipt_ref is not None
+                        else current.promotion_receipt_ref
+                    ),
                     revision=current.revision + 1,
+                    promoted_by_plan_id=(
+                        promoted_by_plan_id
+                        if promoted_by_plan_id is not None
+                        else current.promoted_by_plan_id
+                    ),
                 )
                 try:
+                    update_sql = _ARCHITECTURE_UPDATE_SQL
+                    update_params: list[Any] = [
+                        candidate.current_version,
+                        candidate.current_digest,
+                        candidate.accepted_delta_ref,
+                        candidate.accepted_delta_digest,
+                        candidate.promotion_receipt_ref,
+                        candidate.revision,
+                        candidate.promoted_by_plan_id,
+                        project_id,
+                        expected_revision,
+                    ]
+                    if expected_current_version is not None:
+                        update_sql += " AND current_version = ?"
+                        update_params.append(expected_current_version)
+                    if expected_current_digest is not None:
+                        update_sql += " AND current_digest = ?"
+                        update_params.append(expected_current_digest)
                     cursor = self._connection.execute(
-                        _ARCHITECTURE_UPDATE_SQL,
-                        (
-                            candidate.current_version,
-                            candidate.current_digest,
-                            candidate.accepted_delta_ref,
-                            candidate.accepted_delta_digest,
-                            candidate.promotion_receipt_ref,
-                            candidate.revision,
-                            project_id,
-                            expected_revision,
-                        ),
+                        update_sql,
+                        tuple(update_params),
                     )
                 except sqlite3.Error as exc:
                     raise ProjectGovernancePersistenceError(

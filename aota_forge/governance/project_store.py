@@ -390,6 +390,7 @@ class ArchitectureMetadataRecord:
     accepted_delta_digest: str | None = None
     promotion_receipt_ref: str = ""
     revision: int = 1
+    promoted_by_plan_id: str | None = None
 
     @property
     def authority_ref(self) -> str:
@@ -408,6 +409,10 @@ class ArchitectureMetadataRecord:
         if self.accepted_delta_digest is not None:
             _metadata_digest(self.accepted_delta_digest, "accepted_delta_digest")
         _metadata_text(self.promotion_receipt_ref, "promotion_receipt_ref")
+        if self.promoted_by_plan_id is not None and not is_plan_id(self.promoted_by_plan_id):
+            raise ProjectGovernanceRecordError(
+                "promoted_by_plan_id must be one canonical internal Plan ID"
+            )
         if isinstance(self.revision, bool) or not isinstance(self.revision, int) or self.revision < 1:
             raise ProjectGovernanceRecordError("architecture revision must be positive")
 
@@ -420,6 +425,7 @@ class ArchitectureMetadataRecord:
             "accepted_delta_digest": self.accepted_delta_digest,
             "promotion_receipt_ref": self.promotion_receipt_ref,
             "revision": self.revision,
+            "promoted_by_plan_id": self.promoted_by_plan_id,
         }
 
     @classmethod
@@ -427,7 +433,12 @@ class ArchitectureMetadataRecord:
         if not isinstance(data, Mapping):
             raise ProjectGovernanceRecordError("architecture metadata payload must be a mapping")
         required = {"project_id", "current_version", "current_digest", "promotion_receipt_ref"}
-        allowed = required | {"accepted_delta_ref", "accepted_delta_digest", "revision"}
+        allowed = required | {
+            "accepted_delta_ref",
+            "accepted_delta_digest",
+            "revision",
+            "promoted_by_plan_id",
+        }
         extra = set(data) - allowed
         if extra:
             raise ProjectGovernanceRecordError(
@@ -446,6 +457,7 @@ class ArchitectureMetadataRecord:
             accepted_delta_digest=data.get("accepted_delta_digest"),
             promotion_receipt_ref=data["promotion_receipt_ref"],
             revision=data.get("revision", 1),
+            promoted_by_plan_id=data.get("promoted_by_plan_id"),
         )
 
 
@@ -598,11 +610,14 @@ class ProjectGovernanceStore(ABC):
         project_id: str,
         expected_revision: int,
         *,
+        expected_current_version: str | None = None,
+        expected_current_digest: str | None = None,
         current_version: str | None = None,
         current_digest: str | None = None,
         accepted_delta_ref: str | None = None,
         accepted_delta_digest: str | None = None,
         promotion_receipt_ref: str | None = None,
+        promoted_by_plan_id: str | None = None,
     ) -> ArchitectureMetadataRecord:
         raise NotImplementedError
 
