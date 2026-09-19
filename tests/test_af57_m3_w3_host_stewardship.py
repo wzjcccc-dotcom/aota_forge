@@ -185,6 +185,41 @@ def test_host_rebuilds_local_plan_identity_without_github_parser() -> None:
     assert identity.authority_binding == binding
 
 
+def test_host_steward_factories_defer_residual_construction_for_deterministic_close(
+    tmp_path: Path,
+) -> None:
+    checkpoint = host._build_stewardship_checkpoint(
+        runner_outcome=RunnerOutcome(
+            disposition=DISPOSITION_MILESTONE_CLOSURE_READY,
+            coordinator_id=f"{PROJECT_ID}:{MILESTONE}",
+            coordinator_revision=2,
+            milestone_closure_ready=True,
+        ),
+        state=_state_with_review_receipt(),
+        live_view=_plan_view(),
+        sandbox=_sandbox(tmp_path),
+        trusted_plan=_trusted_plan(),
+        semantic_facts=SemanticFactSet(),
+        plan_id=PLAN_ID,
+    )
+
+    dispatch_factory = host._production_steward_dispatch_factory(
+        dispatcher=object(),
+        sandbox=_sandbox(tmp_path),
+        plan_id=PLAN_ID,
+    )
+    dispatch = dispatch_factory(checkpoint)
+    execution_store = FileBackedExecutionStateStore(tmp_path / "execution.json")
+    resolver_factory = host._production_steward_result_task_id_resolver_factory(
+        execution_store
+    )
+    resolver = resolver_factory(checkpoint)
+
+    assert callable(dispatch)
+    assert callable(resolver)
+    execution_store.close()
+
+
 def test_host_rejects_governance_store_outside_trusted_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

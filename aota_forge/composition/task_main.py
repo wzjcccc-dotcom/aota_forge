@@ -407,6 +407,7 @@ def create_task_main_runner(
     completion_coordinator: DurableCompletionCoordinator | None = None,
     coordinator_id: str | None = None,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+    reviewer_dispatch_resolver: Any | None = None,
     stewardship_checkpoint: StewardshipCheckpoint | None = None,
     stewardship_checkpoint_resolver: Callable[[RunnerOutcome], StewardshipCheckpoint] | None = None,
     stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
@@ -442,6 +443,7 @@ def create_task_main_runner(
         completion_coordinator=completion_coordinator,
         coordinator_id=coordinator_id,
         reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+        reviewer_dispatch_resolver=reviewer_dispatch_resolver,
     )
     if stewardship_checkpoint is None and stewardship_checkpoint_resolver is None:
         return legacy_runner

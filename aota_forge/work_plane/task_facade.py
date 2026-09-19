@@ -129,6 +129,83 @@ THIN_PATH_MISSING_WORK_ROLE_FAILS_CLOSED = True
 CONTROL_PLANE_DEFAULT_CHILD_ROLE_ON_THIN_PATH = False
 LEGACY_PATH_MISSING_WORK_ROLE_DEFAULT = "coder"
 
+# AF #57 M3/RV1 lifecycle repair: a durable work_item handoff may bind an
+# exact canonical task identity in its control envelope (the trusted runtime
+# materializes the integrated-reviewer work-item handoff that way). When it
+# does, a one-shot Worker may open that handoff only for its own exact
+# canonical task: a foreign task binding, or a binding from another attempt,
+# fails closed. Legacy/unbound work_item handoffs (no canonical task id
+# declared) remain readable evidence and are unchanged.
+WORK_ITEM_HANDOFF_TASK_BINDING_ENFORCED = True
+WORK_ITEM_HANDOFF_BINDING_MISMATCH_CODE = "HANDOFF_TASK_BINDING_MISMATCH"
+ONE_SHOT_CALLER_ROLES = frozenset({"coder", "analyst", "reviewer", "project-steward"})
+
+
+class WorkItemHandoffBindingMismatchError(ValueError):
+    """Typed fail-closed error: opened work_item handoff belongs to another task."""
+
+    code = WORK_ITEM_HANDOFF_BINDING_MISMATCH_CODE
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"{self.code}: {detail}")
+
+
+def _looks_like_canonical_task_binding(value: str) -> bool:
+    """True only for explicit AF canonical task identities (never legacy task-<hex>)."""
+    if not isinstance(value, str) or type(value) is not str:
+        return False
+    candidate = value.strip()
+    if not candidate:
+        return False
+    return candidate.startswith("steward:") or candidate.count(":") >= 2
+
+
+def verify_work_item_handoff_task_binding(
+    *,
+    opened: Mapping[str, Any],
+    caller_role: str,
+    caller_canonical_task_id: str,
+) -> None:
+    """Fail closed when a one-shot Worker opens a handoff bound to another task.
+
+    Mechanical identity check only: the durable handoff control envelope is
+    authority for its own exact canonical task binding. No semantic
+    interpretation, no repair, no fallback.
+    """
+    if not isinstance(opened, Mapping):
+        raise ValueError("opened durable handoff must be a mapping")
+    if opened.get("mode") != "work_item":
+        return
+    if not isinstance(caller_role, str) or caller_role not in ONE_SHOT_CALLER_ROLES:
+        return
+    envelope = opened.get("envelope")
+    if not isinstance(envelope, Mapping):
+        return
+    declared = envelope.get("task_id")
+    if not isinstance(declared, str) or not declared.strip():
+        return
+    declared = declared.strip()
+    caller = caller_canonical_task_id.strip() if isinstance(caller_canonical_task_id, str) else ""
+    if not caller:
+        return
+    # Only an explicit canonical task binding is enforced. Legacy/unbound
+    # work_item writes (e.g. "task-<hex>") declare no canonical binding and
+    # stay readable as evidence, exactly as before.
+    if not _looks_like_canonical_task_binding(declared):
+        return
+    if declared != caller:
+        raise WorkItemHandoffBindingMismatchError(
+            f"work_item handoff task binding {declared!r} != caller canonical task "
+            f"{caller!r}; foreign/stale task handoff denied"
+        )
+    target_role = envelope.get("target_role")
+    if isinstance(target_role, str) and target_role.strip() and target_role.strip() != caller_role:
+        raise WorkItemHandoffBindingMismatchError(
+            f"work_item handoff target role {target_role.strip()!r} != caller role "
+            f"{caller_role!r}; refusing cross-role task handoff"
+        )
+
+
 # AF #54 M2/W1-W2 (G54-01) work-item semantic identity grounding contract:
 # a ``work_item`` handoff normatively denotes Plan-bound Work, so on the thin
 # runtime path the durable semantic payload MUST carry an explicit
@@ -503,10 +580,13 @@ def load_trusted_work_item_task_handoff(
     return _load_work_item_task_handoff(semantic, sandbox, envelope, **load_kwargs)
 
 
-def _propagate_trusted_work_handoff(
+def propagate_trusted_work_handoff(
     package: Any,
     *,
-    opened: Mapping[str, Any],
+    opened: Mapping[str, Any] | None = None,
+    ref: str | None = None,
+    digest: str | None = None,
+    mode: str = "work_item",
 ) -> Any:
     """Propagate the trusted durable handoff identity into internal dispatch metadata.
 
@@ -514,26 +594,42 @@ def _propagate_trusted_work_handoff(
     the grounded ``handoff_open`` above (never model input). They travel to the
     governed Worker env resolver, which re-opens and re-validates the same
     durable handoff before any physical Worker launch.
+
+    AF #57 M3/RV1: the runtime review dispatch reuses this exact seam with the
+    already-materialized durable reviewer work_item handoff, so the integrated
+    reviewer dispatch carries a resolvable durable ref/digest (no synthetic
+    digest, no second protocol).
     """
-    ref = opened.get("ref")
-    digest = opened.get("digest")
+    if opened is not None:
+        ref = opened.get("ref", ref)
+        digest = opened.get("digest", digest)
+        mode = opened.get("mode", mode) or mode
     if not isinstance(digest, str) or not digest.strip():
-        raise ValueError("task.start durable handoff digest missing after trusted open")
+        raise ValueError("trusted durable handoff digest missing after trusted open")
     digest = digest.strip().lower()
+    if not isinstance(mode, str) or not mode.strip():
+        raise ValueError("trusted durable handoff mode missing after trusted open")
+    mode = mode.strip()
     if not isinstance(ref, str) or not ref.strip():
         # Deterministic canonical ref form from the trusted open identity
         # (handoff:<mode>:<digest> is understood by the durable store).
-        mode = opened.get("mode")
-        if not isinstance(mode, str) or not mode.strip():
-            raise ValueError("task.start durable handoff ref missing after trusted open")
-        ref = f"handoff:{mode.strip()}:{digest}"
+        ref = f"handoff:{mode}:{digest}"
     working_context = dict(package.working_context)
     working_context[TRUSTED_WORK_HANDOFF_CONTEXT_KEY] = {
         "ref": ref.strip(),
         "digest": digest,
-        "mode": "work_item",
+        "mode": mode,
     }
     return dataclasses.replace(package, working_context=working_context)
+
+
+def _propagate_trusted_work_handoff(
+    package: Any,
+    *,
+    opened: Mapping[str, Any],
+) -> Any:
+    """Backward-compatible private alias of ``propagate_trusted_work_handoff``."""
+    return propagate_trusted_work_handoff(package, opened=opened)
 
 
 def task_start(
@@ -945,11 +1041,17 @@ __all__ = [
     "SEMANTIC_SUCCESS_REQUIRES_VALID_TASK_RETURN",
     "TASK_RETURN_REQUIRES_VALID_RESULT_HANDOFF",
     "TRUSTED_WORK_HANDOFF_CONTEXT_KEY",
+    "WORK_ITEM_HANDOFF_TASK_BINDING_ENFORCED",
+    "WORK_ITEM_HANDOFF_BINDING_MISMATCH_CODE",
+    "ONE_SHOT_CALLER_ROLES",
     "CompletionSink",
     "RoleHandoffMismatchError",
+    "WorkItemHandoffBindingMismatchError",
     "ProductionDispatcherUnavailableError",
     "ProductionExecutionStoreUnavailableError",
     "load_trusted_work_item_task_handoff",
+    "propagate_trusted_work_handoff",
+    "verify_work_item_handoff_task_binding",
     "task_start",
     "task_return",
     "get_completion",

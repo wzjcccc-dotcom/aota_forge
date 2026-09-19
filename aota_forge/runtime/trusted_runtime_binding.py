@@ -104,6 +104,10 @@ class TrustedTaskMainRuntimeContext:
     reviewer_handoff_resolver: Any | None = None
     governed_review_resolver: Any | None = None
     reviewer_canonical_task_id_resolver: Any | None = None
+    # AF #57 M3/RV1: trusted runtime materializer for the integrated-reviewer
+    # work-item handoff (materializes the durable artifact before dispatch and
+    # returns its exact durable ref/digest + enriched review TaskHandoff).
+    reviewer_dispatch_resolver: Any | None = None
     next_milestone_view: Any | None = None
     session_available: bool = True
     coordinator_id: str | None = None
@@ -138,6 +142,8 @@ class TrustedTaskMainRuntimeContext:
             raise TrustedBindingError("governed_review_resolver must be callable or None")
         if self.reviewer_canonical_task_id_resolver is not None and not callable(self.reviewer_canonical_task_id_resolver):
             raise TrustedBindingError("reviewer_canonical_task_id_resolver must be callable or None")
+        if self.reviewer_dispatch_resolver is not None and not callable(self.reviewer_dispatch_resolver):
+            raise TrustedBindingError("reviewer_dispatch_resolver must be callable or None")
         if type(self.session_available) is not bool:
             raise TrustedBindingError("session_available must be bool")
         if self.coordinator_id is not None:
@@ -212,6 +218,14 @@ class TrustedWorkerBinding:
     # task-main bootstrap. Mechanical carrier only; role.bootstrap validates
     # and normalizes it before model exposure. Workers carry none.
     governance_context: Mapping[str, Any] | None = None
+    # AF #57 M3/RV1: trusted durable work-item handoff identity for the exact
+    # task this Worker binding serves (ref + digest produced by the runtime
+    # that materialized the handoff before dispatch). Mechanical carrier only,
+    # never model input; role.bootstrap exposes it so the Worker opens its own
+    # task handoff at startup instead of searching for it. Empty = unbound
+    # legacy binding (unchanged behavior).
+    work_handoff_ref: str = ""
+    work_handoff_digest: str = ""
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -548,6 +562,29 @@ class TrustedWorkerBinding:
         # AF #59 M1: the #58 interactive Plan-state carrier is removed; the
         # binding never carries session-scoped Plan approval state.
 
+        # AF #57 M3/RV1: the durable work-item handoff identity is optional
+        # trusted server-side metadata. When present it must be a bounded
+        # canonical ref + 64-hex digest (fail closed otherwise).
+        if not isinstance(self.work_handoff_ref, str) or not isinstance(
+            self.work_handoff_digest, str
+        ):
+            raise TrustedBindingError("work_handoff_ref/digest must be strings")
+        ref = self.work_handoff_ref.strip()
+        digest = self.work_handoff_digest.strip().lower()
+        if ref:
+            if not (ref.startswith("handoff://") or ref.startswith("handoff:")):
+                raise TrustedBindingError("work_handoff_ref must be a canonical handoff ref")
+            if len(ref) > _MAX_ID_LEN:
+                raise TrustedBindingError("work_handoff_ref exceeds bound")
+        if digest:
+            if len(digest) != 64 or not all(c in "0123456789abcdef" for c in digest):
+                raise TrustedBindingError("work_handoff_digest must be 64 lower hex chars")
+            if not ref:
+                raise TrustedBindingError("work_handoff_digest requires work_handoff_ref")
+        if ref != self.work_handoff_ref or digest != self.work_handoff_digest:
+            object.__setattr__(self, "work_handoff_ref", ref)
+            object.__setattr__(self, "work_handoff_digest", digest)
+
     @property
     def effective_authorized_roots(self) -> AuthorizedRootSet:
         """Effective authorized root set (legacy bindings derive the accepted
@@ -577,11 +614,18 @@ def create_worker_envelope(
     handoff: TaskHandoff,
     envelope_dir: Path | None = None,
     provenence: Mapping[str, Any] | None = None,
+    work_handoff_ref: str | None = None,
+    work_handoff_digest: str | None = None,
 ) -> Path:
     """AF runtime composition creates worker envelope BEFORE MCP transport.
 
     Returns path to envelope file (0600). The envelope digest binds project,
     worktree, task and handoff. Tamper fails closed on load.
+
+    AF #57 M3/RV1: when the trusted runtime materialized a durable work-item
+    handoff for this exact task, its openable ref/digest are carried inside the
+    digest-bound payload so the Worker bootstrap can open its own task handoff
+    at startup (never a synthetic, unresolvable digest).
     """
     worktree_root = Path(worktree_root).resolve()
     if envelope_dir is None:
@@ -600,6 +644,10 @@ def create_worker_envelope(
         "handoff_digest": handoff.handoff_digest,
         "provenance": dict(provenence or {}),
     }
+    if isinstance(work_handoff_ref, str) and work_handoff_ref.strip():
+        payload["work_handoff_ref"] = work_handoff_ref.strip()
+        if isinstance(work_handoff_digest, str) and work_handoff_digest.strip():
+            payload["work_handoff_digest"] = work_handoff_digest.strip().lower()
     canonical = _canonical_json(payload)
     digest = _compute_digest(canonical)
     envelope = {
@@ -756,6 +804,8 @@ def load_binding_from_envelope(envelope_path: Path | str) -> TrustedWorkerBindin
             worktree_id=worktree_id,
             canonical_task_id=canonical_task_id,
             handoff=handoff,
+            work_handoff_ref=str(payload.get("work_handoff_ref") or ""),
+            work_handoff_digest=str(payload.get("work_handoff_digest") or ""),
         )
         # AF #54 M3/W2: install the operator-opt-in passive observation sink
         # carried by the verified envelope provenance (bounded, mechanical,

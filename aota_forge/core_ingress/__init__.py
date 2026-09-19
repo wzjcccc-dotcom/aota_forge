@@ -1147,6 +1147,7 @@ def _dispatch_task_main(
                     next_milestone_view=ctx.next_milestone_view,
                     session_available=ctx.session_available,
                     reviewer_canonical_task_id_resolver=ctx.reviewer_canonical_task_id_resolver,
+                    reviewer_dispatch_resolver=getattr(ctx, "reviewer_dispatch_resolver", None),
                 )
             except Exception as exc:
                 # M3/W1-R1 F2: fail-closed preserved, but expose governed Work
@@ -1692,6 +1693,37 @@ def _dispatch_tool_operation_inner(
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": msg[:512]})
             except Exception as exc:
                 return ToolResponse.failure({"code": "GOVERNED_OPERATION_FAILURE", "message": str(exc)[:512]})
+            # AF #57 M3/RV1 lifecycle repair: a one-shot Worker may open a
+            # work_item handoff only for its own exact canonical task binding
+            # (foreign task / stale attempt fails closed). Unbound legacy
+            # work_item handoffs declare no canonical task and stay readable.
+            caller_role = ""
+            try:
+                h = getattr(binding, "handoff", None)
+                wr = getattr(h, "work_role", None) if h is not None else None
+                if wr is not None:
+                    caller_role = getattr(wr, "value", None) or str(wr)
+            except Exception:
+                caller_role = ""
+            if caller_role:
+                try:
+                    from aota_forge.work_plane.task_facade import (
+                        verify_work_item_handoff_task_binding,
+                    )
+
+                    verify_work_item_handoff_task_binding(
+                        opened=result,
+                        caller_role=caller_role,
+                        caller_canonical_task_id=getattr(binding, "canonical_task_id", "") or "",
+                    )
+                except ValueError as exc:
+                    code = getattr(exc, "code", None)
+                    return ToolResponse.failure(
+                        {
+                            "code": code if isinstance(code, str) and code else "AUTHORITY_DENIED",
+                            "message": str(exc)[:512],
+                        }
+                    )
             response = ToolResponse.success(result)
             _persist_governed_if_needed(binding, response, operation)
             return response

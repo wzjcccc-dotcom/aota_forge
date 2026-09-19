@@ -211,6 +211,8 @@ def build_worker_binding(
     worktree_id: str,
     canonical_task_id: str,
     handoff: TaskHandoff,
+    work_handoff_ref: str = "",
+    work_handoff_digest: str = "",
 ) -> TrustedWorkerBinding:
     """Build one trusted server-side W2 binding from typed existing evidence.
 
@@ -472,6 +474,10 @@ def build_worker_binding(
         trusted_task_main_context=None,
         # AF #55 M2: the worker's authorized root set (active-worktree only).
         authorized_roots=worker_authorized_roots,
+        # AF #57 M3/RV1: trusted durable work-item handoff identity for the
+        # exact task this binding serves (openable through handoff.open).
+        work_handoff_ref=work_handoff_ref,
+        work_handoff_digest=work_handoff_digest,
     )
 
 
@@ -924,6 +930,8 @@ def build_worker_child_environment(
     repo_root: Path | None = None,
     runtime_config_path: Path | None = None,
     context_kind: str = "worker",
+    work_handoff_ref: str | None = None,
+    work_handoff_digest: str | None = None,
 ) -> dict[str, str]:
     """Build the explicit detached Worker child environment (immutable copy).
 
@@ -974,6 +982,8 @@ def build_worker_child_environment(
         canonical_task_id=canonical_task_id,
         handoff=handoff,
         provenence=observation_provenance or None,
+        work_handoff_ref=work_handoff_ref,
+        work_handoff_digest=work_handoff_digest,
     )
     child: dict[str, str] = {
         PRE_RESOLVED_BINDING_ENV: str(envelope_path),
@@ -1256,6 +1266,8 @@ def create_governed_worker_env_resolver(
                     handoff=handoff,
                     repo_root=repo_root,
                     runtime_config_path=runtime_config_path,
+                    work_handoff_ref=trusted["ref"],
+                    work_handoff_digest=trusted["digest"],
                 )
             except TrustedBindingError as exc:
                 raise _normalized_governed_binding_error(exc) from exc

@@ -39,7 +39,7 @@ Authority boundaries
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -446,6 +446,7 @@ def advance_milestone_once(
     completion_coordinator: DurableCompletionCoordinator | None = None,
     session_available: bool = True,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+    reviewer_dispatch_resolver: Callable[[], Mapping[str, Any]] | None = None,
 ) -> RunnerOutcome:
     """Advance one bounded autonomous step for the governed current Milestone.
 
@@ -458,6 +459,12 @@ def advance_milestone_once(
     (Work Item -> ``GovernedWorkItemEvidence``); ``governed_review_resolver``
     is the trusted reviewer channel (reviewer_task_id + card_digest -> review
     evidence). Raw Worker transcripts never enter semantics.
+
+    ``reviewer_dispatch_resolver`` (AF #57 M3/RV1) is the trusted runtime
+    channel that materializes the durable integrated-reviewer work-item
+    handoff BEFORE dispatch and returns its exact durable ref/digest plus the
+    enriched review TaskHandoff; the dispatch then carries a resolvable
+    durable handoff identity instead of a synthetic digest.
     """
     if not isinstance(coordinator_store, TaskMainCoordinatorStore):
         raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -476,6 +483,8 @@ def advance_milestone_once(
         raise TypeError("reviewer_handoff_resolver must be callable or None")
     if governed_review_resolver is not None and not callable(governed_review_resolver):
         raise TypeError("governed_review_resolver must be callable or None")
+    if reviewer_dispatch_resolver is not None and not callable(reviewer_dispatch_resolver):
+        raise TypeError("reviewer_dispatch_resolver must be callable or None")
     session_available = _require_strict_bool(session_available, "session_available")
 
     # ---- recover durable truth (fail-closed on drift / session loss) ----
@@ -875,15 +884,63 @@ def advance_milestone_once(
                 reasons=("integrated reviewer dispatched; awaiting completion",),
             )
         # Dispatch reviewer via dispatcher (one bounded dispatch)
-        handoff = reviewer_handoff_resolver()
-        if not isinstance(handoff, TaskHandoff):
-            raise TypeError("reviewer_handoff_resolver must return TaskHandoff")
+        # AF #57 M3/RV1 lifecycle repair: when the trusted runtime provides the
+        # durable materializer, it writes the reviewer work-item handoff BEFORE
+        # this dispatch and returns the exact durable ref/digest; the dispatch
+        # below then carries a resolvable durable handoff identity. The legacy
+        # in-memory reviewer handoff resolver is preserved for callers that do
+        # not own a durable store (existing bounded tests).
+        from aota_forge.work_plane.task_facade import (
+            propagate_trusted_work_handoff,
+        )
+
+        durable_review_handoff: Mapping[str, Any] | None = None
+        if reviewer_dispatch_resolver is not None:
+            durable_review_handoff = reviewer_dispatch_resolver()
+            if not isinstance(durable_review_handoff, Mapping):
+                raise TypeError("reviewer_dispatch_resolver must return a mapping")
+            handoff = durable_review_handoff.get("handoff")
+            durable_ref = durable_review_handoff.get("handoff_ref")
+            durable_digest = durable_review_handoff.get("handoff_digest")
+            bound_task_id = durable_review_handoff.get("canonical_task_id")
+            if not isinstance(handoff, TaskHandoff):
+                raise TypeError("reviewer_dispatch_resolver must return a TaskHandoff handoff")
+            if not isinstance(durable_ref, str) or not durable_ref.strip():
+                raise TaskMainCoordinatorError(
+                    "reviewer_dispatch_resolver returned no durable handoff ref; "
+                    "refusing a reviewer dispatch with an unresolvable handoff digest"
+                )
+            if not isinstance(durable_digest, str) or not durable_digest.strip():
+                raise TaskMainCoordinatorError(
+                    "reviewer_dispatch_resolver returned no durable handoff digest; "
+                    "refusing a reviewer dispatch with an unresolvable handoff digest"
+                )
+            if not isinstance(bound_task_id, str) or not bound_task_id.strip():
+                raise TaskMainCoordinatorError(
+                    "reviewer_dispatch_resolver returned no canonical reviewer task id"
+                )
+        else:
+            handoff = reviewer_handoff_resolver()
+            if not isinstance(handoff, TaskHandoff):
+                raise TypeError("reviewer_handoff_resolver must return TaskHandoff")
         # Resolve reviewer canonical id deterministically or via resolver param
         if reviewer_canonical_task_id_resolver is not None:
             reviewer_cid = reviewer_canonical_task_id_resolver()
             reviewer_cid = _require_non_empty_str(reviewer_cid, "reviewer_canonical_task_id")
+        elif durable_review_handoff is not None:
+            reviewer_cid = _require_non_empty_str(
+                durable_review_handoff.get("canonical_task_id"), "reviewer_canonical_task_id"
+            )
         else:
             reviewer_cid = f"{state.project_id}:{state.milestone_id}:RV1:attempt-1"
+        if durable_review_handoff is not None and reviewer_cid != durable_review_handoff.get(
+            "canonical_task_id"
+        ):
+            raise TaskMainCoordinatorError(
+                "reviewer dispatch handoff task binding "
+                f"{durable_review_handoff.get('canonical_task_id')!r} contradicts the resolved "
+                f"canonical reviewer task {reviewer_cid!r}; refusing dispatch"
+            )
         from aota_forge.work_plane.compiler import (
             TrustedExecutionBinding,
             compile_handoff_to_execution_package,
@@ -896,6 +953,17 @@ def advance_milestone_once(
             idempotency_key=f"reviewer|{reviewer_cid}",
             correlation_id=f"corr-{reviewer_cid}",
         )
+        if durable_review_handoff is not None:
+            # Reuse the canonical task.start propagation seam (no second
+            # protocol): the governed Worker env resolver re-opens and
+            # re-validates this exact durable handoff before any physical
+            # reviewer launch.
+            package = propagate_trusted_work_handoff(
+                package,
+                ref=durable_review_handoff["handoff_ref"],
+                digest=durable_review_handoff["handoff_digest"],
+                mode="work_item",
+            )
         # Use completion coordinator if available for admission.
         try:
             if completion_coordinator is not None:
@@ -1058,6 +1126,7 @@ class TaskMainMilestoneRunner:
         completion_coordinator: DurableCompletionCoordinator | None = None,
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+        reviewer_dispatch_resolver: Callable[[], Mapping[str, Any]] | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -1089,6 +1158,7 @@ class TaskMainMilestoneRunner:
         self._governed_review_resolver = governed_review_resolver
         self._next_view = next_milestone_view
         self._reviewer_cid_resolver = reviewer_canonical_task_id_resolver
+        self._reviewer_dispatch_resolver = reviewer_dispatch_resolver
         # If caller supplied a placeholder before activation, re-resolve to the durable id that now exists.
         state = self._store.get(coordinator_id)
         if state is None:
@@ -1117,6 +1187,7 @@ class TaskMainMilestoneRunner:
             completion_coordinator=self._completion,
             session_available=session_available,
             reviewer_canonical_task_id_resolver=self._reviewer_cid_resolver,
+            reviewer_dispatch_resolver=self._reviewer_dispatch_resolver,
         )
 
     def update_live_plan_view(self, view: MilestonePlanView) -> None:

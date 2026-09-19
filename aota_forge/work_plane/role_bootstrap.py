@@ -563,7 +563,7 @@ def handle_role_bootstrap(
             "version": version,
         }
 
-    def _handoff_summary(h: Any) -> dict[str, Any]:
+    def _handoff_summary(h: Any, binding: Any) -> dict[str, Any]:
         try:
             wr = h.work_role.value if hasattr(h.work_role, "value") else str(h.work_role)
         except Exception:
@@ -612,6 +612,19 @@ def handle_role_bootstrap(
                 summary["milestone_ref"] = mi
         except Exception:
             pass
+        # AF #57 M3/RV1: when the trusted runtime materialized the durable
+        # work-item handoff for this exact Worker task, expose its real
+        # openable ref/digest so handoff.open succeeds at startup (no search
+        # for the Worker's own task, no synthetic digest).
+        try:
+            _work_ref = getattr(binding, "work_handoff_ref", "") or ""
+            _work_digest = getattr(binding, "work_handoff_digest", "") or ""
+            if isinstance(_work_ref, str) and _work_ref.strip():
+                summary["handoff_ref"] = _work_ref.strip()
+            if isinstance(_work_digest, str) and _work_digest.strip():
+                summary["handoff_digest"] = _work_digest.strip().lower()
+        except Exception:
+            pass
         return summary
 
     # Trim eager entries to essential startup fields (save inline bytes).
@@ -635,7 +648,7 @@ def handle_role_bootstrap(
         "TOOL_SURFACE": tool_surface.canonical_dict() if hasattr(tool_surface, "canonical_dict") else str(tool_surface),
         "BASE_SKILLS": _eager_compact,
         "PROGRESSIVE_SKILLS": progressive_meta,
-        "TASK_HANDOFF": _handoff_summary(handoff),
+        "TASK_HANDOFF": _handoff_summary(handoff, binding),
         "CURRENT_EXECUTION_CONTEXT": {
             "project_id": project_id,
             "worktree_id": worktree_id,

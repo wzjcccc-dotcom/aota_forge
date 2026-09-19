@@ -293,6 +293,7 @@ class TaskMainControlService:
         next_milestone_view: MilestonePlanView | None = None,
         session_available: bool = True,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+        reviewer_dispatch_resolver: Callable[[], Any] | None = None,
     ) -> RunnerOutcome:
         _require_task_main_profile(profile)
         runner = self.create_runner(
@@ -305,6 +306,7 @@ class TaskMainControlService:
             next_milestone_view=next_milestone_view,
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+            reviewer_dispatch_resolver=reviewer_dispatch_resolver,
         )
         outcome = runner.advance_once(session_available=session_available)
         self._refresh_projection_after_transition()
@@ -521,6 +523,7 @@ class TaskMainControlService:
         next_milestone_view: MilestonePlanView | None = None,
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
+        reviewer_dispatch_resolver: Callable[[], Any] | None = None,
     ) -> Any:
         _require_task_main_profile(profile)
         runner = self._runner_factory(
@@ -536,6 +539,7 @@ class TaskMainControlService:
             completion_coordinator=self._completion,
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+            reviewer_dispatch_resolver=reviewer_dispatch_resolver,
         )
         if not callable(getattr(runner, "advance_once", None)):
             raise TypeError("runner_factory must return a runner with advance_once")

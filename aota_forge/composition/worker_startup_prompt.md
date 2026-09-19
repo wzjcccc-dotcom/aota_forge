@@ -11,10 +11,17 @@ aota.invoke(operation="result.hydrate", arguments={...})
 
 取得 bootstrap 後，依其中的 SOUL、TaskHandoff、Tool surface 與 base Skills
 執行本次 bounded 工作的正常生命週期：
-handoff.open(work_item)
+handoff.open(ref=TASK_HANDOFF.handoff_ref（bootstrap 公布的那個真實 durable ref）)
 → workspace.search / workspace.read（僅在 TaskHandoff 授權時才 workspace.write）
 → handoff.write(mode="result")
 → task.return。
+
+若 handoff.open 對 TASK_HANDOFF.handoff_ref 回傳 UNKNOWN_REF 或 invalid binding，
+不要用 workspace.search 重建自己的任務；改為先建立 blocked 的 result handoff
+（handoff.write(mode="result", payload 含 summary），
+再 task.return(status="blocked", result_ref=<該 result ref>)，然後立即停止。
+不要為了尋找任務或 result schema 而反覆搜尋工作區；
+需要更深的 review result contract 時，用 skill.open 開啟 bootstrap 列出的 progressive Skill。
 
 只有遇到符合 use-when 條件的特定需求時，
 才開啟 bootstrap 列出的 progressive Skill。

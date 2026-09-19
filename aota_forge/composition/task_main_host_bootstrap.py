@@ -549,7 +549,6 @@ def _production_steward_dispatch_factory(
 
         if checkpoint.plan_id is None or checkpoint.plan_id != plan_id:
             raise RuntimeError("semantic Steward dispatch requires the trusted internal Plan ID")
-        handoff = _canonical_steward_handoff(checkpoint)
 
         def semantic_payload(value: TaskHandoff) -> dict[str, Any]:
             # TaskHandoff is semantic, but the durable handoff store reserves
@@ -560,9 +559,11 @@ def _production_steward_dispatch_factory(
                 if key not in HANDOFF_CONTROL_FIELDS
             }
 
-        task_id = _steward_task_id(checkpoint, handoff)
-
         def dispatch(received_handoff: TaskHandoff):
+            # Deterministic closure never calls this seam. Defer residual-only
+            # handoff construction until semantic dispatch is actually needed.
+            handoff = _canonical_steward_handoff(checkpoint)
+            task_id = _steward_task_id(checkpoint, handoff)
             if received_handoff.handoff_digest != handoff.handoff_digest:
                 raise RuntimeError("semantic Steward handoff diverged from the trusted checkpoint")
             handoff_ref = handoff_write(
@@ -599,10 +600,11 @@ def _production_steward_result_task_id_resolver_factory(
     execution_store: Any,
 ):
     def factory(checkpoint: StewardshipCheckpoint):
-        handoff = _canonical_steward_handoff(checkpoint)
-        task_id = _steward_task_id(checkpoint, handoff)
-
         def resolve(_record: Any) -> str:
+            # Deterministic closure never resolves a semantic result. Defer
+            # residual-only identity construction until replay actually needs it.
+            handoff = _canonical_steward_handoff(checkpoint)
+            task_id = _steward_task_id(checkpoint, handoff)
             durable = execution_store.get(task_id)
             if durable is None or getattr(durable, "canonical_task_id", None) != task_id:
                 raise RuntimeError(
@@ -754,6 +756,181 @@ def _reviewer_handoff(
         plan_authority=plan_authority,
         plan_digest=plan_digest,
     )
+
+
+# AF #57 M3/RV1 lifecycle repair: the integrated-review dispatch must converge
+# with the normal child lifecycle (W1/W2): materialize a durable work_item
+# handoff, bind the exact canonical reviewer task, then dispatch with the real
+# durable ref/digest. The dispatch mode name stays ``runtime_resolved`` but now
+# means the runtime resolves and materializes the reviewer handoff BEFORE
+# launch; it never means "inject an unresolvable synthetic digest".
+REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED = "runtime_resolved"
+REVIEWER_DISPATCH_REFERENCES_DURABLE_HANDOFF = True
+SECOND_HANDOFF_PROTOCOL_CREATED = False
+
+
+def _reviewer_evidence_refs(
+    *,
+    sandbox: Any,
+    live_view: MilestonePlanView,
+    state: Any,
+) -> tuple[str, ...]:
+    """Real openable durable evidence refs for the integrated review inputs.
+
+    Prefers the W-item task.return result handoff refs (the accepted worker
+    outputs) and falls back to the durable work-item handoff refs recorded at
+    dispatch. Every returned ref is actually opened before inclusion, so the
+    reviewer never receives an unresolvable evidence ref. No evidence bodies
+    are inlined.
+    """
+    from aota_forge.work_plane.handoff_store import handoff_open
+    from aota_forge.work_plane.task_return_receipt import read_task_return_receipt
+
+    def _openable(ref: str, digest: str) -> bool:
+        try:
+            opened = handoff_open(ref, "card", sandbox=sandbox)
+        except Exception:
+            return False
+        opened_digest = opened.get("digest")
+        return (
+            isinstance(opened_digest, str)
+            and opened_digest.strip().lower() == digest.strip().lower()
+        )
+
+    bindings = dict(getattr(state, "bindings", {}) or {}) if state is not None else {}
+    evidence: list[str] = []
+    seen: set[str] = set()
+    for wi in tuple(getattr(live_view.graph, "work_items", ()) or ()):
+        entry = bindings.get(wi)
+        if not isinstance(entry, Mapping):
+            continue
+        candidates: list[tuple[str, str]] = []
+        canonical_task_id = entry.get("canonical_task_id")
+        if isinstance(canonical_task_id, str) and canonical_task_id.strip():
+            try:
+                receipt = read_task_return_receipt(sandbox, canonical_task_id.strip())
+            except Exception:
+                receipt = None
+            if receipt is not None:
+                candidates.append((receipt.result_ref, receipt.result_digest))
+        handoff_ref = entry.get("handoff_ref")
+        handoff_digest = entry.get("handoff_digest")
+        if (
+            isinstance(handoff_ref, str)
+            and handoff_ref.startswith("handoff://")
+            and isinstance(handoff_digest, str)
+        ):
+            candidates.append((handoff_ref, handoff_digest))
+        for ref, digest in candidates:
+            if not isinstance(ref, str) or ref in seen or not isinstance(digest, str):
+                continue
+            if len(digest) != 64:
+                continue
+            if _openable(ref, digest):
+                seen.add(ref)
+                evidence.append(ref)
+    return tuple(evidence)
+
+
+def _materialize_reviewer_work_handoff(
+    *,
+    base_handoff: TaskHandoff,
+    sandbox: Any,
+    live_view: MilestonePlanView,
+    state: Any,
+    project_id: str,
+    reviewer_task_id: str,
+    plan_id: str | None = None,
+    parent_task_identity: str = "",
+) -> dict[str, Any]:
+    """Materialize the durable integrated-reviewer work_item handoff (AF #57 M3/RV1).
+
+    Reuses the existing handoff.write durable store + canonical digest (no
+    second reviewer handoff store, no synthetic digest): the exact canonical
+    reviewer task id is bound in the control envelope, the bounded review
+    context/refs ride the semantic payload, and the returned real ref/digest
+    are what the dispatch and the reviewer bootstrap consume.
+    """
+    import dataclasses
+
+    from aota_forge.runtime.task_main.coordinator import compute_work_source_digest
+    from aota_forge.work_plane.handoff_store import HANDOFF_CONTROL_FIELDS, handoff_write
+
+    evidence_refs = _reviewer_evidence_refs(
+        sandbox=sandbox, live_view=live_view, state=state
+    )[:32]
+    context_refs: list[str] = [f"review-task://{reviewer_task_id}"]
+    if parent_task_identity:
+        context_refs.append(f"parent-task://{parent_task_identity}")
+    if isinstance(live_view.entry_base, str) and live_view.entry_base.strip():
+        context_refs.append(f"accepted-main://{live_view.entry_base.strip()}")
+    if isinstance(live_view.plan_authority, str) and live_view.plan_authority.strip():
+        context_refs.append(f"plan-authority://{live_view.plan_authority.strip()}")
+    if plan_id:
+        context_refs.append(f"plan-id://{plan_id}")
+    for source_slice in tuple(getattr(live_view, "work_source_slices", ()) or ()):
+        try:
+            ref = (
+                f"acceptance-criteria://{live_view.milestone_id}/"
+                f"{source_slice.work_item_id}"
+            )
+            digest = compute_work_source_digest(str(source_slice.source_text))
+        except Exception:
+            continue
+        context_refs.append(f"{ref}#{digest}")
+
+    validation_expectations = tuple(base_handoff.validation_expectations) + (
+        "emit verdict PASS|PASS_WITH_FINDINGS|NEEDS_FIX|BLOCKED|INCONCLUSIVE with findings",
+    )
+    enriched = dataclasses.replace(
+        base_handoff,
+        validation_expectations=validation_expectations,
+        context_refs=tuple(SemanticReference(ref=r) for r in context_refs[:32]),
+        evidence_refs=tuple(SemanticReference(ref=r) for r in evidence_refs),
+        skill_refs=(SemanticReference(ref="aota-implementation-review@1.0.0"),),
+    )
+    # Durable semantic payload: bounded, store-compatible (lists of strings,
+    # no control fields). Digests for evidence refs are resolvable from the
+    # durable artifacts themselves.
+    semantic: dict[str, Any] = {
+        "work_role": enriched.work_role.value,
+        "task_kind": enriched.task_kind,
+        "objective": enriched.objective,
+        "bounded_scope": enriched.bounded_scope,
+        "validation_expectations": list(enriched.validation_expectations),
+        "semantic_stop_expectations": list(enriched.semantic_stop_expectations),
+        "context_refs": [r.ref for r in enriched.context_refs],
+        "evidence_refs": [r.ref for r in enriched.evidence_refs],
+        "skill_refs": [r.ref for r in enriched.skill_refs],
+        "milestone_ref": live_view.milestone_id,
+        "work_item_ref": "RV1",
+        "project_ref": project_id,
+    }
+    for key in tuple(semantic):
+        if key in HANDOFF_CONTROL_FIELDS:
+            del semantic[key]
+    ref = handoff_write(
+        mode="work_item",
+        semantic=semantic,
+        caller_role="task-main",
+        sandbox=sandbox,
+        plan_ref=live_view.plan_authority,
+        milestone_id=live_view.milestone_id,
+        work_item_id="RV1",
+        target_role="reviewer",
+        task_id=reviewer_task_id,
+        provenance={
+            "plan_digest": live_view.plan_digest,
+            "review_dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+        },
+    )
+    return {
+        "handoff": enriched,
+        "handoff_ref": ref.ref,
+        "handoff_digest": ref.digest,
+        "canonical_task_id": reviewer_task_id,
+        "dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+    }
 
 
 def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Path | None) -> None:
@@ -1084,7 +1261,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 return candidate.strip()
         raise _w2_binding_unavailable("dispatch payload carries no canonical_task_id")
 
-    def _w2_build_child_env(handoff: TaskHandoff, payload: Any) -> Any:
+    def _w2_build_child_env(
+        handoff: TaskHandoff,
+        payload: Any,
+        *,
+        work_handoff_ref: str | None = None,
+        work_handoff_digest: str | None = None,
+    ) -> Any:
         from aota_forge.composition.worker_vertical_slice import build_worker_child_environment
 
         return build_worker_child_environment(
@@ -1096,6 +1279,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             trace_path=None,
             repo_root=_w2_repo_root,
             runtime_config_path=_w2_runtime_config_path,
+            work_handoff_ref=work_handoff_ref,
+            work_handoff_digest=work_handoff_digest,
         )
 
     def _w2_validate_grounded_handoff(opened: Mapping[str, Any], wi: str | None) -> None:
@@ -1172,6 +1357,100 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 f"handoff Work Item {work_item_id!r} contradicts dispatch Work Item {wi!r}",
             )
 
+    def _w2_is_review_dispatch(wi: str | None) -> bool:
+        if not isinstance(wi, str) or not wi.strip():
+            return False
+        lowered = wi.strip().lower()
+        return lowered.startswith("rv") or "/rv" in lowered or "review" in lowered
+
+    def _w2_validate_grounded_review_handoff(
+        opened: Mapping[str, Any], payload: Any, wi: str | None
+    ) -> None:
+        """Mechanical identity validation of the integrated-reviewer handoff.
+
+        AF #57 M3/RV1: the reviewer work-item handoff is materialized by the
+        trusted runtime before dispatch, so it declares its exact canonical
+        reviewer task binding. Validation is identity/digest only (plan /
+        milestone / reviewer role / exact task binding); no Work source digest
+        exists for the review seat (the review input is the evidence refs in
+        the handoff itself).
+        """
+        from aota_forge.runtime.task_main.coordinator import (
+            MILESTONE_MISMATCH,
+            PLAN_DIGEST_MISMATCH,
+            PLAN_REF_MISMATCH,
+            WORK_ITEM_MISMATCH,
+            WORK_SOURCE_GROUNDING_MISSING,
+            WorkSourceGroundingError,
+        )
+
+        envelope = opened.get("envelope")
+        if not isinstance(envelope, Mapping):
+            raise WorkSourceGroundingError(
+                WORK_SOURCE_GROUNDING_MISSING,
+                "durable review work_item handoff carries no control envelope",
+            )
+        semantic = opened.get("semantic")
+        semantic = semantic if isinstance(semantic, Mapping) else {}
+        provenance = envelope.get("provenance")
+        provenance = provenance if isinstance(provenance, Mapping) else {}
+        plan_ref = envelope.get("plan_ref")
+        plan_digest = provenance.get("plan_digest")
+        milestone_id = envelope.get("milestone_id")
+        work_item_id = envelope.get("work_item_id")
+        task_id = envelope.get("task_id")
+        target_role = envelope.get("target_role")
+        work_role = semantic.get("work_role")
+        missing = [
+            name
+            for name, value in (
+                ("plan_ref", plan_ref),
+                ("plan_digest", plan_digest),
+                ("milestone_id", milestone_id),
+                ("work_item_id", work_item_id),
+                ("task_id", task_id),
+            )
+            if not isinstance(value, str) or not value.strip()
+        ]
+        if missing:
+            raise WorkSourceGroundingError(
+                WORK_SOURCE_GROUNDING_MISSING,
+                f"durable review work_item handoff is not bound (missing {missing})",
+            )
+        if plan_ref.strip() != live_view.plan_authority:
+            raise WorkSourceGroundingError(
+                PLAN_REF_MISMATCH,
+                f"review handoff plan_ref {plan_ref!r} != current trusted plan "
+                f"{live_view.plan_authority!r}",
+            )
+        if plan_digest.strip() != live_view.plan_digest:
+            raise WorkSourceGroundingError(
+                PLAN_DIGEST_MISMATCH,
+                "review handoff plan_digest does not match the current trusted Plan revision",
+            )
+        if milestone_id.strip() != live_view.milestone_id:
+            raise WorkSourceGroundingError(
+                MILESTONE_MISMATCH,
+                f"review handoff milestone_id {milestone_id!r} != current trusted "
+                f"Milestone {live_view.milestone_id!r}",
+            )
+        if wi is not None and work_item_id.strip() != wi:
+            raise WorkSourceGroundingError(
+                WORK_ITEM_MISMATCH,
+                f"review handoff Work Item {work_item_id!r} contradicts dispatch Work Item {wi!r}",
+            )
+        if work_role != "reviewer" or target_role != "reviewer":
+            raise WorkSourceGroundingError(
+                WORK_ITEM_MISMATCH,
+                "review handoff role is not the reviewer role",
+            )
+        canonical_task_id = _w2_canonical_task_id(payload)
+        if task_id.strip() != canonical_task_id:
+            raise _w2_binding_unavailable(
+                f"review handoff task binding {task_id!r} != canonical reviewer task "
+                f"{canonical_task_id!r}; refusing reviewer launch"
+            )
+
     def _w2_worker_env_resolver(payload: Any) -> Any:
         """Governed Worker env resolver (AF #49 M1/W8, I49-B006).
 
@@ -1187,6 +1466,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         """
         declared, trusted = _w2_extract_trusted_handoff(payload)
         wi = _w2_extract_work_item(payload)
+        is_review = _w2_is_review_dispatch(wi)
         if declared and trusted is not None:
             try:
                 from aota_forge.work_plane.handoff_store import handoff_open
@@ -1207,7 +1487,10 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                     raise _w2_binding_unavailable(
                         "durable handoff digest does not match the trusted dispatch reference"
                     )
-                _w2_validate_grounded_handoff(opened, wi)
+                if is_review:
+                    _w2_validate_grounded_review_handoff(opened, payload, wi)
+                else:
+                    _w2_validate_grounded_handoff(opened, wi)
                 handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
                 if wi is not None:
                     wi_ref = handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
@@ -1215,7 +1498,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                         raise _w2_binding_unavailable(
                             f"derived Work Item {wi_ref!r} contradicts dispatch Work Item {wi!r}"
                         )
-                return _w2_build_child_env(handoff, payload)
+                return _w2_build_child_env(
+                    handoff,
+                    payload,
+                    work_handoff_ref=trusted["ref"],
+                    work_handoff_digest=trusted["digest"],
+                )
             except TrustedBindingError as exc:
                 raise _w2_typed_binding_error(exc) from exc
             except Exception as exc:
@@ -1236,19 +1524,52 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             # operator semantics; failure is typed fail-closed, never a
             # bindingless physical Worker launch.
             handoff_resolver_fn = _w2_holder.get("handoff_resolver")
-            reviewer_resolver_fn = _w2_holder.get("reviewer_handoff_resolver")
-            if handoff_resolver_fn is None:
+            reviewer_dispatch_fn = _w2_holder.get("reviewer_dispatch_resolver")
+            if is_review and reviewer_dispatch_fn is None:
+                # AF #57 M3/RV1: a reviewer dispatch without the trusted
+                # durable materializer can never launch with an unresolvable
+                # handoff digest; fail closed before any physical spawn.
+                raise _w2_binding_unavailable(
+                    "reviewer dispatch requires the trusted durable reviewer "
+                    "handoff materializer; refusing a reviewer launch with an "
+                    "unresolvable handoff digest"
+                )
+            if handoff_resolver_fn is None and not is_review:
                 raise _w2_binding_unavailable("no trusted Work handoff resolver is available")
             try:
-                lowered = wi.lower()
-                if lowered.startswith("rv") or "/rv" in lowered or "review" in lowered:
-                    if reviewer_resolver_fn is None:
+                if is_review:
+                    # Materialize the durable reviewer work-item handoff now
+                    # (same canonical mechanism as the runtime review
+                    # dispatch) and launch from the durable artifact.
+                    from aota_forge.work_plane.handoff_store import handoff_open
+                    from aota_forge.work_plane.task_facade import (
+                        load_trusted_work_item_task_handoff,
+                    )
+
+                    record = reviewer_dispatch_fn()
+                    if not isinstance(record, Mapping) or not isinstance(
+                        record.get("handoff_ref"), str
+                    ):
                         raise _w2_binding_unavailable(
-                            "no trusted reviewer handoff resolver is available"
+                            "trusted reviewer handoff materializer returned no durable ref"
                         )
-                    handoff = reviewer_resolver_fn()
-                else:
-                    handoff = handoff_resolver_fn(wi)
+                    sandbox = _w2_holder.get("sandbox")
+                    if sandbox is None:
+                        raise _w2_binding_unavailable(
+                            "trusted worktree sandbox is not available"
+                        )
+                    opened = handoff_open(record["handoff_ref"], "full", sandbox=sandbox)
+                    _w2_validate_grounded_review_handoff(opened, payload, wi)
+                    handoff = load_trusted_work_item_task_handoff(
+                        opened=opened, sandbox=sandbox
+                    )
+                    return _w2_build_child_env(
+                        handoff,
+                        payload,
+                        work_handoff_ref=record["handoff_ref"],
+                        work_handoff_digest=str(record.get("handoff_digest") or ""),
+                    )
+                handoff = handoff_resolver_fn(wi)
                 return _w2_build_child_env(handoff, payload)
             except TrustedBindingError as exc:
                 raise _w2_typed_binding_error(exc) from exc
@@ -1390,6 +1711,33 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         # Deterministic reviewer task id for this slice
         return f"{project_id}:{live_view.milestone_id}:RV1:attempt-1"
 
+    def reviewer_dispatch_resolver():
+        # AF #57 M3/RV1: the trusted runtime review dispatch materializes the
+        # durable reviewer work_item handoff (exact canonical reviewer task
+        # binding) and returns its real ref/digest BEFORE the reviewer launch.
+        sandbox = _w2_holder.get("sandbox")
+        if sandbox is None:
+            raise TrustedBindingError(
+                "integrated-review dispatch requires the trusted worktree sandbox"
+            )
+        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        try:
+            current_state = coord_store.get(current_coordinator_id)
+        except Exception:
+            current_state = None
+        return _materialize_reviewer_work_handoff(
+            base_handoff=reviewer_handoff_resolver(),
+            sandbox=sandbox,
+            live_view=live_view,
+            state=current_state,
+            project_id=project_id,
+            reviewer_task_id=reviewer_canonical_task_id_resolver(),
+            plan_id=plan_id,
+            parent_task_identity=origin_session,
+        )
+
+    _w2_holder["reviewer_dispatch_resolver"] = reviewer_dispatch_resolver
+
     # Build the outer TrustedWorkerBinding for task-main (neutral AF principal).
     # D7: synthetic project evidence removed from production path
     # (SYNTHETIC_PROJECT_AUTHORITY_PRODUCTION_PATH=no). Missing canonical
@@ -1496,6 +1844,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         reviewer_handoff_resolver=reviewer_handoff_resolver,
         governed_review_resolver=governed_review_resolver,
         reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
+        reviewer_dispatch_resolver=reviewer_dispatch_resolver,
         next_milestone_view=next_view,
         session_available=True,
         coordinator_id=coordinator_id,
