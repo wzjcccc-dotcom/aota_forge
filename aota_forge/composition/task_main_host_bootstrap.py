@@ -1037,6 +1037,152 @@ def _bootstrap_path_for_validation() -> Path | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# AF #57 M3/AC10 — semantic Steward production dispatch grounding
+# ---------------------------------------------------------------------------
+#
+# The semantic Steward is not a normal Plan Work Item: it is created from a
+# trusted Governance checkpoint plus a typed semantic residual.  Its work
+# source is the trusted checkpoint / semantic residual / logical replay
+# identity already owned by StewardshipCheckpoint and the existing Steward
+# replay seam -- there is no second work-source system and no fabricated Work
+# Item.  A normal Worker binding requires governed Work Item source grounding;
+# a semantic Steward binding requires the reconciliation below instead.  Role
+# text alone is never sufficient authority.
+
+SEMANTIC_STEWARD_DISPATCH_TARGET_ROLE = "project-steward"
+SEMANTIC_STEWARD_CANONICAL_TASK_PREFIX = "steward:"
+
+
+class _TrustedClosureReadyOutcome:
+    """Minimal trusted closure-ready runner-outcome view.
+
+    ``_build_stewardship_checkpoint`` re-validates every durable fact (state,
+    readiness, plan/milestone/project identity); the runner outcome only
+    supplies the trusted closure-ready fact.  This view lets the Worker
+    binding resolver reconstruct the exact same checkpoint the production
+    semantic Steward dispatch factory derived its handoff from, without
+    re-running the runner.
+    """
+
+    milestone_closure_ready = True
+
+
+def is_semantic_steward_dispatch_handoff(opened: Mapping[str, Any]) -> bool:
+    """Structural declaration of the canonical semantic Steward dispatch.
+
+    Positive trusted-envelope declaration only: the durable control envelope
+    must name the Project Steward role and the canonical ``steward:`` task
+    identity.  This is a routing hypothesis, never authority by itself -- the
+    caller must reconcile the trusted checkpoint, semantic residual, logical
+    replay identity and canonical task id before any Worker binding is built.
+    """
+    envelope = opened.get("envelope") if isinstance(opened, Mapping) else None
+    if not isinstance(envelope, Mapping):
+        return False
+    if envelope.get("target_role") != SEMANTIC_STEWARD_DISPATCH_TARGET_ROLE:
+        return False
+    task_id = envelope.get("task_id")
+    return isinstance(task_id, str) and task_id.strip().startswith(
+        SEMANTIC_STEWARD_CANONICAL_TASK_PREFIX
+    )
+
+
+def validate_semantic_steward_dispatch_grounding(
+    *,
+    opened: Mapping[str, Any],
+    payload: Any,
+    state: Any,
+    live_view: MilestonePlanView,
+    sandbox: Any,
+    trusted_plan: TrustedPlanIdentity,
+    semantic_facts: SemanticFactSet,
+    plan_id: str | None,
+    all_milestones_closed: bool,
+    project_id: str,
+) -> TaskHandoff:
+    """Reconcile a declared semantic Steward dispatch with trusted facts.
+
+    The bounded alternate path is admitted only with positive proof of the
+    canonical semantic Steward dispatch contract, reconciled against the same
+    server-side facts the production dispatch factory used:
+
+    * trusted Governance checkpoint reconstructed from durable coordinator
+      state + the trusted Plan view + trusted semantic facts;
+    * typed semantic residual (missing residual => fail closed; a checkpoint
+      that is deterministically finalizable is never a Steward dispatch);
+    * canonical Steward task identity (``steward:<digest>``) recomputed from
+      project_id + plan_id + checkpoint_id + canonical handoff digest;
+    * trusted control envelope plan/milestone identity agreement;
+    * durable handoff semantic payload equality with the checkpoint-derived
+      canonical TaskHandoff and canonical raw project binding.
+
+    Any missing/mismatched/foreign dimension raises the typed fail-closed
+    binding error before any physical Worker launch.
+    """
+
+    def _deny(detail: str) -> TrustedBindingError:
+        error = TrustedBindingError(f"WORKER_BINDING_UNAVAILABLE: {detail}")
+        error.code = "WORKER_BINDING_UNAVAILABLE"
+        return error
+
+    from aota_forge.governance.stewardship import StewardshipDisposition
+    from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+
+    if not is_semantic_steward_dispatch_handoff(opened):
+        raise _deny("semantic Steward grounding requires the canonical Steward dispatch declaration")
+    envelope = opened.get("envelope")
+    if not isinstance(envelope, Mapping):
+        raise _deny("semantic Steward handoff carries no control envelope")
+    declared_task_id = str(envelope.get("task_id")).strip()
+    context = payload.get("context") if isinstance(payload, Mapping) else None
+    payload_task_id = context.get("canonical_task_id") if isinstance(context, Mapping) else None
+    if not isinstance(payload_task_id, str) or not payload_task_id.strip():
+        raise _deny("semantic Steward dispatch payload carries no canonical task id")
+    if payload_task_id.strip() != declared_task_id:
+        raise _deny("canonical Steward task identity contradicts the trusted dispatch payload")
+
+    checkpoint = _build_stewardship_checkpoint(
+        runner_outcome=_TrustedClosureReadyOutcome(),
+        state=state,
+        live_view=live_view,
+        sandbox=sandbox,
+        trusted_plan=trusted_plan,
+        semantic_facts=semantic_facts,
+        plan_id=plan_id,
+        all_milestones_closed=all_milestones_closed,
+    )
+    if checkpoint.project_id != project_id:
+        raise _deny("semantic Steward checkpoint project does not match the trusted dispatch project")
+    evaluation = evaluate_checkpoint(checkpoint)
+    residual = evaluation.residual
+    if evaluation.disposition is not StewardshipDisposition.SEMANTIC_RESIDUAL_REQUIRED or residual is None:
+        raise _deny("semantic Steward dispatch is not grounded by a trusted semantic residual")
+    canonical_handoff = build_semantic_steward_handoff(checkpoint, residual)
+    expected_task_id = _steward_task_id(checkpoint, canonical_handoff)
+    if declared_task_id != expected_task_id:
+        raise _deny(
+            "canonical Steward task identity does not reconcile with the trusted logical checkpoint"
+        )
+    if envelope.get("plan_ref") != checkpoint.trusted_plan.plan_ref:
+        raise _deny("semantic Steward handoff Plan identity contradicts the trusted Plan")
+    expected_milestone = (
+        checkpoint.milestone_ref if checkpoint.milestone_ref is not None else live_view.milestone_id
+    )
+    if envelope.get("milestone_id") != expected_milestone:
+        raise _deny("semantic Steward handoff Milestone contradicts the trusted checkpoint")
+    derived = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
+    if derived.handoff_digest != canonical_handoff.handoff_digest:
+        raise _deny(
+            "semantic Steward durable handoff does not match the trusted checkpoint handoff"
+        )
+    if derived.project_ref is None or derived.project_ref.ref != checkpoint.project_id:
+        raise _deny("semantic Steward handoff project binding does not match the trusted project")
+    if derived.work_item_ref is not None:
+        raise _deny("semantic Steward dispatch must not claim a normal Work Item binding")
+    return canonical_handoff
+
+
 def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     """Attempt to build a task-main TrustedWorkerBinding from host bootstrap.
 
@@ -1487,17 +1633,38 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                     raise _w2_binding_unavailable(
                         "durable handoff digest does not match the trusted dispatch reference"
                     )
-                if is_review:
-                    _w2_validate_grounded_review_handoff(opened, payload, wi)
+                if is_semantic_steward_dispatch_handoff(opened):
+                    # AF #57 M3/AC10: the semantic Steward is grounded by its
+                    # trusted checkpoint + semantic residual + logical replay
+                    # identity, not by a normal Work Item source.  This branch
+                    # is admitted only after full reconciliation; any missing
+                    # or foreign dimension raises before any physical dispatch.
+                    handoff = validate_semantic_steward_dispatch_grounding(
+                        opened=opened,
+                        payload=payload,
+                        state=coord_store.get(
+                            coordinator_id or f"{project_id}:{live_view.milestone_id}"
+                        ),
+                        live_view=live_view,
+                        sandbox=sandbox,
+                        trusted_plan=trusted_plan,
+                        semantic_facts=semantic_facts,
+                        plan_id=plan_id,
+                        all_milestones_closed=next_view is None,
+                        project_id=project_id,
+                    )
                 else:
-                    _w2_validate_grounded_handoff(opened, wi)
-                handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
-                if wi is not None:
-                    wi_ref = handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
-                    if wi_ref != wi:
-                        raise _w2_binding_unavailable(
-                            f"derived Work Item {wi_ref!r} contradicts dispatch Work Item {wi!r}"
-                        )
+                    if is_review:
+                        _w2_validate_grounded_review_handoff(opened, payload, wi)
+                    else:
+                        _w2_validate_grounded_handoff(opened, wi)
+                    handoff = load_trusted_work_item_task_handoff(opened=opened, sandbox=sandbox)
+                    if wi is not None:
+                        wi_ref = handoff.work_item_ref.ref if handoff.work_item_ref is not None else None
+                        if wi_ref != wi:
+                            raise _w2_binding_unavailable(
+                                f"derived Work Item {wi_ref!r} contradicts dispatch Work Item {wi!r}"
+                            )
                 return _w2_build_child_env(
                     handoff,
                     payload,

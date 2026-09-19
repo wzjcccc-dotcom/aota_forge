@@ -1256,7 +1256,11 @@ def build_semantic_steward_handoff(
     if residual.required_input_refs:
         scope_bits.append("bounded refs: " + ", ".join(residual.required_input_refs))
     bounded_scope = ("; ".join(scope_bits))[:MAX_HANDOFF_SCOPE_LENGTH]
-    project_ref = SemanticReference(ref=f"project:{checkpoint.project_id}")
+    # Canonical TaskHandoff.project_ref is the raw canonical project_id (the
+    # same representation the normal governed Worker handoffs use); the
+    # projection-style ``project:<id>`` form belongs to Governance
+    # semantic/projection refs, not to TaskHandoff transport identity.
+    project_ref = SemanticReference(ref=checkpoint.project_id)
     plan_ref = SemanticReference(ref=checkpoint.trusted_plan.plan_ref)
     readiness = checkpoint.readiness
     if readiness is not None and readiness.ready_for_project_steward:

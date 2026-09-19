@@ -813,7 +813,15 @@ def test_build_semantic_steward_handoff_is_pure_existing_seam() -> None:
     handoff = build_semantic_steward_handoff(cp, residual)
     assert handoff.work_role is AgentWorkRole.PROJECT_STEWARD
     assert handoff.task_kind == STEWARD_TASK_KIND_MODE_B
-    assert handoff.project_ref is not None and handoff.project_ref.ref == f"project:{PROJECT_ID}"
+    # TaskHandoff transport identity carries the canonical raw project_id; the
+    # projection-style ``project:<id>`` form is a Governance projection ref,
+    # never a TaskHandoff binding.
+    assert handoff.project_ref is not None
+    assert handoff.project_ref.ref == PROJECT_ID
+    assert not handoff.project_ref.ref.startswith("project:")
+    assert handoff.plan_ref is not None and handoff.plan_ref.ref == PLAN_REF
+    assert handoff.milestone_ref is not None and handoff.milestone_ref.ref == MILESTONE
+    assert handoff.work_item_ref is None
     other_checkpoint_residual = SemanticResidual(
         kind=SemanticResidualKind.AMBIGUOUS_GOVERNANCE_REASON,
         reason="other checkpoint residual",
@@ -821,6 +829,17 @@ def test_build_semantic_steward_handoff_is_pure_existing_seam() -> None:
     )
     with pytest.raises(ValueError):
         build_semantic_steward_handoff(cp, other_checkpoint_residual)
+
+
+def test_semantic_residual_mode_a_handoff_uses_canonical_project_id() -> None:
+    cp = _plan_init(semantic=SemanticFactSet(architecture_question_refs=("architecture:q1",)))
+    evaluation = evaluate_checkpoint(cp)
+    residual = evaluation.residual
+    assert residual is not None
+    handoff = build_semantic_steward_handoff(cp, residual)
+    assert handoff.task_kind == STEWARD_TASK_KIND_MODE_A
+    assert handoff.project_ref is not None and handoff.project_ref.ref == PROJECT_ID
+    assert handoff.plan_ref is not None and handoff.plan_ref.ref == PLAN_REF
 
 
 def test_semantic_residual_bounded_context_uses_w2_route_refs() -> None:
