@@ -869,6 +869,11 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # AF #57 M3/W1: preserve the trusted prebuilt Governance projection
         # for the canonical role.bootstrap consumer.
         governance_context=getattr(binding, "governance_context", None),
+        # AF #57 M3/RV1: preserve the trusted durable work-item handoff
+        # identity for the canonical role.bootstrap consumer (the Worker must
+        # open its own task handoff at startup, never search for it).
+        work_handoff_ref=str(getattr(binding, "work_handoff_ref", "") or ""),
+        work_handoff_digest=str(getattr(binding, "work_handoff_digest", "") or ""),
     )
 
 

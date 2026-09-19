@@ -42,7 +42,7 @@ from aota_forge.composition.task_main_host_bootstrap import (
 from aota_forge.core.execution.durable_state import OriginSessionRef
 from aota_forge.core.execution.registry import ExecutorRegistry
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
-from aota_forge.mcp_transport import _SharedAotaMcpAdapter
+from aota_forge.mcp_transport import _SharedAotaMcpAdapter, _to_canonical_binding
 from aota_forge.runtime.task_main.runner import (
     DISPOSITION_DISPATCHED_REVIEW,
     TaskMainMilestoneRunner,
@@ -239,6 +239,14 @@ class TestReviewerDispatchMaterialization:
         task_handoff = bootstrap["TASK_HANDOFF"]
         assert task_handoff["handoff_ref"] == record["handoff_ref"]
         assert task_handoff["handoff_digest"] == record["handoff_digest"]
+        # The MCP transport -> Core binding conversion must preserve the
+        # durable work-item handoff identity (the real Worker child reaches
+        # role.bootstrap through this exact conversion).
+        canonical = _to_canonical_binding(binding)
+        assert canonical.work_handoff_ref == record["handoff_ref"]
+        assert canonical.work_handoff_digest == record["handoff_digest"]
+        canonical_bootstrap = handle_role_bootstrap(canonical, {})
+        assert canonical_bootstrap["TASK_HANDOFF"]["handoff_ref"] == record["handoff_ref"]
         opened = handoff_open(task_handoff["handoff_ref"], "full", sandbox=binding.sandbox)
         assert opened["digest"] == record["handoff_digest"]
         assert opened["envelope"]["task_id"] == REVIEWER_CID

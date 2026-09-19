@@ -219,6 +219,11 @@ class CanonicalDispatchBinding:
     # AF #57 M3/W1: mechanical copy of the trusted prebuilt Governance
     # projection consumed by task-main role.bootstrap; never authority.
     governance_context: Any | None = None
+    # AF #57 M3/RV1: mechanical copy of the trusted durable work-item handoff
+    # identity for the exact task this binding serves. role.bootstrap exposes
+    # it so the Worker opens its own task handoff at startup; never authority.
+    work_handoff_ref: str = ""
+    work_handoff_digest: str = ""
     # AF #59 M1: unbound host-session marker. True only for the always-available
     # global MCP mode where no trusted session/instance binding exists; the
     # transport resolves operation authority from canonical refs at the
