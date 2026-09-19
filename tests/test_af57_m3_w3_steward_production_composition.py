@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,11 +19,19 @@ from aota_forge.composition.stewardship import (
 )
 from aota_forge.composition.task_main import create_task_main_runner
 from aota_forge.governance.project_store import (
+    PLAN_LIFECYCLE_ACTIVE,
+    PLAN_LIFECYCLE_RETIRED,
+    ProjectPlanRecord,
     STEWARD_REPLAY_STATE_ACTIVE,
     STEWARD_REPLAY_STATE_COMPLETED,
     STEWARD_REPLAY_STATE_FAILED_CLOSED,
 )
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
+from aota_forge.adapters.plan_authority.local_governance import local_plan_authority_reference
 from aota_forge.governance.stewardship import (
     GovernanceCheckpointKind,
     MaterializationRequest,
@@ -144,6 +153,7 @@ def _executor(
     live_plan_view=None,
     result_sandbox=None,
     finalizer=None,
+    local_plan_lifecycle_coordinator=None,
 ):
     if result_sandbox is None:
         result_sandbox = _sandbox(tmp_path)
@@ -167,6 +177,7 @@ def _executor(
         semantic_dispatch=dispatch,
         result_sandbox=result_sandbox,
         origin_session_ref="session:w3",
+        local_plan_lifecycle_coordinator=local_plan_lifecycle_coordinator,
     )
     return executor, governance_store, coordinator_store, live_plan_view
 
@@ -208,6 +219,96 @@ def test_deterministic_path_never_dispatches_or_creates_replay(tmp_path: Path) -
     assert outcome.reentry_evidence is not None
     assert calls == []
     assert governance.get_steward_replay(PROJECT_ID, PLAN_ID, "checkpoint:cp-w3-close") is None
+
+
+def test_plan_close_retires_local_plan_only_after_trusted_finalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local_ref = local_plan_authority_reference(PROJECT_ID, PLAN_ID)
+    local_binding = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        authority_ref=local_ref,
+    )
+    trusted_plan = TrustedPlanIdentity(
+        governing_repo=None,
+        plan_issue_number=None,
+        milestone_ref=MILESTONE,
+        plan_ref=local_ref,
+        managed_comments={},
+        authority_binding=local_binding,
+    )
+    checkpoint = replace(
+        _checkpoint(semantic=False, checkpoint_id="cp-w3-plan-close"),
+        kind=GovernanceCheckpointKind.PLAN_CLOSE,
+        trusted_plan=trusted_plan,
+        closure_phase=ClosurePhase.ACCEPTED_CLOSURE,
+        user_gate=TrustedUserGateState(user_approval_satisfied=True),
+        all_milestones_closed=True,
+    )
+    coordinator_store, live_plan_view = _coordinator_world(tmp_path)
+    live_plan_view = replace(live_plan_view, plan_authority=local_ref)
+    state = coordinator_store.get(f"{PROJECT_ID}:{MILESTONE}")
+    assert state is not None
+    coordinator_store.close()
+    coordinator_store = FileBackedTaskMainCoordinatorStore(tmp_path / "local-coordinator.json")
+    coordinator_store.create(replace(state, plan_authority=local_ref))
+    governance = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
+    governance.put_plan(
+        ProjectPlanRecord(
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            lifecycle_state=PLAN_LIFECYCLE_ACTIVE,
+            authority=local_binding,
+        )
+    )
+    executor_probe, _, _, _ = _executor(
+        tmp_path,
+        lambda _handoff: None,
+        governance_store=governance,
+        coordinator_store=coordinator_store,
+        live_plan_view=live_plan_view,
+    )
+    monkeypatch.setattr(
+        runner_module.TaskMainMilestoneRunner,
+        "advance_once",
+        lambda self, *, session_available=True: RunnerOutcome(
+            disposition=DISPOSITION_MILESTONE_CLOSURE_READY,
+            coordinator_id=self.coordinator_id,
+            coordinator_revision=2,
+            milestone_closure_ready=True,
+        ),
+    )
+    composed = create_task_main_runner(
+        coordinator_store=coordinator_store,
+        execution_store=InMemoryExecutionStateStore(),
+        execution_dispatcher=ExecutionDispatcher(ExecutorRegistry()),
+        live_plan_view=live_plan_view,
+        handoff_resolver=lambda _ref: pytest.fail("Plan Close must not dispatch a Worker"),
+        coordinator_id=f"{PROJECT_ID}:{MILESTONE}",
+        stewardship_checkpoint=checkpoint,
+        stewardship_dispatch=lambda _handoff: None,
+        stewardship_sandbox=_sandbox(tmp_path),
+        stewardship_finalizer=executor_probe.finalizer,
+        governance_store=governance,
+    )
+
+    outcome = composed.advance_once()
+
+    assert outcome.milestone_closure_ready is True
+    assert composed.stewardship_outcome is not None
+    assert composed.stewardship_outcome.execution_state is StewardshipExecutionState.FINALIZED
+    retired = governance.get_plan(PROJECT_ID, PLAN_ID)
+    assert retired is not None
+    assert retired.lifecycle_state == PLAN_LIFECYCLE_RETIRED
+    assert retired.revision == 2
+
+    replay = composed.advance_once()
+    assert replay.milestone_closure_ready is True
+    assert composed.stewardship_outcome is not None
+    assert composed.stewardship_outcome.execution_state is StewardshipExecutionState.FINALIZED
+    assert governance.get_plan(PROJECT_ID, PLAN_ID).revision == 2
+    governance.close()
 
 
 def test_semantic_path_uses_existing_dispatch_and_coordinator_finalizer(tmp_path: Path) -> None:

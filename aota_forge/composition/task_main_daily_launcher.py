@@ -109,6 +109,10 @@ from aota_forge.adapters.hermes.session_reentry import (
     PRODUCTION_EXACT_SESSION_REENTRY_TRANSPORT,
 )
 from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter, PlanAuthoritySnapshot
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
 from aota_forge.composition.task_main_host_bootstrap import (
     BOOTSTRAP_ENV_ROOT,
     BOOTSTRAP_EXPLICIT_ENV,
@@ -122,6 +126,9 @@ from aota_forge.composition.task_main_runtime_selection import (
     materialize_thin_task_main_bootstrap,
     read_existing_thin_origin_session_ref,
     select_task_main_runtime_path,
+)
+from aota_forge.composition.plan_authority import (
+    compose_trusted_launch_plan_authority_binding,
 )
 from aota_forge.core.execution.durable_state import (
     UNBOUND_ORIGIN_SESSION_REF_PREFIX,
@@ -1029,6 +1036,35 @@ class DailyTaskMainLauncher:
 
         if len(origin_task_main_session_ref) > 512 or not origin_task_main_session_ref.strip():
             raise ValueError("origin_task_main_session_ref invalid")
+        plan_authority_binding = None
+        adapter_binding = getattr(adapter, "binding", None)
+        if plan_id is not None and str(plan_id).strip():
+            if isinstance(adapter_binding, PlanAuthorityBinding):
+                if (
+                    adapter_binding.plan_id != str(plan_id).strip()
+                    or adapter_binding.authority_ref != live_view.plan_authority
+                ):
+                    raise RuntimeError(
+                        "Plan adapter binding does not match the trusted Plan identity"
+                    )
+                plan_authority_binding = adapter_binding
+            else:
+                try:
+                    plan_authority_binding = compose_trusted_launch_plan_authority_binding(
+                        project_id=project_id,
+                        plan_id=plan_id,
+                        plan_ref=live_view.plan_authority,
+                        local_governance_enabled=False,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Plan authority binding composition failed: {exc}"
+                    ) from exc
+        elif isinstance(adapter_binding, PlanAuthorityBinding):
+            if adapter_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+                raise RuntimeError(
+                    "local Plan authority requires the trusted internal plan_id"
+                )
         write_bootstrap_file(
             worktree_root=worktree_root,
             project_id=project_id,
@@ -1041,6 +1077,7 @@ class DailyTaskMainLauncher:
             next_milestone_view=next_view,
             coordinator_id=coordinator_id,
             plan_id=plan_id,
+            plan_authority_binding=plan_authority_binding,
             governance_store_path=Path(governance_store_path).resolve()
             if governance_store_path is not None
             else None,

@@ -36,6 +36,11 @@ from typing import Any, Mapping
 
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.plan.validation import is_plan_id
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
 from aota_forge.composition.execution import create_production_execution_dispatcher
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
 from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
@@ -288,12 +293,65 @@ def _trusted_plan_identity_from_bootstrap(
     live_view: MilestonePlanView,
     data: Mapping[str, Any],
 ) -> TrustedPlanIdentity:
-    try:
-        governing_repo, _owner, issue_number = parse_plan_ref(live_view.plan_authority)
-    except Exception as exc:
-        raise TrustedBindingError(
-            f"bootstrap live Plan authority is not a canonical Plan reference: {exc}"
-        ) from exc
+    raw_binding = data.get("plan_authority_binding")
+    plan_binding: PlanAuthorityBinding | None = None
+    if raw_binding is not None:
+        try:
+            plan_binding = PlanAuthorityBinding.from_dict(raw_binding)
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"bootstrap Plan authority binding invalid: {exc}"
+            ) from exc
+        raw_plan_id = data.get("plan_id")
+        if raw_plan_id is not None and raw_plan_id != plan_binding.plan_id:
+            raise TrustedBindingError(
+                "bootstrap Plan authority binding does not match plan_id"
+            )
+        if plan_binding.authority_ref != live_view.plan_authority:
+            raise TrustedBindingError(
+                "bootstrap Plan authority binding does not match the live Plan view"
+            )
+        if plan_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+            from aota_forge.adapters.plan_authority.local_governance import (
+                local_plan_authority_reference,
+            )
+
+            expected_ref = local_plan_authority_reference(
+                str(data.get("project_id") or ""),
+                plan_binding.plan_id,
+            )
+            if plan_binding.authority_ref != expected_ref:
+                raise TrustedBindingError(
+                    "bootstrap local Plan authority does not match the trusted project/Plan identity"
+                )
+            governing_repo = None
+            issue_number = None
+        else:
+            try:
+                governing_repo, _owner, issue_number = parse_plan_ref(plan_binding.authority_ref)
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"bootstrap GitHub Plan authority is not a canonical Plan reference: {exc}"
+                ) from exc
+    else:
+        try:
+            governing_repo, _owner, issue_number = parse_plan_ref(live_view.plan_authority)
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"bootstrap live Plan authority is not a canonical Plan reference: {exc}"
+            ) from exc
+        raw_plan_id = data.get("plan_id")
+        if raw_plan_id is not None:
+            try:
+                plan_binding = PlanAuthorityBinding(
+                    plan_id=raw_plan_id,
+                    source_kind=PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
+                    authority_ref=live_view.plan_authority,
+                )
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"bootstrap GitHub Plan authority binding invalid: {exc}"
+                ) from exc
     raw_comments = data.get("managed_comments", {})
     if raw_comments is None:
         raw_comments = {}
@@ -306,6 +364,7 @@ def _trusted_plan_identity_from_bootstrap(
             milestone_ref=live_view.milestone_id,
             plan_ref=live_view.plan_authority,
             managed_comments=dict(raw_comments),
+            authority_binding=plan_binding,
         )
     except Exception as exc:
         raise TrustedBindingError(
@@ -392,6 +451,7 @@ def _build_stewardship_checkpoint(
     trusted_plan: TrustedPlanIdentity,
     semantic_facts: SemanticFactSet,
     plan_id: str | None,
+    all_milestones_closed: bool | None = None,
 ) -> StewardshipCheckpoint:
     if getattr(runner_outcome, "milestone_closure_ready", False) is not True:
         raise TrustedBindingError(
@@ -418,9 +478,22 @@ def _build_stewardship_checkpoint(
         )
     )
     checkpoint_id = f"stewardship:{hashlib.sha256(identity_material.encode('utf-8')).hexdigest()}"
+    # The canonical Plan projection supplies the next trusted Milestone view;
+    # absence plus the durable user gate means this is an accepted final Plan
+    # closure. No model or runner text can assert the Plan-close fact.
+    next_milestone_view_is_none = (
+        all_milestones_closed is True
+        and plan_id is not None
+        and state.user_approval_satisfied is True
+    )
+    checkpoint_kind = (
+        GovernanceCheckpointKind.PLAN_CLOSE
+        if next_milestone_view_is_none
+        else GovernanceCheckpointKind.MILESTONE_CLOSE
+    )
     return StewardshipCheckpoint(
         checkpoint_id=checkpoint_id,
-        kind=GovernanceCheckpointKind.MILESTONE_CLOSE,
+        kind=checkpoint_kind,
         project_id=state.project_id,
         trusted_binding=TrustedProjectBinding(
             project_id=sandbox.project_id,
@@ -430,7 +503,11 @@ def _build_stewardship_checkpoint(
         trusted_plan=trusted_plan,
         plan_id=plan_id,
         milestone_ref=state.milestone_id,
-        closure_phase=ClosurePhase.REVIEWED_CLOSURE,
+        closure_phase=(
+            ClosurePhase.ACCEPTED_CLOSURE
+            if next_milestone_view_is_none
+            else ClosurePhase.REVIEWED_CLOSURE
+        ),
         readiness=readiness,
         user_gate=TrustedUserGateState(
             user_approval_satisfied=state.user_approval_satisfied,
@@ -439,6 +516,7 @@ def _build_stewardship_checkpoint(
         semantic_facts=semantic_facts,
         open_blocker_refs=state.open_blockers,
         plan_authority_ref=state.plan_authority,
+        all_milestones_closed=True if next_milestone_view_is_none else None,
     )
 
 
@@ -1383,6 +1461,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             trusted_plan=trusted_plan,
             semantic_facts=semantic_facts,
             plan_id=plan_id,
+            all_milestones_closed=next_view is None,
         )
 
     stewardship_dispatch_factory = _production_steward_dispatch_factory(
@@ -1471,6 +1550,14 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     except Exception:
         restricted_shell_authority = None
 
+    trusted_plan_binding = None
+    if trusted_plan.authority_binding is not None:
+        if trusted_plan.authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE:
+            from aota_forge.work_plane.github_tools import TrustedPlanGitHubBinding
+
+            trusted_plan_binding = TrustedPlanGitHubBinding.from_plan_ref(
+                trusted_plan.authority_binding.authority_ref
+            )
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{project_id}:{live_view.milestone_id}:task-main:{origin_session[:8]}",
         project_id=project_id,
@@ -1482,6 +1569,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         read_authorities=read_authorities,
         mutation_authority=None,
         restricted_shell_authority=restricted_shell_authority,
+        plan_binding=trusted_plan_binding,
+        plan_authority_binding=trusted_plan.authority_binding,
         trusted_task_main_context=ctx,
     )
     return binding
@@ -1501,6 +1590,7 @@ def write_bootstrap_file(
     executor_id: str = "hermes",
     coordinator_id: str | None = None,
     plan_id: str | None = None,
+    plan_authority_binding: PlanAuthorityBinding | None = None,
     governance_store_path: Path | None = None,
     work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
     stewardship_semantic_facts: Mapping[str, Any] | SemanticFactSet | None = None,
@@ -1577,6 +1667,16 @@ def write_bootstrap_file(
         if not is_plan_id(plan_id):
             raise ValueError("plan_id must be a canonical internal Plan ID when supplied")
         payload["plan_id"] = plan_id
+    if plan_authority_binding is not None:
+        if not isinstance(plan_authority_binding, PlanAuthorityBinding):
+            raise ValueError("plan_authority_binding must be a PlanAuthorityBinding")
+        if plan_id != plan_authority_binding.plan_id:
+            raise ValueError("plan_authority_binding must match plan_id")
+        if plan_authority_binding.authority_ref != live_plan_view.plan_authority:
+            raise ValueError(
+                "plan_authority_binding must match the live Plan authority"
+            )
+        payload["plan_authority_binding"] = plan_authority_binding.to_dict()
     if governance_store_path is not None:
         payload["governance_store_path"] = str(governance_store_path.resolve())
     if stewardship_semantic_facts is not None:

@@ -70,7 +70,6 @@ from aota_forge.adapters.plan_authority.binding import (
 )
 from aota_forge.composition.plan_authority import (
     PlanAuthorityCompositionError,
-    compose_plan_authority_binding,
     resolve_bound_plan_authority,
 )
 from aota_forge.composition.project_binding import (
@@ -729,19 +728,32 @@ def compose_thin_task_main_host(
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
     )
-    # AF #54 M5/W2: mechanically ground the trusted bound-Plan GitHub
-    # identity once at launch; GitHub authorities derive only from it. An
-    # unbound launch carries no GitHub authority (fail closed at dispatch).
+    # AF #54 M5/W2 / AF #57 M3: mechanically ground the trusted bound-Plan
+    # GitHub identity once at launch; GitHub authorities derive only from it.
+    # A canonical local authority ref is validated against the trusted
+    # project/Plan pair and never sent through the GitHub parser.
     plan_binding: TrustedPlanGitHubBinding | None = None
     github_authorities: tuple[Any, ...] = ()
     if plan_ref is not None and str(plan_ref).strip():
-        plan_binding = TrustedPlanGitHubBinding.from_plan_ref(str(plan_ref).strip())
-        github_authorities = (
-            create_github_authority(sandbox, handoff, GITHUB_ISSUE_READ_DESCRIPTOR, plan_binding),
-            create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENTS_READ_DESCRIPTOR, plan_binding),
-            create_github_authority(sandbox, handoff, GITHUB_ISSUE_UPDATE_DESCRIPTOR, plan_binding),
-            create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENT_UPDATE_DESCRIPTOR, plan_binding),
-        )
+        candidate_plan_ref = str(plan_ref).strip()
+        local_ref_matches = False
+        if local_governance_binding is not None and normalized_plan_id is not None:
+            from aota_forge.adapters.plan_authority.local_governance import (
+                local_plan_authority_reference,
+            )
+
+            local_ref_matches = candidate_plan_ref == local_plan_authority_reference(
+                pid,
+                normalized_plan_id,
+            )
+        if not local_ref_matches:
+            plan_binding = TrustedPlanGitHubBinding.from_plan_ref(candidate_plan_ref)
+            github_authorities = (
+                create_github_authority(sandbox, handoff, GITHUB_ISSUE_READ_DESCRIPTOR, plan_binding),
+                create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENTS_READ_DESCRIPTOR, plan_binding),
+                create_github_authority(sandbox, handoff, GITHUB_ISSUE_UPDATE_DESCRIPTOR, plan_binding),
+                create_github_authority(sandbox, handoff, GITHUB_ISSUE_COMMENT_UPDATE_DESCRIPTOR, plan_binding),
+            )
 
     # AF #57 M1/W4: one source-neutral Plan Authority binding per launch.
     # The internal Plan identity is supplied explicitly by the trusted
@@ -751,10 +763,14 @@ def compose_thin_task_main_host(
     plan_authority_binding: PlanAuthorityBinding | None = None
     if normalized_plan_id is not None:
         try:
-            plan_authority_binding = compose_plan_authority_binding(
+            from aota_forge.composition.plan_authority import (
+                compose_trusted_launch_plan_authority_binding,
+            )
+
+            plan_authority_binding = compose_trusted_launch_plan_authority_binding(
                 project_id=pid,
                 plan_id=normalized_plan_id,
-                github_plan_ref=plan_binding.plan_ref if plan_binding is not None else None,
+                plan_ref=plan_binding.plan_ref if plan_binding is not None else plan_ref,
                 local_governance_enabled=local_governance_binding is not None,
             )
         except PlanAuthorityCompositionError as exc:
@@ -809,6 +825,10 @@ def compose_thin_task_main_host(
             if resolved_governance_store is not None:
                 resolved_governance_store.close()
             raise TrustedBindingError(str(exc)) from exc
+        if plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+            observed_binding = getattr(resolved_plan_authority, "binding", None)
+            if isinstance(observed_binding, PlanAuthorityBinding):
+                plan_authority_binding = observed_binding
 
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",

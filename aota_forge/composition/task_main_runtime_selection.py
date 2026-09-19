@@ -394,19 +394,13 @@ def materialize_thin_task_main_bootstrap(
         if len(remote) > 64 or not _SAFE_ID.fullmatch(remote):
             raise TaskMainRuntimeSelectionError("thin bootstrap git remote invalid")
         payload["git_remote"] = remote
-    # AF #54 M5/W2: trusted bound-Plan reference ("owner/repo#number").
-    # Operator/runtime-supplied at launch; the model never re-states owner,
-    # repo or issue per call — GitHub operations mechanically ground from it.
+    # AF #54 M5/W2 / AF #57 M3: trusted bound-Plan reference. A canonical
+    # local-governance reference is accepted only when it matches the trusted
+    # project/Plan pair; every other reference retains the GitHub parser.
     if plan_ref is not None and str(plan_ref).strip():
         candidate_plan = str(plan_ref).strip()
         if len(candidate_plan) > 256:
             raise TaskMainRuntimeSelectionError("thin bootstrap plan_ref invalid")
-        try:
-            from aota_forge.work_plane.github_tools import parse_plan_ref
-
-            parse_plan_ref(candidate_plan)
-        except Exception as exc:
-            raise TaskMainRuntimeSelectionError(f"thin bootstrap plan_ref invalid: {exc}") from exc
         payload["plan_ref"] = candidate_plan
     # AF #57 M1/W4: trusted internal Plan identity for the source-neutral
     # PlanAuthorityBinding (never inferred; absent => plan-less legacy launch).
@@ -442,6 +436,36 @@ def materialize_thin_task_main_bootstrap(
                 "thin bootstrap governance_base must be an existing directory"
             )
         payload["governance_base"] = str(resolved_governance_base)
+    raw_plan_id = str(payload.get("plan_id") or "").strip() or None
+    local_governance_enabled = "governance_base" in payload
+    launch_binding = None
+    if raw_plan_id is not None or local_governance_enabled:
+        try:
+            from aota_forge.composition.plan_authority import (
+                compose_trusted_launch_plan_authority_binding,
+            )
+
+            launch_binding = compose_trusted_launch_plan_authority_binding(
+                project_id=pid,
+                plan_id=raw_plan_id,
+                plan_ref=payload.get("plan_ref"),
+                local_governance_enabled=local_governance_enabled,
+            )
+        except Exception as exc:
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap Plan authority binding invalid: {exc}"
+            ) from exc
+        if launch_binding is not None:
+            payload["plan_authority_binding"] = launch_binding.to_dict()
+    if payload.get("plan_ref") and launch_binding is None:
+        try:
+            from aota_forge.work_plane.github_tools import parse_plan_ref
+
+            parse_plan_ref(str(payload["plan_ref"]))
+        except Exception as exc:
+            raise TaskMainRuntimeSelectionError(
+                f"thin bootstrap plan_ref invalid: {exc}"
+            ) from exc
     if governance_store_path is not None and str(governance_store_path).strip():
         payload["governance_store_path"] = str(
             _validate_governance_store_path(governance_store_path)
@@ -627,6 +651,21 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
     # operator-owned bootstrap channel (digest-covered). Absent => the launch
     # stays plan-less/legacy; never inferred from the Issue or the worktree.
     plan_id = str(content.get("plan_id") or "").strip() or None
+    plan_authority_binding = None
+    raw_plan_authority_binding = content.get("plan_authority_binding")
+    if raw_plan_authority_binding is not None:
+        try:
+            from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+
+            plan_authority_binding = PlanAuthorityBinding.from_dict(raw_plan_authority_binding)
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"thin task-main bootstrap Plan authority binding invalid: {exc}"
+            ) from exc
+        if plan_id != plan_authority_binding.plan_id:
+            raise TrustedBindingError(
+                "thin task-main bootstrap Plan authority binding does not match plan_id"
+            )
     governance_context = content.get("governance_context")
     if governance_context is not None and not isinstance(governance_context, Mapping):
         raise TrustedBindingError(
@@ -670,6 +709,25 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
         plan_id=plan_id,
         governance_context=governance_context,
     )
+    if plan_authority_binding is not None:
+        actual_binding = host.trusted_binding.plan_authority_binding
+        if (
+            actual_binding is None
+            or actual_binding.plan_id != plan_authority_binding.plan_id
+            or actual_binding.source_kind != plan_authority_binding.source_kind
+            or actual_binding.authority_ref != plan_authority_binding.authority_ref
+            or (
+                plan_authority_binding.source_revision is not None
+                and actual_binding.source_revision != plan_authority_binding.source_revision
+            )
+            or (
+                plan_authority_binding.source_digest is not None
+                and actual_binding.source_digest != plan_authority_binding.source_digest
+            )
+        ):
+            raise TrustedBindingError(
+                "thin task-main host Plan authority binding disagrees with bootstrap"
+            )
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:
     # telemetry configuration never breaks binding construction.

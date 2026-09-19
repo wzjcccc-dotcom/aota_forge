@@ -310,6 +310,11 @@ class LocalPlanAuthorityReadAdapter(PlanAuthorityReadAdapter):
         return self._destination
 
     @property
+    def binding(self) -> PlanAuthorityBinding:
+        """Return the trusted source-neutral binding used by this reader."""
+        return self._binding
+
+    @property
     def plan_authority(self) -> str:
         return self._binding.authority_ref
 

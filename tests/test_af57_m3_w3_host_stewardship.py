@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from aota_forge.composition import task_main_host_bootstrap as host
 from aota_forge.adapters.execution.reference import ReferenceFakeExecutorAdapter
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
+from aota_forge.adapters.plan_authority.local_governance import local_plan_authority_reference
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
 from aota_forge.core.execution.registry import ExecutorRegistry
@@ -156,6 +162,27 @@ def test_host_rebuilds_checkpoint_from_durable_review_receipt(tmp_path: Path) ->
     assert checkpoint.readiness is not None
     assert checkpoint.readiness.ready_for_project_steward is True
     assert checkpoint.readiness.reviewed_frontier_ref.ref == "frontier:rv1"
+
+
+def test_host_rebuilds_local_plan_identity_without_github_parser() -> None:
+    local_ref = local_plan_authority_reference(PROJECT_ID, PLAN_ID)
+    binding = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        authority_ref=local_ref,
+    )
+    identity = host._trusted_plan_identity_from_bootstrap(
+        replace(_plan_view(), plan_authority=local_ref),
+        {
+            "project_id": PROJECT_ID,
+            "plan_id": PLAN_ID,
+            "plan_authority_binding": binding.to_dict(),
+        },
+    )
+
+    assert identity.governing_repo is None
+    assert identity.plan_issue_number is None
+    assert identity.authority_binding == binding
 
 
 def test_host_rejects_governance_store_outside_trusted_worktree(

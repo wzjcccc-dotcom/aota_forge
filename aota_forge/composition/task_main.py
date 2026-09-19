@@ -31,6 +31,14 @@ from aota_forge.governance.project_store import (
     ProjectGovernanceStore,
     StewardLogicalReplayRecord,
 )
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+)
+from aota_forge.core.journal.store import (
+    FileBackedDurableJournalStore,
+    InMemoryDurableJournalStore,
+)
+from aota_forge.governance.local_lifecycle import LocalPlanLifecycleCoordinator
 from aota_forge.governance.projection_lifecycle import GovernanceProjectionLifecycle
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.governance.stewardship import StewardshipCheckpoint
@@ -369,6 +377,22 @@ def _default_stewardship_dispatch(_handoff: TaskHandoff) -> StewardResult | None
     )
 
 
+def _open_local_plan_lifecycle_coordinator(
+    *,
+    governance_store: ProjectGovernanceStore,
+    coordinator_store: TaskMainCoordinatorStore | str | Path,
+) -> LocalPlanLifecycleCoordinator:
+    """Reuse the existing lifecycle coordinator and durable journal seam."""
+    coordinator_path = _coordinator_storage_path(coordinator_store)
+    if coordinator_path is None:
+        journal_store = InMemoryDurableJournalStore()
+    else:
+        journal_store = FileBackedDurableJournalStore(
+            coordinator_path.with_name("governance-journal.json")
+        )
+    return LocalPlanLifecycleCoordinator(governance_store, journal_store)
+
+
 def create_task_main_runner(
     *,
     coordinator_store: TaskMainCoordinatorStore | str | Path,
@@ -397,6 +421,7 @@ def create_task_main_runner(
     stewardship_repo_path: str | Path | None = None,
     stewardship_origin_session_ref: str | None = None,
     governance_store: ProjectGovernanceStore | str | Path | None = None,
+    stewardship_local_plan_lifecycle_coordinator: Any | None = None,
 ) -> TaskMainMilestoneRunner | StewardshipTaskMainComposition:
     """Bounded autonomous runner over already-wired M2/W1/W2 stores (ONE iteration)."""
     store = (
@@ -488,6 +513,17 @@ def create_task_main_runner(
             selected_dispatch = stewardship_dispatch_factory(checkpoint)
         if not callable(selected_dispatch):
             raise TypeError("trusted stewardship dispatch factory must return a callable")
+        local_lifecycle_coordinator = stewardship_local_plan_lifecycle_coordinator
+        authority_binding = checkpoint.trusted_plan.authority_binding
+        if (
+            authority_binding is not None
+            and authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            and local_lifecycle_coordinator is None
+        ):
+            local_lifecycle_coordinator = _open_local_plan_lifecycle_coordinator(
+                governance_store=governance,
+                coordinator_store=coordinator_store,
+            )
         result_task_id_resolver = None
         if stewardship_result_task_id_resolver_factory is not None:
             result_task_id_resolver = stewardship_result_task_id_resolver_factory(checkpoint)
@@ -504,6 +540,7 @@ def create_task_main_runner(
             result_sandbox=stewardship_sandbox,
             result_task_id_resolver=result_task_id_resolver,
             origin_session_ref=origin_session_ref,
+            local_plan_lifecycle_coordinator=local_lifecycle_coordinator,
         )
 
     try:
@@ -542,6 +579,7 @@ def create_task_main_control_service(
     stewardship_repo_path: str | Path | None = None,
     stewardship_origin_session_ref: str | None = None,
     governance_store: ProjectGovernanceStore | str | Path | None = None,
+    stewardship_local_plan_lifecycle_coordinator: Any | None = None,
     projection_refresh_hook: Callable[[], Any] | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
@@ -564,6 +602,7 @@ def create_task_main_control_service(
             stewardship_repo_path=stewardship_repo_path,
             stewardship_origin_session_ref=stewardship_origin_session_ref,
             governance_store=governance_store,
+            stewardship_local_plan_lifecycle_coordinator=stewardship_local_plan_lifecycle_coordinator,
         )
 
     if projection_refresh_hook is None:

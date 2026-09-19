@@ -148,6 +148,47 @@ def compose_plan_authority_binding(
     )
 
 
+def compose_trusted_launch_plan_authority_binding(
+    *,
+    project_id: Any,
+    plan_id: Any,
+    plan_ref: Any = None,
+    local_governance_enabled: bool = False,
+) -> PlanAuthorityBinding | None:
+    """Compose and validate the one source selected for a production launch.
+
+    A local reference is accepted only when it exactly equals the canonical
+    reference derived from the trusted project/Plan identity. Any other
+    reference is treated as the existing GitHub source and must pass the
+    existing GitHub parser; it is never accepted as an opaque local alias.
+    """
+    normalized_plan_id = _clean(plan_id)
+    candidate_ref = _clean(plan_ref)
+    if local_governance_enabled and normalized_plan_id is not None:
+        from aota_forge.adapters.plan_authority.local_governance import (
+            local_plan_authority_reference,
+        )
+
+        expected_local_ref = local_plan_authority_reference(
+            _clean(project_id) or "",
+            normalized_plan_id,
+        )
+        if candidate_ref == expected_local_ref:
+            candidate_ref = None
+
+    binding = compose_plan_authority_binding(
+        project_id=project_id,
+        plan_id=normalized_plan_id,
+        github_plan_ref=candidate_ref,
+        local_governance_enabled=local_governance_enabled,
+    )
+    if binding is not None and binding.source_kind == PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE:
+        from aota_forge.work_plane.github_tools import TrustedPlanGitHubBinding
+
+        TrustedPlanGitHubBinding.from_plan_ref(binding.authority_ref)
+    return binding
+
+
 def resolve_bound_plan_authority(
     binding: PlanAuthorityBinding,
     *,
@@ -237,5 +278,6 @@ __all__ = [
     "LOCAL_GOVERNANCE_PATH_IS_AUTHORITY",
     "PlanAuthorityCompositionError",
     "compose_plan_authority_binding",
+    "compose_trusted_launch_plan_authority_binding",
     "resolve_bound_plan_authority",
 ]

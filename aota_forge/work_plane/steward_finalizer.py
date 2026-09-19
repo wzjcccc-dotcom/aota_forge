@@ -324,20 +324,58 @@ def make_trusted_binding_for_test(project_id: str = "test-project") -> TrustedPr
 
 @dataclass(frozen=True)
 class TrustedPlanIdentity:
-    """Trusted Plan/Milestone identity (governing repo/issue + managed mapping)."""
+    """Trusted Plan/Milestone identity for GitHub or local authority.
 
-    governing_repo: str
-    plan_issue_number: int
+    GitHub-bound identities retain the canonical repository/issue fields. A
+    local Governance 2.0 identity carries the existing source-neutral binding
+    instead; it never fabricates a GitHub locator.
+    """
+
+    governing_repo: str | None
+    plan_issue_number: int | None
     milestone_ref: str
     plan_ref: str
     managed_comments: dict[str, str]  # role -> comment_id (numeric REST id as str)
+    authority_binding: Any | None = None
 
     def __post_init__(self) -> None:
-        repo = _require_non_empty_str(self.governing_repo, "governing_repo", max_length=256)
-        if not _SAFE_REPO_RE.fullmatch(repo):
-            raise ValueError(f"governing_repo must be 'owner/repo', got {repo!r}")
-        object.__setattr__(self, "governing_repo", repo)
-        if type(self.plan_issue_number) is not int or self.plan_issue_number <= 0:
+        binding = self.authority_binding
+        if binding is not None:
+            from aota_forge.adapters.plan_authority.binding import (
+                PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
+                PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+                PlanAuthorityBinding,
+            )
+
+            if not isinstance(binding, PlanAuthorityBinding):
+                raise TypeError("authority_binding must be a PlanAuthorityBinding or None")
+            if binding.authority_ref != self.plan_ref:
+                raise ValueError("authority_binding authority_ref must match plan_ref")
+            if binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+                if self.governing_repo is not None or self.plan_issue_number is not None:
+                    raise ValueError("local authority identity must not carry GitHub repository/issue fields")
+            elif binding.source_kind == PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE:
+                if self.governing_repo is None or self.plan_issue_number is None:
+                    raise ValueError("GitHub authority identity requires repository/issue fields")
+            else:  # pragma: no cover - PlanAuthorityBinding rejects unknown kinds
+                raise ValueError(f"unsupported Plan authority source kind: {binding.source_kind!r}")
+        else:
+            if self.governing_repo is None:
+                raise ValueError("governing_repo is required without a source-neutral authority binding")
+            repo = _require_non_empty_str(self.governing_repo, "governing_repo", max_length=256)
+            if not _SAFE_REPO_RE.fullmatch(repo):
+                raise ValueError(f"governing_repo must be 'owner/repo', got {repo!r}")
+            object.__setattr__(self, "governing_repo", repo)
+            if type(self.plan_issue_number) is not int or self.plan_issue_number <= 0:
+                raise ValueError(f"plan_issue_number must be positive int, got {self.plan_issue_number!r}")
+        if self.governing_repo is not None:
+            repo = _require_non_empty_str(self.governing_repo, "governing_repo", max_length=256)
+            if not _SAFE_REPO_RE.fullmatch(repo):
+                raise ValueError(f"governing_repo must be 'owner/repo', got {repo!r}")
+            object.__setattr__(self, "governing_repo", repo)
+        if self.plan_issue_number is not None and (
+            type(self.plan_issue_number) is not int or self.plan_issue_number <= 0
+        ):
             raise ValueError(f"plan_issue_number must be positive int, got {self.plan_issue_number!r}")
         object.__setattr__(self, "milestone_ref", _require_non_empty_str(self.milestone_ref, "milestone_ref", max_length=128))
         object.__setattr__(self, "plan_ref", _require_non_empty_str(self.plan_ref, "plan_ref"))
@@ -1330,6 +1368,11 @@ class TrustedStewardFinalizer:
 
         # 5. Trusted Plan identity for GitHub targets + managed-comment authority.
         for u in intent.github_updates:
+            if plan.governing_repo is None or plan.plan_issue_number is None:
+                raise FinalizerError(
+                    FinalizerFailure.MANAGED_COMMENT_IDENTITY_MISMATCH,
+                    "local Governance authority cannot materialize GitHub managed comments",
+                )
             trusted_cid = plan.comment_id_for(u.role)
             if trusted_cid is None:
                 raise FinalizerError(
