@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 
+import pytest
 from aota_forge.composition.governed_read import (
     create_bound_cross_project_grant,
     resolve_cross_project_target_project,
 )
+from aota_forge.composition.task_main_daily_launcher import (
+    DailyTaskMainLauncher,
+    launch_daily_task_main,
+)
+from aota_forge.composition.task_main_runtime_selection import TaskMainRuntimeSelectionError
 from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
 from aota_forge.core.ingress import reset_execution_dispatcher
 from aota_forge.governance.cross_project_grant import PreapprovedByPlan
@@ -19,7 +27,17 @@ from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
     PlanAuthorityBinding,
 )
+from aota_forge.mcp_transport import create_aota_invoke_dispatch
+from aota_forge.adapters.hermes.session_reentry import OUTCOME_COMPLETED
+from aota_forge.runtime.trusted_runtime_binding import (
+    PRE_RESOLVED_BINDING_ENV,
+    load_binding_from_envelope,
+)
 from aota_forge.work_plane.durable_result_store import persist_durable_payload
+from aota_forge.work_plane.authorized_roots import (
+    AuthorizedEvidenceRootError,
+    ROOT_REF_AUTHORIZED_EVIDENCE as AUTHORIZED_EVIDENCE_ROOT_REF,
+)
 
 
 NATIVE = "native-governed"
@@ -66,6 +84,38 @@ class _FakeHostClient:
         return {"adapter_handle": "fake", "status": "running", "dispatch_time": "now"}
 
 
+class _ResumeProbeLauncher(DailyTaskMainLauncher):
+    """Keep the launcher re-entry seam, replacing only the external host call."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reentry_context = None
+        self.reentry_envelope = None
+
+    def _require_task_main_tool_surface(self, *, ctx, session_id, phase, env=None):
+        return ("aota.invoke",)
+
+    def _run_autonomous_completion_continuation(
+        self, *, ctx, session_id, timeout_seconds=None, trace_path=None
+    ):
+        return object()
+
+    def _build_exact_session_reentry(self, *, ctx, timeout_seconds):
+        self.reentry_context = ctx
+
+        class _Reentry:
+            def reenter(inner_self, session_id, payload):
+                self.reentry_envelope = os.environ[PRE_RESOLVED_BINDING_ENV]
+                return SimpleNamespace(
+                    outcome=OUTCOME_COMPLETED,
+                    session_id=session_id,
+                    payload=payload,
+                    delivery_outcomes=(),
+                )
+
+        return _Reentry()
+
+
 def _checkout(parent: Path, name: str, project_id: str, source: str) -> Path:
     root = parent / name
     (root / ".aota").mkdir(parents=True)
@@ -79,7 +129,23 @@ def _checkout(parent: Path, name: str, project_id: str, source: str) -> Path:
 
 def _runtime_config(tmp_path: Path) -> Path:
     executable = tmp_path / "hermes-stub"
-    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.write_text(
+        "#!/bin/sh\n"
+        "usage=''\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--usage-file\" ]; then\n"
+        "    usage=\"$2\"\n"
+        "    shift 2\n"
+        "  else\n"
+        "    shift\n"
+        "  fi\n"
+        "done\n"
+        "if [ -n \"$usage\" ]; then\n"
+        "  printf '%s\\n' '{\"session_id\":\"session:af57-hermes\",\"completed\":true}' > \"$usage\"\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
     executable.chmod(0o755)
     config = tmp_path / "runtime.json"
     config.write_text(
@@ -132,6 +198,19 @@ def _plan() -> ProjectPlanRecord:
             authority_ref=f"{NATIVE}/plans/{PLAN_ID}",
         ),
     )
+
+
+def _binding_from_launcher_context(launcher: DailyTaskMainLauncher, ctx):
+    env = launcher.build_env(ctx)
+    return load_binding_from_envelope(env[PRE_RESOLVED_BINDING_ENV])
+
+
+def _active_grants(database: Path):
+    governance = SQLiteProjectGovernanceStore(database)
+    try:
+        return governance.list_cross_project_grants(NATIVE, active_only=True)
+    finally:
+        governance.close()
 
 
 def test_thin_production_activation_materializes_live_grant_evidence_and_identity(
@@ -293,3 +372,201 @@ def test_thin_bootstrap_round_trip_keeps_evidence_and_live_grant_inputs(
         assert binding.authorized_roots.get(grant.grant_id) is not None
     finally:
         reset_execution_dispatcher()
+
+
+def test_launch_daily_task_main_forwards_trusted_evidence_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _native_root, _target_root, worktree, registry, evidence_base = _fixture(tmp_path)
+    cfg = _runtime_config(tmp_path)
+    captured = {}
+
+    def fake_launch(self, **kwargs):
+        captured.update(kwargs)
+        ctx = self.prepare(
+            worktree_root=kwargs["worktree_root"],
+            project_id=kwargs["project_id"],
+            worktree_id=kwargs["worktree_id"],
+            runtime_config_path=kwargs["runtime_config_path"],
+            origin_task_main_session_ref="session:af57-wrapper",
+            evidence_base=kwargs["evidence_base"],
+            source_repository=kwargs["source_repository"],
+            registry_path=kwargs["registry_path"],
+        )
+        captured["binding"] = _binding_from_launcher_context(self, ctx)
+        return ctx, "session:af57-wrapper"
+
+    monkeypatch.setattr(DailyTaskMainLauncher, "launch", fake_launch)
+    try:
+        ctx, session_id = launch_daily_task_main(
+            worktree,
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            plan_adapter=object(),
+            evidence_base=evidence_base,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+        )
+        assert session_id == "session:af57-wrapper"
+        assert captured["evidence_base"] == evidence_base
+        binding = captured["binding"]
+        assert binding.authorized_roots is not None
+        assert binding.authorized_roots.evidence_binding is not None
+        assert binding.authorized_roots.get(AUTHORIZED_EVIDENCE_ROOT_REF) is not None
+        assert ctx.runtime_path == "thin"
+    finally:
+        reset_execution_dispatcher()
+
+
+def test_daily_task_main_resume_reconstructs_evidence_and_reloads_live_grants(
+    tmp_path: Path,
+):
+    _native_root, _target_root, worktree, registry, evidence_base = _fixture(tmp_path)
+    cfg = _runtime_config(tmp_path)
+    database = tmp_path / "governance.sqlite3"
+    governance = SQLiteProjectGovernanceStore(database)
+    governance.put_plan(_plan())
+    target_binding = resolve_cross_project_target_project(
+        project_id=TARGET,
+        registry_path=registry,
+    )
+    grant = create_bound_cross_project_grant(
+        store=governance,
+        requesting_project=NATIVE,
+        target_binding=target_binding,
+        authority=PreapprovedByPlan(plan_id=PLAN_ID),
+    )
+    governance.close()
+
+    try:
+        launcher_a = _ResumeProbeLauncher()
+        ctx_a, launch_session_id = launcher_a.launch(
+            worktree_root=worktree,
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            initial_prompt="operator launch",
+            timeout_seconds=5,
+            completion_timeout_seconds=1,
+            max_productive_continuations=0,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            governance_store_path=database,
+            evidence_base=evidence_base,
+        )
+        assert launch_session_id == "session:af57-hermes"
+        binding_a = _binding_from_launcher_context(launcher_a, ctx_a)
+        invoke_a = create_aota_invoke_dispatch(binding_a)
+
+        assert len(_active_grants(database)) == 1
+        local_before = invoke_a(
+            "workspace.read",
+            {"path": "receipt.json", "root_ref": AUTHORIZED_EVIDENCE_ROOT_REF},
+        )
+        assert local_before["ok"] is True
+        assert binding_a.authorized_roots is not None
+        assert binding_a.authorized_roots.evidence_binding is not None
+
+        foreign_read_before = invoke_a(
+            "workspace.read",
+            {"path": "foreign.txt", "root_ref": grant.grant_id},
+        )
+        assert foreign_read_before["ok"] is True
+        assert foreign_read_before["payload"]["source_project_id"] == TARGET
+        foreign_search_before = invoke_a(
+            "workspace.search",
+            {"query": "foreign production needle", "root_ref": grant.grant_id},
+        )
+        assert foreign_search_before["ok"] is True
+
+        revoked = SQLiteProjectGovernanceStore(database)
+        try:
+            revoked.revoke_cross_project_grant(grant.grant_id, grant.revision)
+        finally:
+            revoked.close()
+        assert len(_active_grants(database)) == 0
+
+        launcher_b = _ResumeProbeLauncher()
+        resumed = launcher_b.resume(
+            worktree_root=worktree,
+            session_id="session:af57-reentry",
+            payload="operator re-entry",
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            governance_store_path=database,
+            evidence_base=evidence_base,
+        )
+        assert resumed.outcome == OUTCOME_COMPLETED
+        assert launcher_b.reentry_context is not None
+        assert launcher_b.reentry_envelope is not None
+
+        # The real resume path refreshed the trusted bootstrap; this load is the
+        # same verified child-side reconstruction used by the production MCP.
+        binding_b = load_binding_from_envelope(launcher_b.reentry_envelope)
+        invoke_b = create_aota_invoke_dispatch(binding_b)
+        assert binding_b is not binding_a
+        assert binding_b.authorized_roots is not binding_a.authorized_roots
+        assert binding_b.authorized_roots is not None
+        assert binding_b.authorized_roots.evidence_binding is not None
+        assert binding_b.authorized_roots.get(AUTHORIZED_EVIDENCE_ROOT_REF) is not None
+        assert binding_b.authorized_roots.get(grant.grant_id) is None
+
+        local_after = invoke_b(
+            "workspace.read",
+            {"path": "receipt.json", "root_ref": AUTHORIZED_EVIDENCE_ROOT_REF},
+        )
+        assert local_after["ok"] is True
+        foreign_read_after = invoke_b(
+            "workspace.read",
+            {"path": "foreign.txt", "root_ref": grant.grant_id},
+        )
+        assert foreign_read_after["ok"] is False
+        assert foreign_read_after["error"]["code"] == "AUTHORIZED_ROOT_UNKNOWN"
+        foreign_search_after = invoke_b(
+            "workspace.search",
+            {"query": "foreign production needle", "root_ref": grant.grant_id},
+        )
+        assert foreign_search_after["ok"] is False
+        assert foreign_search_after["error"]["code"] == "AUTHORIZED_ROOT_UNKNOWN"
+        assert len(_active_grants(database)) == 0
+    finally:
+        reset_execution_dispatcher()
+
+
+def test_daily_task_main_invalid_evidence_base_fails_closed(tmp_path: Path):
+    _native_root, _target_root, worktree, registry, evidence_base = _fixture(tmp_path)
+    cfg = _runtime_config(tmp_path)
+    launcher = DailyTaskMainLauncher()
+    missing = tmp_path / "missing-evidence"
+    with pytest.raises(TaskMainRuntimeSelectionError):
+        launcher.prepare(
+            worktree_root=worktree,
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            origin_task_main_session_ref="session:af57-invalid-missing",
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            evidence_base=missing,
+        )
+
+    wrong_scope = tmp_path / "wrong-scope-evidence"
+    (wrong_scope / TARGET).mkdir(parents=True)
+    ctx = launcher.prepare(
+        worktree_root=worktree,
+        project_id=NATIVE,
+        worktree_id=WORKTREE_ID,
+        runtime_config_path=cfg,
+        origin_task_main_session_ref="session:af57-invalid-scope",
+        source_repository=SOURCE_NATIVE,
+        registry_path=registry,
+        evidence_base=wrong_scope,
+    )
+    env = launcher.build_env(ctx)
+    with pytest.raises(AuthorizedEvidenceRootError):
+        load_binding_from_envelope(env[PRE_RESOLVED_BINDING_ENV])
+    assert evidence_base.is_dir()
