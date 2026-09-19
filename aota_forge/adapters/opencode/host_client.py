@@ -765,6 +765,26 @@ class OpenCodeHostClient:
             raise OpenCodeMalformedResponseError("abort response must be a boolean")
         return payload
 
+    def dispose_instance(self, *, directory: str) -> bool:
+        """Dispose the cached OpenCode instance for an explicit directory.
+
+        The pinned host owns the instance lifecycle, including cleanup of its
+        MCP clients.  Re-entry uses this existing boundary before the exact
+        session is prompted again so a child cannot retain the previous AF
+        binding.
+        """
+        scope = _require_directory(directory)
+        payload = self._request_json(
+            "POST",
+            "/instance/dispose",
+            directory=scope,
+            expected=(200,),
+            rejection_statuses=frozenset({400, 401, 403, 405, 422}),
+        )
+        if type(payload) is not bool:
+            raise OpenCodeMalformedResponseError("instance dispose response must be a boolean")
+        return payload
+
     def observe_events(
         self,
         *,

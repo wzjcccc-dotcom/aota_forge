@@ -116,6 +116,85 @@ class _ResumeProbeLauncher(DailyTaskMainLauncher):
         return _Reentry()
 
 
+class _OpenCodeResumeHost:
+    """Host double that reloads the binding only after instance disposal."""
+
+    def __init__(self) -> None:
+        self.session_id = "ses_af57_m3_w4_reentry"
+        self.session: dict[str, str] | None = None
+        self.messages: list[dict] = []
+        self.events: list[str] = []
+        self.dispose_calls: list[str] = []
+        self.binding_history: list = []
+        self.child_binding = None
+        self.disposed = False
+
+    def probe_versions(self):
+        return {"healthy": True, "version": "1.18.30"}
+
+    def create_session(self, **kwargs):
+        directory = str(kwargs["directory"])
+        self.session = {
+            "id": self.session_id,
+            "directory": directory,
+            "agent": str(kwargs["agent"]),
+        }
+        self.events.append("create")
+        return dict(self.session)
+
+    def get_session(self, session_id, *, directory=None, scope_hint=None):
+        assert session_id == self.session_id
+        assert self.session is not None
+        return dict(self.session)
+
+    def fetch_session_messages(self, session_id, *, directory):
+        assert session_id == self.session_id
+        return list(self.messages)
+
+    def submit_prompt_async(self, session_id, *, directory, parts, model=None, agent=None, system=None):
+        assert session_id == self.session_id
+        if self.dispose_calls:
+            assert self.disposed is True
+        pointer = json.loads(
+            (
+                Path(directory)
+                / ".aota"
+                / "opencode"
+                / "active_binding.json"
+            ).read_text(encoding="utf-8")
+        )
+        binding = load_binding_from_envelope(pointer["envelope_path"])
+        self.child_binding = binding
+        self.binding_history.append(binding)
+        self.disposed = False
+        self.events.append("prompt")
+        self.messages.append(
+            {
+                "info": {"role": "assistant", "finish": "stop"},
+                "parts": [
+                    {
+                        "type": "tool",
+                        "tool": "aota_aota_invoke",
+                        "state": {
+                            "input": json.dumps(
+                                {"operation": "role.bootstrap", "arguments": {}}
+                            )
+                        },
+                    }
+                ],
+            }
+        )
+
+    def dispose_instance(self, *, directory):
+        assert self.session is not None
+        assert directory == self.session["directory"]
+        self.dispose_calls.append(directory)
+        self.child_binding = None
+        self.disposed = True
+        self.events.append("dispose")
+        return True
+
+
 def _checkout(parent: Path, name: str, project_id: str, source: str) -> Path:
     root = parent / name
     (root / ".aota").mkdir(parents=True)
@@ -167,6 +246,18 @@ def _runtime_config(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
+    return config
+
+
+def _opencode_runtime_config(tmp_path: Path) -> Path:
+    source = _runtime_config(tmp_path)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["executor"] = "opencode"
+    payload["host_endpoint"] = "http://127.0.0.1:4096"
+    for binding in payload["bindings"].values():
+        binding.pop("toolsets", None)
+    config = tmp_path / "runtime-opencode.json"
+    config.write_text(json.dumps(payload), encoding="utf-8")
     return config
 
 
@@ -520,6 +611,144 @@ def test_daily_task_main_resume_reconstructs_evidence_and_reloads_live_grants(
             {"path": "receipt.json", "root_ref": AUTHORIZED_EVIDENCE_ROOT_REF},
         )
         assert local_after["ok"] is True
+        foreign_read_after = invoke_b(
+            "workspace.read",
+            {"path": "foreign.txt", "root_ref": grant.grant_id},
+        )
+        assert foreign_read_after["ok"] is False
+        assert foreign_read_after["error"]["code"] == "AUTHORIZED_ROOT_UNKNOWN"
+        foreign_search_after = invoke_b(
+            "workspace.search",
+            {"query": "foreign production needle", "root_ref": grant.grant_id},
+        )
+        assert foreign_search_after["ok"] is False
+        assert foreign_search_after["error"]["code"] == "AUTHORIZED_ROOT_UNKNOWN"
+        assert len(_active_grants(database)) == 0
+    finally:
+        reset_execution_dispatcher()
+
+
+def test_opencode_reentry_retires_cached_mcp_child_before_fresh_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _native_root, _target_root, worktree, registry, evidence_base = _fixture(tmp_path)
+    cfg = _opencode_runtime_config(tmp_path)
+    database = tmp_path / "governance.sqlite3"
+    governance = SQLiteProjectGovernanceStore(database)
+    governance.put_plan(_plan())
+    target_binding = resolve_cross_project_target_project(
+        project_id=TARGET,
+        registry_path=registry,
+    )
+    grant = create_bound_cross_project_grant(
+        store=governance,
+        requesting_project=NATIVE,
+        target_binding=target_binding,
+        authority=PreapprovedByPlan(plan_id=PLAN_ID),
+    )
+    governance.close()
+
+    host = _OpenCodeResumeHost()
+    monkeypatch.setattr(
+        "aota_forge.adapters.opencode.host_client.OpenCodeHostClient",
+        lambda base_url, **kwargs: host,
+    )
+    monkeypatch.setattr(
+        "aota_forge.composition.task_main_daily_launcher.probe_production_af_mcp_surface",
+        lambda **kwargs: SimpleNamespace(ok=True, tool_names=("aota.invoke",), detail=None),
+    )
+
+    try:
+        launcher_a = DailyTaskMainLauncher()
+        _ctx_a, session_id = launcher_a.launch(
+            worktree_root=worktree,
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            initial_prompt="operator launch",
+            timeout_seconds=2,
+            max_productive_continuations=0,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            governance_store_path=database,
+            evidence_base=evidence_base,
+        )
+        assert session_id == host.session_id
+        binding_a = host.binding_history[-1]
+        invoke_a = create_aota_invoke_dispatch(binding_a)
+        assert invoke_a(
+            "workspace.read",
+            {"path": "receipt.json", "root_ref": AUTHORIZED_EVIDENCE_ROOT_REF},
+        )["ok"] is True
+        assert invoke_a(
+            "workspace.read",
+            {"path": "foreign.txt", "root_ref": grant.grant_id},
+        )["ok"] is True
+        assert invoke_a(
+            "workspace.search",
+            {"query": "foreign production needle", "root_ref": grant.grant_id},
+        )["ok"] is True
+
+        active_reentry = DailyTaskMainLauncher().resume(
+            worktree_root=worktree,
+            session_id=session_id,
+            payload="active-grant re-entry",
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            governance_store_path=database,
+            evidence_base=evidence_base,
+        )
+        assert active_reentry.completed is True
+        binding_active = host.binding_history[-1]
+        invoke_active = create_aota_invoke_dispatch(binding_active)
+        assert binding_active.authorized_roots.get(grant.grant_id) is not None
+        assert invoke_active(
+            "workspace.read",
+            {"path": "foreign.txt", "root_ref": grant.grant_id},
+        )["ok"] is True
+        assert invoke_active(
+            "workspace.search",
+            {"query": "foreign production needle", "root_ref": grant.grant_id},
+        )["ok"] is True
+
+        revoked = SQLiteProjectGovernanceStore(database)
+        try:
+            revoked.revoke_cross_project_grant(grant.grant_id, grant.revision)
+        finally:
+            revoked.close()
+        assert len(_active_grants(database)) == 0
+
+        launcher_b = DailyTaskMainLauncher()
+        resumed = launcher_b.resume(
+            worktree_root=worktree,
+            session_id=session_id,
+            payload="operator re-entry",
+            project_id=NATIVE,
+            worktree_id=WORKTREE_ID,
+            runtime_config_path=cfg,
+            source_repository=SOURCE_NATIVE,
+            registry_path=registry,
+            governance_store_path=database,
+            evidence_base=evidence_base,
+        )
+        assert resumed.completed is True
+        assert host.events[-2:] == ["dispose", "prompt"]
+        assert host.child_binding is not binding_a
+        binding_b = host.binding_history[-1]
+        assert binding_b.authorized_roots is not None
+        assert binding_b.authorized_roots.evidence_binding is not None
+        assert binding_b.authorized_roots.get(AUTHORIZED_EVIDENCE_ROOT_REF) is not None
+        assert binding_b.authorized_roots.get(grant.grant_id) is None
+        assert binding_b.authorized_roots.digest() != binding_a.authorized_roots.digest()
+
+        invoke_b = create_aota_invoke_dispatch(binding_b)
+        assert invoke_b(
+            "workspace.read",
+            {"path": "receipt.json", "root_ref": AUTHORIZED_EVIDENCE_ROOT_REF},
+        )["ok"] is True
         foreign_read_after = invoke_b(
             "workspace.read",
             {"path": "foreign.txt", "root_ref": grant.grant_id},

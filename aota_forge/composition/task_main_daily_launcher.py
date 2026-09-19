@@ -1745,9 +1745,13 @@ class DailyTaskMainLauncher:
         """Continue the EXACT OpenCode task-main session (no replacement)."""
         from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
         from aota_forge.adapters.opencode.task_main import (
+            BINDING_KIND_TASK_MAIN,
             resolve_operator_prompt_model,
+            stage_envelope_in_instance,
             submit_task_main_turn,
+            write_binding_pointer,
         )
+        from aota_forge.runtime.trusted_runtime_binding import create_task_main_envelope
 
         if not ctx.runtime_config.host_endpoint:
             raise TaskMainSessionContinuationError(
@@ -1760,10 +1764,62 @@ class DailyTaskMainLauncher:
             raise TaskMainSessionContinuationError(
                 "exact task-main session row is missing its persisted directory scope"
             )
+        raw_instance = Path(directory)
+        if raw_instance.is_symlink():
+            raise TaskMainSessionContinuationError(
+                "exact task-main session directory must not be a symlink"
+            )
+        instance = raw_instance.resolve()
+        if not instance.is_dir():
+            raise TaskMainSessionContinuationError(
+                "exact task-main session directory is not an existing directory"
+            )
+        instance_root = (
+            ctx.worktree_root / ".aota" / "opencode" / "instances"
+        ).resolve()
+        try:
+            relative_instance = instance.relative_to(instance_root)
+        except ValueError as exc:
+            raise TaskMainSessionContinuationError(
+                "exact task-main session directory is outside the trusted instance namespace"
+            ) from exc
+        if len(relative_instance.parts) != 1 or not instance.name.startswith("task-main-"):
+            raise TaskMainSessionContinuationError(
+                "exact task-main session directory is not a task-main instance"
+            )
+        bootstrap_path = ctx.worktree_root / THIN_BOOTSTRAP_RELPATH
+        try:
+            envelope = create_task_main_envelope(
+                worktree_root=ctx.worktree_root,
+                bootstrap_path=bootstrap_path,
+                provenence={"host": "opencode", "instance_key": instance.name},
+            )
+            staged_envelope = stage_envelope_in_instance(instance, envelope)
+            write_binding_pointer(
+                instance,
+                kind=BINDING_KIND_TASK_MAIN,
+                envelope_path=staged_envelope,
+                binding_root=ctx.worktree_root,
+                bootstrap_path=bootstrap_path,
+            )
+        except Exception as exc:
+            raise TaskMainSessionContinuationError(
+                f"fresh opencode task-main binding staging failed: {exc}"
+            ) from exc
+        try:
+            disposed = host_client.dispose_instance(directory=str(instance))
+        except Exception as exc:
+            raise TaskMainSessionContinuationError(
+                f"fresh opencode task-main binding lifecycle disposal failed: {exc}"
+            ) from exc
+        if disposed is not True:
+            raise TaskMainSessionContinuationError(
+                "opencode instance disposal did not confirm MCP child retirement"
+            )
         return submit_task_main_turn(
             host_client,
             session_id=session_id,
-            directory=directory,
+            directory=str(instance),
             text=payload,
             model=resolve_operator_prompt_model(ctx.runtime_config),
             # AF #58 M1: every AF-owned continuation of the exact task-main
