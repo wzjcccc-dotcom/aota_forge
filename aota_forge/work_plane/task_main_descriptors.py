@@ -174,15 +174,16 @@ _THIN_TASK_START_EXAMPLE = {
 }
 
 # AF #54 M5/W1-W2: thin primitive contracts for the governed lifecycle
-# surfaces. Mechanics only — the semantic procedure (which comment is which,
-# when to checkpoint/integrate, governance record shapes) lives canonically
-# in the progressive aota-task-main-governance Skill; never duplicate it
-# here.
+# surfaces. Mechanics only — the semantic procedure (local Governance 2.0 is
+# normal; GitHub five-comment reconciliation is compatibility-only) lives
+# canonically in the progressive aota-task-main-governance Skill; never
+# duplicate it here.
 _THIN_GIT_NOTE = (
     "bounded git on the trusted worktree located by the canonical plan_ref "
     "locator (targets never model-supplied); reads eager; "
-    "checkpoint/integrate/push additionally require the current Plan approval "
-    "and configured trusted lifecycle authority; FF-only, never force"
+    "checkpoint/integrate/push are legacy lifecycle compatibility mechanics and "
+    "additionally require the current Plan approval and configured trusted "
+    "lifecycle authority; FF-only, never force"
 )
 _THIN_GIT_EXAMPLE = {
     "git.status": {"plan_ref": _PLAN_REF_EXAMPLE},
@@ -192,7 +193,8 @@ _THIN_GIT_EXAMPLE = {
     "git.push": {"plan_ref": _PLAN_REF_EXAMPLE, "expected_remote_sha": "sha40? (never force)"},
 }
 _THIN_GITHUB_NOTE = (
-    "Plan-bound GitHub governance on the Plan Issue located by the canonical "
+    "Legacy authority_kind=github_issue compatibility only: Plan-bound GitHub "
+    "governance on the Plan Issue located by the canonical "
     "plan_ref locator (repo/owner/issue are NOT model inputs); reads are "
     "card-first with by_ref hydration; mutations are task-main-only and "
     "read-before-write CAS; github.issue.update.body is a WHOLE BODY "
@@ -298,10 +300,11 @@ def build_thin_task_main_operation_guidance() -> dict[str, dict[str, object]]:
         },
         "governance_procedure": (
             "open the aota-task-main-governance progressive Skill before "
-            "governance mutations or milestone/plan close. Never probe "
-            "mutation schemas against live authoritative Plan data: read the "
-            "Skill, then help(operation=...), then proceed or stop with "
-            "needs_input."
+            "Project/Plan governance mutation or milestone/plan close. Local "
+            "Governance 2.0 is the normal path; the Skill's GitHub branch is "
+            "compatibility-only. Never probe mutation schemas against live "
+            "authoritative Plan data: read the Skill, then help(operation=...), "
+            "then proceed or stop with needs_input."
         ),
     }
 

@@ -9,9 +9,23 @@ tags: [aota, project-steward, project-state, closure, governance-sync]
 
 > `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. How to request steward work via `aota.invoke`. AF runtime decides authorization. Never grants acceptance, approval, or mutation authority.
 
+```text
+PROJECT_STEWARD_IS_NORMAL_WORKER=no
+PROJECT_STEWARDSHIP_IS_SUBSYSTEM_PLUGIN=yes
+PROJECT_STEWARDSHIP_IS_EVENT_DRIVEN=yes
+DETERMINISTIC_FIRST_STEWARDSHIP=yes
+SEMANTIC_STEWARD_IS_RESIDUAL_ONLY=yes
+```
+
 ## Identity
 
-One-shot `project-steward`: one request → compact result → terminate. Owns no long-term state. Never implements product logic, never reviews implementation, never accepts Milestone, never sets user approval, never invents frontier. No generic Git/GitHub mutation. No shell. No `test.run`.
+Compatibility execution vehicle for genuine semantic residual stewardship:
+one request → compact result → terminate. It is not a routine worker and owns
+no long-term state. Never implements product logic, never reviews
+implementation, never accepts Milestone, never sets user approval, never
+invents frontier. Deterministic stewardship runs first; use this Skill only
+when a bounded semantic residual remains. No generic Git/GitHub mutation. No
+shell. No `test.run`.
 
 ## Mode A — ProjectState inspection
 

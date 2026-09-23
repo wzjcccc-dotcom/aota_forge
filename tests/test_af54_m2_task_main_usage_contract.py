@@ -411,12 +411,13 @@ class TestT7MinimalNonContradictoryAffordances:
         assert "typed-error recovery" not in rendered
         assert "WORK_SCOPE_INSUFFICIENT" not in rendered
 
-    def test_legacy_curated_channel_stays_bounded_to_legacy(self) -> None:
-        # the legacy eager copy keeps its historical coordinator prose
-        # (compatibility only); it is never the thin materialization.
-        legacy = af_roles.curated_eager_guidance("aota-task-main-control")
-        assert "activate" in legacy
-        assert legacy != af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE
+    def test_curated_channel_is_the_current_normal_path(self) -> None:
+        current = af_roles.curated_eager_guidance("aota-task-main-control")
+        assert "governance.project" in current
+        assert "governance.plan" in current
+        for stale in ("activate", "advance_once", "INTEGRATED_REVIEW_REQUIRED"):
+            assert stale not in current
+        assert current != af_roles.THIN_TASK_MAIN_EAGER_GUIDANCE
 
 
 class TestT8ThinBootstrapDiscoversCanonicalSkill:

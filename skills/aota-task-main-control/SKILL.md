@@ -1,6 +1,6 @@
 ---
 name: aota-task-main-control
-description: Task-main thin production usage contract — unbound ref-scoped operation model, progressive Skill routing, semantic child dispatch, Plan Work identity, typed-error recovery
+description: Task-main normal operating contract — local Governance 2.0 context, progressive Skill routing, semantic child dispatch, Plan Work identity, typed stop behavior
 category: orchestration
 tags: [aota, task-main, handoff, task.start, work-identity, routing]
 ---
@@ -13,11 +13,21 @@ tags: [aota, task-main, handoff, task.start, work-identity, routing]
 > is never authority. Tool visibility is not authority.
 > `ROLE_SKILL_IS_PRIMARY_USAGE_GUIDANCE=yes`.
 
+```text
+TASK_MAIN_EAGER_BASE_SKILL_COUNT=1
+TASK_MAIN_BASE_SKILL_SUFFICIENT_FOR_NORMAL_HAPPY_PATH=yes
+BASE_SKILL_OWNS_EXACT_OPERATION_SCHEMA=no
+GOV2_IS_NORMAL=yes
+GOV1_IS_COMPATIBILITY_ONLY=yes
+GUIDANCE_ADVERTISES_UNAVAILABLE_OPERATION=no
+```
+
 ## Session model (current truth)
 
 ```text
 ordinary task-main session = unbound
-plan_ref = per-operation authority locator (owner/repo#number)
+local Project/Plan identity = per-operation Governance 2.0 context
+legacy plan_ref = compatibility locator (owner/repo#number)
 plan_ref != authority
 session != authority
 directory != authority
@@ -29,7 +39,7 @@ profile != authority
 Plan bind and not a session bind. A safe read never requires bootstrap to
 have been called first, and no first-message Plan grammar exists.
 
-## Plan locator discipline (bare number fast-stop)
+## Legacy Plan locator compatibility (bare number fast-stop)
 
 ```text
 AMBIGUOUS_PLAN_NUMBER_IS_NOT_PLAN_REF=yes
@@ -38,9 +48,9 @@ SESSION_DIRECTORY_PROFILE_REPO_INFERENCE=no
 UNNECESSARY_DISCOVERY_BEFORE_NEEDS_INPUT=no
 ```
 
-When an operation needs canonical Plan identity and the user supplied only a
-bare issue number (`#39`), the canonical `plan_ref` is insufficient. Ask for
-`owner/repo#number` immediately — a full GitHub Issue URL or its
+When the explicit legacy `authority_kind=github_issue` path needs a canonical
+Plan locator and the user supplied only a bare issue number (`#39`), the
+canonical `plan_ref` is insufficient. Ask for `owner/repo#number` immediately — a full GitHub Issue URL or its
 `owner/repo/issues/N` path form is used by normalizing it deterministically to
 `owner/repo#number` (never guess any component). Do **not** "resolve" the
 repository by exploring `host.status` / `runtime.status`, the current
@@ -117,18 +127,27 @@ only validates, grounds mechanical identity, and enforces authority; it never
 chooses the next workflow action and prescribes nothing about review
 frequency, Work order, or Milestone advancement.
 
-You also own the project-lifecycle decisions during the Governance 1.x
-transition: broad read of project/Plan evidence, the checkpoint/integration
-decisions, and the Plan/Milestone governance reconciliation itself. Open the
-progressive `aota-task-main-governance` Skill **before** any governance
-mutation (see routing below). Do not delegate governance to a project-steward
-child in the normal path; the legacy steward role exists for compatibility
-only.
+You also own semantic workflow decisions for the current Milestone. Governance
+2.0 local Project/Plan intake and reconciliation is the normal path; open the
+progressive `aota-task-main-governance` Skill before governed mutation. The
+same Skill contains a bounded Governance 1.x branch only when the authority is
+explicitly a legacy GitHub Issue. Do not delegate routine governance to a
+project-steward child; the steward role is a compatibility execution vehicle
+for genuine semantic residual work, not a normal worker.
+
+Never delegate governance to a project-steward child in the normal path.
 
 ## Routing table (base Skill owns this)
 
 ```text
-Read Plan/status
+Ensure Project / local Plan context
+  -> governance.project / governance.plan                 (Governance 2.0 normal path)
+  -> open aota-project-governance or aota-plan-governance as needed
+
+Read local Plan/status
+  -> governance.plan(mode=inspect) and its authoritative local refs
+
+Legacy authority_kind=github_issue only
   -> github.issue.read / github.issue.comments.read      (arguments carry plan_ref)
 
 Inspect source
@@ -147,15 +166,17 @@ Dispatch a child
 Inspect Git
   -> git.status / git.diff                               (plan_ref)
 
-Project / local Plan intake
-  -> open aota-project-governance or aota-plan-governance as needed
+Project / local Plan governance mutation
+  -> open aota-task-main-governance as needed
   -> governance.project / governance.plan through the same aota.invoke entry
-  -> keep project.yaml, plan.md and generated MAP/STATUS ownership distinct
+  -> keep project.yaml, plan.md and generated MAP/STATUS ownership distinct;
+     never hand-edit generated projections
 
 Plan/Milestone governance mutation
 Milestone close, Plan close
 checkpoint / integrate / push
-  -> open aota-task-main-governance@1.0.0 BEFORE proceeding
+  -> open aota-task-main-governance@1.0.0 BEFORE proceeding; use its local
+     Governance 2.0 procedure, or its explicitly bounded legacy branch
 
 Need exact operation arguments or semantics
   -> help(operation=...)
@@ -176,12 +197,14 @@ UNKNOWN_INPUT / INPUT_TYPE_INVALID
 
 Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 
-1. Read Plan/context on demand: `workspace.read` / `workspace.search` for
-   local evidence; `github.issue.read` / `github.issue.comments.read` for the
-   Plan Issue you are working on (arguments carry the canonical `plan_ref`;
-   the Control Plane locates the authority server-side at the operation
-   boundary). Reason the current Milestone, Work Items and prior results from
-   what you read.
+1. Ensure the Project and local Plan context with `governance.project` /
+   `governance.plan` when needed. Read local evidence with `workspace.read` /
+   `workspace.search`; use the local Plan authority and generated cards/refs to
+   orient, never to invent authority. For an explicitly legacy
+   `authority_kind=github_issue`, use `github.issue.read` /
+   `github.issue.comments.read` through the bounded compatibility branch.
+   Reason the current Milestone, Work Items and prior results from what you
+   read.
 2. Reason about the next semantic action.
 3. Write a bounded semantic handoff through the one public entry:
    `aota.invoke(operation="handoff.write", arguments={"mode": "work_item", "plan_ref": <ref>, "payload": {...semantic intent...}})`.

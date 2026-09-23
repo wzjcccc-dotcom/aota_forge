@@ -16,6 +16,12 @@ tags: [aota, task-main, plan, spec, intake, handoff]
 
 # AOTA Profile Task Orchestration
 
+> `DISPOSITION=legacy/deprecated-reference`. This Skill is not task-main's
+> normal lifecycle authority and is not assigned to any Role universe. It is
+> retained only for existing Profile Task launcher/runtime consumers. Ordinary
+> task-main work uses the single eager Base Skill plus Governance 2.0 Project/
+> Plan Skills; do not preload this document for normal orchestration.
+
 When work creates or changes an AOTA Skill, write an `implementation` SPEC with
 an explicit Skill-development contract and require the implementer to follow
 `aota-skill-development`. This does not introduce a new task role or spec kind.

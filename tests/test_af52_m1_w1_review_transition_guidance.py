@@ -237,11 +237,14 @@ class TestSkillGuidance:
 
 
 class TestEagerGuidance:
-    def test_eager_guidance_carries_minimal_transition_hint(self) -> None:
+    def test_eager_guidance_carries_current_governance_hint(self) -> None:
         guidance = curated_eager_guidance("aota-task-main-control")
-        assert "INTEGRATED_REVIEW_REQUIRED" in guidance
-        assert "call advance_once again" in guidance
-        assert "never build a review handoff manually" in guidance
+        assert "governance.project" in guidance
+        assert "governance.plan" in guidance
+        assert "aota-task-main-governance" in guidance
+        assert "submit_work_projection=compatibility only" in guidance
+        for stale in ("activate", "advance_once", "INTEGRATED_REVIEW_REQUIRED"):
+            assert stale not in guidance
         assert len(guidance) <= BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS
 
 

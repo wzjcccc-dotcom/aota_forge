@@ -44,6 +44,23 @@ MAINTAINER_CONTENT_IN_NORMAL_LLM_CONTEXT = False
 EAGER_SKILL_CONTENT_IS_USABLE_GUIDANCE = True
 SEMANTIC_TRUNCATION_FOR_BOOTSTRAP = False
 
+# M1/W4 task-main consolidation markers. These describe the guidance
+# ownership boundary; runtime authorization remains in the existing ingress.
+TASK_MAIN_EAGER_BASE_SKILL_COUNT = 1
+TASK_MAIN_BASE_SKILL_SUFFICIENT_FOR_NORMAL_HAPPY_PATH = True
+COMPETING_TASK_MAIN_OPERATIONAL_CONTRACTS = 0
+LEGACY_TASK_MAIN_SKILLS_IN_NORMAL_ROUTING = 0
+NORMAL_TASK_MAIN_REQUIRES_MULTI_SKILL_PRELOAD = False
+BASE_SKILL_OWNS_EXACT_OPERATION_SCHEMA = False
+PROJECT_GOVERNANCE_SKILL_PROGRESSIVE = True
+PLAN_GOVERNANCE_SKILL_PROGRESSIVE = True
+GOVERNANCE_SKILL_GOV2_NORMAL = True
+GOVERNANCE_SKILL_GOV1_COMPATIBILITY = True
+GOV1_IS_NORMAL_NEW_PLAN_PATH = False
+GUIDANCE_ADVERTISES_UNAVAILABLE_OPERATION = False
+SOUL_OWNS_WORKFLOW = False
+SOUL_OWNS_OPERATION_SCHEMA = False
+
 # ---------------------------------------------------------------------------
 # Soul catalog — load from AF-owned markdown files (aota_forge/roles/<role>.md)
 # ---------------------------------------------------------------------------
@@ -246,19 +263,16 @@ AF_TOOL_SURFACES = dict(_TOOL_SURFACES)
 
 _SKILL_META: dict[str, tuple[str, str]] = {
     "aota-task-main-control": (
-        "Canonical task-main usage contract: bounded child dispatch with "
-        "explicit semantic role and Plan Work identity, typed-error recovery, "
-        "delegation and review sizing",
-        "use as the detailed procedure source before writing child handoffs "
-        "or when handling a typed dispatch failure",
+        "Canonical task-main normal path: local Governance 2.0 context, "
+        "card-first reasoning, bounded child dispatch and typed stop behavior",
+        "use as the single eager Base Skill for ordinary task-main work; "
+        "open progressive guidance only for a specialized workflow",
     ),
     "aota-task-main-governance": (
-        "Transitional Governance 1.x procedure: Plan Issue body authority, "
-        "exactly five managed comments, read-before-write reconciliation, "
-        "progress/defect/appendix/decision records, Milestone close and "
-        "known-good checkpoint lifecycle",
-        "open before performing any Plan/Milestone governance mutation or "
-        "checkpoint/integration close procedure",
+        "Task-main governance workflow: Governance 2.0 local authority is normal; "
+        "bounded Governance 1.x GitHub compatibility is explicit and legacy-only",
+        "open before Project/Plan governance mutation, close, checkpoint, or "
+        "an explicitly requested legacy GitHub reconciliation",
     ),
     "aota-project-governance": (
         "Governance 2.0 Project identity, trusted registration and generated projection intake",
@@ -334,24 +348,24 @@ _ROLE_SKILL_DEFS: dict[str, tuple[list[str], list[str]]] = {
 # Orphan disposition (deterministic, Role-contract rationale; orphan != defect).
 # Known candidates + other existing Skills evaluated against accepted contracts.
 ORPHAN_SKILL_DISPOSITION: dict[str, tuple[str, str]] = {
-    "aota-pcf-project-steward": ("assign_eager", "steward Mode A/B is steward normal path; rewritten to M1/M2 contract"),
+    "aota-pcf-project-steward": ("assign_eager", "steward compatibility execution vehicle for bounded Mode A/B residuals; rewritten to M1/M2 contract"),
     "aota-multi-phase-doc-closure": ("assign_progressive", "closure evidence reference for steward rare path; not eager"),
     "aota-evidence-first-debugging": ("assign_eager", "analyst bounded evidence/diagnosis is analyst normal path"),
     "aota-implementation-review": ("assign_eager", "independent review is reviewer normal path; verifies product effect"),
     "aota-spec-driven-implementation": ("assign_eager", "SPEC-driven workflow + validation integrity is coder normal path"),
-    "aota-task-main-control": ("assign_eager", "milestone orchestration is task-main normal path"),
-    "aota-task-main-governance": ("assign_progressive", "Governance 1.x transition procedures are task-main-owned but on-demand; never eager"),
+    "aota-task-main-control": ("assign_eager", "single task-main Base Skill for the Governance 2.0 normal path"),
+    "aota-task-main-governance": ("assign_progressive", "current task-main governance workflow; Governance 1.x is a bounded compatibility branch"),
     "aota-project-governance": ("assign_progressive", "Governance 2.0 Project intake is task-main-owned but on-demand; never eager"),
     "aota-plan-governance": ("assign_progressive", "Governance 2.0 local Plan intake is task-main-owned but on-demand; never eager"),
     "aota-workspace-operations": ("assign_eager", "search/read (+role-scoped write/test policy) is normal for analyst/coder/reviewer/steward"),
     "aota-restricted-shell": ("assign_progressive", "residual fallback only for analyst/coder conditional; never eager"),
     "aota-result-hydration": ("assign_progressive", "large-reference hydrate only; never normal Skill loading"),
-    "aota-task-lifecycle": ("remain_unassigned", "profile-task binding/wait-mode internals not in accepted Role normal path"),
+    "aota-task-lifecycle": ("remain_unassigned", "bounded Profile Task runtime reference; not task-main normal lifecycle authority"),
     "aota-architecture-review": ("remain_unassigned", "no accepted Role normal path requires it"),
     "aota-canonical-spec-contract": ("remain_unassigned", "no accepted Role normal path requires it"),
     "aota-canonical-spec-pitfalls": ("remain_unassigned", "no accepted Role normal path requires it"),
     "aota-plugin-tool-development": ("remain_unassigned", "plugin tool lifecycle not in accepted Role normal path"),
-    "aota-profile-task-orchestration": ("remain_unassigned", "profile orchestration not in accepted Role normal path"),
+    "aota-profile-task-orchestration": ("remain_unassigned", "legacy Profile Task reference; not task-main normal orchestration or Plan authority"),
     "aota-skill-development": ("remain_unassigned", "skill authoring not in accepted Role normal path"),
     "aota-tool-failure-fallback": ("remain_unassigned", "generic fallback not in accepted Role normal path"),
     "aota-work-classify-and-plan-gate": ("remain_unassigned", "classification gate not in accepted Role normal path"),
@@ -367,14 +381,15 @@ ORPHAN_SKILL_DISPOSITION: dict[str, tuple[str, str]] = {
 
 _CURATED_EAGER_GUIDANCE: dict[str, str] = {
     "aota-task-main-control": (
-        "Task-main normal: activate (empty args, needs approval=yes; stop on USER_GATE_REQUIRED), "
-        "recover after restart (re-bind live Plan/session), "
-        "advance_once (one iteration; observe next_action DISPATCHED/WAITING/BLOCKED; never call internal reconcile/dispatch). "
-        "All source Work Items complete -> INTEGRATED_REVIEW_REQUIRED is normal: call advance_once again so AF dispatches the governed integrated reviewer; never build a review handoff manually. "
-        "Normal work path: read the authoritative Work source from activate/recover/advance work_context, reason, then "
-        "handoff.write(mode=work_item) and task.start(role, handoff_ref). submit_work_projection=compatibility only, not the normal path. "
-        "Owns DAG/risk/blocker/next-action; risk control only; one review; Human Brake with scope; card-first no transcript; retry needs progress else escalate; user gates mandatory stop. "
-        "Dispatch workers via AF (Handoff scope sole source); workers start with role.bootstrap."
+        "Task-main normal: understand intent, ensure local Project/Plan context through "
+        "governance.project/governance.plan, read cards and exact refs only as needed, "
+        "reason, then handoff.write(mode=work_item) and task.start(role, handoff_ref). "
+        "Consume a compact result card and reason again; review frequency is semantic judgment, "
+        "not a fixed runtime policy. submit_work_projection=compatibility only, not the normal path. "
+        "Open aota-task-main-governance for the local Governance 2.0 workflow; its GitHub "
+        "branch is compatibility-only. Keep the Human Brake, card-first retrieval, bounded scope, "
+        "typed-error recovery and needs_input behavior. Dispatch workers via AF; workers start "
+        "with role.bootstrap."
     ),
     "aota-workspace-operations": (
         "Shared workspace primitives via aota.invoke: workspace.search {\"query\": \"...\"}; "
@@ -451,31 +466,28 @@ KNOWN_CONTEXT_REUSE_FIRST = True
 THIN_TASK_MAIN_EAGER_GUIDANCE_MAX_CHARS = 1600
 
 THIN_TASK_MAIN_EAGER_GUIDANCE = (
-    "AF task-main (unbound). You own reasoning, workflow, delegation, review "
-    "frequency and Milestone judgment; the Control Plane enforces authority "
-    "only. role.bootstrap is startup guidance, not authority/Plan/session "
-    "bind; plan_ref is an operation locator, never authority. Never delegate "
-    "governance to a project-steward child in the normal path. Routing: Plan "
-    "-> github.issue.read / github.issue.comments.read; Source -> "
-    "workspace.search / workspace.read (plan_ref). by_ref -> result.hydrate "
-    "(exact claims); aota-result-hydration when needed. Dispatch -> "
-    "handoff.write(mode=work_item, "
-    "payload.work_role+work_item_ref+milestone_ref) then task.start(role=same, "
-    "handoff_ref); procedure in aota-task-main-control (skill.open). Git -> "
-    "git.status / git.diff. Governance mutation / close / checkpoint / "
-    "integrate / push -> open aota-task-main-governance@1.0.0 first. Exact "
-    "args -> help(operation=...). A bare #N is not a plan_ref: ask for "
-    "owner/repo#number (a GitHub Issue URL or owner/repo/issues/N path "
-    "normalizes to it deterministically); never infer the repo "
-    "from host/runtime/workspace/cwd/profile/session/search. Reuse known "
+    "AF task-main (unbound). aota-task-main-control is the eager Base Skill; "
+    "role.bootstrap/skill.open are advisory, never authority or bind. Loop: intent -> "
+    "Project/Plan -> read needed cards/refs -> reason -> handoff.write(mode=work_item, "
+    "payload.work_role+work_item_ref+milestone_ref) -> task.start(role=same, handoff_ref) -> "
+    "result card -> "
+    "reason again. review frequency is semantic judgment. Local Project/Plan -> "
+    "governance.project / governance.plan; open aota-project-governance or "
+    "aota-plan-governance when needed. Governance procedure -> open "
+    "aota-task-main-governance@1.0.0; local Governance 2.0 is normal, while "
+    "authority_kind=github_issue and github.issue.read / github.issue.comments.read are "
+    "legacy compatibility only. Source -> workspace.search / workspace.read. by_ref -> "
+    "result.hydrate with exact claims; aota-result-hydration when needed. "
+    "submit_work_projection=compatibility only. Exact args -> help(operation=...). "
+    "A bare #N is not a plan_ref: ask for owner/repo#number (a GitHub Issue URL "
+    "or owner/repo/issues/N path normalizes deterministically); plan_ref is an "
+    "operation locator, never authority. Never infer the repo from "
+    "host/runtime/workspace/cwd/profile/session/search; never infer. Reuse known "
     "context first: don't re-run role.bootstrap or reopen a Skill already in "
-    "context (same ref/digest); after a candidate miss use the same card's "
-    "remaining refs, not a repeat search/hydrate; re-read only on source/digest "
-    "change, exhausted candidates, changed intent, compaction, freshness/CAS, "
-    "or an incomplete prior result. AUTHORITY_DENIED -> stop; no other "
-    "transport. "
-    "UNKNOWN_INPUT -> read Skill/help; never probe live state. No "
-    "approval/evidence -> needs_input."
+    "context (same ref/digest); a candidate miss is not a search miss, so "
+    "continue with remaining refs; no repeat search/hydrate without freshness. "
+    "AUTHORITY_DENIED -> stop; UNKNOWN_INPUT -> read Skill/help; missing approval or "
+    "evidence -> needs_input."
 )
 
 

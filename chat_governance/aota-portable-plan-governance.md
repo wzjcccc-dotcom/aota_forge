@@ -608,7 +608,18 @@ EXTRA_GATE_EXPLICIT_JUSTIFICATION_REQUIRED=yes
 
 ## Project Steward scope
 
-Steward is retightened to exactly three formal checkpoints:
+Project Steward is not a normal Work Item worker. Deterministic stewardship is
+event-driven and runs first; this compatibility execution vehicle handles only
+the bounded semantic residual at the formal checkpoints below:
+
+```text
+PROJECT_STEWARD_IS_NORMAL_WORKER=no
+PROJECT_STEWARDSHIP_IS_SUBSYSTEM_PLUGIN=yes
+PROJECT_STEWARDSHIP_IS_EVENT_DRIVEN=yes
+DETERMINISTIC_FIRST_STEWARDSHIP=yes
+```
+
+The compatibility vehicle is retightened to exactly three formal checkpoints:
 
 ```text
 PLAN_INIT

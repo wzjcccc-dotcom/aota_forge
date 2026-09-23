@@ -12,6 +12,12 @@ category: orchestration
 > `OperationContractDescriptor` / `work_plane/workspace_tools.py`, `work_plane/skill_registry.py`).
 > `SKILL_IS_AUTHORITY=no` preserved — Skill remains guidance, not authority.
 
+> `DISPOSITION=bounded-runtime-compatibility-reference`. This document is not
+> task-main's normal lifecycle authority and remains unassigned in the Role
+> Skill universes. Use it only for a real Profile Task/worker runtime consumer;
+> ordinary task-main orchestration follows the Base Skill and local Governance
+> 2.0 workflow.
+
 
 # AOTA Task Lifecycle
 

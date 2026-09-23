@@ -910,9 +910,11 @@ class TestH6RoleSkillGuidanceAdvisory:
         assert "advance_once" not in operation_guidance
         assert operation_guidance == build_thin_task_main_operation_guidance()
 
-    def test_legacy_task_main_guidance_remains_unchanged(self) -> None:
-        legacy = curated_eager_guidance("aota-task-main-control")
-        assert "advance_once" in legacy
+    def test_curated_task_main_guidance_is_the_current_normal_path(self) -> None:
+        current = curated_eager_guidance("aota-task-main-control")
+        assert "governance.project" in current
+        assert "governance.plan" in current
+        assert "advance_once" not in current
         legacy_guidance = build_task_main_operation_guidance()
         assert "task_main.submit_work_projection" in legacy_guidance
 

@@ -1,36 +1,90 @@
 ---
 name: aota-task-main-governance
-description: Governance 1.x procedure for task-main — Plan Issue body authority, exactly five managed comments, ref-scoped read-before-write reconciliation, progress/defect/appendix/decision records, Milestone close, known-good checkpoint and frontier integration
+description: Task-main Governance workflow — Governance 2.0 local authority is normal, with bounded Governance 1.x GitHub compatibility, read-before-write reconciliation, Milestone close, checkpoint and frontier integration
 category: governance
 tags: [aota, task-main, governance, plan-issue, managed-comments, git-lifecycle]
 ---
 
-# AOTA Task-Main Governance 1.x (task-main-owned)
+# AOTA Task-Main Governance (Gov2 normal, Gov1 compatibility)
 
-> `SKILL_IS_AUTHORITY=no`. This is the canonical detailed procedure for
-> operational governance that task-main performs **directly** during the
-> Governance 1.x transition. The AF runtime decides authorization; guidance
-> is never authority. Tool primitive contracts live in the canonical
-> operation descriptors (`role.bootstrap` OPERATION_GUIDANCE / `help` / this
-> file's §Tools). GitHub transport mechanics have exactly one canonical owner
-> — this file — and are never duplicated into the base task-main Skill or
-> SOUL.
+> `SKILL_IS_AUTHORITY=no`. This is the canonical detailed governance workflow
+> for task-main. Governance 2.0 local Project/Plan authority is the normal
+> branch; the historical GitHub Issue representation is a bounded compatibility
+> branch only. The AF runtime decides authorization; guidance is never authority.
+> Tool primitive contracts live in the canonical operation descriptors
+> (`role.bootstrap` OPERATION_GUIDANCE / `help` / this file's Tools section).
+> Compatibility transport mechanics have one owner here and are not duplicated
+> into the Base Skill or SOUL.
+
+```text
+GOVERNANCE_SKILL_GOV2_NORMAL=yes
+GOVERNANCE_SKILL_GOV1_COMPATIBILITY=yes
+GOV1_IS_NORMAL_NEW_PLAN_PATH=no
+PROJECT_STEWARD_IS_NORMAL_WORKER=no
+PROJECT_STEWARDSHIP_IS_SUBSYSTEM_PLUGIN=yes
+DETERMINISTIC_FIRST_STEWARDSHIP=yes
+```
+
+## Normal Governance 2.0 path
+
+For `authority_kind=local_governance`, use this semantic loop:
+
+```text
+read current Project / Plan / Milestone context
+→ reason the next semantic state change
+→ check the user approval or Human Brake
+→ invoke governance.project or governance.plan through aota.invoke
+→ verify the returned durable result and projection refs
+→ continue, request input, or stop
+```
+
+The local `plan.md` plus its durable journal/CAS is Plan authority. Project
+identity comes from the trusted manifest and Project Registry; `root_ref`,
+Cards, ContextRoute, MAP and STATUS are bounded references or projections, not
+authority. Do not hand-edit generated MAP/STATUS files and do not create a
+second Plan mutation path. Exact inputs and typed errors come from
+`help(operation=...)`; this Skill supplies semantic procedure, not a second
+operation schema.
+
+Project/Plan modes are intentionally proportional:
+
+- Project `init` establishes trusted registration and initial projections.
+- Project `inspect` reads current registration without rewriting projections.
+- Project `reconcile` repairs a verified registration/projection drift through the canonical intake.
+- Plan `init` materializes an approved local Plan and its initial projections.
+- Plan `inspect` reads current local authority and projection state.
+- Plan `amend` requires a fresh revision/authority precondition and a semantic decision reference.
+- Plan `close` requires the current approval and lifecycle preconditions; verify the durable result.
+
+Never infer project identity from a filesystem path, session directory, profile,
+or search result. Ambiguous identity, stale revision/authority, missing approval,
+or unknown durable outcome is `needs_input`/blocked, not a reason to probe or
+retry.
 
 ## Why task-main owns this now
 
-`TASK_MAIN_TEMPORARY_STEWARDSHIP=yes`
+`TASK_MAIN_TEMPORARY_STEWARDSHIP=no`
 `PROJECT_STEWARD_NEW_NORMAL_DELEGATION=no`
 `PROJECT_STEWARD_LEGACY_COMPATIBILITY=yes`
 
-You do NOT delegate governance reconciliation to a project-steward child in
-the normal path. You read the authoritative state yourself, decide the
-semantic update, and write it through the governed AF primitives. The legacy
-project-steward role/Skill remain loadable for compatibility only;
-Governance 2.0 will later convert stewardship into a subsystem/plugin.
+You do NOT delegate ordinary Governance 2.0 reconciliation to a
+project-steward child. You read the authoritative state, decide the semantic
+update, and use the canonical AF intake. The project-steward role/Skill remains
+loadable only as a compatibility execution vehicle for genuine semantic
+residuals; deterministic stewardship is the normal subsystem boundary.
+Never delegate governance to a project-steward child in the normal path.
 `AOTA_TASK_LIFECYCLE_REINTRODUCED=no` — the historical lifecycle Skill stays
 outside your normal path.
 
-## Authoritative model (current #59 truth)
+## Legacy Governance 1.x compatibility model
+
+The following branch applies only when the trusted authority explicitly has
+`authority_kind=github_issue`. It is not the normal new-Plan path and it does
+not redefine Portable Plan semantics. A GitHub Issue body and its managed
+comments are adapter-specific legacy evidence; use the current Gov2 workflow
+for local authority.
+
+## Legacy authoritative model (compatibility only)
 
 1. **The Plan GitHub Issue body is the normative Plan authority.**
    An ordinary task-main session is **unbound**: it carries no Plan or

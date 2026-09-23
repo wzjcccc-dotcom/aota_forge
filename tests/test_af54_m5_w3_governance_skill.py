@@ -102,7 +102,7 @@ class TestW3CanonicalOwnership:
             "expected_digest",
             "git.integrate",
             "git.push",
-            "TASK_MAIN_TEMPORARY_STEWARDSHIP=yes",
+            "TASK_MAIN_TEMPORARY_STEWARDSHIP=no",
             "PROJECT_STEWARD_NEW_NORMAL_DELEGATION=no",
             "PROJECT_STEWARD_LEGACY_COMPATIBILITY=yes",
             "AOTA_TASK_LIFECYCLE_REINTRODUCED=no",
