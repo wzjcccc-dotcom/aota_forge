@@ -30,6 +30,7 @@ def load_canonical_text(name: str) -> str:
 CANONICAL_CORE_TEXT = load_canonical_text("aota-portable-plan-governance.md")
 CANONICAL_INDEX_TEXT = load_canonical_text("GOVERNANCE_INDEX.md")
 CANONICAL_CHAT_PLANNING = load_canonical_text("aota-chatgpt-project-planning.md")
+CANONICAL_VALIDATION = load_canonical_text("aota-chatgpt-validation-governance.md")
 CANONICAL_PARALLEL = load_canonical_text("aota-chatgpt-parallel-development.md")
 CANONICAL_WORKTREE = load_canonical_text("aota-chatgpt-worktree-governance.md")
 CANONICAL_GITHUB_ALIAS = load_canonical_text("aota-github-issue-planning.md")
@@ -53,6 +54,7 @@ def make_good_governance() -> dict:
         "GOVERNANCE_INDEX.md": CANONICAL_INDEX_TEXT,
         "aota-portable-plan-governance.md": CANONICAL_CORE_TEXT,
         "aota-chatgpt-project-planning.md": CANONICAL_CHAT_PLANNING,
+        "aota-chatgpt-validation-governance.md": CANONICAL_VALIDATION,
         "aota-chatgpt-parallel-development.md": CANONICAL_PARALLEL,
         "aota-chatgpt-worktree-governance.md": CANONICAL_WORKTREE,
         "aota-github-issue-planning.md": CANONICAL_GITHUB_ALIAS,
@@ -178,6 +180,35 @@ def test_static_guard():
     del gov_n8["aota-chatgpt-worktree-governance.md"]
     # Also remove from index expectation? Actually index still points to missing file, so guard should catch missing target
     check("N08 missing canonical target -> FAIL", gov_n8, False, "CG001_CANONICAL_CORE_MISSING")
+
+    # N09 Gov1 Issue authority restored as a universal/current claim -> FAIL
+    gov_n9 = make_good_governance()
+    gov_n9["aota-chatgpt-project-planning.md"] = (
+        CANONICAL_CHAT_PLANNING + "\nISSUE_BODY_REMAINS_PLAN_AUTHORITY=yes\n"
+    )
+    check("N09 Issue body universal authority -> FAIL", gov_n9, False, "CG005_GOV1_RESTORED_AS_NORMAL")
+
+    # N10 normal Plan creation forced through GitHub Issue -> FAIL
+    gov_n10 = make_good_governance()
+    gov_n10["aota-chatgpt-project-planning.md"] = (
+        CANONICAL_CHAT_PLANNING + "\nEvery new Plan requires create a GitHub Issue\n"
+    )
+    check("N10 GitHub-first new Plan -> FAIL", gov_n10, False, "CG005_GOV1_RESTORED_AS_NORMAL")
+
+    # N11 local Gov2 forced into the five-comment representation -> FAIL
+    gov_n11 = make_good_governance()
+    gov_n11["aota-portable-plan-governance.md"] = (
+        CANONICAL_CORE_TEXT + "\nLOCAL_GOV2_REQUIRES_FIVE_COMMENT_FILES=yes\n"
+    )
+    check("N11 local Gov2 five-comment requirement -> FAIL", gov_n11, False, "CG005_GOV1_RESTORED_AS_NORMAL")
+
+    # N12 local amendment forced through Issue-body mutation -> FAIL
+    gov_n12 = make_good_governance()
+    gov_n12["aota-chatgpt-project-planning.md"] = (
+        CANONICAL_CHAT_PLANNING
+        + "\nLocal Plan amendment requires a GitHub Issue body\n"
+    )
+    check("N12 local amendment Issue mutation -> FAIL", gov_n12, False, "CG005_GOV1_RESTORED_AS_NORMAL")
 
     return results
 
@@ -524,10 +555,10 @@ def main():
 
     print(f"\nFIXTURE_SUITE_RESULT total={total} pass={passed} fail={failed}")
     # Write a small fixture manifest for evidence
-    # Deterministic counts: static unchanged, material expanded with P3 hardening, false_positive expanded
+    # Deterministic counts for the normal-vs-legacy authority drift corpus.
     manifest = {
         "positive_static": 4,
-        "negative_static": 8,
+        "negative_static": 12,
         "positive_material": 17,
         "negative_material": 22,
         "false_positive": len(res3),

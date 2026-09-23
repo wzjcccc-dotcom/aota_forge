@@ -1,76 +1,106 @@
-# AOTA Forge — Chat Governance Canonical Index
+# AOTA Forge - Chat Governance Canonical Index
 
-This index declares the canonical authority map for Chat governance.
-It does not duplicate governance rules. Normative rules live in the
-shared core; other files only reference / specialize / adapt.
-
-```text
-CANONICAL_CHAT_GOVERNANCE_ROOT=/home/latios/workspace/aota_forge/chat_governance
-
-SHARED_CORE=aota-portable-plan-governance.md
-
-CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
-CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
-
-PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
-WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
-LEGACY_GITHUB_ENTRY_ALIAS=aota-github-issue-planning.md
-
-P2_ADAPTERS_CANONICALIZED=yes
-```
-
-## Authority declaration
-
-- `aota-portable-plan-governance.md` is the single shared semantic
-  governance core for Portable Plans, Milestones, Work Items, review,
-  Steward, Git checkpoints, and materialization.
-- All other Chat governance files must reference / specialize / adapt
-  the shared core. They must not copy the full authority model.
-- ChatGPT Project uploads, if present, are snapshot / bootstrap /
-  reference only. They are not current canonical authority.
+This index is the only map of the canonical ChatGPT/Friday governance
+adapters. It does not duplicate their semantic rules. The shared Portable
+Plan core is carrier-neutral; the runtime and a trusted authority binding
+select the current carrier.
 
 ```text
-DUPLICATE_NORMATIVE_AUTHORITY_ALLOWED=no
-UPLOADED_SNAPSHOT_CANONICAL=no
-LOCAL_CANONICAL_LIVE_READ_PREFERRED=yes
-```
+CANONICAL_CHAT_GOVERNANCE_ROOT=chat_governance
 
-## Canonical truth resolution
-
-Canonical current truth is determined by the local source in this
-directory plus a live read of the governing Issue and local evidence.
-An uploaded snapshot never overrides the local canonical file plus live
-read.
-
-An old source file may continue to exist during the transitional period
-for read-compatibility, but the repository must not maintain two
-manually-synced normative authorities for the same concern.
-
-## Canonical map
-
-```text
 SHARED_CORE=aota-portable-plan-governance.md
 CHATGPT_PLANNING_ENTRY=aota-chatgpt-project-planning.md
 CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
 PARALLEL_DEVELOPMENT_ADAPTER=aota-chatgpt-parallel-development.md
 WORKTREE_MANUAL_ADAPTER=aota-chatgpt-worktree-governance.md
 LEGACY_GITHUB_ENTRY_ALIAS=aota-github-issue-planning.md
+
+NORMAL_CHATGPT_PLAN_AUTHORITY_MODEL=local_governance
+LEGACY_GITHUB_IS_NORMAL_AUTHORITY=no
+PORTABLE_PLAN_SEMANTICS_SINGLE_CORE=yes
+PORTABLE_PLAN_AUTHORITY_CARRIER_NEUTRAL=yes
+GOVERNANCE_INDEX_IS_CANONICAL_MAP=yes
+```
+
+## Authority Map
+
+| Role | Canonical file | Boundary |
+| --- | --- | --- |
+| Shared semantic core | `aota-portable-plan-governance.md` | Portable Plan, Milestone, Work Item, approval, review, evidence, and stewardship semantics |
+| ChatGPT planning entry | `aota-chatgpt-project-planning.md` | Project/Plan proposal, approval, lifecycle handoff, readback, and construction gate |
+| Validation planning | `aota-chatgpt-validation-governance.md` | Change Surface, risk/process depth, and proof planning only |
+| Parallel development adapter | `aota-chatgpt-parallel-development.md` | Work Item scheduling inside an approved Milestone |
+| Manual worktree adapter | `aota-chatgpt-worktree-governance.md` | Transitional mechanical Codex worktree handoff |
+| Legacy GitHub entry alias | `aota-github-issue-planning.md` | Explicit Gov1 compatibility routing only |
+
+All adapters reference the shared core and must not create a second Plan
+ontology, authority model, mutation protocol, or runtime Skill contract.
+
+```text
 ONE_SHARED_GOVERNANCE_AUTHORITY=yes
 DUPLICATE_NORMATIVE_AUTHORITY_ALLOWED=no
+CHATGPT_GOVERNANCE_DUPLICATES_RUNTIME_SKILL=no
 ```
 
-`aota-chatgpt-validation-governance.md` is the canonical
-change/risk/validation/evidence planning specialization. It references the
-shared core and does not replace it.
+## Current Truth Resolution
+
+ChatGPT/Friday reads this index and the shared core from the local repository,
+then reads the current Project/Plan authority through the canonical AF
+lifecycle. A ChatGPT Project upload is only a snapshot/bootstrap/reference.
+It is never current authority.
+
+For a normal new Plan:
 
 ```text
-CHATGPT_VALIDATION_GOVERNANCE_SCOPE=change/risk/validation/evidence_planning_specialization
-VALIDATION_GOVERNANCE_IS_SHARED_CORE_REPLACEMENT=no
-VALIDATION_GOVERNANCE_CREATES_SECOND_PLAN_AUTHORITY=no
+Portable Plan semantic document
++ trusted PlanAuthorityBinding
+        -> authority_kind=local_governance
+        -> local Governance 2.0 lifecycle
 ```
 
-P2 adapters are canonicalized. P3 owns wrapper/alias consistency and drift
-guards so duplicate normative authority cannot reappear undetected.
+For an explicitly legacy Plan:
 
-This index is the only place that maps canonical roles to files.
-If a file is not listed here, it is not canonical Chat governance.
+```text
+Portable Plan semantic document
++ trusted PlanAuthorityBinding
+        -> authority_kind=github_issue
+        -> bounded Gov1 compatibility adapter
+```
+
+The legacy alias may describe GitHub Issue bodies and five managed comments,
+but that representation is not the normal entry and does not create local
+comment files.
+
+```text
+LOCAL_CANONICAL_LIVE_READ_PREFERRED=yes
+NORMAL_NEW_PLAN_ENTRY=aota-chatgpt-project-planning.md
+LEGACY_GITHUB_ENTRY_ALIAS=yes
+NORMAL_NEW_PLAN_REQUIRES_GITHUB_ISSUE=no
+```
+
+## Runtime Boundary
+
+Chat governance describes the adapter boundary, not a replacement runtime.
+The canonical runtime contract is obtained from `role.bootstrap`, progressive
+Skills, and `help(operation=...)`. The normal AF ingress remains:
+
+```text
+CHATGPT / FRIDAY semantic reasoning
+        -> user review and approval
+        -> Codex mechanical ingress when a governed ChatGPT writer is absent
+        -> aota.invoke
+        -> governance.project / governance.plan
+        -> local authority readback and reconcile
+```
+
+```text
+MCP_PUBLIC_TOOL_COUNT=1
+MCP_PUBLIC_TOOL=aota.invoke
+CHATGPT_DIRECT_GENERIC_GOVERNANCE_WRITE=no
+AOTA_READER_ROLE=readonly_observation
+AOTA_READER_GOVERNANCE_WRITE=no
+```
+
+If this map conflicts with an implementation contract, the trusted runtime
+descriptor and result contract win; do not document an unavailable mode or
+operation here.

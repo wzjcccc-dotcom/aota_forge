@@ -1,257 +1,310 @@
 ---
 name: aota-chatgpt-project-planning
-description: Thin ChatGPT entry adapter for Friday/task-main orchestration. References the shared core and defines only the Chat entry workflow, prompt handoff gate, and transitional control-plane boundary.
+description: ChatGPT/Friday planning entry adapter for semantic Project and Plan proposals, trusted Governance 2.0 lifecycle handoff, authority-aware readback, and the explicit construction-prompt gate.
 ---
 
-# AOTA ChatGPT Project Planning — Entry Adapter
+# AOTA ChatGPT Project Planning - Gov2 Entry Adapter
 
-This is a thin ChatGPT entry adapter. It does not define Portable Plan
-semantics, hierarchy, materialization, Steward, or checkpoint rules.
-All shared definitions are owned by:
+This is the canonical ChatGPT/Friday planning entry. It is an adapter, not a
+second runtime Skill or mutation implementation. Read the index and the
+carrier-neutral shared core first.
 
 ```text
 SHARED_CORE=aota-portable-plan-governance.md
 CHATGPT_ENTRY_DUPLICATES_SHARED_CORE=no
+CHATGPT_GOVERNANCE_DUPLICATES_RUNTIME_SKILL=no
+NORMAL_CHATGPT_PLAN_AUTHORITY=local_governance
+NEW_CHATGPT_PLAN_DEFAULT_AUTHORITY=local_governance
+NEW_CHATGPT_PLAN_REQUIRES_GITHUB_ISSUE=no
+CHATGPT_DIRECT_GOV2_GENERIC_WRITE=no
+PLAN_AUTHORITY_RESOLVED_BY_BINDING=yes
+PLAN_AUTHORITY_BINDING_MODEL=plan_id + source_kind + authority_ref + source_revision + source_digest
 ```
 
-Read the shared core first for: `S/M/W` identifiers, Issue Body
-normative contract, the fixed 5 managed-comment roles
-(`milestone_progress_index` / `development_notes` / `defect_register` /
-`plan_appendix` / `decision_change_log`), body update semantics,
-Milestone-first workflow, Steward scope, Git checkpoints, and evidence
-layering. This adapter never copies that contract.
+## Runtime Contract Boundary
 
-During the transition, also observe the canonical index:
+The actual runtime exposes one public entry:
 
 ```text
-CANONICAL_CHAT_GOVERNANCE_ROOT=/home/latios/workspace/aota_forge/chat_governance
-GOVERNANCE_INDEX=chat_governance/GOVERNANCE_INDEX.md
+MCP_PUBLIC_TOOL_COUNT=1
+MCP_PUBLIC_TOOL=aota.invoke
 ```
 
-## Authority and safety
-
-Current Portable Plan authority:
+The accepted Governance 2.0 operation families are:
 
 ```text
-GitHub Issue body (portable_plan_normative_contract)
-  + plan_appendix in managed comment #4 (supports, never authority)
-  + 5 managed comments as compact projections (COMMENT_PLAN_AUTHORITY=no)
+governance.project: init | inspect | reconcile
+governance.plan: init | inspect | amend | close
 ```
 
+These modes are the runtime contract currently implemented by W2/W4. Exact
+inputs, required context, typed errors and result mechanics come from
+`help(operation=...)` and the canonical descriptors; this adapter does not
+copy a second operation schema.
+
 ```text
-CHATGPT_DIRECT_GITHUB_MUTATION=no
-CHATGPT_GOVERNANCE_MUTATION_MODEL=codex_prompt_handoff
-USER_APPROVES_MATERIALIZATION != CHATGPT_DIRECT_WRITE_PERMISSION
-FRIDAY_TEMPORARY_TASK_MAIN=yes
-FRIDAY_ROLE=semantic_orchestration
-CODEX_ROLE=mechanical_execution
+PROJECT_GOVERNANCE_SKILL=aota-project-governance@1.0.0
+PLAN_GOVERNANCE_SKILL=aota-plan-governance@1.0.0
+CHATGPT_DIRECT_GENERIC_GOVERNANCE_WRITE=no
+```
+
+`governance.project` requires trusted intake context and approval/decision
+handling on the runtime side. Its result is read back before continuing and
+contains Project identity evidence plus generated projection, ContextRoute and
+Card proof. `governance.plan` likewise requires trusted Project context and
+returns durable status, Plan identity, authority/projection references and
+revision evidence. A result that is not verified is not a successful
+materialization.
+
+## Friday's Normal Planning Loop
+
+For every new request, Friday/ChatGPT remains the semantic orchestrator:
+
+```text
+read canonical Chat governance
+-> resolve/read current Project and Plan context
+-> card-first, bounded hydration where available
+-> AOTA Reader read-only source/current-state inspection
+-> duplicate/adjacent Plan reconciliation
+-> semantic Project/Plan proposal
+-> user review and approval when required
+-> canonical AF lifecycle operation
+-> local authority readback/reconcile
+-> stop before source construction until Milestone approval
+```
+
+Do not infer current state from Chat history, an uploaded snapshot, a folder,
+an Issue number, a session name or a branch name. Use logical Project/Plan
+references and the current trusted binding.
+
+```text
+CARD_FIRST=yes
+FULL_PLAN_EAGER_HYDRATION=no
+AUTHORITY_KIND_DRIVES_ADAPTER_SPECIFIC_HYDRATION=yes
 AOTA_READER_ROLE=readonly_observation
-```
-
-A governed mutation follows: Friday prepares a Codex mutation prompt for
-the Issue body or a control-comment update → authorized Codex performs
-the GitHub mutation → Friday reads back and reconciles. Prior ad-hoc
-report/sync/summary comments are legacy non-authoritative history
-(`PRIOR_AD_HOC_COMMENT_CREATES_PRECEDENT=no`).
-
-## How Friday starts planning
-
-Friday is the temporary task-main semantic orchestrator until AOTA Forge
-fully assumes runtime.
-
-1. **Live-read governance** — read `GOVERNANCE_INDEX.md` and the shared
-   core from the local canonical root; never rely on a ChatGPT Project
-   upload snapshot as current truth.
-2. **Hydrate Plan** — in the order defined by the shared core:
-   Issue body → `milestone_progress_index` (#1) → `development_notes`
-   (#2) → `defect_register` (#3) → relevant/bounded `plan_appendix`
-   (#4) → local evidence on demand. Cross-subplan hydration: umbrella
-   first, then one relevant Child Plan. `#4` is bounded/relevant only
-   (`PLAN_APPENDIX_RELEVANT_BOUNDED_HYDRATION=yes`); `#5
-   decision_change_log` is not default hydration (see shared core).
-3. **Source reconnaissance** — inspect relevant source/current state.
-   Use AOTA Reader or equivalent read-only observation. If deeper local
-   inspection is required, request a bounded Codex read-only
-   reconnaissance pass. Do not infer current state from chat memory.
-4. **Milestone planning** — produce a Milestone implementation plan,
-   decompose `W1..Wn`, define dependencies, acceptance, and review
-   expectations per the shared core. Complete validation planning in the
-   same pass: classify change surface, reconcile risk / process depth,
-   and map each important Acceptance Criterion to its required proof per
-   `aota-chatgpt-validation-governance.md`.
-5. **Bounded Codex feasibility review** — one review only. Treat
-   Codex suggestions as advisory.
-6. **Friday reconciliation** — reconcile user feedback, Codex feedback,
-   source evidence, accepted Plan authority, and over-design risk.
-   Never blindly copy a reviewer recommendation.
-7. **User approval** — stop for explicit user approval of the Milestone
-   plan before generating construction prompts.
-8. **Construction SPEC / review triage** — generate execution SPECs,
-   then after work, triage each `RV1`/`RV2` finding batch as a whole.
-
-Milestone planning order:
-
-```text
-source reconnaissance
-↓
-Milestone/W decomposition
-↓
-Change Surface classification
-↓
-Risk reconciliation
-↓
-Acceptance → Required Proof mapping
-↓
-bounded feasibility review
-↓
-Friday reconciliation
-↓
-user approval
-↓
-construction
-```
-
-```text
-VALIDATION_PLAN_BEFORE_CONSTRUCTION=yes
-CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
-```
-
-```text
-CODEX_RECOMMENDATION_IS_ADVISORY=yes
-FRIDAY_RECONCILIATION_REQUIRED=yes
-BLINDLY_COPY_REVIEWER_RECOMMENDATION=no
+AOTA_READER_GOVERNANCE_WRITE=no
 USER_MILESTONE_APPROVAL_REQUIRED=yes
 ```
 
-## Validation planning
+## New Project Workflow
 
-Before construction, Friday / task-main maps each important Acceptance
-Criterion to a change surface, risk / process depth, and required proof per
-`aota-chatgpt-validation-governance.md`. Planning stays proportional: a
-simple `W` can be very short.
+For a request such as `建立/納管一個 Project`:
+
+1. Determine the semantic Project intent and canonical `PROJECT_ID`.
+2. Inspect whether that Project is already registered through the trusted
+   Project governance context. Ask when identity or repository scope is
+   ambiguous.
+3. Gather only the required semantic facts: name, kind, summary and bounded
+   capabilities when needed. Do not ask the user to construct `project.yaml`
+   manually as the normal workflow.
+4. Present the material durable Project decision and obtain the required user
+   approval.
+5. Invoke `aota.invoke(operation="governance.project", arguments={"mode":
+   "init", "project_id": PROJECT_ID, ...})` through the canonical AF
+   lifecycle. If no governed ChatGPT writer is available, Codex is only the
+   mechanical ingress to this same operation.
+6. Read the result and verify `PROJECT_ID`, Project Registry evidence, trusted
+   Project scope, generated `MAP.md`/`STATUS.md` references and available
+   Project/ContextRoute proof.
+
+If the Project already exists, use `inspect` and, only for verified drift,
+`reconcile`; do not re-run `init` to repair or refresh it.
 
 ```text
-CHANGE_SURFACE=pure_logic
-PROCESS_DEPTH=FAST
-REQUIRED_PROOF=V1
+CHATGPT_PROJECT_INIT_CONTRACT_ALIGNED=yes
+PROJECT_INIT_USES_CANONICAL_AF_LIFECYCLE=yes
+PROJECT_INIT_MANUAL_PROJECT_YAML=no
+PROJECT_INIT_WORKFLOW=inspect -> approval -> governance.project(init) -> readback -> verify
+MAP_STATUS_MANUAL_MAINTENANCE=no
 ```
 
-For real operational surfaces (`runtime_wiring`, `transport`,
-`agent_model_boundary`, `lifecycle`, `authority_or_security_boundary`,
-`persistence`, `concurrency`, `deployment`) the required proof defaults to
-V3 when the acceptance involves real operational behavior.
+The source `.aota/project.yaml` remains a bounded Project identity manifest.
+It does not become Plan, session or root-capability authority.
+
+## New Plan Workflow
+
+For a new bounded initiative:
+
+1. Inspect the trusted Project governance and active Plan projection.
+2. Reconcile duplicate or adjacent Plan intent before proposing another Plan.
+   An existing matching Plan is inspected or amended; it is not duplicated.
+3. Produce a semantic Plan proposal containing, at minimum:
+   `PLAN_NUMBER` as display/provenance only, canonical `PLAN_ID`, title, goal,
+   scope, non-goals, Milestones/DAG, acceptance, validation, and authority
+   intent.
+4. Establish the intended binding explicitly:
+
+   ```text
+   SOURCE_KIND=portable_plan_local
+   AUTHORITY_KIND=local_governance
+   ```
+
+   The binding fields are `plan_id`, `source_kind`, `authority_ref`,
+   `source_revision` and `source_digest`. `PLAN_NUMBER`, folder name,
+   `root_ref` and session identity do not select authority.
+5. Present the proposal for explicit user approval. Plan approval authorizes
+   Plan materialization only; it does not authorize source construction.
+6. Invoke `aota.invoke(operation="governance.plan", arguments={"mode":
+   "init", "project_id": PROJECT_ID, "plan_id": PLAN_ID,
+   "candidate_body": COMPLETE_PORTABLE_PLAN, ...})`.
+7. Read back the durable result and verify the local binding, logical
+   authority reference, source revision/digest, `plan.md` authority,
+   ProjectPlanRecord, journal/CAS evidence, generated projections and Card /
+   ContextRoute proof.
+8. Stop. Continue to Milestone planning, and source construction only after
+   the relevant explicit Milestone approval.
 
 ```text
-VALIDATION_PLAN_BEFORE_CONSTRUCTION=yes
-PROOF_DRIVEN_ACCEPTANCE=yes
+CHATGPT_PLAN_INIT_CONTRACT_ALIGNED=yes
+NEW_CHATGPT_PLAN_DEFAULT_AUTHORITY=local_governance
+NEW_CHATGPT_PLAN_REQUIRES_GITHUB_ISSUE=no
+PLAN_AUTHORITY_BINDING_MODEL=plan_id + source_kind + authority_ref + source_revision + source_digest
+PLAN_AUTHORITY_BINDING_REQUIRED=yes
+LOCAL_GOV2_PLAN_INIT_WORKFLOW=proposal -> approval -> governance.plan(init) -> readback -> stop before construction
 ```
 
-## Construction prompt gate
+The normal local semantic authority resolves through the trusted project
+governance root to `<plan_id>/plan.md`. ChatGPT reasons with the logical
+`authority_ref`, not a host path. It does not translate the legacy five-role
+comment model into local files.
 
-Friday produces a complete, standalone Codex construction prompt for a
-specific `W` only when the user explicitly says:
+## Plan Amendment Workflow
+
+For a material semantic delta on a normal local Plan:
+
+```text
+read current Plan authority and binding
+-> propose semantic delta
+-> obtain user approval when required by governance
+-> invoke governance.plan(mode=amend)
+-> CAS/readback verification
+-> verify new source revision and digest
+-> reconcile generated views and Cards
+```
+
+Use the fresh `expected_plan_revision` and semantic decision/authorization
+references required by the current descriptor/help contract. The candidate is
+the complete semantic Plan document expected by the local lifecycle, not a
+manual patch to a file. Stop on stale revision, stale authority, ambiguous
+identity, invalid candidate or unknown durable outcome; do not blind-retry.
+
+```text
+CHATGPT_PLAN_AMEND_CONTRACT_ALIGNED=yes
+LOCAL_GOV2_PLAN_AMEND_WORKFLOW=read -> semantic delta -> approval -> governance.plan(amend) -> CAS/readback -> projection reconcile
+PLAN_AMENDMENT_ISSUE_BODY_MUTATION=no
+PLAN_AUTHORITY_RESOLVED_BY_BINDING=yes
+```
+
+Only when the current trusted binding explicitly has
+`authority_kind=github_issue` may the legacy adapter use its Issue-body CAS
+amendment. That is not a fallback for local Gov2.
+
+## Authority-Aware Inspection and Hydration
+
+Start with known compact navigation and hydrate only what the question needs:
+
+```text
+known Cards / ContextRoute
+-> PlanCard
+-> current MilestoneCard
+-> explicit relevant authority ref
+-> bounded plan.md section
+-> MAP.md / STATUS.md when useful
+-> evidence on demand
+```
+
+```text
+CARD_FIRST=yes
+KNOWN_CONTEXT_REUSE_FIRST=yes
+FULL_PLAN_EAGER_HYDRATION=no
+AUTHORITY_KIND_DRIVES_ADAPTER_SPECIFIC_HYDRATION=yes
+```
+
+For `local_governance`, read the bound local Plan authority and its current
+revision/digest. For explicit `github_issue` compatibility, use bounded Gov1
+hydration including legacy managed comments when the adapter requires them.
+Do not make GitHub five-comment hydration universal.
+
+`MAP.md` is generated Project navigation and `STATUS.md` is generated Project
+progress. Both are useful projections, never authority. When stale, call the
+canonical Project/Plan reconcile or projection lifecycle through the trusted
+AF path; never prepare a manual maintenance prompt.
+
+## Construction Prompt Gate
+
+Friday produces a complete Codex construction prompt only when the user
+explicitly asks, for example:
 
 ```text
 給我施工提示詞
 ```
 
-Without that intent, Friday stays in planning / reconciliation / triage.
-A prompt must be scoped to one `W`, bound to the exact Milestone
-acceptance, and must not invent Plan scope.
-
-The construction prompt must carry the bounded validation requirements for
-that `W` (change surface, required proof, validation method, budget /
-stopping rule). Codex must not self-expand the validation scope beyond the
-assigned bounded requirements.
+Without that intent, stay in semantic planning, reconciliation or review. A
+construction prompt must be bound to the current local Plan authority,
+explicit Milestone/Work Item scope, acceptance and required proof. It must
+carry the logical `PROJECT_ID`, `PLAN_ID`, current authority revision/digest
+evidence and the exact authority refs needed for the work; it must not assume
+that a GitHub Issue body is current truth.
 
 ```text
-CONSTRUCTION_PROMPT_CARRIES_BOUNDED_VALIDATION=yes
-CODEX_SELF_EXPANDS_VALIDATION_SCOPE=no
+USER_MILESTONE_APPROVAL_REQUIRED=yes
+CONSTRUCTION_PROMPT_BOUND_TO_CURRENT_PLAN_AUTHORITY=yes
+CONSTRUCTION_PROMPT_REQUIRES_EXPLICIT_USER_REQUEST=yes
 ```
 
-## Normal Work Item defaults
-
-Normal `W` is an execution unit, not a governance ceremony. Unless the
-shared core's risk-scoped exception applies with an explicit
-`IDENTIFIED_RISK`/`JUSTIFICATION`/`END_CONDITION`:
+Codex is mechanical execution only. It must use the same canonical AF
+lifecycle for Project/Plan governance and must not implement a second
+`project.init`/`plan.init` path, create directories by hand, edit the
+governance store, append the journal, or maintain generated views manually.
 
 ```text
-NORMAL_WORK_ITEM_SEPARATE_ISSUE=no
-NORMAL_WORK_ITEM_INDEPENDENT_PLAN_REVIEW_DEFAULT=no
-NORMAL_WORK_ITEM_INDEPENDENT_SOURCE_REVIEW_DEFAULT=no
-NORMAL_WORK_ITEM_PROJECT_STEWARD_DEFAULT=no
-NORMAL_WORK_ITEM_COMPLETION_APPENDIX_DEFAULT=no
-NORMAL_WORK_ITEM_KNOWN_GOOD_CHECKPOINT_DEFAULT=no
-NORMAL_WORK_ITEM_ACCEPTED_BASE_CEREMONY_DEFAULT=no
-NORMAL_EXECUTION_DOES_NOT_CREATE_NEW_GITHUB_COMMENT=yes
-ROUTINE_EXECUTION_EVENT_LOG=no
-NORMAL_WORK_ITEM_COMMENT_CREATION=no
+CODEX_ROLE=mechanical_execution
+CODEX_USES_CANONICAL_AF_LIFECYCLE=yes
+SECOND_CODEX_PLAN_INIT_IMPLEMENTATION=no
+SECOND_CODEX_PROJECT_INIT_IMPLEMENTATION=no
 ```
 
-Construction `PASS` at `W` level produces source-ready code plus cheap
-bounded validation (`CHEAP_VALIDATION_EARLY=yes`) only. It does not by
-default create a new Issue comment, `Event Log` entry, independent
-review, or Steward reconciliation. Friday returns the sync report in the
-chat conversation without persisting a GitHub comment:
+## Stewardship and AGENTS Boundary
+
+Project Stewardship is a deterministic-first subsystem, not routine ChatGPT
+work assignment. Do not assign a Project Steward to routine MAP/STATUS
+updates, notes, Plan Init bookkeeping or Work Item completion.
 
 ```text
-USER_VISIBLE_SYNC_REPORT != GITHUB_EVENT_LOG_REQUIRED
+PROJECT_STEWARD_IS_NORMAL_WORKER=no
+PROJECT_STEWARDSHIP_IS_SUBSYSTEM_PLUGIN=yes
+DETERMINISTIC_FIRST_STEWARDSHIP=yes
+SEMANTIC_STEWARD_ONLY_FOR_RESIDUAL=yes
 ```
 
-Routine Work Item progress syncs at Milestone boundaries; material
-durable governance information may update an existing managed comment
-mid-Milestone (see shared core `MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED`):
+Source/worktree `AGENTS.md` is Project policy. AF discovers and projects its
+applicability. Do not create a governance-root duplicate
+`/workspace/plans/<project>/AGENTS.md` as part of normal Gov2 planning.
 
-- Milestone review/closure → update `milestone_progress_index` (#1)
-  and, as strictly needed, `#2/#3/#4` (all compact).
-- Mid-Milestone material update (when needed) → update existing
-  `#2`/`#3`/`#4` in place (e.g., true defect → `#3`, valid
-  constraint/debt/risk → `#2`, supporting technical info → `#4`).
-- Only a material Plan amendment updates the Issue body in place and
-  appends one entry to `decision_change_log` (#5).
+## Explicit Legacy Route
+
+`aota-github-issue-planning.md` is a compatibility alias, not this entry's
+normal implementation. If the current binding is explicitly `github_issue`,
+route through the bounded Gov1 read-before-write adapter and preserve its
+five managed roles. Otherwise route every new Project/Plan request here and
+the local Gov2 lifecycle.
 
 ```text
-MILESTONE_COMPLETION_UPDATES_BODY=no
-MILESTONE_COMPLETION_UPDATES_PROGRESS_INDEX=yes
-ROUTINE_WORK_ITEM_PROGRESS_SYNC_AT_MILESTONE_BOUNDARY=yes
-MATERIAL_MANAGED_COMMENT_UPDATE_MID_MILESTONE_ALLOWED=yes
-NORMAL_EXECUTION_DOES_NOT_CREATE_NEW_GITHUB_COMMENT=yes
-BODY_MATERIAL_PLAN_AMENDMENT_UPDATE=yes
+LEGACY_GITHUB_ENTRY_ALIAS=yes
+GOV1_COMPATIBILITY_PRESERVED=yes
+GOV1_IS_NORMAL_NEW_PLAN_PATH=no
+GITHUB_5_COMMENT_MODEL_ADAPTER_SPECIFIC=yes
+LOCAL_GOV2_REQUIRES_FIVE_COMMENT_FILES=no
+GITHUB_5_COMMENT_MODEL_ROLE=legacy_adapter_only
 ```
 
-## Integrated review and repair loop
+## Validation Planning
 
-All `W` under a Milestone converge into one integrated Milestone review
-(`RV1`). Friday triages all findings as a batch, creates repair Work
-Items for real defects only, executes them, then runs `RV2` if needed.
-Do not run a finding-by-finding review loop.
+Use `aota-chatgpt-validation-governance.md` for Change Surface, risk/process
+depth, V1/V2/V3/V4 proof selection and evidence non-escalation. Validation
+semantics are independent of whether the current Plan carrier is local or
+legacy GitHub. This adapter does not redefine them.
 
-```text
-REVIEW_BATCH_ORIENTED=yes
-FINDING_BY_FINDING_REVIEW_LOOP_DEFAULT=no
-REVIEW_COUNT_MUST_BE_JUSTIFIED_BY_NEW_INFORMATION=yes
-```
-
-## Transitional control plane
-
-```text
-TRANSITIONAL_CHATGPT_CONTROL_PLANE=yes
-LONG_TERM_EXECUTION_OWNER=AOTA_Forge_task_main
-TRANSITIONAL_MODEL_DOES_NOT_DEFINE_FINAL_RUNTIME_IMPLEMENTATION=yes
-AOTA_WORKTREE_CONTRACT_VERSION=transitional see aota-worktree-governance
-```
-
-Friday duties: requirement convergence, Plan/Milestone planning, Work
-Item decomposition, Codex feedback reconciliation, construction SPEC
-generation, review triage, repair Work Item planning, Milestone
-acceptance recommendation, governance materialization planning. Friday
-does not perform direct terminal/source writes. Codex is the mechanical
-executor. Long-term execution, worktree/lane lifecycle, and runtime
-worktree governance belong to `task-main` / `aota-worktree-governance`.
-The manual-Codex worktree adapter
-(`aota-chatgpt-worktree-governance`) remains transitional.
-
-This adapter remains thin by design. Any rule that would change
-objective, scope, hierarchy, body authority, comment roles, Steward
-checkpoints, or Git semantics must be proposed as an amendment to the
-shared core, not patched here.
+Stop rather than infer when a binding, approval, current revision, source
+fact, or runtime result is missing. `AOTA Reader` is observation only and
+cannot replace the canonical lifecycle writer.

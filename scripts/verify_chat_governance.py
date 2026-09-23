@@ -37,6 +37,7 @@ def resolve_governance_root(cli_root=None):
 ADAPTER_FILES = {
     "SHARED_CORE": "aota-portable-plan-governance.md",
     "CHATGPT_PLANNING_ENTRY": "aota-chatgpt-project-planning.md",
+    "CHATGPT_VALIDATION_GOVERNANCE": "aota-chatgpt-validation-governance.md",
     "PARALLEL_DEVELOPMENT_ADAPTER": "aota-chatgpt-parallel-development.md",
     "WORKTREE_MANUAL_ADAPTER": "aota-chatgpt-worktree-governance.md",
     "LEGACY_GITHUB_ENTRY_ALIAS": "aota-github-issue-planning.md",
@@ -44,23 +45,45 @@ ADAPTER_FILES = {
 
 # Canonical markers that must appear (exact string). Some are validated cross-file.
 CORE_MARKERS = [
-    "ISSUE_BODY_ROLE=portable_plan_normative_contract",
-    "ONE_PRIMARY_MANAGED_COMMENT_PER_ROLE=yes",
-    "PLAN_ISSUE_EXPECTED_PRIMARY_MANAGED_COMMENT_COUNT=5",
-    "APPROVED_CONTINUATION_SAME_ROLE_ALLOWED=yes",
-    "CONTINUATION_OF_REQUIRED=yes",
-    "PLAN_APPENDIX_LOCATION=managed_comment",
-    "PLAN_APPENDIX_IS_PLAN_AUTHORITY=no",
-    "DECISION_CHANGE_LOG_ENTRY_APPEND_ONLY=yes",
-    "MILESTONE_COMPLETION_UPDATES_BODY=no",
-    "BODY_MATERIAL_PLAN_AMENDMENT_UPDATE=yes",
+    "PORTABLE_PLAN_SEMANTICS_SINGLE_CORE=yes",
+    "PORTABLE_PLAN_AUTHORITY_CARRIER_NEUTRAL=yes",
+    "GITHUB_ISSUE_IS_PORTABLE_PLAN_ONTOLOGY=no",
+    "PLAN_AUTHORITY_RESOLVED_BY_BINDING=yes",
+    "AUTHORITY_SELECTED_BY_PLAN_AUTHORITY_BINDING=yes",
+    "PLAN_ID_IS_AUTHORITY=no",
+    "SOURCE_KIND=portable_plan_local",
+    "AUTHORITY_KIND=local_governance",
+    "LOCAL_GOVERNANCE_NORMAL_SUPPORTED=yes",
+    "LEGACY_GITHUB_ISSUE_COMPAT_SUPPORTED=yes",
+    "GITHUB_5_COMMENT_MODEL_ADAPTER_SPECIFIC=yes",
+    "GITHUB_5_COMMENT_MODEL_GOV2_REQUIRED=no",
+    "LOCAL_GOV2_CREATES_FIVE_COMMENT_FILES=no",
+    "COMMENT_PLAN_AUTHORITY=no",
+    "CARD_FIRST=yes",
+    "FULL_PLAN_EAGER_HYDRATION=no",
+    "AUTHORITY_KIND_DRIVES_ADAPTER_SPECIFIC_HYDRATION=yes",
+    "MAP_AUTHORITY=no",
+    "STATUS_AUTHORITY=no",
+    "MAP_STATUS_MANUAL_MAINTENANCE=no",
+    "GOVERNANCE_ROOT_AGENTS_DUPLICATE=no",
+    "PROJECT_STEWARD_IS_NORMAL_WORKER=no",
+    "PROJECT_STEWARDSHIP_IS_SUBSYSTEM_PLUGIN=yes",
+    "DETERMINISTIC_FIRST_STEWARDSHIP=yes",
+    "SEMANTIC_STEWARD_ONLY_FOR_RESIDUAL=yes",
     "NEW_PLAN_W_AS_WORK_ITEM=yes",
     "NORMAL_WORK_ITEM_SEPARATE_ISSUE=no",
     "NORMAL_WORK_ITEM_INDEPENDENT_PLAN_REVIEW_DEFAULT=no",
     "NORMAL_WORK_ITEM_INDEPENDENT_SOURCE_REVIEW_DEFAULT=no",
+    "NORMAL_WORK_ITEM_PROJECT_STEWARD_DEFAULT=no",
     "PLAN_INIT_PER_MILESTONE=no",
     "PLAN_INIT_PER_WORK_ITEM=no",
     "FRIDAY_TEMPORARY_TASK_MAIN=yes",
+    "CHATGPT_DIRECT_GENERIC_GOVERNANCE_WRITE=no",
+    "CODEX_ROLE=mechanical_execution",
+    "CODEX_USES_CANONICAL_AF_LIFECYCLE=yes",
+    "AOTA_READER_ROLE=readonly_observation",
+    "USER_MILESTONE_APPROVAL_REQUIRED=yes",
+    "CONSTRUCTION_PROMPT_BOUND_TO_CURRENT_PLAN_AUTHORITY=yes",
 ]
 
 # These may be in core or adapters (cross-file)
@@ -73,6 +96,15 @@ CROSS_FILE_MARKERS = {
 
 # Forbidden active markers (must not appear as current normative, except legacy compatibility)
 FORBIDDEN_ACTIVE_MARKERS = [
+    ("ISSUE_BODY_REMAINS_PLAN_AUTHORITY=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("NEW_PLAN_REQUIRES_GITHUB_ISSUE=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("LOCAL_GOV2_REQUIRES_FIVE_COMMENT_FILES=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("GITHUB_5_COMMENT_MODEL_GOV2_REQUIRED=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("NORMAL_NEW_PLAN_ENTRY=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("GITHUB_ISSUE_BODY_MUTATION_IS_LOCAL_AMENDMENT=yes", "CG005_GOV1_RESTORED_AS_NORMAL"),
+    ("CHATGPT_DIRECT_GENERIC_GOVERNANCE_WRITE=yes", "CG006_WRITER_BOUNDARY_REGRESSION"),
+    ("MAP_STATUS_MANUAL_MAINTENANCE=yes", "CG007_PROJECTION_OWNERSHIP_REGRESSION"),
+    ("PROJECT_STEWARD_IS_NORMAL_WORKER=yes", "CG008_STEWARD_BOUNDARY_REGRESSION"),
     ("PARENT_OWNS_CROSS_WORKSTREAM_GOVERNANCE=yes", "CG004_CURRENT_LEGACY_MODEL_REINTRODUCED"),
     ("MILESTONE_DELEGATES_TO_CHILD_PLAN_ONLY_WHEN_EXPLICIT=yes", "CG004_CURRENT_LEGACY_MODEL_REINTRODUCED"),
     ("PLAN_INIT_PER_WORK_ITEM=yes", "CG004_CURRENT_LEGACY_MODEL_REINTRODUCED"),
@@ -87,6 +119,34 @@ FORBIDDEN_ACTIVE_MARKERS = [
 # More contextual forbidden patterns requiring bounded detection
 # For "Comments are an append-only Event Log only" -> fail only if active/current, not legacy section
 FORBIDDEN_CONTEXTUAL = [
+    {
+        "pattern": re.compile(
+            r"(?:every|each|normal|new)\s+(?:new\s+)?Plan\s+"
+            r"(?:must|requires?|needs?)\s+(?:create|have)\s+(?:a\s+)?GitHub\s+Issue",
+            re.IGNORECASE,
+        ),
+        "code": "CG005_GOV1_RESTORED_AS_NORMAL",
+        "detail": "GitHub Issue creation required for normal new Plans",
+    },
+    {
+        "pattern": re.compile(
+            r"(?:every|each|normal|new)\s+(?:local\s+)?Gov2\s+Plan\s+"
+            r"(?:requires?|must\s+have|creates?)\s+(?:exactly\s+)?five\s+"
+            r"(?:managed\s+)?comment(?:s|\s+files)?",
+            re.IGNORECASE,
+        ),
+        "code": "CG005_GOV1_RESTORED_AS_NORMAL",
+        "detail": "five-comment representation required for local Gov2",
+    },
+    {
+        "pattern": re.compile(
+            r"local(?:\s+Gov2)?\s+Plan\s+(?:amendment|amendments?)\s+"
+            r"(?:must|requires?|uses?)\s+(?:a\s+)?GitHub\s+Issue\s+body",
+            re.IGNORECASE,
+        ),
+        "code": "CG005_GOV1_RESTORED_AS_NORMAL",
+        "detail": "GitHub Issue body mutation required for local Plan amendment",
+    },
     {
         "pattern": re.compile(r"Comments\s+are\s+an\s+append-only\s+Event\s+Log\s+only"),
         "code": "CG004_CURRENT_LEGACY_MODEL_REINTRODUCED",
@@ -110,6 +170,7 @@ FORBIDDEN_CONTEXTUAL = [
 # Thin adapter expectations
 EXPECTED_ADAPTER_REFERENCES = {
     "aota-chatgpt-project-planning.md": ["SHARED_CORE=aota-portable-plan-governance.md"],
+    "aota-chatgpt-validation-governance.md": ["SHARED_CORE=aota-portable-plan-governance.md"],
     "aota-chatgpt-parallel-development.md": ["SHARED_CORE=aota-portable-plan-governance.md"],
     "aota-chatgpt-worktree-governance.md": ["SHARED_CORE=aota-portable-plan-governance.md"],
     "aota-github-issue-planning.md": ["LEGACY_COMPATIBILITY_ALIAS_ONLY=yes"],
@@ -135,6 +196,7 @@ def contains_legacy_section_context(text: str, match_start: int) -> bool:
         "## legacy",
         "## retired",
         "read-compatible",
+        "legacy_gov1_adapter_representation=yes",
     ]
     for m in explicit:
         if m.lower() in lower:
@@ -223,14 +285,16 @@ def main(argv=None) -> int:
         text = read_text(f)
         # Simple exact forbidden markers
         for forbidden, code in FORBIDDEN_ACTIVE_MARKERS:
-            if forbidden in text:
-                # Check if this is inside legacy compatibility section
-                idx = text.find(forbidden)
+            search_from = 0
+            while True:
+                idx = text.find(forbidden, search_from)
+                if idx < 0:
+                    break
+                # Check each occurrence so a valid legacy example cannot hide
+                # a later active regression in the same file.
                 if not contains_legacy_section_context(text, idx):
                     errors.append((code, f"forbidden active marker {forbidden} in {f.name}"))
-                else:
-                    # tolerated legacy compatibility
-                    pass
+                search_from = idx + len(forbidden)
         # Contextual patterns
         for item in FORBIDDEN_CONTEXTUAL:
             for m in item["pattern"].finditer(text):
@@ -239,7 +303,9 @@ def main(argv=None) -> int:
                     continue
                 # Additional guard for body+appendices: only fail if described as current authority
                 snippet = text[max(0,start-500):start+500].lower()
-                if item["detail"].startswith("body + structured"):
+                if item["code"] == "CG005_GOV1_RESTORED_AS_NORMAL":
+                    errors.append((item["code"], f"{item['detail']} in {f.name}"))
+                elif item["detail"].startswith("body + structured"):
                     # check if snippet suggests current authority (not retired)
                     if "retired" in snippet or "legacy" in snippet or "do not" in snippet or "read-compatible" in snippet:
                         continue
@@ -252,8 +318,8 @@ def main(argv=None) -> int:
                         continue
                 elif item["detail"].startswith("W=Workstream"):
                     # Need to check if it's describing new/current hierarchy vs legacy
-                    window = text[max(0,start-800):start+800]
-                    if "LEGACY" in window or "read-compatible" in window.lower() or "retired" in window.lower():
+                    window = text[max(0,start-180):start+180]
+                    if "legacy" in window.lower() or "read-compatible" in window.lower() or "retired" in window.lower():
                         continue
                     # Check for "NEW_PLAN_W_AS_WORK_ITEM=yes" nearby suggests current model is correct, so any W=Workstream without legacy qualifier is forbidden
                     # If line contains W=Workstream and not inside legacy section, fail

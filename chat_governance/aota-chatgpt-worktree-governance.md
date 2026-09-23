@@ -23,6 +23,9 @@ GOVERNANCE_INDEX=chat_governance/GOVERNANCE_INDEX.md
 TRANSITIONAL_CHATGPT_CONTROL_PLANE=yes
 LONG_TERM_WORKTREE_EXECUTION_OWNER=task-main
 WORKTREE_CHATGPT_ADAPTER_DUPLICATES_RUNTIME_CORE=no
+WORKTREE_IS_PLAN_AUTHORITY=no
+PLAN_IDENTITY_FROM_CURRENT_GOVERNANCE=yes
+PLAN_AUTHORITY_FROM_CURRENT_BINDING=yes
 ```
 
 Read `aota-worktree-governance` for the full runtime root/path/branch/
@@ -134,7 +137,7 @@ already belongs to exactly one repository.
 Retire the oversimplified rules:
 
 - "always use latest known-good Milestone checkpoint"
-- "use accepted writable base from Issue Body"
+- "use an Issue body as universal Plan authority"
 
 ```text
 WORKTREE_BASE_MUST_BE_EXPLICIT=yes
@@ -144,6 +147,7 @@ COMMON_BASE_SHA_MUST_BE_EXPLICIT=yes
 COMMON_BASE_SHA_MUST_BE_GIT_VERIFIED=yes
 CURRENT_EXECUTION_BASE_ROLE=current_verified_integration_frontier
 CURRENT_EXECUTION_BASE != MILESTONE_KNOWN_GOOD_CHECKPOINT
+WORKTREE_BASE_COMES_FROM_CURRENT_GOVERNANCE=yes
 ```
 
 At Milestone start the base is usually the prior Milestone's known-good

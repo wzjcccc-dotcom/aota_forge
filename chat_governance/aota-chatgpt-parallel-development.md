@@ -1,27 +1,32 @@
 ---
 name: aota-chatgpt-parallel-development
-description: Thin ChatGPT adapter for W execution scheduling within one approved Milestone. Depends on shared core for Plan authority, body/comment contract, Steward, and checkpoints.
+description: Thin ChatGPT adapter for W execution scheduling within one approved Milestone. Depends on the shared carrier-neutral core for Plan semantics, Steward and checkpoints; legacy GitHub projection details remain adapter-specific.
 ---
 
 # AOTA ChatGPT Parallel Development — Execution Adapter
 
 This is a **Milestone-internal W scheduling adapter**. It does not own Plan
-authority, Issue materialization semantics, Steward rules, Body/comment
-contract, Milestone creation, or Plan amendment semantics. All those are owned
-by:
+authority, carrier materialization semantics, Steward rules, Milestone
+creation, or Plan amendment semantics. All shared semantic rules are owned by:
 
 ```text
 SHARED_CORE=aota-portable-plan-governance.md
 PARALLEL_ADAPTER_DUPLICATES_CORE=no
 ADAPTER_MAY_REFERENCE_SHARED_CORE=yes
 ADAPTER_MAY_REDEFINE_SHARED_CORE=no
+PLAN_IDENTITY_FROM_CURRENT_GOVERNANCE=yes
+PLAN_AUTHORITY_FROM_CURRENT_BINDING=yes
+LOCAL_GOV2_REQUIRES_FIVE_COMMENT_FILES=no
+GITHUB_5_COMMENT_MODEL_ADAPTER_SPECIFIC=yes
 ```
 
-Read the shared core first for `S/M/W` identifiers, Body normative contract,
-fixed 5 managed comments, body update semantics, Milestone-first workflow,
-Steward checkpoints (`PLAN_INIT / MILESTONE_CLOSE / PLAN_CLOSE`), Git
-checkpoint levels, and materialization timing. Validation planning and
-proof levels are specialized by:
+Read the shared core first for `S/M/W` identifiers, the Portable Plan semantic
+contract, authority-binding rules, Milestone-first workflow, Steward
+checkpoints (`PLAN_INIT / MILESTONE_CLOSE / PLAN_CLOSE`), Git checkpoint levels
+and evidence principles. If the current binding is the explicit legacy
+`github_issue` adapter, its five managed roles are available through the
+legacy entry only; they are not a local Gov2 requirement. Validation planning
+and proof levels are specialized by:
 
 ```text
 CHATGPT_VALIDATION_GOVERNANCE=aota-chatgpt-validation-governance.md
@@ -52,8 +57,8 @@ aota-chatgpt-project-planning.md (Friday planning entry)
 - execution result reconciliation and mechanical integration
 - transition into one integrated Milestone review
 
-Explicitly **not** owned: Plan authority, Body/comment contract, Steward,
-Milestone creation/amendment, or body mutation.
+Explicitly **not** owned: Plan authority, carrier-specific projection
+contract, Steward, Milestone creation/amendment, or authority mutation.
 
 Execution adapter identity:
 
@@ -233,17 +238,23 @@ final review. If `RV1 FAIL`: return to Friday, aggregate findings, drop false
 positives / style-only / out-of-scope noise, group real defects, create repair
 W, execute, integrate, then `RV2` (`REVIEW_COUNT_MUST_BE_JUSTIFIED_BY_NEW_INFORMATION=yes`).
 
-## GitHub materialization
+## Authority-carrier materialization
 
-This adapter does not create GitHub comments directly.
+This adapter does not create authority or mutate a Plan carrier directly. A
+normal local Gov2 execution result is reconciled through the current Project /
+Plan governance lifecycle. It does not create comment files or ask Codex to
+maintain generated projections.
 
 ```text
 ROUTINE_WORK_ITEM_GITHUB_COMMENT=no
+MAP_STATUS_MANUAL_MAINTENANCE=no
 ROUTINE_WORK_ITEM_PROGRESS_SYNC_AT_MILESTONE_BOUNDARY=yes
 ```
 
-Routine W completion: no GitHub sync. Material durable findings route to the
-shared materialization policy: `#2` currently-valid engineering info, `#3`
-material defect, `#4` supporting technical info, Body + `#5` only for material
-Plan amendment. The legacy `major historical event -> append arbitrary Event Log
-comment` rule is retired; fixed managed-comment model applies.
+Routine W completion is local evidence and current-state reconciliation, not a
+new remote projection. For an explicit legacy `github_issue` binding only,
+material durable findings may use the five legacy roles: `#2` current
+engineering information, `#3` material defects, `#4` supporting technical
+information, and the Issue body plus `#5` for a material Plan amendment. The
+legacy role model never applies to a local Gov2 Plan and is never translated
+into five local files.
