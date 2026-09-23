@@ -475,6 +475,8 @@ DECLARED_COMPATIBILITY_IMPORTERS: frozenset[str] = frozenset(
         "aota_forge.composition.task_main",
         "aota_forge.composition.task_main_daily_launcher",
         "aota_forge.work_plane.steward_finalizer",
+        "aota_forge.governance.projection",
+        "aota_forge.governance.projection_lifecycle",
     }
 )
 

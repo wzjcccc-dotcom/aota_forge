@@ -301,6 +301,8 @@ def test_role_bootstrap_exposes_task_main_skill_refs_and_skill_open_unbound(
         "aota-workspace-operations",
         "aota-result-hydration",
         "aota-task-main-governance",
+        "aota-project-governance",
+        "aota-plan-governance",
     }
     assert payload["SKILL_ACCESS"]["argument"] == "ref"
     assert payload["SKILL_ACCESS"]["IS_AUTHORITY"] is False

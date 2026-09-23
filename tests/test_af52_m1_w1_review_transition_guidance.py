@@ -212,18 +212,18 @@ def _reset_dispatcher():
 
 
 class TestSkillGuidance:
-    def test_skill_teaches_second_advance_once_and_prohibits_manual_review(self) -> None:
+    def test_thin_skill_excludes_legacy_review_workflow(self) -> None:
         text = _skill_text()
-        assert "INTEGRATED_REVIEW_REQUIRED" in text
-        assert (
-            'call `aota.invoke(operation="task_main.advance_once", arguments={})` again in the same session'
-            in text
-        )
-        assert "Never construct the review handoff manually" in text
-        assert 'no `handoff.write(mode="review")`' in text
-        assert "no fabricated review Work Item" in text
-        assert 'no `task.start(role="reviewer")` from a source Work handoff' in text
-        assert "DISPATCHED_REVIEW" in text
+        for stale in (
+            "INTEGRATED_REVIEW_REQUIRED",
+            "task_main.advance_once",
+            "Never construct the review handoff manually",
+            'handoff.write(mode="review")',
+            "fabricated review Work Item",
+            'task.start(role="reviewer") from a source Work handoff',
+            "DISPATCHED_REVIEW",
+        ):
+            assert stale not in text, stale
 
     def test_skill_does_not_claim_manual_dispatch(self) -> None:
         text = _skill_text()

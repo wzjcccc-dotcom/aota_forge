@@ -6,6 +6,8 @@ contracts:
   compatible_operations:
   - plan_init
   - plan_retirement
+  - governance.plan
+  - governance.project
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'
 - name: canonical_dispatch_result.v1
@@ -24,5 +26,53 @@ contracts:
   description: Workspace file write result
   compatible_operations:
   - workspace.write
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.handoff.write.v1
+  description: Semantic handoff write result
+  compatible_operations:
+  - handoff.write
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.task.start.v1
+  description: Task start result
+  compatible_operations:
+  - task.start
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.task.return.v1
+  description: Task return result
+  compatible_operations:
+  - task.return
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.git.checkpoint.v1
+  description: Git checkpoint result
+  compatible_operations:
+  - git.checkpoint
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.git.integrate.v1
+  description: Git integration result
+  compatible_operations:
+  - git.integrate
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.git.push.v1
+  description: Git push result
+  compatible_operations:
+  - git.push
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.github.issue.update.v1
+  description: GitHub issue update result
+  compatible_operations:
+  - github.issue.update
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.github.issue.comment.update.v1
+  description: GitHub issue comment update result
+  compatible_operations:
+  - github.issue.comment.update
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'

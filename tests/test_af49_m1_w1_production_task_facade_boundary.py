@@ -95,6 +95,8 @@ def _work_item_handoff(sandbox: WorktreeSandboxBoundary):
         "semantic_stop_expectations": ["stop"],
         "work_role": "coder",
         "task_kind": "impl",
+        "milestone_ref": "M1",
+        "work_item_ref": "W1",
     }
     return handoff_write(
         mode="work_item",

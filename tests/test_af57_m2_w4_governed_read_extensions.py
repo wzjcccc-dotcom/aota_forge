@@ -1235,7 +1235,7 @@ class TestArchitectureGuards:
     def test_no_public_operation_surface_change(self):
         from aota_forge import mcp_transport
 
-        assert len(mcp_transport.LOGICAL_OPERATIONS) == 29
+        assert len(mcp_transport.LOGICAL_OPERATIONS) == 31
         for forbidden in ("grant.create", "grant.open", "evidence.open", "cross_project.search"):
             assert forbidden not in mcp_transport.LOGICAL_OPERATIONS
         assert grant_module.GRANT_IS_PUBLIC_AGENT_OPERATION is False

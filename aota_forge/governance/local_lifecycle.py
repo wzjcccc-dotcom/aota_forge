@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
@@ -81,6 +82,10 @@ LOCAL_PLAN_AUTHORITY_CUTOVER_IMPLEMENTED = True
 LOCAL_PLAN_AUTHORITY_CUTOVER_USES_EXISTING_PORT = True
 LOCAL_PLAN_AUTHORITY_CUTOVER_USES_EXISTING_JOURNAL = True
 LOCAL_PLAN_AUTHORITY_CUTOVER_USES_PROJECT_STORE_CAS = True
+LOCAL_PLAN_AMENDMENT_IMPLEMENTED = True
+LOCAL_PLAN_AMENDMENT_USES_EXISTING_PORT = True
+LOCAL_PLAN_AMENDMENT_USES_EXISTING_JOURNAL = True
+LOCAL_PLAN_AMENDMENT_USES_PROJECT_STORE_CAS = True
 SECOND_PLAN_MUTATION_PROTOCOL_CREATED = False
 SECOND_TRANSACTION_FRAMEWORK_CREATED = False
 SILENT_DUAL_AUTHORITY_ALLOWED = False
@@ -412,6 +417,7 @@ def _new_record(
     source_binding: PlanAuthorityBinding | None,
     source_revision: str | int | None,
     source_digest: str | None,
+    evidence_extra: Mapping[str, Any] | None = None,
 ) -> JournalRecord:
     target_binding = PlanAuthorityBinding(
         plan_id=request.plan_id,
@@ -433,6 +439,8 @@ def _new_record(
         "cutover_phase": LocalPlanLifecyclePhase.PREPARED.value,
         "authority_switch": "pending",
     }
+    if evidence_extra:
+        evidence.update(dict(evidence_extra))
     return JournalRecord(
         journal_id=_journal_id(identity),
         correlation_id=request.correlation_id,
@@ -494,7 +502,11 @@ def _find_existing(
         )
     for entry in matches:
         evidence = entry.record.evidence
-        if evidence.get("local_plan_lifecycle") not in {"local_plan_init", "authority_cutover"}:
+        if evidence.get("local_plan_lifecycle") not in {
+            "local_plan_init",
+            "local_plan_amendment",
+            "authority_cutover",
+        }:
             raise LocalPlanLifecycleError(
                 "IDEMPOTENCY_CONFLICT",
                 "idempotency key is already owned by another journal operation",
@@ -679,6 +691,214 @@ class LocalPlanLifecycleCoordinator:
             source_revision=None,
             source_digest=None,
             source_body=None,
+        )
+
+    def amend(
+        self,
+        request: LocalPlanLifecycleRequest,
+        candidate_body: str,
+        *,
+        expected_authority: PlanAuthorityBinding,
+        amendment_event: Mapping[str, Any],
+    ) -> LocalPlanLifecycleResult:
+        """Replace one existing local Plan through the existing init pipeline.
+
+        This is an internal local-governance seam, not a new Agent operation:
+        the journal and mutation port still carry the canonical ``plan_init``
+        contract. The replacement is admitted only with the caller's exact
+        Project/Plan revision and raw authority precondition.
+        """
+        body = _bounded_body(candidate_body)
+        candidate_digest = _digest(body)
+        normalized_digest = _normalized_digest(body)
+        current = self.governance_store.get_plan(request.project_id, request.plan_id)
+
+        if not isinstance(expected_authority, PlanAuthorityBinding):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_BINDING_INVALID",
+                "amendment requires the current local Plan authority binding",
+                plan_record=current,
+            )
+        if (
+            expected_authority.plan_id != request.plan_id
+            or expected_authority.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or expected_authority.authority_ref != request.destination.authority_ref
+            or expected_authority.source_revision is None
+            or expected_authority.source_digest is None
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_PRECONDITION_INVALID",
+                "amendment requires the complete current local authority binding",
+                plan_record=current,
+            )
+        if request.expected_plan_revision is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_REVISION_REQUIRED",
+                "local Plan amendment requires an explicit Project Governance CAS revision",
+                plan_record=current,
+            )
+        try:
+            event = dict(amendment_event)
+        except (TypeError, ValueError) as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_EVENT_INVALID",
+                f"amendment event must be a mapping: {exc}",
+                plan_record=current,
+            )
+        if event.get("event") != "plan_amendment":
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_EVENT_INVALID",
+                "amendment event must identify plan_amendment",
+                plan_record=current,
+            )
+
+        identity = _request_identity(
+            "local_plan_amendment",
+            request,
+            candidate_digest,
+            expected_authority,
+            expected_authority.source_revision,
+            expected_authority.source_digest,
+        )
+        try:
+            existing = _find_existing(self.journal_store, request, identity)
+        except LocalPlanLifecycleError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                exc.code,
+                exc.message,
+                plan_record=current,
+            )
+        if existing is not None:
+            return self._resume(
+                request,
+                existing,
+                candidate_body=None,
+                source_adapter=None,
+                source_binding=None,
+            )
+
+        if current is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.BOUND,
+                "PLAN_RECORD_REQUIRED",
+                "local Plan amendment requires an existing Project Governance Plan record",
+            )
+        if current.revision != request.expected_plan_revision:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "STALE_PLAN_REVISION",
+                "local Plan record revision is stale",
+                plan_record=current,
+            )
+        if current.lifecycle_state != PLAN_LIFECYCLE_ACTIVE:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_NOT_ACTIVE",
+                "only an active local Plan can be amended",
+                plan_record=current,
+            )
+        if not _source_binding_matches(current.authority, expected_authority):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_BINDING_STALE",
+                "current local Plan authority does not match the amendment CAS precondition",
+                plan_record=current,
+            )
+
+        target_adapter = LocalPlanAuthorityAdapter(
+            request.destination,
+            allow_existing_replacement=True,
+        )
+        try:
+            target_revision, target_digest, target_body = target_adapter.read_raw_authority(
+                request.destination.expected_ref
+            )
+        except LocalPlanLifecycleError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                exc.code,
+                exc.message,
+                plan_record=current,
+            )
+        except Exception as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "LOCAL_TARGET_READ_UNKNOWN",
+                str(exc),
+                plan_record=current,
+            )
+        if not target_body:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "LOCAL_PLAN_MISSING",
+                "local Plan amendment requires an existing non-empty Plan document",
+                plan_record=current,
+            )
+        if (
+            target_revision != expected_authority.source_revision
+            or target_digest != expected_authority.source_digest
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "STALE_AUTHORITY",
+                "local Plan document does not match the amendment raw CAS precondition",
+                plan_record=current,
+            )
+
+        event.update(
+            {
+                "local_plan_lifecycle": "local_plan_amendment",
+                "project_id": request.project_id,
+                "plan_id": request.plan_id,
+                "amendment_precondition_binding": expected_authority.to_dict(),
+                "original_plan_raw_digest": target_digest,
+                "candidate_plan_raw_digest": candidate_digest,
+            }
+        )
+        record = _new_record(
+            request,
+            kind="local_plan_amendment",
+            identity=identity,
+            target_revision=target_revision,
+            target_digest=target_digest,
+            candidate_digest=candidate_digest,
+            normalized_digest=normalized_digest,
+            subject_revision=current.revision,
+            source_binding=None,
+            source_revision=target_revision,
+            source_digest=target_digest,
+            evidence_extra=event,
+        )
+        return self._create_and_attempt(
+            request,
+            record,
+            body,
+            target_adapter,
+            source_adapter=None,
+            source_binding=None,
+            source_revision=target_revision,
+            source_digest=target_digest,
+            source_body=target_body,
         )
 
     def cutover(
@@ -1110,11 +1330,19 @@ class LocalPlanLifecycleCoordinator:
         entry = result.journal_entry
         if not result.ok or entry is None:
             return result
-        completion_evidence = {
-            "authority_switch": "complete",
-            "cutover_phase": LocalPlanLifecyclePhase.VERIFIED.value,
-            "binding_revision": result.plan_record.revision if result.plan_record else None,
-        }
+        if entry.record.evidence.get("local_plan_lifecycle") == "local_plan_amendment":
+            completion_evidence = {
+                "event": "plan_amendment",
+                "amendment_phase": LocalPlanLifecyclePhase.VERIFIED.value,
+                "authority_switch": "unchanged",
+                "binding_revision": result.plan_record.revision if result.plan_record else None,
+            }
+        else:
+            completion_evidence = {
+                "authority_switch": "complete",
+                "cutover_phase": LocalPlanLifecyclePhase.VERIFIED.value,
+                "binding_revision": result.plan_record.revision if result.plan_record else None,
+            }
         if all(
             entry.record.evidence.get(key) == value
             for key, value in completion_evidence.items()
@@ -1165,7 +1393,12 @@ class LocalPlanLifecycleCoordinator:
         source_adapter: PlanAuthorityReadAdapter | PlanAuthorityMutationPort | None,
         source_binding: PlanAuthorityBinding | None,
     ) -> LocalPlanLifecycleResult:
-        target_adapter = LocalPlanAuthorityAdapter(request.destination)
+        target_adapter = LocalPlanAuthorityAdapter(
+            request.destination,
+            allow_existing_replacement=(
+                entry.record.evidence.get("local_plan_lifecycle") == "local_plan_amendment"
+            ),
+        )
         current = self.governance_store.get_plan(request.project_id, request.plan_id)
         state = entry.record.journal_state
         if state in _NONTERMINAL_STATES:
@@ -1389,6 +1622,8 @@ class LocalPlanLifecycleCoordinator:
         current = self.governance_store.get_plan(request.project_id, request.plan_id)
         if kind == "local_plan_init":
             return self._complete_local_init(request, entry, current, desired)
+        if kind == "local_plan_amendment":
+            return self._complete_local_amendment(request, entry, current, desired)
         if kind != "authority_cutover":
             return _failure(
                 request,
@@ -1522,6 +1757,125 @@ class LocalPlanLifecycleCoordinator:
                 "binding CAS did not verify the exact local authority after write",
                 journal_entry=entry,
                 plan_record=verified or switched,
+            )
+        return self._mark_terminal_evidence(
+            request, _success(request, journal_entry=entry, plan_record=verified)
+        )
+
+    def _complete_local_amendment(
+        self,
+        request: LocalPlanLifecycleRequest,
+        entry: DurableJournalEntry,
+        current: ProjectPlanRecord | None,
+        desired: PlanAuthorityBinding,
+    ) -> LocalPlanLifecycleResult:
+        if current is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_RECORD_MISSING",
+                "local Plan amendment cannot update a missing Project Governance Plan record",
+                journal_entry=entry,
+            )
+        if current.lifecycle_state != PLAN_LIFECYCLE_ACTIVE:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_NOT_ACTIVE",
+                "local Plan amendment cannot update a retired Plan",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        try:
+            expected_data = entry.record.evidence["amendment_precondition_binding"]
+            expected = PlanAuthorityBinding.from_dict(expected_data)
+        except (KeyError, TypeError, ValueError) as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "JOURNAL_CORRUPT",
+                f"local amendment journal has an invalid authority precondition: {exc}",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        if _source_binding_matches(current.authority, desired):
+            return self._mark_terminal_evidence(
+                request, _success(request, journal_entry=entry, plan_record=current)
+            )
+        if current.revision != entry.record.subject_expected_revision:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "STALE_PLAN_REVISION",
+                "Plan binding revision changed while local amendment was in flight",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        if not _source_binding_matches(current.authority, expected):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_BINDING_CONFLICT",
+                "current Plan authority is neither the amendment precondition nor the exact amended target",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        if (
+            current.authority.source_revision != entry.record.authority_source_revision
+            or current.authority.source_digest != entry.record.authority_observed_raw_digest
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "STALE_AUTHORITY",
+                "current Plan authority facts changed before amendment CAS",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        try:
+            amended = self.governance_store.compare_and_swap_plan(
+                request.project_id,
+                request.plan_id,
+                current.revision,
+                authority=desired,
+            )
+        except StalePlanRevisionError:
+            latest = self.governance_store.get_plan(request.project_id, request.plan_id)
+            if latest is not None and _source_binding_matches(latest.authority, desired):
+                return self._mark_terminal_evidence(
+                    request, _success(request, journal_entry=entry, plan_record=latest)
+                )
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "AMENDMENT_BINDING_CONFLICT",
+                "amendment CAS lost and the observed binding is not the exact amended target",
+                journal_entry=entry,
+                plan_record=latest,
+            )
+        except ProjectGovernancePersistenceError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "AMENDMENT_BINDING_PERSISTENCE_UNKNOWN",
+                str(exc),
+                journal_entry=entry,
+                plan_record=current,
+            )
+        verified = self.governance_store.get_plan(request.project_id, request.plan_id)
+        if (
+            verified is None
+            or verified.revision != amended.revision
+            or not _source_binding_matches(verified.authority, desired)
+            or verified.lifecycle_state != PLAN_LIFECYCLE_ACTIVE
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "AMENDMENT_BINDING_READBACK_FAILED",
+                "amended Plan binding did not verify after CAS",
+                journal_entry=entry,
+                plan_record=verified or amended,
             )
         return self._mark_terminal_evidence(
             request, _success(request, journal_entry=entry, plan_record=verified)

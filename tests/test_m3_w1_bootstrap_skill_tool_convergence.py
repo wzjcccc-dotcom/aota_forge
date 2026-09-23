@@ -268,7 +268,8 @@ class TestFGEagerProgressive:
                 "aota-multi-phase-doc-closure", "aota-workspace-operations",
                 # AF #54 M5/W3: governance procedures are on-demand only
                 # (never eager-dumped into bootstrap).
-                "aota-task-main-governance"}
+                "aota-task-main-governance", "aota-project-governance",
+                "aota-plan-governance"}
         for role, (eager, prog) in _ROLE_SKILL_DEFS.items():
             # Eager must be normal capabilities (not large-ref/hydration/shell fallback)
             assert "aota-result-hydration" not in eager, f"{role} hydration must not be eager"

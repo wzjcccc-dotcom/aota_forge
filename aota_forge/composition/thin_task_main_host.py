@@ -672,6 +672,30 @@ def compose_thin_task_main_host(
                 f"thin host governed-read activation failed: {exc}"
             ) from exc
 
+    governance_intake_context: Any | None = None
+    if local_governance_binding is not None and registry_path is not None:
+        try:
+            from importlib import import_module
+
+            GovernanceIntakeContext = import_module(
+                "aota_forge.governance.intake"
+            ).GovernanceIntakeContext
+
+            governance_intake_context = GovernanceIntakeContext(
+                workspace_id=project_evidence.workspace_id,
+                governance_base=governance_base,
+                registry_path=registry_path,
+                workspace_root=project_evidence.workspace_root,
+                project_root=sandbox.project_root,
+                governance_store_path=governance_store_path,
+                journal_path=Path(sandbox.project_root) / ".aota" / "governance-journal.json",
+                source_repository=str(trusted_project_context.get("source_repository", "") or ""),
+            )
+        except Exception as exc:
+            if resolved_governance_store is not None:
+                resolved_governance_store.close()
+            raise TrustedBindingError(f"thin host governance intake context failed: {exc}") from exc
+
     store: ExecutionStateStore = (
         execution_store if execution_store is not None else _default_execution_store(root)
     )
@@ -838,6 +862,7 @@ def compose_thin_task_main_host(
             principal_id=THIN_HOST_ROLE,
             principal_type=THIN_HOST_ROLE,
             channel="mcp",
+            governance_intake_context=governance_intake_context,
         ),
         handoff=handoff,
         sandbox=sandbox,

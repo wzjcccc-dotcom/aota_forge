@@ -225,6 +225,8 @@ class TestW1BootstrapProjection:
             "aota-workspace-operations@1.0.0",
             "aota-result-hydration@1.0.0",
             "aota-task-main-governance@1.0.0",
+            "aota-project-governance@1.0.0",
+            "aota-plan-governance@1.0.0",
         }
         for entry in progressive:
             assert entry["short_description"]

@@ -76,6 +76,11 @@ _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 _RESOLVER = ContextResolver()
 
+GOVERNANCE_INTAKE_OPERATIONS: tuple[str, ...] = (
+    "governance.project",
+    "governance.plan",
+)
+
 
 # ---------------------------------------------------------------------------
 # M5 Canonical Execution Descriptors — YAML Projection (S1/M2/W2)
@@ -991,7 +996,7 @@ def execute(
         principal_audit,
     )
 
-    if descriptor.read_write != READ_ONLY:
+    if descriptor.read_write != READ_ONLY and operation not in GOVERNANCE_INTAKE_OPERATIONS:
         audit["validation"] = "ok"
         audit["context"] = "ok"
         audit["handler"] = "not_executed"
@@ -1045,6 +1050,7 @@ def execute(
 
 __all__ = [
     "CANONICAL_EXECUTION_OPERATIONS",
+    "GOVERNANCE_INTAKE_OPERATIONS",
     "EXECUTION_DESCRIPTORS",
     "EXECUTION_OPERATIONS",
     "EXECUTOR_CAPABILITIES_DESCRIPTOR",

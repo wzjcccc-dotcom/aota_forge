@@ -901,7 +901,7 @@ class TestGuidanceSurfaceGuardsV2:
     def test_no_new_public_operation_surface(self):
         from aota_forge import mcp_transport
 
-        assert len(mcp_transport.LOGICAL_OPERATIONS) == 29
+        assert len(mcp_transport.LOGICAL_OPERATIONS) == 31
         assert len(set(mcp_transport.LOGICAL_OPERATIONS)) == len(mcp_transport.LOGICAL_OPERATIONS)
         for banned in (
             "governance.search",

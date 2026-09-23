@@ -224,6 +224,7 @@ class TestTier2BootstrapParity:
         from aota_forge.work_plane.task_main_descriptors import build_task_main_operation_guidance
         from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
         from aota_forge.work_plane.tool_surface import create_role_tool_surface
+        from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
         m = load_operation_descriptor_map(discover_canonical_project_root())
         desc = m["task_main.submit_work_projection"]
@@ -255,20 +256,27 @@ class TestTier2BootstrapParity:
             progressive=["result.hydrate"],
         )
 
-        class _SB:
-            worktree_root = "/tmp"
-            project_id = "p"
-            worktree_id = "w"
+        _SB = WorktreeSandboxBoundary(
+            workspace_id="ws",
+            workspace_root="/tmp",
+            project_id="p",
+            project_root="/tmp",
+            worktree_id="w",
+            worktree_root="/tmp",
+            registry_fingerprint="a" * 64,
+            candidate_fingerprint="b" * 64,
+        )
 
         class _B:
             pass
 
         _B.handoff = _handoff
         _B.tool_surface = _surface
-        _B.sandbox = _SB()
+        _B.sandbox = _SB
         _B.project_id = "p"
         _B.worktree_id = "w"
         _B.canonical_task_id = "t"
+        _B.trusted_task_main_context = object()
 
         out = handle_role_bootstrap(_B(), {})
         assert "OPERATION_GUIDANCE" in out

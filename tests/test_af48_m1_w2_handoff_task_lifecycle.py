@@ -261,7 +261,15 @@ class TestTaskStart:
         # thin task lifecycle, whose work_item grounding requires the explicit
         # semantic work_role (the historical coder default remains only on the
         # legacy context-bearing compatibility path).
-        sem = {"objective": "obj", "bounded_scope": "scope", "validation_expectations": ["v"], "semantic_stop_expectations": ["s"], "work_role": "coder"}
+        sem = {
+            "objective": "obj",
+            "bounded_scope": "scope",
+            "validation_expectations": ["v"],
+            "semantic_stop_expectations": ["s"],
+            "work_role": "coder",
+            "milestone_ref": "M1",
+            "work_item_ref": "W1",
+        }
         ref = handoff_write(mode="work_item", semantic=sem, caller_role="task-main", sandbox=sb)
         binding = CanonicalDispatchBinding(
             canonical_task_id="task-main-1",

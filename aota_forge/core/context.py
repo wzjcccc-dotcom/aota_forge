@@ -109,6 +109,9 @@ class TrustedContext:
     provenance: str = "trusted_runtime"
     freshness: str | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
+    # Trusted runtime-only Project/Plan intake composition. It is never
+    # model-supplied and is omitted from the bounded public context view.
+    governance_intake_context: Any | None = field(default=None, repr=False, compare=False)
     _binding_token: object = field(default=None, repr=False, compare=False)
 
     @property
@@ -147,6 +150,7 @@ def bind_trusted_context(
     channel: str = "runtime",
     freshness: str | None = None,
     metadata: Mapping[str, str] | None = None,
+    governance_intake_context: Any | None = None,
 ) -> TrustedContext:
     """Create the runtime-bound context accepted by Core.
 
@@ -181,6 +185,7 @@ def bind_trusted_context(
         provenance=provenance,
         freshness=freshness,
         metadata=bounded_metadata,
+        governance_intake_context=governance_intake_context,
         _binding_token=_TRUSTED_CONTEXT_TOKEN,
     )
 
@@ -337,6 +342,7 @@ class OperationContext:
     authority: None = None
     capability_lease: None = None
     project_binding: ProjectBinding | None = None
+    trusted_context: TrustedContext | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Bounded metadata view: never echoes params/trusted values."""
@@ -381,6 +387,8 @@ class ContextResolver:
         }
         if binding.trusted_context is not None:
             trusted.update(binding.trusted_context.metadata)
+            if binding.trusted_context.governance_intake_context is not None:
+                trusted["governance_intake_context"] = binding.trusted_context.governance_intake_context
         semantic_inputs = {
             key: value
             for key, value in validated_params.items()
@@ -399,4 +407,5 @@ class ContextResolver:
             semantic_inputs=semantic_inputs,
             trusted=trusted,
             project_binding=project_binding if isinstance(project_binding, ProjectBinding) else None,
+            trusted_context=binding.trusted_context,
         )

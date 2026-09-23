@@ -549,7 +549,7 @@ def test_w2_regression_operations_13_and_hashes():
     EXPECTED_HASHES = mod.EXPECTED_HASHES  # type: ignore
 
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 21
+    assert set(m).issuperset(EXPECTED_HASHES)
     for name, expected in EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 
@@ -557,9 +557,9 @@ def test_w2_regression_operations_13_and_hashes():
 def test_registry_topology_preserved():
     from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 
-    # AF #55 M1 adds project.reconcile to the canonical Core general registry
-    # (8 general/lifecycle); execution.* still absent.
-    assert len(DEFAULT_REGISTRY.names()) == 8
+    # Governance 2.0 intake adds two general operations; execution.* remains
+    # outside the HandlerRegistry topology.
+    assert len(DEFAULT_REGISTRY.names()) == 10
     assert "execution.task_start" not in DEFAULT_REGISTRY.names()
 
 

@@ -295,6 +295,12 @@ INTROSPECTION_OPERATIONS: tuple[str, ...] = (
     "operations.list",
     "runtime.status",
 )
+# AF #57 M1/W2: Project/Plan Governance 2.0 intake families share the
+# canonical Core ingress and the existing single aota.invoke transport.
+GOVERNANCE_OPERATIONS: tuple[str, ...] = (
+    "governance.project",
+    "governance.plan",
+)
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
 # operations are Agent-visible through the same single aota.invoke transport.
 # Exposure is an exposure boundary only; server-side role/authority validation
@@ -326,7 +332,7 @@ GITHUB_READ_OPERATIONS: tuple[str, ...] = ("github.issue.read", "github.issue.co
 GITHUB_MUTATION_OPERATIONS: tuple[str, ...] = ("github.issue.update", "github.issue.comment.update")
 GITHUB_OPERATIONS: tuple[str, ...] = GITHUB_READ_OPERATIONS + GITHUB_MUTATION_OPERATIONS
 LOGICAL_OPERATIONS: tuple[str, ...] = (
-    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS + INTROSPECTION_OPERATIONS + (HELP_OPERATION,)
+    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS + INTROSPECTION_OPERATIONS + GOVERNANCE_OPERATIONS + (HELP_OPERATION,)
 )
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
@@ -904,6 +910,40 @@ def _project_tool_response(binding: Any, operation: str, tool_response: ToolResp
     return _governed_from_response(binding, operation, tool_response)
 
 
+def _invoke_core_ingress(
+    binding: Any,
+    operation: str,
+    arguments: dict[str, Any],
+) -> McpToolResult:
+    """Project one canonical Core-ingress envelope through the MCP boundary."""
+    from aota_forge.core_ingress import dispatch_via_core
+
+    try:
+        envelope = dispatch_via_core(
+            operation,
+            dict(arguments),
+            _to_canonical_binding(binding),
+        )
+    except ForgeError as exc:
+        error = {"code": getattr(exc, "code", "GOVERNED_OPERATION_FAILURE"), "message": str(exc)}
+        return _governed_error(binding, operation, error["code"], error["message"])
+    except Exception as exc:  # noqa: BLE001 - transport boundary
+        message = _bounded_failure_message(str(exc))
+        return _governed_error(binding, operation, "GOVERNED_OPERATION_FAILURE", message)
+    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+        error = envelope.get("error") if isinstance(envelope, dict) else None
+        code = str(error.get("code") if isinstance(error, dict) else "GOVERNED_OPERATION_FAILURE")
+        message = _bounded_failure_message(str(error.get("message") if isinstance(error, dict) else "governed operation failed"))
+        return _governed_error(binding, operation, code, message)
+    payload: dict[str, Any] = {}
+    for key in ("data", "evidence", "warnings"):
+        value = envelope.get(key)
+        if value:
+            payload[key] = value
+    response = ToolResponse.success(payload)
+    return _governed_from_response(binding, operation, response)
+
+
 class _SharedAotaMcpAdapter:
     """Thin MCP transport adapter over canonical Core dispatch (W1 convergence).
 
@@ -978,6 +1018,8 @@ class _SharedAotaMcpAdapter:
         # through the same Core registry handlers (exposure is not authority).
         if operation in INTROSPECTION_OPERATIONS:
             return self._invoke_bound_introspection(operation, arguments)
+        if operation in GOVERNANCE_OPERATIONS:
+            return _invoke_core_ingress(self.binding, operation, arguments)
         # Canonical dispatch via Core (owns validation + provider selection).
         try:
             from aota_forge.core_ingress import dispatch_tool_operation as _core_dispatch
@@ -1314,6 +1356,8 @@ _HELP_RELEVANT_SKILLS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("task.start", "task.return"), "aota-task-main-control@1.0.0"),
     (("role.bootstrap", "skill.open", HELP_OPERATION), "aota-task-main-control@1.0.0"),
     (("operations.list", "host.status", "runtime.status"), "aota-task-main-control@1.0.0"),
+    (("governance.project",), "aota-project-governance@1.0.0"),
+    (("governance.plan",), "aota-plan-governance@1.0.0"),
 )
 
 
@@ -1625,6 +1669,12 @@ class _UnboundAotaAdapter:
         # Read-only Progress introspection: canonical Core ingress handlers.
         if operation in UNBOUND_READ_INTROSPECTION_OPERATIONS:
             return self._invoke_read_introspection(operation, arguments)
+        if operation in GOVERNANCE_OPERATIONS:
+            return _unbound_governed_error(
+                operation,
+                "AUTHORITY_DENIED",
+                "governance intake requires a trusted bound runtime context",
+            )
         # Durable by_ref hydration in unbound mode: scope from the ref identity.
         if operation == "result.hydrate":
             return self._invoke_registry_hydrate(arguments)
@@ -1933,6 +1983,7 @@ __all__ = [
     "TASK_MAIN_OPERATIONS",
     "HANDOFF_TASK_OPERATIONS",
     "INTROSPECTION_OPERATIONS",
+    "GOVERNANCE_OPERATIONS",
     "HELP_OPERATION",
     "INTERNAL_TASK_MAIN_OPERATIONS",
     "BOUNDED_MCP_OPERATIONS",

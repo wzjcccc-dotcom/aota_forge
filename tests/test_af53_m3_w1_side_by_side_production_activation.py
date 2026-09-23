@@ -457,17 +457,15 @@ class TestBExplicitTrustedThinSelection:
         root = _make_project_root(tmp_path)
         launcher = DailyTaskMainLauncher(plan_adapter=None)
 
-        ctx = launcher.prepare(
-            worktree_root=root,
-            project_id=PROJECT_ID,
-            worktree_id="wt-thin-missing-authority",
-            runtime_config_path=cfg,
-            origin_task_main_session_ref="20260913_af53_m3w1_missing_authority_session",
-            plan_id="plan_af53_m3w1",
-        )
-
-        with pytest.raises(TrustedBindingError) as excinfo:
-            _load_binding(launcher, ctx)
+        with pytest.raises(TaskMainRuntimeSelectionError) as excinfo:
+            launcher.prepare(
+                worktree_root=root,
+                project_id=PROJECT_ID,
+                worktree_id="wt-thin-missing-authority",
+                runtime_config_path=cfg,
+                origin_task_main_session_ref="20260913_af53_m3w1_missing_authority_session",
+                plan_id="plan_af53_m3w1",
+            )
         assert "PLAN_AUTHORITY_SOURCE_UNAVAILABLE" in str(excinfo.value)
 
     def test_launcher_github_and_local_authority_fail_closed(
@@ -481,19 +479,17 @@ class TestBExplicitTrustedThinSelection:
         (governance_base / PROJECT_ID).mkdir(parents=True)
         launcher = DailyTaskMainLauncher(plan_adapter=None)
 
-        ctx = launcher.prepare(
-            worktree_root=root,
-            project_id=PROJECT_ID,
-            worktree_id="wt-thin-dual-authority",
-            runtime_config_path=cfg,
-            origin_task_main_session_ref="20260913_af53_m3w1_dual_authority_session",
-            plan_id="plan_af53_m3w1",
-            plan_ref="wzjcccc-dotcom/aota-hermes-tools#57",
-            governance_base=governance_base,
-        )
-
-        with pytest.raises(TrustedBindingError) as excinfo:
-            _load_binding(launcher, ctx)
+        with pytest.raises(TaskMainRuntimeSelectionError) as excinfo:
+            launcher.prepare(
+                worktree_root=root,
+                project_id=PROJECT_ID,
+                worktree_id="wt-thin-dual-authority",
+                runtime_config_path=cfg,
+                origin_task_main_session_ref="20260913_af53_m3w1_dual_authority_session",
+                plan_id="plan_af53_m3w1",
+                plan_ref="wzjcccc-dotcom/aota-hermes-tools#57",
+                governance_base=governance_base,
+            )
         assert "PLAN_AUTHORITY_SOURCE_AMBIGUOUS" in str(excinfo.value)
 
     def test_operator_selects_thin_production_candidate(

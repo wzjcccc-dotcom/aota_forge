@@ -147,6 +147,11 @@ Dispatch a child
 Inspect Git
   -> git.status / git.diff                               (plan_ref)
 
+Project / local Plan intake
+  -> open aota-project-governance or aota-plan-governance as needed
+  -> governance.project / governance.plan through the same aota.invoke entry
+  -> keep project.yaml, plan.md and generated MAP/STATUS ownership distinct
+
 Plan/Milestone governance mutation
 Milestone close, Plan close
 checkpoint / integrate / push
@@ -178,13 +183,16 @@ Repeat the loop until the Milestone is genuinely done or a real gate stops you:
    boundary). Reason the current Milestone, Work Items and prior results from
    what you read.
 2. Reason about the next semantic action.
-3. Write a bounded semantic handoff:
-   `handoff.write(mode="work_item", plan_ref=<ref>, payload={...semantic intent...})`.
+3. Write a bounded semantic handoff through the one public entry:
+   `aota.invoke(operation="handoff.write", arguments={"mode": "work_item", "plan_ref": <ref>, "payload": {...semantic intent...}})`.
 4. Start one permitted child role:
    `task.start(plan_ref=<ref>, role=<same work_role>, handoff_ref=<ref from handoff.write>)`.
 5. Consume the returned result/completion card (card-first; hydrate a
    `by_ref` result only through the exact claims attached to it).
 6. Reason again; choose the next action.
+
+`submit_work_projection` is internal compatibility only; it is not the Agent
+normal path.
 
 You may choose coder, reviewer, analyst, or project-steward as child roles,
 subject to actual role policy. The Control Plane never picks the child role.

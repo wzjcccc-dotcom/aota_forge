@@ -232,7 +232,7 @@ AF_TOOL_SURFACES = dict(_TOOL_SURFACES)
 #
 # ROLE x SKILL matrix (ASSIGNMENT eager/progressive/not_assigned):
 # task-main: task-main-control eager; workspace-operations/result-hydration/
-#            task-main-governance progressive
+#            task-main-governance/project-governance/plan-governance progressive
 # analyst: workspace-operations + evidence-first-debugging eager;
 #          result-hydration + restricted-shell progressive
 # coder: workspace-operations + spec-driven-implementation eager;
@@ -259,6 +259,14 @@ _SKILL_META: dict[str, tuple[str, str]] = {
         "known-good checkpoint lifecycle",
         "open before performing any Plan/Milestone governance mutation or "
         "checkpoint/integration close procedure",
+    ),
+    "aota-project-governance": (
+        "Governance 2.0 Project identity, trusted registration and generated projection intake",
+        "open when creating, inspecting or reconciling a Project through governance.project",
+    ),
+    "aota-plan-governance": (
+        "Governance 2.0 local Plan authority and bounded Plan lifecycle intake",
+        "open when initializing, amending, inspecting or closing a local Plan through governance.plan",
     ),
     "aota-workspace-operations": (
         "Bounded workspace search/read/write plus test policy via aota.invoke",
@@ -297,7 +305,13 @@ _SKILL_META: dict[str, tuple[str, str]] = {
 _ROLE_SKILL_DEFS: dict[str, tuple[list[str], list[str]]] = {
     "task-main": (
         ["aota-task-main-control"],
-        ["aota-workspace-operations", "aota-result-hydration", "aota-task-main-governance"],
+        [
+            "aota-workspace-operations",
+            "aota-result-hydration",
+            "aota-task-main-governance",
+            "aota-project-governance",
+            "aota-plan-governance",
+        ],
     ),
     "analyst": (
         ["aota-workspace-operations", "aota-evidence-first-debugging"],
@@ -327,6 +341,8 @@ ORPHAN_SKILL_DISPOSITION: dict[str, tuple[str, str]] = {
     "aota-spec-driven-implementation": ("assign_eager", "SPEC-driven workflow + validation integrity is coder normal path"),
     "aota-task-main-control": ("assign_eager", "milestone orchestration is task-main normal path"),
     "aota-task-main-governance": ("assign_progressive", "Governance 1.x transition procedures are task-main-owned but on-demand; never eager"),
+    "aota-project-governance": ("assign_progressive", "Governance 2.0 Project intake is task-main-owned but on-demand; never eager"),
+    "aota-plan-governance": ("assign_progressive", "Governance 2.0 local Plan intake is task-main-owned but on-demand; never eager"),
     "aota-workspace-operations": ("assign_eager", "search/read (+role-scoped write/test policy) is normal for analyst/coder/reviewer/steward"),
     "aota-restricted-shell": ("assign_progressive", "residual fallback only for analyst/coder conditional; never eager"),
     "aota-result-hydration": ("assign_progressive", "large-reference hydrate only; never normal Skill loading"),

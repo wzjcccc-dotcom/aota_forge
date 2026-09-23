@@ -355,12 +355,18 @@ class LocalPlanAuthorityAdapter(PlanAuthorityMutationPort):
     treats adapter success as verification.
     """
 
-    def __init__(self, destination: LocalPlanAuthorityDestination) -> None:
+    def __init__(
+        self,
+        destination: LocalPlanAuthorityDestination,
+        *,
+        allow_existing_replacement: bool = False,
+    ) -> None:
         if not isinstance(destination, LocalPlanAuthorityDestination):
             raise LocalGovernanceAdapterError(
                 "mutation adapter requires a LocalPlanAuthorityDestination"
             )
         self._destination = destination
+        self._allow_existing_replacement = allow_existing_replacement
         self.read_count = 0
         self.verify_count = 0
         self.mutate_count = 0
@@ -452,10 +458,27 @@ class LocalPlanAuthorityAdapter(PlanAuthorityMutationPort):
                     observed_raw_digest=current_digest,
                     observed_revision=current_revision,
                 )
+            if self._allow_existing_replacement:
+                if (
+                    request.authority_source_revision is None
+                    or request.authority_observed_raw_digest is None
+                ):
+                    return _rejection(
+                        request,
+                        "KNOWN_REJECTION",
+                        "existing local Plan replacement requires a complete raw CAS precondition",
+                    )
+            else:
+                return _rejection(
+                    request,
+                    "KNOWN_REJECTION",
+                    "plan_init does not amend an existing non-empty local Plan document; no effect",
+                )
+        elif self._allow_existing_replacement:
             return _rejection(
                 request,
                 "KNOWN_REJECTION",
-                "plan_init does not amend an existing non-empty local Plan document; no effect",
+                "local Plan amendment requires an existing non-empty Plan document",
             )
         revision, digest = self._materialize(body)
         self.write_count += 1

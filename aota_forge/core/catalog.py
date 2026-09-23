@@ -44,6 +44,8 @@ from aota_forge.core.contracts.registry import DEFAULT_REGISTRY
 # it is not a Core ingress dispatch operation and the model never self-grants
 # project authority.
 CANONICAL_GENERAL_OPERATIONS: Final[tuple[str, ...]] = (
+    "governance.project",
+    "governance.plan",
     "project.resolve",
     "project.reconcile",
     "git.inspect",
@@ -95,12 +97,12 @@ def get_catalog_descriptor(name: str) -> OperationContractDescriptor | None:
 
 
 def get_all_descriptors() -> tuple[OperationContractDescriptor, ...]:
-    """Return all 13 canonical descriptors in YAML order (deterministic)."""
+    """Return all canonical descriptors in YAML order (deterministic)."""
     return _load_all_descriptors()
 
 
 def get_general_lifecycle_descriptors() -> tuple[OperationContractDescriptor, ...]:
-    """Return the 7 descriptors that are bound into DEFAULT_REGISTRY."""
+    """Return the general/lifecycle descriptors bound into DEFAULT_REGISTRY."""
     m = _load_descriptor_map()
     return tuple(m[name] for name in (*CANONICAL_GENERAL_OPERATIONS, *CANONICAL_LIFECYCLE_OPERATIONS) if name in m)
 

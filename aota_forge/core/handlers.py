@@ -107,6 +107,32 @@ def _handle_project_reconcile(ctx: OperationContext) -> dict[str, Any]:
     return {"data": evidence.to_dict()}
 
 
+def _handle_governance_intake(ctx: OperationContext) -> dict[str, Any]:
+    """Route Project/Plan intake through the trusted runtime composition."""
+    # Keep the generic thin lifecycle import closure free of the legacy
+    # Governance package projection; load it only for a trusted intake call.
+    from importlib import import_module
+
+    dispatch_governance_operation = import_module(
+        "aota_forge.governance.intake"
+    ).dispatch_governance_operation
+
+    response = dispatch_governance_operation(
+        ctx.operation,
+        ctx.semantic_inputs,
+        context=ctx.trusted.get("governance_intake_context"),
+        trusted_context=ctx.trusted_context,
+    )
+    if response.ok:
+        return {"data": response.payload or {}}
+    error = response.error or {}
+    raise ForgeError(
+        str(error.get("code") or "GOVERNANCE_INTAKE_FAILED"),
+        str(error.get("message") or "governance intake failed"),
+        retryable=bool(error.get("retryable", False)),
+    )
+
+
 def _handle_runtime_status(ctx: OperationContext) -> dict[str, Any]:
     pid = ctx.params.get("pid")
     if not isinstance(pid, int) or isinstance(pid, bool):
@@ -430,6 +456,8 @@ def register_operations() -> None:
     """
     DEFAULT_REGISTRY.bind_handler("project.resolve", _handle_project_resolve)
     DEFAULT_REGISTRY.bind_handler("project.reconcile", _handle_project_reconcile)
+    DEFAULT_REGISTRY.bind_handler("governance.project", _handle_governance_intake)
+    DEFAULT_REGISTRY.bind_handler("governance.plan", _handle_governance_intake)
     DEFAULT_REGISTRY.bind_handler("git.inspect", _handle_git_inspect)
     DEFAULT_REGISTRY.bind_handler("runtime.status", _handle_runtime_status)
     DEFAULT_REGISTRY.bind_handler("host.status", _handle_host_status)

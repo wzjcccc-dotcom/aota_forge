@@ -340,6 +340,136 @@ contracts:
   - RETIREMENT_SELF_SUCCESSOR
   - RETIREMENT_STALE_AUTHORITY_PRECONDITION
   protocol_version: '1.0'
+- name: governance.plan
+  description: Canonical local Governance 2.0 Plan intake and lifecycle family
+  inputs:
+  - name: mode
+    type: str
+  - name: project_id
+    type: str
+  - name: plan_id
+    type: str
+  - name: candidate_body
+    type: str?
+  - name: expected_plan_revision
+    type: int?
+  - name: semantic_decision_ref
+    type: str?
+  - name: authorization_reference
+    type: str?
+  - name: lease_reference
+    type: str?
+  - name: idempotency_key
+    type: str?
+  - name: correlation_id
+    type: str?
+  required_context:
+  - principal
+  optional_context:
+  - project_binding
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: governance_plan
+  required_authority: trusted_governance_intake_context
+  approval_required: true
+  decision_required: true
+  valid_predecessor_state: uninitialized|active
+  valid_successor_state: active|retired
+  subject_revision_precondition: true
+  external_authority_precondition: false
+  idempotency: same intent replays; changed intent conflicts
+  result_contract: canonical_mutation_result.v1
+  errors:
+  - AUTHORITY_DENIED
+  - INPUT_INVALID
+  - MODE_INVALID
+  - PROJECT_ID_INVALID
+  - PLAN_ID_INVALID
+  - PLAN_BODY_REQUIRED
+  - PLAN_BODY_INVALID
+  - PLAN_BODY_TOO_LARGE
+  - PLAN_RECORD_REQUIRED
+  - PLAN_REVISION_REQUIRED
+  - STALE_PLAN_REVISION
+  - STALE_AUTHORITY
+  - PLAN_NOT_FOUND
+  - PLAN_NOT_ACTIVE
+  - LOCAL_AUTHORITY_REQUIRED
+  - AMENDMENT_BINDING_INVALID
+  - AMENDMENT_PRECONDITION_INVALID
+  - PLAN_INIT_FAILED
+  - PLAN_AMEND_FAILED
+  - PLAN_CLOSE_FAILED
+  - SOURCE_REPOSITORY_INVALID
+  - SOURCE_REPOSITORY_MISMATCH
+  - PROJECT_REGISTRY_REQUIRED
+  - PROJECT_REGISTRY_INVALID
+  - PROJECT_NOT_FOUND
+  - PROJECT_AMBIGUOUS
+  - PROJECT_RECONCILIATION_DRIFT
+  - PROJECT_SOURCE_REPOSITORY_MISMATCH
+  - PROJECT_RECONCILIATION_FAILED
+  - PROJECT_ROOT_REQUIRED
+  - GOVERNANCE_STORE_OPEN_FAILED
+  - GOVERNANCE_PROJECTION_FAILED
+  - LOCAL_GOVERNANCE_ROOT_INVALID
+  - PROJECT_INTAKE_FAILED
+  protocol_version: '1.0'
+- name: governance.project
+  description: Canonical local Governance 2.0 Project intake and lifecycle family
+  inputs:
+  - name: mode
+    type: str
+  - name: project_id
+    type: str
+  - name: project_name
+    type: str?
+  - name: project_kind
+    type: str?
+  - name: summary
+    type: str?
+  - name: capabilities
+    type: list?
+  required_context:
+  - principal
+  optional_context:
+  - project_binding
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: governance_project
+  required_authority: trusted_governance_intake_context
+  approval_required: true
+  decision_required: true
+  valid_predecessor_state: unresolved|registered
+  valid_successor_state: registered|reconciled
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: same intent replays; changed intent conflicts
+  result_contract: canonical_mutation_result.v1
+  errors:
+  - AUTHORITY_DENIED
+  - INPUT_INVALID
+  - MODE_INVALID
+  - PROJECT_ID_INVALID
+  - PROJECT_ID_MISMATCH
+  - PROJECT_MANIFEST_INVALID
+  - PROJECT_MANIFEST_WRITE_FAILED
+  - SOURCE_REPOSITORY_INVALID
+  - PROJECT_REGISTRY_REQUIRED
+  - PROJECT_REGISTRY_INVALID
+  - PROJECT_NOT_FOUND
+  - PROJECT_AMBIGUOUS
+  - PROJECT_RECONCILIATION_DRIFT
+  - PROJECT_SOURCE_REPOSITORY_MISMATCH
+  - PROJECT_RECONCILIATION_FAILED
+  - PROJECT_INTAKE_FAILED
+  - LOCAL_GOVERNANCE_ROOT_INVALID
+  - GOVERNANCE_STORE_OPEN_FAILED
+  - PROJECT_ROOT_REQUIRED
+  - GOVERNANCE_PROJECTION_FAILED
+  protocol_version: '1.0'
 - name: project.resolve
   description: resolve exactly one registered project deterministically (0/1/many fail-closed)
   inputs:

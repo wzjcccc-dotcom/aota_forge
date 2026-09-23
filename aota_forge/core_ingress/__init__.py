@@ -106,6 +106,8 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
 # Existing ingress families (already single Core path via core.ingress).
 # Listed for registration completeness; dispatch delegates to core.ingress.
 INGRESS_BACKED_OPERATIONS: tuple[str, ...] = (
+    "governance.project",
+    "governance.plan",
     "project.resolve",
     "git.inspect",
     "runtime.status",
