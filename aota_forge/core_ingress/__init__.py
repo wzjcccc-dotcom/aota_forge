@@ -355,6 +355,24 @@ def _persist_governed_if_needed(binding: CanonicalDispatchBinding, response: Any
         pass
 
 
+def _normalize_ingress_success_response(envelope: object) -> ToolResponse | None:
+    """Normalize a successful ingress envelope for result governance.
+
+    The MCP projection consumes only the canonical ingress ``data``,
+    ``evidence`` and ``warnings`` payload fields.  Keeping this conversion in
+    Core lets persistence and transport projection operate on the same
+    semantic payload without introducing another result envelope.
+    """
+    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+        return None
+    payload: dict[str, Any] = {}
+    for key in ("data", "evidence", "warnings"):
+        value = envelope.get(key)
+        if value:
+            payload[key] = value
+    return ToolResponse.success(payload)
+
+
 _DEFAULT_INLINE_OUTPUT_BOUND = 4096
 _DEFAULT_INLINE_ERROR_BOUND = 2048
 
@@ -2089,7 +2107,11 @@ def dispatch_via_core(
     trusted_context = getattr(binding, "trusted_context", None) if binding is not None else None
     # Validate via canonical seam first to prove same validation (ingress will re-validate identically).
     validated = validate_operation_input(descriptor, params)
-    return core_execute(operation, validated, trusted_context=trusted_context)
+    envelope = core_execute(operation, validated, trusted_context=trusted_context)
+    response = _normalize_ingress_success_response(envelope)
+    if response is not None:
+        _persist_governed_if_needed(binding, response, operation)
+    return envelope
 
 
 __all__ = [
