@@ -817,6 +817,11 @@ def _check_live_binding(state: TaskMainCoordinatorState, view: MilestonePlanView
         raise PlanDriftError(
             f"entry base changed: durable {state.entry_base!r} vs live {view.entry_base!r}"
         )
+    if state.plan_source_revision != view.plan_source_revision:
+        raise PlanDriftError(
+            f"Plan source revision changed: durable {state.plan_source_revision!r} "
+            f"vs live {view.plan_source_revision!r}"
+        )
     if state.work_items != tuple(sorted(view.graph.work_items)) or state.dependencies != tuple(
         sorted(view.graph.dependencies)
     ):

@@ -73,6 +73,7 @@ import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
@@ -98,8 +99,10 @@ from aota_forge.runtime.task_main.coordinator_store import (
     TaskMainCoordinatorStore,
 )
 from aota_forge.runtime.task_main.review_adoption import (
+    ReviewAdoptionError,
     review_only_adoption_from_state,
     review_only_progression_for,
+    revalidate_adopted_frontier,
 )
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.milestone_closure import evaluate_milestone_closure_readiness
@@ -509,6 +512,8 @@ class GovernedReviewEvidence:
     pre_failure_fingerprints: tuple[FailureFingerprint, ...] = ()
     post_failure_fingerprints: tuple[FailureFingerprint, ...] = ()
     semantic_boundary_exceeded: bool = False
+    review_handoff_ref: str | None = None
+    review_handoff_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.review_evidence, MilestoneReviewEvidence):
@@ -550,6 +555,19 @@ class GovernedReviewEvidence:
             "semantic_boundary_exceeded",
             _require_strict_bool(self.semantic_boundary_exceeded, "semantic_boundary_exceeded"),
         )
+        if (self.review_handoff_ref is None) != (self.review_handoff_digest is None):
+            raise ValueError("review_handoff_ref and review_handoff_digest must be supplied together")
+        if self.review_handoff_ref is not None:
+            object.__setattr__(
+                self,
+                "review_handoff_ref",
+                _require_non_empty_str(self.review_handoff_ref, "review_handoff_ref"),
+            )
+            object.__setattr__(
+                self,
+                "review_handoff_digest",
+                _require_non_empty_str(self.review_handoff_digest, "review_handoff_digest", max_length=128),
+            )
 
 
 @dataclass(frozen=True)
@@ -629,10 +647,75 @@ def _check_live_plan_binding(state: TaskMainCoordinatorState, view: MilestonePla
         raise PlanDriftError(
             f"entry base changed: durable {state.entry_base!r} vs live {view.entry_base!r}"
         )
+    if state.plan_source_revision != view.plan_source_revision:
+        raise PlanDriftError(
+            f"Plan source revision changed: durable {state.plan_source_revision!r} "
+            f"vs live {view.plan_source_revision!r}"
+        )
     if state.work_items != tuple(sorted(view.graph.work_items)) or state.dependencies != tuple(
         sorted(view.graph.dependencies)
     ):
         raise PlanDriftError("governed Milestone DAG changed under a durable coordinator")
+
+
+def _validate_adopted_review_binding(
+    *,
+    state: TaskMainCoordinatorState,
+    adoption: Any,
+    governed_review: GovernedReviewEvidence,
+) -> None:
+    """Validate every durable identity bound when the reviewer was dispatched."""
+
+    marker = state.integrated_review
+    if not isinstance(marker, Mapping):
+        raise ReconciliationError("review-only adoption has no integrated-review marker")
+    binding = marker.get("reviewer_binding")
+    if not isinstance(binding, Mapping):
+        raise ReconciliationError("review-only adoption has no durable reviewer binding")
+    expected = (
+        (binding.get("canonical_task_id"), adoption.reviewer_canonical_task_id, "reviewer task"),
+        (binding.get("attempt"), 1, "reviewer attempt"),
+        (binding.get("role"), AgentWorkRole.REVIEWER.value, "reviewer role"),
+        (binding.get("project_id"), state.project_id, "reviewer project"),
+        (binding.get("plan_authority"), state.plan_authority, "reviewer Plan authority"),
+        (binding.get("plan_digest"), state.plan_digest, "reviewer Plan digest"),
+        (binding.get("plan_source_revision"), state.plan_source_revision, "reviewer Plan source revision"),
+        (binding.get("milestone_id"), state.milestone_id, "reviewer Milestone"),
+        (binding.get("frontier_ref"), adoption.frontier_ref, "reviewer frontier"),
+        (binding.get("review_cycle"), ReviewCycle.RV1.value, "review cycle"),
+    )
+    for supplied, expected_value, label in expected:
+        if supplied != expected_value:
+            raise ReconciliationError(f"{label} binding mismatch")
+
+    evidence = governed_review.review_evidence
+    if evidence.review_cycle != ReviewCycle.RV1:
+        raise ReconciliationError("review-only adoption requires the bound RV1 cycle")
+    if evidence.reviewed_frontier_ref.ref != adoption.frontier_ref:
+        raise ReconciliationError("review evidence frontier contradicts adopted frontier")
+    handoff = governed_review.review_task_handoff
+    if handoff is None:
+        raise ReconciliationError("review-only adoption requires the bound reviewer TaskHandoff")
+    if handoff.work_role != AgentWorkRole.REVIEWER:
+        raise ReconciliationError("reviewer TaskHandoff role contradicts durable reviewer binding")
+    if binding.get("task_handoff_digest") != handoff.compute_handoff_digest():
+        raise ReconciliationError("reviewer TaskHandoff digest contradicts durable reviewer binding")
+
+    bound_handoff_ref = binding.get("handoff_ref")
+    bound_handoff_digest = binding.get("handoff_digest")
+    if governed_review.review_handoff_ref != bound_handoff_ref:
+        raise ReconciliationError("reviewer durable handoff ref contradicts durable reviewer binding")
+    if governed_review.review_handoff_digest != bound_handoff_digest:
+        raise ReconciliationError("reviewer durable handoff digest contradicts durable reviewer binding")
+    if handoff.project_ref is not None and handoff.project_ref.ref != state.project_id:
+        raise ReconciliationError("reviewer TaskHandoff project identity contradicts coordinator")
+    if handoff.plan_ref is not None:
+        if handoff.plan_ref.ref != state.plan_authority:
+            raise ReconciliationError("reviewer TaskHandoff Plan authority contradicts coordinator")
+        if handoff.plan_ref.digest is not None and handoff.plan_ref.digest != state.plan_digest:
+            raise ReconciliationError("reviewer TaskHandoff Plan digest contradicts coordinator")
+    if handoff.milestone_ref is not None and handoff.milestone_ref.ref != state.milestone_id:
+        raise ReconciliationError("reviewer TaskHandoff Milestone contradicts coordinator")
 
 
 def _require_active_for_reconciliation(
@@ -1386,6 +1469,8 @@ def reconcile_review_completion(
     card_digest: str,
     live_plan_view: MilestonePlanView,
     governed_review: GovernedReviewEvidence,
+    review_adoption_worktree_root: str | Path | None = None,
+    review_adoption_git: Any | None = None,
 ) -> ReconciliationOutcome:
     """Reconcile one milestone-level reviewer completion through review seams.
 
@@ -1416,6 +1501,23 @@ def reconcile_review_completion(
     ):
         raise ReconciliationError(
             "reviewer completion identity contradicts the adopted reviewer task"
+        )
+    if review_only_adoption is not None:
+        try:
+            revalidate_adopted_frontier(
+                state=state,
+                live_plan_view=live_plan_view,
+                worktree_root=review_adoption_worktree_root,
+                git=review_adoption_git,
+            )
+        except PlanDriftError:
+            raise
+        except ReviewAdoptionError as exc:
+            raise ReconciliationError(f"adopted review frontier is stale: {exc}") from exc
+        _validate_adopted_review_binding(
+            state=state,
+            adoption=review_only_adoption,
+            governed_review=governed_review,
         )
 
     existing_payload = state.reconciled_completions.get(reviewer_canonical_task_id)
@@ -1584,6 +1686,8 @@ def reconcile_review_completion(
         governed_evidence={
             "review_evidence": evidence.to_dict(),
             "review_findings": [finding.to_dict() for finding in governed_review.review_findings],
+            "review_handoff_ref": governed_review.review_handoff_ref,
+            "review_handoff_digest": governed_review.review_handoff_digest,
             "workflow_disposition": workflow.disposition.value,
             "workflow_digest": workflow.digest,
             "closure_ready": milestone_closure_ready,

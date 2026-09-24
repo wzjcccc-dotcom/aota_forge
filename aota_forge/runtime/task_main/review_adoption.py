@@ -13,10 +13,12 @@ the existing integrated-review dispatch path may run.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+import secrets
 from typing import Any
 
 from aota_forge.adapters.plan_authority.binding import (
@@ -46,6 +48,8 @@ from aota_forge.runtime.task_main.coordinator_store import (
 from aota_forge.work_plane.progression import (
     ProgressionDisposition,
 )
+from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import GitPort, SubprocessGitPort
 
 
@@ -65,6 +69,14 @@ _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_REF_LENGTH = 512
 _EXPECTED_REVIEWER_ATTEMPT = 1
+_AUTHORIZATION_PROVENANCE_SECRET = secrets.token_bytes(32)
+_IGNORED_UNTRACKED_RUNTIME_PATHS = frozenset(
+    {
+        ".aota/governance.sqlite3",
+        ".aota/governance.sqlite3-wal",
+        ".aota/governance.sqlite3-shm",
+    }
+)
 
 
 class ReviewAdoptionError(TaskMainCoordinatorError):
@@ -118,6 +130,7 @@ class AcceptedFrontierAuthorization:
     candidate_frontier_ref: str
     authorization_ref: str
     reviewer_canonical_task_id: str
+    provenance_digest: str = ""
 
     def __post_init__(self) -> None:
         for label in (
@@ -138,6 +151,14 @@ class AcceptedFrontierAuthorization:
             "candidate_frontier_ref",
             _require_commit(self.candidate_frontier_ref, "candidate_frontier_ref"),
         )
+        if not isinstance(self.provenance_digest, str) or type(self.provenance_digest) is not str:
+            raise TypeError("provenance_digest must be a string")
+        if self.provenance_digest:
+            object.__setattr__(
+                self,
+                "provenance_digest",
+                _require_sha256(self.provenance_digest, "provenance_digest"),
+            )
 
     @property
     def frontier_ref(self) -> str:
@@ -174,6 +195,51 @@ class TrustedGitFrontier:
             "tree_ref": self.tree_ref,
             "worktree_root": self.worktree_root,
         }
+
+
+def _authorization_provenance_payload(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> dict[str, Any]:
+    return {
+        "authorization": {
+            "authority_source_kind": authorization.authority_source_kind,
+            "authorization_ref": authorization.authorization_ref,
+            "candidate_frontier_ref": authorization.candidate_frontier_ref,
+            "entry_base": authorization.entry_base,
+            "milestone_id": authorization.milestone_id,
+            "plan_authority": authorization.plan_authority,
+            "plan_digest": authorization.plan_digest,
+            "plan_id": authorization.plan_id,
+            "plan_source_revision": authorization.plan_source_revision,
+            "project_id": authorization.project_id,
+            "reviewer_canonical_task_id": authorization.reviewer_canonical_task_id,
+        },
+        "git": frontier.canonical_dict(),
+    }
+
+
+def _authorization_provenance_digest(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> str:
+    encoded = canonical_json(
+        canonicalize(
+            _authorization_provenance_payload(authorization, frontier),
+            path="AcceptedFrontierAuthorizationProvenance",
+        )
+    ).encode("utf-8")
+    return hmac.new(_AUTHORIZATION_PROVENANCE_SECRET, encoded, hashlib.sha256).hexdigest()
+
+
+def _has_trusted_authorization_provenance(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> bool:
+    if not authorization.provenance_digest:
+        return False
+    expected = _authorization_provenance_digest(authorization, frontier)
+    return hmac.compare_digest(authorization.provenance_digest, expected)
 
 
 @dataclass(frozen=True)
@@ -226,7 +292,7 @@ def read_trusted_git_frontier(
         raise ReviewAdoptionError(f"trusted Git inspection failed: {exc}") from exc
     if observation.get("available") is not True:
         raise ReviewAdoptionError("trusted Git source is unavailable")
-    if observation.get("is_dirty") is not False:
+    if not _trusted_source_is_clean(observation):
         raise ReviewAdoptionError("trusted Git source is dirty")
     head = observation.get("head_sha")
     try:
@@ -289,6 +355,44 @@ def _expected_reviewer_task_id(project_id: str, milestone_id: str) -> str:
     return f"{project_id}:{milestone_id}:RV1:attempt-{_EXPECTED_REVIEWER_ATTEMPT}"
 
 
+def _reported_dirty_paths(observation: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    paths: list[tuple[str, str]] = []
+    for category in ("staged", "unstaged", "untracked"):
+        payload = observation.get(category)
+        if not isinstance(payload, Mapping):
+            continue
+        raw_paths = payload.get("paths")
+        if not isinstance(raw_paths, (tuple, list)):
+            continue
+        for raw_path in raw_paths:
+            if isinstance(raw_path, str) and raw_path.strip():
+                path = raw_path.strip().replace("\\", "/")
+                if path.startswith("./"):
+                    path = path[2:]
+                paths.append((category, path))
+    return tuple(paths)
+
+
+def _trusted_source_is_clean(observation: Mapping[str, Any]) -> bool:
+    """Apply the source-cleanliness policy to a trusted Git observation."""
+
+    for category in ("staged", "unstaged", "untracked"):
+        payload = observation.get(category)
+        if isinstance(payload, Mapping) and payload.get("truncated") is True:
+            return False
+    if observation.get("is_dirty") is False:
+        return not _reported_dirty_paths(observation)
+    if observation.get("is_dirty") is not True:
+        return False
+    dirty_paths = _reported_dirty_paths(observation)
+    if not dirty_paths:
+        return False
+    return all(
+        category == "untracked" and path in _IGNORED_UNTRACKED_RUNTIME_PATHS
+        for category, path in dirty_paths
+    )
+
+
 def _validate_authorization(
     *,
     state: TaskMainCoordinatorState,
@@ -333,6 +437,58 @@ def _validate_authorization(
             )
     if not frontier.clean:
         raise ReviewAdoptionError("trusted Git frontier is not clean")
+
+
+def mint_accepted_frontier_authorization(
+    *,
+    state: TaskMainCoordinatorState,
+    live_plan_view: MilestonePlanView,
+    plan_id: str,
+    authorization_ref: str,
+    trusted_frontier: TrustedGitFrontier,
+) -> AcceptedFrontierAuthorization:
+    """Mint the value object from trusted runtime/operator observations."""
+
+    if not isinstance(state, TaskMainCoordinatorState):
+        raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    if not isinstance(trusted_frontier, TrustedGitFrontier):
+        raise TypeError(
+            f"trusted_frontier must be TrustedGitFrontier, got {type(trusted_frontier).__name__}"
+        )
+    try:
+        _check_live_binding(state, live_plan_view)
+    except PlanDriftError:
+        raise
+    except Exception as exc:
+        raise ReviewAdoptionError(f"trusted runtime Plan binding failed: {exc}") from exc
+    authorization = AcceptedFrontierAuthorization(
+        project_id=state.project_id,
+        plan_id=plan_id,
+        plan_authority=live_plan_view.plan_authority,
+        authority_source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        plan_digest=live_plan_view.plan_digest,
+        plan_source_revision=live_plan_view.plan_source_revision or "",
+        milestone_id=live_plan_view.milestone_id,
+        entry_base=live_plan_view.entry_base,
+        candidate_frontier_ref=trusted_frontier.frontier_ref,
+        authorization_ref=authorization_ref,
+        reviewer_canonical_task_id=_expected_reviewer_task_id(
+            state.project_id, state.milestone_id
+        ),
+    )
+    authorization = replace(
+        authorization,
+        provenance_digest=_authorization_provenance_digest(authorization, trusted_frontier),
+    )
+    _validate_authorization(
+        state=state,
+        view=live_plan_view,
+        authorization=authorization,
+        frontier=trusted_frontier,
+    )
+    return authorization
 
 
 def _require_no_active_execution(execution_store: ExecutionStateStore) -> None:
@@ -395,7 +551,17 @@ def _existing_exact_adoption(
     state: TaskMainCoordinatorState,
     updates: Mapping[str, Mapping[str, Any]],
 ) -> bool:
-    return all(getattr(state, field) == dict(value) for field, value in updates.items())
+    for field, value in updates.items():
+        current = getattr(state, field)
+        expected = dict(value)
+        if field == "integrated_review" and isinstance(current, Mapping):
+            # Dispatch adds its exact reviewer binding after the adoption
+            # marker is written; that binding is part of the same marker.
+            current = dict(current)
+            current.pop("reviewer_binding", None)
+        if current != expected:
+            return False
+    return True
 
 
 def adopt_accepted_frontier_for_review(
@@ -465,6 +631,10 @@ def adopt_accepted_frontier_for_review(
         authorization=authorization,
         frontier=frontier,
     )
+    if not _has_trusted_authorization_provenance(authorization, frontier):
+        raise ReviewAdoptionError(
+            "accepted frontier authorization lacks trusted runtime provenance"
+        )
     proof_digest = _proof_digest(authorization, frontier)
     updates = _adoption_updates(
         authorization=authorization,
@@ -557,7 +727,158 @@ def review_only_adoption_from_state(
         state.project_id, state.milestone_id
     ):
         raise ReviewAdoptionError("review-only marker reviewer identity is not canonical")
+    reviewer_binding = review.get("reviewer_binding")
+    if reviewer_binding is not None:
+        if not isinstance(reviewer_binding, Mapping):
+            raise ReviewAdoptionError("review-only reviewer binding is malformed")
+        binding_checks = (
+            (reviewer_binding.get("canonical_task_id"), adoption.reviewer_canonical_task_id, "reviewer task"),
+            (reviewer_binding.get("attempt"), _EXPECTED_REVIEWER_ATTEMPT, "reviewer attempt"),
+            (reviewer_binding.get("role"), AgentWorkRole.REVIEWER.value, "reviewer role"),
+            (reviewer_binding.get("project_id"), state.project_id, "reviewer project"),
+            (reviewer_binding.get("plan_authority"), state.plan_authority, "reviewer Plan authority"),
+            (reviewer_binding.get("plan_digest"), state.plan_digest, "reviewer Plan digest"),
+            (reviewer_binding.get("plan_source_revision"), state.plan_source_revision, "reviewer Plan source revision"),
+            (reviewer_binding.get("milestone_id"), state.milestone_id, "reviewer Milestone"),
+            (reviewer_binding.get("frontier_ref"), adoption.frontier_ref, "reviewer frontier"),
+            (reviewer_binding.get("review_cycle"), "RV1", "review cycle"),
+        )
+        for supplied, expected, label in binding_checks:
+            if supplied != expected:
+                raise ReviewAdoptionError(f"{label} binding mismatch")
     return adoption
+
+
+def revalidate_adopted_frontier(
+    *,
+    state: TaskMainCoordinatorState,
+    live_plan_view: MilestonePlanView,
+    worktree_root: str | Path | None,
+    git: GitPort | None = None,
+) -> TrustedGitFrontier:
+    """Re-observe the adopted frontier immediately before review work."""
+
+    if not isinstance(state, TaskMainCoordinatorState):
+        raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
+    adoption = review_only_adoption_from_state(state)
+    if adoption is None:
+        raise ReviewAdoptionError("review frontier revalidation requires review-only adoption")
+    try:
+        _check_live_binding(state, live_plan_view)
+    except PlanDriftError:
+        raise
+    except Exception as exc:
+        raise ReviewAdoptionError(f"live Plan binding failed closed: {exc}") from exc
+    if worktree_root is None:
+        raise ReviewAdoptionError(
+            "review-only adoption requires trusted source revalidation before dispatch/reconciliation"
+        )
+    frontier = read_trusted_git_frontier(
+        worktree_root,
+        entry_base=state.entry_base,
+        git=git,
+    )
+    if frontier.frontier_ref != adoption.frontier_ref:
+        raise ReviewAdoptionError(
+            f"adopted frontier changed: marker {adoption.frontier_ref!r} vs trusted {frontier.frontier_ref!r}"
+        )
+    return frontier
+
+
+def build_review_dispatch_binding(
+    *,
+    state: TaskMainCoordinatorState,
+    adoption: ReviewOnlyAdoption,
+    handoff: TaskHandoff,
+    handoff_ref: str | None = None,
+    handoff_digest: str | None = None,
+) -> dict[str, Any]:
+    """Build the exact reviewer identity persisted before physical dispatch."""
+
+    if not isinstance(state, TaskMainCoordinatorState):
+        raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
+    if not isinstance(adoption, ReviewOnlyAdoption):
+        raise TypeError(f"adoption must be ReviewOnlyAdoption, got {type(adoption).__name__}")
+    if not isinstance(handoff, TaskHandoff):
+        raise TypeError(f"handoff must be TaskHandoff, got {type(handoff).__name__}")
+    if handoff.work_role != AgentWorkRole.REVIEWER:
+        raise ReviewAdoptionError("integrated reviewer handoff must have reviewer role")
+    if handoff.project_ref is not None and handoff.project_ref.ref != state.project_id:
+        raise ReviewAdoptionError("reviewer handoff project identity contradicts coordinator")
+    if handoff.plan_ref is not None:
+        if handoff.plan_ref.ref != state.plan_authority:
+            raise ReviewAdoptionError("reviewer handoff Plan authority contradicts coordinator")
+        if handoff.plan_ref.digest is not None and handoff.plan_ref.digest != state.plan_digest:
+            raise ReviewAdoptionError("reviewer handoff Plan digest contradicts coordinator")
+    if handoff.milestone_ref is not None and handoff.milestone_ref.ref != state.milestone_id:
+        raise ReviewAdoptionError("reviewer handoff Milestone contradicts coordinator")
+    if (handoff_ref is None) != (handoff_digest is None):
+        raise ReviewAdoptionError("reviewer durable handoff ref/digest must be supplied together")
+    if handoff_ref is not None:
+        handoff_ref = _require_non_empty_str(handoff_ref, "reviewer handoff_ref")
+        if not handoff_ref.startswith("handoff://"):
+            raise ReviewAdoptionError("reviewer handoff_ref is not a durable handoff reference")
+        handoff_digest = _require_sha256(handoff_digest, "reviewer handoff_digest")
+    return {
+        "canonical_task_id": adoption.reviewer_canonical_task_id,
+        "attempt": _EXPECTED_REVIEWER_ATTEMPT,
+        "role": AgentWorkRole.REVIEWER.value,
+        "project_id": state.project_id,
+        "plan_authority": state.plan_authority,
+        "plan_digest": state.plan_digest,
+        "plan_source_revision": state.plan_source_revision,
+        "milestone_id": state.milestone_id,
+        "frontier_ref": adoption.frontier_ref,
+        "review_cycle": "RV1",
+        "task_handoff_digest": handoff.compute_handoff_digest(),
+        "handoff_ref": handoff_ref,
+        "handoff_digest": handoff_digest,
+    }
+
+
+def record_review_dispatch_binding(
+    *,
+    store: TaskMainCoordinatorStore,
+    coordinator_id: str,
+    binding: Mapping[str, Any],
+) -> TaskMainCoordinatorState:
+    """CAS-bind reviewer identity before the reviewer can be dispatched."""
+
+    if not isinstance(store, TaskMainCoordinatorStore):
+        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
+    coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
+    if not isinstance(binding, Mapping):
+        raise TypeError(f"binding must be a mapping, got {type(binding).__name__}")
+    state = store.get(coordinator_id)
+    if state is None:
+        raise ReviewAdoptionError(f"coordinator {coordinator_id!r} does not exist")
+    review_only_adoption_from_state(state)
+    current_marker = state.integrated_review
+    if not isinstance(current_marker, Mapping):
+        raise ReviewAdoptionError("review-only adoption has no integrated-review marker")
+    existing = current_marker.get("reviewer_binding")
+    if existing is not None:
+        if dict(existing) != dict(binding):
+            raise ReviewAdoptionError("conflicting durable reviewer binding blocks dispatch")
+        return state
+    updated_marker = dict(current_marker)
+    updated_marker["reviewer_binding"] = dict(binding)
+    try:
+        return store.compare_and_swap(
+            coordinator_id,
+            state.coordinator_revision,
+            {"integrated_review": updated_marker},
+            state.revision_token,
+        )
+    except StaleCoordinatorRevisionError:
+        refreshed = store.get(coordinator_id)
+        if refreshed is not None and isinstance(refreshed.integrated_review, Mapping):
+            winner = refreshed.integrated_review.get("reviewer_binding")
+            if isinstance(winner, Mapping) and dict(winner) == dict(binding):
+                return refreshed
+        raise ReviewAdoptionError("reviewer binding CAS lost a conflicting race") from None
 
 
 def review_only_progression_for(
@@ -598,7 +919,11 @@ __all__ = [
     "ReviewOnlyAdoption",
     "TrustedGitFrontier",
     "adopt_accepted_frontier_for_review",
+    "build_review_dispatch_binding",
+    "mint_accepted_frontier_authorization",
     "read_trusted_git_frontier",
+    "record_review_dispatch_binding",
+    "revalidate_adopted_frontier",
     "review_only_adoption_from_state",
     "review_only_progression_for",
 ]

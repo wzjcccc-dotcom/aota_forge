@@ -526,7 +526,12 @@ def _normalize_attempt_states(raw: Any, work_items: tuple[str, ...]) -> dict[str
     return norm
 
 
-def _normalize_optional_ref_dict(raw: Any, label: str) -> dict[str, Any] | None:
+def _normalize_optional_ref_dict(
+    raw: Any,
+    label: str,
+    *,
+    extra_allowed: frozenset[str] = frozenset(),
+) -> dict[str, Any] | None:
     """Generic optional ref dict {ref, digest?, freshness?, status?} (bounded)."""
     if raw is None:
         return None
@@ -542,6 +547,7 @@ def _normalize_optional_ref_dict(raw: Any, label: str) -> dict[str, Any] | None:
             out[opt] = _require_non_empty_str(v, f"{label}.{opt}", max_length=512)
     # Preserve any additional bounded str fields? Fail closed on unknown to keep seam tight.
     allowed = {"ref", "digest", "freshness", "status", "reason", "required", "integrated_state"}
+    allowed.update(extra_allowed)
     extra = set(raw.keys()) - allowed
     if extra:
         raise ValueError(f"Unknown field(s) in {label}: {sorted(extra)}")
@@ -555,6 +561,110 @@ def _normalize_optional_ref_dict(raw: Any, label: str) -> dict[str, Any] | None:
         if k in raw:
             out[k] = _require_non_empty_str(raw[k], f"{label}.{k}", max_length=512)
     return out
+
+
+_REVIEWER_BINDING_FIELDS: frozenset[str] = frozenset(
+    {
+        "canonical_task_id",
+        "attempt",
+        "role",
+        "project_id",
+        "plan_authority",
+        "plan_digest",
+        "plan_source_revision",
+        "milestone_id",
+        "frontier_ref",
+        "review_cycle",
+        "task_handoff_digest",
+        "handoff_ref",
+        "handoff_digest",
+    }
+)
+
+
+def _normalize_reviewer_binding(raw: Any, label: str) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{label} must be a mapping")
+    extra = set(raw.keys()) - _REVIEWER_BINDING_FIELDS
+    if extra:
+        raise ValueError(f"Unknown field(s) in {label}: {sorted(extra)}")
+    for required in (
+        "canonical_task_id",
+        "attempt",
+        "role",
+        "project_id",
+        "plan_authority",
+        "plan_digest",
+        "milestone_id",
+        "frontier_ref",
+        "review_cycle",
+        "task_handoff_digest",
+    ):
+        if required not in raw:
+            raise ValueError(f"Missing required field in {label}: {required!r}")
+    attempt = raw["attempt"]
+    if type(attempt) is not int or attempt < 1:
+        raise ValueError(f"{label}.attempt must be an int >= 1")
+    role = _require_non_empty_str(raw["role"], f"{label}.role", max_length=64)
+    if role != "reviewer":
+        raise ValueError(f"{label}.role must be 'reviewer'")
+    normalized: dict[str, Any] = {
+        "canonical_task_id": _require_non_empty_str(
+            raw["canonical_task_id"], f"{label}.canonical_task_id"
+        ),
+        "attempt": attempt,
+        "role": role,
+        "project_id": _require_non_empty_str(raw["project_id"], f"{label}.project_id"),
+        "plan_authority": _require_non_empty_str(
+            raw["plan_authority"], f"{label}.plan_authority"
+        ),
+        "plan_digest": _require_non_empty_str(raw["plan_digest"], f"{label}.plan_digest"),
+        "plan_source_revision": (
+            _require_non_empty_str(
+                raw["plan_source_revision"], f"{label}.plan_source_revision"
+            )
+            if raw.get("plan_source_revision") is not None
+            else None
+        ),
+        "milestone_id": _require_non_empty_str(raw["milestone_id"], f"{label}.milestone_id"),
+        "frontier_ref": _require_non_empty_str(raw["frontier_ref"], f"{label}.frontier_ref"),
+        "review_cycle": _require_non_empty_str(
+            raw["review_cycle"], f"{label}.review_cycle", max_length=32
+        ),
+        "task_handoff_digest": _require_non_empty_str(
+            raw["task_handoff_digest"], f"{label}.task_handoff_digest", max_length=128
+        ),
+    }
+    handoff_ref = raw.get("handoff_ref")
+    handoff_digest = raw.get("handoff_digest")
+    if (handoff_ref is None) != (handoff_digest is None):
+        raise ValueError(f"{label}.handoff_ref and handoff_digest must be supplied together")
+    normalized["handoff_ref"] = (
+        _require_non_empty_str(handoff_ref, f"{label}.handoff_ref")
+        if handoff_ref is not None
+        else None
+    )
+    normalized["handoff_digest"] = (
+        _require_non_empty_str(handoff_digest, f"{label}.handoff_digest", max_length=128)
+        if handoff_digest is not None
+        else None
+    )
+    return normalized
+
+
+def _normalize_integrated_review(raw: Any) -> dict[str, Any] | None:
+    normalized = _normalize_optional_ref_dict(
+        raw,
+        "integrated_review",
+        extra_allowed=frozenset({"reviewer_binding"}),
+    )
+    if normalized is None:
+        return None
+    if "reviewer_binding" in raw:
+        normalized["reviewer_binding"] = _normalize_reviewer_binding(
+            raw["reviewer_binding"], "integrated_review.reviewer_binding"
+        )
+    return normalized
 
 
 def _normalize_open_blockers(raw: Any) -> tuple[str, ...]:
@@ -851,7 +961,7 @@ class TaskMainCoordinatorState:
         )
         object.__setattr__(self, "review_gates", _normalize_optional_ref_dict(self.review_gates, "review_gates"))
         object.__setattr__(
-            self, "integrated_review", _normalize_optional_ref_dict(self.integrated_review, "integrated_review")
+            self, "integrated_review", _normalize_integrated_review(self.integrated_review)
         )
         object.__setattr__(self, "frontier_ref", _normalize_optional_ref_dict(self.frontier_ref, "frontier_ref"))
         object.__setattr__(self, "next_action", _normalize_next_action(self.next_action))
@@ -928,9 +1038,7 @@ class TaskMainCoordinatorState:
         if "review_gates" in updates:
             kwargs["review_gates"] = _normalize_optional_ref_dict(updates["review_gates"], "review_gates")
         if "integrated_review" in updates:
-            kwargs["integrated_review"] = _normalize_optional_ref_dict(
-                updates["integrated_review"], "integrated_review"
-            )
+            kwargs["integrated_review"] = _normalize_integrated_review(updates["integrated_review"])
         if "frontier_ref" in updates:
             kwargs["frontier_ref"] = _normalize_optional_ref_dict(updates["frontier_ref"], "frontier_ref")
         if "open_blockers" in updates:

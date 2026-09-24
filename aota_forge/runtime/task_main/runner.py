@@ -40,7 +40,7 @@ Authority boundaries
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -77,8 +77,12 @@ from aota_forge.runtime.task_main.reconciliation import (
 )
 from aota_forge.runtime.task_main.review_adoption import (
     AcceptedFrontierAuthorization,
+    ReviewAdoptionError,
     adopt_accepted_frontier_for_review,
+    build_review_dispatch_binding,
+    record_review_dispatch_binding,
     review_only_adoption_from_state,
+    revalidate_adopted_frontier,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
@@ -516,12 +520,9 @@ def advance_milestone_once(
         raise TypeError(
             "accepted_frontier_authorization must be AcceptedFrontierAuthorization or None"
         )
-    if accepted_frontier_authorization is None and (
-        review_adoption_worktree_root is not None or review_adoption_git is not None
-    ):
+    if review_adoption_git is not None and review_adoption_worktree_root is None:
         raise TypeError(
-            "review_adoption_worktree_root/review_adoption_git require "
-            "accepted_frontier_authorization"
+            "review_adoption_git requires review_adoption_worktree_root"
         )
     if accepted_frontier_authorization is not None and review_adoption_worktree_root is None:
         raise TypeError(
@@ -627,6 +628,20 @@ def advance_milestone_once(
             worktree_root=review_adoption_worktree_root,
             git=review_adoption_git,
         )
+
+    review_only_adoption = review_only_adoption_from_state(state)
+    if review_only_adoption is not None:
+        try:
+            revalidate_adopted_frontier(
+                state=state,
+                live_plan_view=live_plan_view,
+                worktree_root=review_adoption_worktree_root,
+                git=review_adoption_git,
+            )
+        except PlanDriftError:
+            raise
+        except ReviewAdoptionError:
+            raise
 
     # Next milestone gate: if current milestone is closure-ready and next milestone exists but unapproved, stop.
     if _is_closure_ready(state) and next_milestone_view is not None:  # noqa: SIM102
@@ -778,6 +793,21 @@ def advance_milestone_once(
             raise ReconciliationError(f"governed review resolver failed: {exc}") from exc
         if not isinstance(governed_review, GovernedReviewEvidence):
             raise TypeError("governed_review must be GovernedReviewEvidence")
+        adoption = review_only_adoption_from_state(state)
+        if adoption is not None:
+            marker = state.integrated_review
+            binding = marker.get("reviewer_binding") if isinstance(marker, Mapping) else None
+            if isinstance(binding, Mapping):
+                # The trusted durable binding supplies the artifact identity
+                # when the runtime evidence resolver only returns semantic
+                # review evidence. Explicit resolver values remain checked by
+                # reconciliation and cannot be silently overwritten.
+                if governed_review.review_handoff_ref is None and binding.get("handoff_ref") is not None:
+                    governed_review = replace(
+                        governed_review,
+                        review_handoff_ref=binding.get("handoff_ref"),
+                        review_handoff_digest=binding.get("handoff_digest"),
+                    )
         outcome = reconcile_review_completion(
             store=coordinator_store,
             execution_store=execution_store,
@@ -786,6 +816,8 @@ def advance_milestone_once(
             card_digest=reviewer_digest,
             live_plan_view=live_plan_view,
             governed_review=governed_review,
+            review_adoption_worktree_root=review_adoption_worktree_root,
+            review_adoption_git=review_adoption_git,
         )
         fresh = coordinator_store.get(coordinator_id) or state
         # Map review outcome.
@@ -939,8 +971,26 @@ def advance_milestone_once(
     # dispatcher exception alone. No durable record is created either way.
     _origin_unbound = bool(getattr(execution_dispatcher, "origin_session_is_placeholder", False))
 
+    # Review-only adoption has no legitimate Work dispatch fallback.  If the
+    # trusted reviewer path is unavailable, retain the review-required state.
+    if (
+        review_only_adoption is not None
+        and _is_integrated_review_required(state)
+        and reviewer_handoff_resolver is None
+        and reviewer_dispatch_resolver is None
+    ):
+        return RunnerOutcome(
+            disposition=DISPOSITION_INTEGRATED_REVIEW_REQUIRED,
+            coordinator_id=coordinator_id,
+            coordinator_revision=state.coordinator_revision,
+            integrated_review_required=True,
+            reasons=("review-only adoption is waiting for the trusted reviewer resolver",),
+        )
+
     # ---- integrated review required but not yet reconciled: should dispatch reviewer ----
-    if _is_integrated_review_required(state) and reviewer_handoff_resolver is not None:
+    if _is_integrated_review_required(state) and (
+        reviewer_handoff_resolver is not None or reviewer_dispatch_resolver is not None
+    ):
         if _origin_unbound:
             return RunnerOutcome(
                 disposition=DISPOSITION_BLOCKED,
@@ -987,7 +1037,10 @@ def advance_milestone_once(
             propagate_trusted_work_handoff,
         )
 
+        review_only_adoption = review_only_adoption_from_state(state)
         durable_review_handoff: Mapping[str, Any] | None = None
+        durable_ref: str | None = None
+        durable_digest: str | None = None
         if reviewer_dispatch_resolver is not None:
             durable_review_handoff = reviewer_dispatch_resolver()
             if not isinstance(durable_review_handoff, Mapping):
@@ -1013,11 +1066,19 @@ def advance_milestone_once(
                     "reviewer_dispatch_resolver returned no canonical reviewer task id"
                 )
         else:
+            if reviewer_handoff_resolver is None:
+                raise TaskMainCoordinatorError(
+                    "trusted reviewer handoff resolver is unavailable; refusing reviewer dispatch"
+                )
             handoff = reviewer_handoff_resolver()
             if not isinstance(handoff, TaskHandoff):
                 raise TypeError("reviewer_handoff_resolver must return TaskHandoff")
         # Resolve reviewer canonical id deterministically or via resolver param
-        if reviewer_canonical_task_id_resolver is not None:
+        if review_only_adoption is not None:
+            # Adoption derives identity from its durable marker, never from a
+            # caller-supplied resolver.
+            reviewer_cid = review_only_adoption.reviewer_canonical_task_id
+        elif reviewer_canonical_task_id_resolver is not None:
             reviewer_cid = reviewer_canonical_task_id_resolver()
             reviewer_cid = _require_non_empty_str(reviewer_cid, "reviewer_canonical_task_id")
         elif durable_review_handoff is not None:
@@ -1026,7 +1087,6 @@ def advance_milestone_once(
             )
         else:
             reviewer_cid = f"{state.project_id}:{state.milestone_id}:RV1:attempt-1"
-        review_only_adoption = review_only_adoption_from_state(state)
         if review_only_adoption is not None and reviewer_cid != review_only_adoption.reviewer_canonical_task_id:
             raise TaskMainCoordinatorError(
                 "reviewer dispatch identity contradicts the adopted reviewer task"
@@ -1038,6 +1098,27 @@ def advance_milestone_once(
                 "reviewer dispatch handoff task binding "
                 f"{durable_review_handoff.get('canonical_task_id')!r} contradicts the resolved "
                 f"canonical reviewer task {reviewer_cid!r}; refusing dispatch"
+            )
+        if review_only_adoption is not None:
+            # Revalidate source after materialization and bind all reviewer
+            # identity facts before the physical dispatch call.
+            revalidate_adopted_frontier(
+                state=state,
+                live_plan_view=live_plan_view,
+                worktree_root=review_adoption_worktree_root,
+                git=review_adoption_git,
+            )
+            binding = build_review_dispatch_binding(
+                state=state,
+                adoption=review_only_adoption,
+                handoff=handoff,
+                handoff_ref=durable_ref,
+                handoff_digest=durable_digest,
+            )
+            state = record_review_dispatch_binding(
+                store=coordinator_store,
+                coordinator_id=coordinator_id,
+                binding=binding,
             )
         from aota_forge.work_plane.compiler import (
             TrustedExecutionBinding,
