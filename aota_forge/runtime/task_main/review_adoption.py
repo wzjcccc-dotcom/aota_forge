@@ -73,7 +73,8 @@ _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_REF_LENGTH = 512
 _EXPECTED_REVIEWER_ATTEMPT = 1
-_AUTHORIZATION_PROVENANCE_VERSION = 1
+_AUTHORIZATION_PROVENANCE_LEGACY_VERSION = 1
+_AUTHORIZATION_PROVENANCE_VERSION = 2
 _TRUSTED_GIT_MAX_OBSERVED_PATHS = 4096
 _RUNTIME_DIGEST_FILE_RE = re.compile(r"^[0-9a-f]{64}\.(?:bin|json)$")
 _HANDOFF_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
@@ -436,31 +437,34 @@ def _authorization_provenance_reason(
     authorization: AcceptedFrontierAuthorization,
     frontier: TrustedGitFrontier,
 ) -> str:
-    """Encode the complete provenance in the existing bounded gate field.
+    """Encode only the provenance not already held by the coordinator.
 
-    ``review_gates.reason`` is already a durable coordinator field.  Keeping
-    the canonical facts there avoids adding a coordinator schema/store while
-    still making a fresh process independent of the original authorization
-    object.  Compression keeps the bounded string usable for normal trusted
-    runtime paths; oversized provenance fails closed.
+    The coordinator's existing Plan, Milestone, review-marker, and frontier
+    fields reconstruct the authorization identity.  Only the Git observation
+    residual that has no existing durable owner stays in ``reason``.  This is
+    deliberately an uncompressed canonical representation: compression is not
+    part of the trust or size contract.
     """
 
     payload = {
         "version": _AUTHORIZATION_PROVENANCE_VERSION,
-        "payload": _authorization_provenance_payload(authorization, frontier),
+        "git": {
+            "clean": frontier.clean,
+            "tree_ref": frontier.tree_ref,
+            "worktree_root": frontier.worktree_root,
+        },
     }
-    encoded = canonical_json(canonicalize(payload, path="AcceptedFrontierAuthorizationRecord")).encode("utf-8")
-    compressed = base64.urlsafe_b64encode(zlib.compress(encoded, level=9)).decode("ascii")
-    result = f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:{compressed}"
+    result = f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:{canonical_json(canonicalize(payload, path='AcceptedFrontierAuthorizationRecord'))}"
     if len(result) > _MAX_REF_LENGTH:
         raise ReviewAdoptionError("authorization provenance exceeds the durable coordinator bound")
     return result
 
 
-def _authorization_provenance_from_reason(reason: Any) -> tuple[AcceptedFrontierAuthorization, TrustedGitFrontier]:
-    if not isinstance(reason, str) or not reason.startswith(f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:"):
-        raise ReviewAdoptionError("review-only adoption is missing durable authorization provenance")
-    encoded = reason.split(":", 1)[1]
+def _authorization_provenance_from_legacy_reason(
+    reason: str,
+) -> tuple[AcceptedFrontierAuthorization, TrustedGitFrontier]:
+    prefix = f"authprov{_AUTHORIZATION_PROVENANCE_LEGACY_VERSION}:"
+    encoded = reason[len(prefix) :]
     try:
         raw = zlib.decompress(base64.urlsafe_b64decode(encoded.encode("ascii")))
         if len(raw) > 32 * 1024:
@@ -468,7 +472,7 @@ def _authorization_provenance_from_reason(reason: Any) -> tuple[AcceptedFrontier
         record = json.loads(raw.decode("utf-8"))
     except Exception as exc:
         raise ReviewAdoptionError(f"durable authorization provenance cannot be decoded: {exc}") from exc
-    if not isinstance(record, Mapping) or record.get("version") != _AUTHORIZATION_PROVENANCE_VERSION:
+    if not isinstance(record, Mapping) or record.get("version") != _AUTHORIZATION_PROVENANCE_LEGACY_VERSION:
         raise ReviewAdoptionError("durable authorization provenance version is invalid")
     payload = record.get("payload")
     if not isinstance(payload, Mapping):
@@ -484,6 +488,121 @@ def _authorization_provenance_from_reason(reason: Any) -> tuple[AcceptedFrontier
         raise ReviewAdoptionError(f"durable authorization provenance facts are invalid: {exc}") from exc
     if authorization.provenance_digest:
         raise ReviewAdoptionError("durable authorization provenance must not self-embed its digest")
+    authorization = replace(
+        authorization,
+        provenance_digest=_authorization_provenance_digest(authorization, frontier),
+    )
+    return authorization, frontier
+
+
+def _coordinator_marker_ref(
+    state: TaskMainCoordinatorState,
+    field: str,
+) -> str:
+    marker = getattr(state, field)
+    if not isinstance(marker, Mapping):
+        raise ReviewAdoptionError(f"durable authorization is missing coordinator {field} marker")
+    try:
+        return _require_non_empty_str(marker.get("ref"), f"{field}.ref")
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(f"durable coordinator {field}.ref is invalid: {exc}") from exc
+
+
+def _plan_id_from_coordinator_authority(state: TaskMainCoordinatorState) -> str:
+    prefix = f"local-governance:{state.project_id}/"
+    authority = state.plan_authority
+    if not authority.startswith(prefix):
+        raise ReviewAdoptionError("durable coordinator Plan authority is not canonical local_governance")
+    plan_id = authority[len(prefix) :]
+    if not plan_id or "/" in plan_id:
+        raise ReviewAdoptionError("durable coordinator Plan authority has no canonical Plan identity")
+    try:
+        if local_plan_authority_reference(state.project_id, plan_id) != authority:
+            raise ReviewAdoptionError("durable coordinator Plan authority does not round-trip canonically")
+    except ReviewAdoptionError:
+        raise
+    except Exception as exc:
+        raise ReviewAdoptionError(f"durable coordinator Plan identity is invalid: {exc}") from exc
+    return plan_id
+
+
+def _authorization_from_coordinator_state(
+    state: TaskMainCoordinatorState,
+) -> AcceptedFrontierAuthorization:
+    """Rebuild authorization identity from existing durable coordinator facts."""
+
+    if not isinstance(state, TaskMainCoordinatorState):
+        raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
+    try:
+        return AcceptedFrontierAuthorization(
+            project_id=state.project_id,
+            plan_id=_plan_id_from_coordinator_authority(state),
+            plan_authority=state.plan_authority,
+            authority_source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            plan_digest=state.plan_digest,
+            plan_source_revision=state.plan_source_revision or "",
+            milestone_id=state.milestone_id,
+            entry_base=state.entry_base,
+            candidate_frontier_ref=_coordinator_marker_ref(state, "frontier_ref"),
+            authorization_ref=_coordinator_marker_ref(state, "review_gates"),
+            reviewer_canonical_task_id=_coordinator_marker_ref(state, "integrated_review"),
+        )
+    except ReviewAdoptionError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(f"durable coordinator authorization facts are invalid: {exc}") from exc
+
+
+def _authorization_provenance_from_reason(
+    reason: Any,
+    *,
+    state: TaskMainCoordinatorState | None = None,
+) -> tuple[AcceptedFrontierAuthorization, TrustedGitFrontier]:
+    if not isinstance(reason, str) or type(reason) is not str:
+        raise ReviewAdoptionError("review-only adoption is missing durable authorization provenance")
+    if len(reason) > _MAX_REF_LENGTH:
+        raise ReviewAdoptionError("durable authorization provenance exceeds the coordinator bound")
+
+    legacy_prefix = f"authprov{_AUTHORIZATION_PROVENANCE_LEGACY_VERSION}:"
+    current_prefix = f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:"
+    if reason.startswith(legacy_prefix):
+        return _authorization_provenance_from_legacy_reason(reason)
+    if not reason.startswith(current_prefix):
+        raise ReviewAdoptionError("review-only adoption is missing durable authorization provenance")
+    if not isinstance(state, TaskMainCoordinatorState):
+        raise ReviewAdoptionError(
+            "authprov2 durable authorization requires the existing coordinator facts"
+        )
+
+    encoded = reason[len(current_prefix) :]
+    try:
+        record = json.loads(encoded)
+        if canonical_json(record) != encoded:
+            raise ValueError("provenance encoding is not canonical")
+    except Exception as exc:
+        raise ReviewAdoptionError(f"durable authorization provenance cannot be decoded: {exc}") from exc
+    if not isinstance(record, Mapping) or set(record) != {"git", "version"}:
+        raise ReviewAdoptionError("durable authorization provenance record is malformed")
+    if record.get("version") != _AUTHORIZATION_PROVENANCE_VERSION:
+        raise ReviewAdoptionError("durable authorization provenance version is invalid")
+    git_raw = record.get("git")
+    if not isinstance(git_raw, Mapping) or set(git_raw) != {"clean", "tree_ref", "worktree_root"}:
+        raise ReviewAdoptionError("durable authorization provenance Git residual is malformed")
+    if type(git_raw.get("clean")) is not bool:
+        raise ReviewAdoptionError("durable authorization provenance clean flag is invalid")
+    try:
+        authorization = _authorization_from_coordinator_state(state)
+        frontier = TrustedGitFrontier(
+            worktree_root=git_raw["worktree_root"],
+            entry_base=authorization.entry_base,
+            frontier_ref=authorization.candidate_frontier_ref,
+            tree_ref=git_raw["tree_ref"],
+            clean=git_raw["clean"],
+        )
+    except ReviewAdoptionError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(f"durable authorization provenance facts are invalid: {exc}") from exc
     authorization = replace(
         authorization,
         provenance_digest=_authorization_provenance_digest(authorization, frontier),
@@ -1044,7 +1163,8 @@ def adopt_accepted_frontier_for_review(
         stored_authorization, stored_frontier = _authorization_provenance_from_reason(
             state.review_gates.get("reason")
             if isinstance(state.review_gates, Mapping)
-            else None
+            else None,
+            state=state,
         )
         _validate_authorization_against_state(
             state=state,
@@ -1137,7 +1257,9 @@ def review_only_adoption_from_state(
         raise ReviewAdoptionError("review-only adoption marker has missing proof digest")
     if len(set(digests)) != 1 or not _SHA256_RE.fullmatch(digests[0]):
         raise ReviewAdoptionError("review-only adoption marker proof digests conflict")
-    authorization, authorized_frontier = _authorization_provenance_from_reason(gates.get("reason"))
+    authorization, authorized_frontier = _authorization_provenance_from_reason(
+        gates.get("reason"), state=state
+    )
     _validate_authorization_against_state(
         state=state,
         authorization=authorization,
@@ -1225,7 +1347,8 @@ def revalidate_adopted_frontier(
     authorization, authorized_frontier = _authorization_provenance_from_reason(
         state.review_gates.get("reason")
         if isinstance(state.review_gates, Mapping)
-        else None
+        else None,
+        state=state,
     )
     frontier = read_trusted_git_frontier(
         worktree_root,

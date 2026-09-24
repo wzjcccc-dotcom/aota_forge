@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import json
+import zlib
 from pathlib import Path
 
 import pytest
@@ -188,12 +190,161 @@ def _clean_observation(*, dirty: bool = False, head: str = FRONTIER) -> dict[str
     }
 
 
+def _legacy_provenance_reason(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> str:
+    encoded = review_adoption_module.canonical_json(
+        review_adoption_module.canonicalize(
+            {
+                "version": 1,
+                "payload": review_adoption_module._authorization_provenance_payload(
+                    authorization, frontier
+                ),
+            },
+            path="AcceptedFrontierAuthorizationRecord",
+        )
+    ).encode("utf-8")
+    return "authprov1:" + base64.urlsafe_b64encode(zlib.compress(encoded, level=9)).decode("ascii")
+
+
 def _patch_git_observation(monkeypatch: pytest.MonkeyPatch, *, dirty: bool = False, head: str = FRONTIER) -> None:
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
         lambda _root, boundary=None, **_kwargs: _clean_observation(dirty=dirty, head=head),
     )
+
+
+def test_authprov2_real_production_shape_fits_the_512_byte_bound() -> None:
+    authority = local_plan_authority_reference(
+        "aota_forge", "plan_001_gov2_session_first_adoption"
+    )
+    authorization = AcceptedFrontierAuthorization(
+        project_id="aota_forge",
+        plan_id="plan_001_gov2_session_first_adoption",
+        plan_authority=authority,
+        authority_source_kind="local_governance",
+        plan_digest="cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+        plan_source_revision="cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+        milestone_id="M1",
+        entry_base="db7932a5445b0bc37d8fe7d1271ea3031ff4ef6e",
+        candidate_frontier_ref="a3f5d68b07e0dece621a8cffd3de4619e09d1bf2",
+        authorization_ref=(
+            "review-authority://local_governance/aota_forge/"
+            "plan_001_gov2_session_first_adoption/M1"
+        ),
+        reviewer_canonical_task_id="aota_forge:M1:RV1:attempt-1",
+    )
+    frontier = TrustedGitFrontier(
+        worktree_root=str(Path(__file__).resolve().parents[1]),
+        entry_base=authorization.entry_base,
+        frontier_ref=authorization.candidate_frontier_ref,
+        tree_ref="b" * 40,
+        clean=True,
+    )
+
+    reason = review_adoption_module._authorization_provenance_reason(authorization, frontier)
+
+    assert len(reason) <= 512
+    assert reason.startswith("authprov2:")
+
+
+def test_authprov2_is_compact_canonical_and_round_trips_from_durable_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-authprov2-shape")
+    try:
+        view = _view()
+        auth = _authorization(world, tmp_path)
+        runner = _runner(world, view, auth, tmp_path)
+        assert runner.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+        state = world.coord_store.get(runner.coordinator_id)
+        assert state is not None and state.review_gates is not None
+
+        reason = state.review_gates["reason"]
+        assert reason.startswith("authprov2:")
+        assert len(reason) <= 512
+        residual = json.loads(reason.split(":", 1)[1])
+        assert set(residual) == {"git", "version"}
+        assert set(residual["git"]) == {"clean", "tree_ref", "worktree_root"}
+
+        restored_auth, restored_frontier = review_adoption_module._authorization_provenance_from_reason(
+            reason, state=state
+        )
+        assert restored_auth == auth
+        assert restored_frontier.canonical_dict() == {
+            "clean": True,
+            "entry_base": ENTRY_BASE,
+            "frontier_ref": FRONTIER,
+            "tree_ref": TREE,
+            "worktree_root": str(tmp_path.resolve()),
+        }
+    finally:
+        world.close()
+
+
+def test_authprov1_remains_strict_read_compatibility(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-authprov1-read")
+    try:
+        auth = _authorization(world, tmp_path)
+        frontier = TrustedGitFrontier(
+            worktree_root=str(tmp_path.resolve()),
+            entry_base=ENTRY_BASE,
+            frontier_ref=FRONTIER,
+            tree_ref=TREE,
+            clean=True,
+        )
+        reason = _legacy_provenance_reason(auth, frontier)
+        restored_auth, restored_frontier = review_adoption_module._authorization_provenance_from_reason(reason)
+        assert restored_auth == auth
+        assert restored_frontier == frontier
+    finally:
+        world.close()
+
+
+def test_authprov2_oversized_residual_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-authprov2-oversized")
+    try:
+        auth = _authorization(world, tmp_path)
+        frontier = TrustedGitFrontier(
+            worktree_root="x" * 512,
+            entry_base=ENTRY_BASE,
+            frontier_ref=FRONTIER,
+            tree_ref=TREE,
+            clean=True,
+        )
+        with pytest.raises(ReviewAdoptionError, match="coordinator bound"):
+            review_adoption_module._authorization_provenance_reason(auth, frontier)
+    finally:
+        world.close()
+
+
+def test_authprov2_malformed_residual_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-authprov2-malformed")
+    try:
+        view = _view()
+        auth = _authorization(world, tmp_path)
+        runner = _runner(world, view, auth, tmp_path)
+        assert runner.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+        state = world.coord_store.get(runner.coordinator_id)
+        assert state is not None and state.review_gates is not None
+        with pytest.raises(ReviewAdoptionError, match="cannot be decoded"):
+            review_adoption_module._authorization_provenance_from_reason(
+                "authprov2:{not-json}", state=state
+            )
+    finally:
+        world.close()
 
 
 def _runner(
@@ -358,7 +509,7 @@ def test_durable_tamper_and_rehash_is_rejected_after_restart(
         original_state = world.coord_store.get(coordinator_id)
         assert original_state is not None
         original_auth, original_frontier = review_adoption_module._authorization_provenance_from_reason(
-            original_state.review_gates["reason"]
+            original_state.review_gates["reason"], state=original_state
         )
         tampered = dataclasses.replace(
             original_auth,
