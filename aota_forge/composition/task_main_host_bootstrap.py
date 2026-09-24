@@ -2086,11 +2086,24 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         # Review truth must come from governed review/reconciliation path
         # (AF_RECONCILIATION_OR_GOVERNED_REVIEW). If review evidence is
         # unavailable, fail closed (do not fabricate PASS).
+        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        current_state = coord_store.get(current_coordinator_id)
+        frontier_marker = getattr(current_state, "frontier_ref", None)
+        trusted_frontier_ref = (
+            frontier_marker.get("ref")
+            if isinstance(frontier_marker, Mapping)
+            else None
+        )
+        if not isinstance(trusted_frontier_ref, str) or not trusted_frontier_ref.strip():
+            raise TrustedBindingError(
+                "governed reviewer evidence requires an explicit trusted frontier binding"
+            )
         return derive_governed_review_evidence(
             reviewer_canonical_task_id=cid,
             card_digest=digest,
             execution_store=exec_store,
             live_plan_view=live_view,
+            reviewed_frontier_ref=trusted_frontier_ref,
             reviewer_handoff_resolver=reviewer_handoff_resolver,
         )
 

@@ -101,6 +101,7 @@ _RUNTIME_ARTIFACT_DIRECTORY_PREFIXES = (
     ".aota/pre-resolved-bindings/",
     ".aota/task_return_receipts/",
     ".pytest_cache/",
+    ".ruff_cache/",
 )
 _RUNTIME_ARTIFACT_DIRECTORY_PATHS = frozenset(
     path
@@ -253,7 +254,7 @@ def _is_known_runtime_artifact_path(path: str) -> bool:
         if not normalized.startswith(prefix):
             continue
         filename = normalized[len(prefix) :]
-        if prefix == ".pytest_cache/":
+        if prefix in (".pytest_cache/", ".ruff_cache/"):
             return True
         if "/" in filename:
             return False

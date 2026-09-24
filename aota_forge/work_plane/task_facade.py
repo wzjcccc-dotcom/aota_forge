@@ -729,19 +729,32 @@ def task_start(
             "by the trusted runtime; the Control Plane never infers it from "
             "an Issue number, worktree, branch, repository or title"
         )
-    trusted_steward_task_id = envelope.get("task_id")
+    trusted_envelope_task_id = envelope.get("task_id")
     if (
+        thin_task_lifecycle
+        and envelope.get("target_role") == grounded_role
+        and isinstance(trusted_envelope_task_id, str)
+        and _looks_like_canonical_task_binding(trusted_envelope_task_id)
+    ):
+        # A trusted runtime may materialize an exact canonical child identity in
+        # the durable handoff before invoking the generic thin task.start seam.
+        # Reusing it keeps the execution/CARD/reconciliation identity stable;
+        # ordinary model-created handoffs still use the historical generated id.
+        if len(trusted_envelope_task_id) > 512:
+            raise MalformedTaskIdentityError("trusted thin task identity exceeds 512 characters")
+        canonical_task_id = trusted_envelope_task_id.strip()
+    elif (
         grounded_role == "project-steward"
         and envelope.get("target_role") == grounded_role
-        and isinstance(trusted_steward_task_id, str)
-        and trusted_steward_task_id.startswith("steward:")
+        and isinstance(trusted_envelope_task_id, str)
+        and trusted_envelope_task_id.startswith("steward:")
     ):
         # The legacy production Steward path binds its stable task identity in
         # the trusted handoff envelope. It is durable with the handoff and is
         # therefore safe to reuse after a task-main process restart.
-        if len(trusted_steward_task_id) > 256:
+        if len(trusted_envelope_task_id) > 256:
             raise MalformedTaskIdentityError("trusted Steward task identity exceeds 256 characters")
-        canonical_task_id = trusted_steward_task_id
+        canonical_task_id = trusted_envelope_task_id
     else:
         artifact_id = envelope.get("artifact_id", uuid.uuid4().hex)
         grounded_milestone = task_handoff.milestone_ref.ref if task_handoff.milestone_ref is not None else None

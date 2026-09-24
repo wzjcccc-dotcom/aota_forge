@@ -207,20 +207,37 @@ def derive_governed_review_evidence(
     card_digest: str,
     execution_store: ExecutionStateStore,
     live_plan_view: MilestonePlanView,
+    reviewed_frontier_ref: str | SemanticReference,
     reviewer_handoff_resolver: Callable[[], TaskHandoff],
 ) -> dict:
     """Minimal helper for review evidence derivation (reviewer card -> GovernedReviewEvidence).
 
-    Reuses existing MilestoneReviewEvidence construction; keeps generic bridge small.
+    The frontier is an explicit trusted runtime input. It is deliberately not
+    derived from the model, current HEAD, or a milestone-shaped placeholder.
+    Reuses existing MilestoneReviewEvidence construction; keeps generic bridge
+    small.
     """
     from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle
     from aota_forge.work_plane.result_card import WorkerResultCard
     from aota_forge.runtime.task_main.reconciliation import GovernedReviewEvidence
     from aota_forge.work_plane.handoff import SemanticReference
 
+    if isinstance(reviewed_frontier_ref, SemanticReference):
+        frontier_ref = reviewed_frontier_ref.ref
+    elif isinstance(reviewed_frontier_ref, str):
+        frontier_ref = reviewed_frontier_ref.strip()
+    else:
+        raise ReconciliationError("reviewed_frontier_ref must be a trusted string or SemanticReference")
+    if not frontier_ref:
+        raise ReconciliationError("reviewed_frontier_ref must be non-empty")
+    if frontier_ref == f"frontier-{live_plan_view.milestone_id}-rv1":
+        raise ReconciliationError("synthetic milestone frontier is not a trusted review frontier")
+
     record = execution_store.get(reviewer_canonical_task_id)
     if record is None or record.worker_result_card is None:
         raise ReconciliationError(f"no durable reviewer CARD for {reviewer_canonical_task_id!r}")
+    if not record.canonical_task_state.is_terminal or record.terminal_result is None:
+        raise ReconciliationError(f"reviewer execution {reviewer_canonical_task_id!r} is not terminal")
     card = WorkerResultCard.from_dict(dict(record.worker_result_card))
     if card.compute_card_digest() != card_digest:
         raise ReconciliationError("reviewer CARD digest mismatch")
@@ -230,7 +247,7 @@ def derive_governed_review_evidence(
     ev = MilestoneReviewEvidence(
         milestone_ref=SemanticReference(ref=live_plan_view.milestone_id),
         review_cycle=ReviewCycle.RV1,
-        reviewed_frontier_ref=SemanticReference(ref=f"frontier-{live_plan_view.milestone_id}-rv1"),
+        reviewed_frontier_ref=SemanticReference(ref=frontier_ref),
         review_result_ref=card.result_handoff_ref,
         review_result_digest=card.compute_card_digest(),
         finding_refs=(),
@@ -239,7 +256,8 @@ def derive_governed_review_evidence(
         review_evidence=ev,
         review_findings=(),
         review_task_handoff=handoff,
-        expected_final_frontier=SemanticReference(ref=f"frontier-{live_plan_view.milestone_id}-rv1"),
+        expected_frontier=SemanticReference(ref=frontier_ref),
+        expected_final_frontier=SemanticReference(ref=frontier_ref),
     )
 
 
