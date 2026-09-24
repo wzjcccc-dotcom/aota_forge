@@ -11,11 +11,13 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from aota_forge.adapters.plan_authority import PlanAuthoritySnapshot
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
     PlanAuthorityBinding,
 )
 from aota_forge.adapters.plan_authority.local_governance import (
+    LocalGovernanceAdapterError,
     LocalPlanAuthorityDestination,
     LocalPlanAuthorityReadAdapter,
 )
@@ -25,7 +27,7 @@ from aota_forge.core.identity.kinds import IdKind, SubjectKind
 from aota_forge.core.identity.refs import object_ref_subject
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import PORTABLE_PLAN_SOURCE_LOCAL
-from aota_forge.core.plan.sections import parse_body_sections
+from aota_forge.core.plan.sections import KIND_CURRENT, parse_body_sections
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.core.project.manifest import PROJECT_ID_RE, load_project
 from aota_forge.governance.project_store import (
@@ -47,6 +49,10 @@ RAW_PUT_PLAN_OPERATOR_REPAIR = False
 FAKE_HISTORICAL_RECORD_REVISION = False
 FAKE_PLAN_INIT_JOURNAL_EVENT = False
 NEW_PUBLIC_OPERATION = False
+
+_TRUSTED_PLAN_TRUTH_KEYS = frozenset(
+    {"PROJECT_ID", "PLAN_ID", "PLAN_REVISION", "PLAN_STATUS", "CURRENT_MILESTONE"}
+)
 
 
 class PlanRecordRehydrationError(ValueError):
@@ -121,7 +127,67 @@ def _plan_identity(body: str) -> dict[str, str]:
             "PLAN_IDENTITY_INVALID",
             "authoritative Plan must contain exactly one Plan Identity section",
         )
-    return identity_sections[0].key_values
+    identity = identity_sections[0]
+    for key, values in identity.duplicates:
+        if key in _TRUSTED_PLAN_TRUTH_KEYS and len(set(values)) > 1:
+            raise _error(
+                "PLAN_IDENTITY_CONTRADICTION",
+                f"Plan Identity key {key!r} has contradictory values: {values!r}",
+            )
+
+    current_values: dict[str, str] = {}
+    for section in sections:
+        if section.kind != KIND_CURRENT:
+            continue
+        for key, value in section.key_values.items():
+            if key not in _TRUSTED_PLAN_TRUTH_KEYS:
+                continue
+            previous = current_values.get(key)
+            if previous is not None and previous != value:
+                raise _error(
+                    "PLAN_IDENTITY_CONTRADICTION",
+                    f"current Plan truth key {key!r} contradicts across current sections: "
+                    f"{previous!r} vs {value!r} (section {section.title!r})",
+                )
+            current_values[key] = value
+
+    for key in ("PROJECT_ID", "PLAN_ID", "PLAN_REVISION"):
+        current_value = current_values.get(key)
+        if current_value is not None and current_value != identity.key_values.get(key):
+            raise _error(
+                "PLAN_IDENTITY_CONTRADICTION",
+                f"current Plan truth key {key!r} contradicts Plan Identity: "
+                f"{identity.key_values.get(key)!r} vs {current_value!r}",
+            )
+    return identity.key_values
+
+
+def _verify_authority_snapshot(
+    reader: LocalPlanAuthorityReadAdapter,
+    initial_snapshot: PlanAuthoritySnapshot,
+    initial_digest: str,
+) -> None:
+    """Fail before commit unless the guarded authority is byte-for-byte stable."""
+    try:
+        verification_snapshot = reader.load()
+        verification_digest = hashlib.sha256(
+            verification_snapshot.body.encode("utf-8")
+        ).hexdigest()
+    except Exception as exc:
+        raise _error(
+            "PLAN_AUTHORITY_CHANGED_DURING_REHYDRATION",
+            f"local Plan authority could not be revalidated: {exc}",
+        ) from exc
+    if (
+        verification_snapshot.body != initial_snapshot.body
+        or verification_snapshot.digest != verification_digest
+        or verification_snapshot.revision != initial_snapshot.revision
+        or verification_digest != initial_digest
+    ):
+        raise _error(
+            "PLAN_AUTHORITY_CHANGED_DURING_REHYDRATION",
+            "local Plan authority changed during guarded metadata establishment",
+        )
 
 
 def _validate_authority_identity(
@@ -182,6 +248,34 @@ def _readback(
     return readback
 
 
+def _discard_established_record(
+    store: ProjectGovernanceStore,
+    expected: ProjectPlanRecord,
+) -> None:
+    """Remove only the exact record created by this failed establishment."""
+    try:
+        discarded = store.discard_plan_if_exact(expected)
+    except Exception as exc:
+        raise _error(
+            "PROJECT_PLAN_RECORD_ROLLBACK_FAILED",
+            f"failed to roll back the raced ProjectPlanRecord: {exc}",
+        ) from exc
+    if discarded:
+        return
+    try:
+        remaining = store.get_plan(expected.project_id, expected.plan_id)
+    except Exception as exc:
+        raise _error(
+            "PROJECT_PLAN_RECORD_ROLLBACK_FAILED",
+            f"could not verify the raced ProjectPlanRecord rollback: {exc}",
+        ) from exc
+    if remaining is not None:
+        raise _error(
+            "PROJECT_PLAN_RECORD_ROLLBACK_FAILED",
+            "raced ProjectPlanRecord was not the exact newly established record",
+        )
+
+
 def rehydrate_existing_local_plan_record(
     *,
     project_id: str,
@@ -217,109 +311,151 @@ def rehydrate_existing_local_plan_record(
         )
         _validate_authority_identity(authority_binding, derived_binding)
         reader = LocalPlanAuthorityReadAdapter(destination, binding=derived_binding)
-        snapshot = reader.load()
     except PlanRecordRehydrationError:
         raise
     except Exception as exc:
         raise _error("LOCAL_AUTHORITY_READ_FAILED", str(exc)) from exc
 
-    if not snapshot.body:
-        raise _error("AUTHORITY_DOCUMENT_MISSING", "existing local Plan authority is empty or missing")
     try:
-        raw_digest = hashlib.sha256(snapshot.body.encode("utf-8")).hexdigest()
-    except (UnicodeEncodeError, AttributeError) as exc:
-        raise _error("AUTHORITY_DOCUMENT_INVALID", "local Plan authority is not valid UTF-8 text") from exc
-    if snapshot.digest != raw_digest:
-        raise _error("SOURCE_DIGEST_MISMATCH", "local Plan adapter digest does not match authority bytes")
-    if snapshot.revision is None or isinstance(snapshot.revision, bool):
-        raise _error("SOURCE_REVISION_INVALID", "local Plan authority has no valid observed revision")
-    if not isinstance(snapshot.revision, (str, int)):
-        raise _error("SOURCE_REVISION_INVALID", "local Plan authority revision must be str|int")
-    if isinstance(snapshot.revision, str) and not snapshot.revision:
-        raise _error("SOURCE_REVISION_INVALID", "local Plan authority revision must be non-empty")
-    if isinstance(snapshot.revision, int) and snapshot.revision < 0:
-        raise _error("SOURCE_REVISION_INVALID", "local Plan authority revision must be non-negative")
+        with reader.authority_guard():
+            try:
+                snapshot = reader.load()
+            except Exception as exc:
+                raise _error("LOCAL_AUTHORITY_READ_FAILED", str(exc)) from exc
 
-    observed_binding = PlanAuthorityBinding(
-        plan_id=plan_id,
-        source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
-        authority_ref=destination.authority_ref,
-        source_revision=snapshot.revision,
-        source_digest=raw_digest,
-    )
-    _validate_observed_binding(authority_binding, observed_binding)
+            if not snapshot.body:
+                raise _error(
+                    "AUTHORITY_DOCUMENT_MISSING",
+                    "existing local Plan authority is empty or missing",
+                )
+            try:
+                raw_digest = hashlib.sha256(snapshot.body.encode("utf-8")).hexdigest()
+            except (UnicodeEncodeError, AttributeError) as exc:
+                raise _error(
+                    "AUTHORITY_DOCUMENT_INVALID",
+                    "local Plan authority is not valid UTF-8 text",
+                ) from exc
+            if snapshot.digest != raw_digest:
+                raise _error(
+                    "SOURCE_DIGEST_MISMATCH",
+                    "local Plan adapter digest does not match authority bytes",
+                )
+            if snapshot.revision is None or isinstance(snapshot.revision, bool):
+                raise _error(
+                    "SOURCE_REVISION_INVALID",
+                    "local Plan authority has no valid observed revision",
+                )
+            if not isinstance(snapshot.revision, (str, int)):
+                raise _error(
+                    "SOURCE_REVISION_INVALID",
+                    "local Plan authority revision must be str|int",
+                )
+            if isinstance(snapshot.revision, str) and not snapshot.revision:
+                raise _error(
+                    "SOURCE_REVISION_INVALID",
+                    "local Plan authority revision must be non-empty",
+                )
+            if isinstance(snapshot.revision, int) and snapshot.revision < 0:
+                raise _error(
+                    "SOURCE_REVISION_INVALID",
+                    "local Plan authority revision must be non-negative",
+                )
 
-    try:
-        document = normalize_portable_plan(
-            snapshot.body,
-            source_revision=str(snapshot.revision),
-            source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
-        )
-    except Exception as exc:
-        raise _error("PLAN_AUTHORITY_INVALID", f"authoritative Plan normalization failed: {exc}") from exc
-
-    try:
-        identity = _plan_identity(snapshot.body)
-    except PlanRecordRehydrationError:
-        raise
-    except Exception as exc:
-        raise _error("PLAN_IDENTITY_INVALID", f"authoritative Plan identity could not be read: {exc}") from exc
-    if identity.get("PROJECT_ID") != project_id:
-        raise _error("PLAN_PROJECT_ID_MISMATCH", "Plan Identity PROJECT_ID differs from trusted project_id")
-    if identity.get("PLAN_ID") != plan_id:
-        raise _error("PLAN_ID_MISMATCH", "Plan Identity PLAN_ID differs from requested plan_id")
-    if identity.get("PLAN_STATUS") != document.plan_status:
-        raise _error("PLAN_STATUS_CONTRADICTION", "Plan Identity and normalized Plan status disagree")
-    if document.plan_status != PLAN_LIFECYCLE_ACTIVE:
-        raise _error(
-            "PLAN_LIFECYCLE_NOT_REHYDRATABLE_AS_ACTIVE",
-            "only an authoritative active Plan can be rehydrated",
-        )
-
-    expected = ProjectPlanRecord(
-        project_id=project_id,
-        plan_id=plan_id,
-        lifecycle_state=PLAN_LIFECYCLE_ACTIVE,
-        authority=observed_binding,
-    )
-    current = _exact_record_or_conflict(
-        governance_store.get_plan(project_id, plan_id),
-        expected,
-    )
-    if current is not None:
-        return _readback(governance_store, expected)
-
-    try:
-        verification_snapshot = reader.load()
-        verification_digest = hashlib.sha256(
-            verification_snapshot.body.encode("utf-8")
-        ).hexdigest()
-    except Exception as exc:
-        raise _error("LOCAL_AUTHORITY_READ_FAILED", str(exc)) from exc
-    if (
-        verification_snapshot.body != snapshot.body
-        or verification_snapshot.digest != verification_digest
-        or verification_snapshot.revision != snapshot.revision
-        or verification_digest != raw_digest
-    ):
-        raise _error(
-            "PLAN_AUTHORITY_CHANGED_DURING_REHYDRATION",
-            "local Plan authority changed before metadata could be adopted",
-        )
-
-    try:
-        governance_store.put_plan(expected)
-    except PlanRecordAlreadyExistsError:
-        current = _exact_record_or_conflict(
-            governance_store.get_plan(project_id, plan_id),
-            expected,
-        )
-        if current is None:
-            raise _error(
-                "PROJECT_PLAN_RECORD_WRITE_UNKNOWN",
-                "record appeared during rehydration but could not be read back",
+            observed_binding = PlanAuthorityBinding(
+                plan_id=plan_id,
+                source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+                authority_ref=destination.authority_ref,
+                source_revision=snapshot.revision,
+                source_digest=raw_digest,
             )
-    return _readback(governance_store, expected)
+            _validate_observed_binding(authority_binding, observed_binding)
+
+            try:
+                document = normalize_portable_plan(
+                    snapshot.body,
+                    source_revision=str(snapshot.revision),
+                    source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+                )
+            except Exception as exc:
+                raise _error(
+                    "PLAN_AUTHORITY_INVALID",
+                    f"authoritative Plan normalization failed: {exc}",
+                ) from exc
+
+            try:
+                identity = _plan_identity(snapshot.body)
+            except PlanRecordRehydrationError:
+                raise
+            except Exception as exc:
+                raise _error(
+                    "PLAN_IDENTITY_INVALID",
+                    f"authoritative Plan identity could not be read: {exc}",
+                ) from exc
+            if identity.get("PROJECT_ID") != project_id:
+                raise _error(
+                    "PLAN_PROJECT_ID_MISMATCH",
+                    "Plan Identity PROJECT_ID differs from trusted project_id",
+                )
+            if identity.get("PLAN_ID") != plan_id:
+                raise _error(
+                    "PLAN_ID_MISMATCH",
+                    "Plan Identity PLAN_ID differs from requested plan_id",
+                )
+            if identity.get("PLAN_STATUS") != document.plan_status:
+                raise _error(
+                    "PLAN_STATUS_CONTRADICTION",
+                    "Plan Identity and normalized Plan status disagree",
+                )
+            if document.plan_status != PLAN_LIFECYCLE_ACTIVE:
+                raise _error(
+                    "PLAN_LIFECYCLE_NOT_REHYDRATABLE_AS_ACTIVE",
+                    "only an authoritative active Plan can be rehydrated",
+                )
+
+            expected = ProjectPlanRecord(
+                project_id=project_id,
+                plan_id=plan_id,
+                lifecycle_state=PLAN_LIFECYCLE_ACTIVE,
+                authority=observed_binding,
+            )
+            current = _exact_record_or_conflict(
+                governance_store.get_plan(project_id, plan_id),
+                expected,
+            )
+            if current is not None:
+                _verify_authority_snapshot(reader, snapshot, raw_digest)
+                return _readback(governance_store, expected)
+
+            created = False
+            try:
+                governance_store.put_plan(
+                    expected,
+                    verify_current=lambda: _verify_authority_snapshot(
+                        reader, snapshot, raw_digest
+                    ),
+                )
+                created = True
+            except PlanRecordAlreadyExistsError:
+                current = _exact_record_or_conflict(
+                    governance_store.get_plan(project_id, plan_id),
+                    expected,
+                )
+                if current is None:
+                    raise _error(
+                        "PROJECT_PLAN_RECORD_WRITE_UNKNOWN",
+                        "record appeared during rehydration but could not be read back",
+                    )
+            try:
+                _verify_authority_snapshot(reader, snapshot, raw_digest)
+                return _readback(governance_store, expected)
+            except PlanRecordRehydrationError:
+                if created:
+                    _discard_established_record(governance_store, expected)
+                raise
+    except PlanRecordRehydrationError:
+        raise
+    except LocalGovernanceAdapterError as exc:
+        raise _error("LOCAL_AUTHORITY_READ_FAILED", str(exc)) from exc
 
 
 __all__ = [

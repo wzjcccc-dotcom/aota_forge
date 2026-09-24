@@ -36,10 +36,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from aota_forge.adapters.plan_authority.binding import (
     PlanAuthorityBinding,
@@ -106,6 +107,9 @@ _UPDATE_SQL = (
     f"UPDATE {_TABLE} SET lifecycle_state = ?, source_kind = ?, authority_ref = ?, "
     "source_revision = ?, source_digest = ?, revision = ? "
     "WHERE project_id = ? AND plan_id = ? AND revision = ?"
+)
+_DELETE_EXACT_SQL = (
+    f"DELETE FROM {_TABLE} WHERE project_id = ? AND plan_id = ? AND revision = ?"
 )
 
 # AF #57 M3/W1 bounded additive foundation tables. The v1 plan table and
@@ -749,13 +753,20 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
 
     # -- port --------------------------------------------------------------------
 
-    def put_plan(self, record: ProjectPlanRecord) -> ProjectPlanRecord:
+    def put_plan(
+        self,
+        record: ProjectPlanRecord,
+        *,
+        verify_current: Callable[[], None] | None = None,
+    ) -> ProjectPlanRecord:
         if not isinstance(record, ProjectPlanRecord):
             raise ProjectGovernanceRecordError("record must be a ProjectPlanRecord")
         if record.revision != 1:
             raise ProjectGovernanceRecordError(
                 "put_plan creates a new record at revision 1; use compare_and_swap_plan to mutate"
             )
+        if verify_current is not None and not callable(verify_current):
+            raise ProjectGovernanceRecordError("verify_current must be callable when supplied")
         with self._lock:
             self._require_open()
             with self._write_transaction():
@@ -769,8 +780,44 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                     raise ProjectGovernancePersistenceError(
                         f"governance write failed: {exc}"
                     ) from exc
+                if verify_current is not None:
+                    verify_current()
                 self._inject_write_failure()
         return record
+
+    def discard_plan_if_exact(self, record: ProjectPlanRecord) -> bool:
+        if not isinstance(record, ProjectPlanRecord):
+            raise ProjectGovernanceRecordError("record must be a ProjectPlanRecord")
+        if record.revision != 1:
+            raise ProjectGovernanceRecordError(
+                "bounded Plan rollback only accepts a newly established revision-1 record"
+            )
+        with self._lock:
+            self._require_open()
+            with self._write_transaction():
+                try:
+                    row = self._connection.execute(
+                        _SELECT_ONE_SQL, (record.project_id, record.plan_id)
+                    ).fetchone()
+                except sqlite3.Error as exc:
+                    raise ProjectGovernancePersistenceError(
+                        f"governance rollback read failed: {exc}"
+                    ) from exc
+                if row is None or self._row_to_record(row) != record:
+                    return False
+                try:
+                    cursor = self._connection.execute(
+                        _DELETE_EXACT_SQL,
+                        (record.project_id, record.plan_id, record.revision),
+                    )
+                except sqlite3.Error as exc:
+                    raise ProjectGovernancePersistenceError(
+                        f"governance rollback failed: {exc}"
+                    ) from exc
+                if cursor.rowcount != 1:
+                    return False
+                self._inject_write_failure()
+        return True
 
     def get_plan(self, project_id: str, plan_id: str) -> ProjectPlanRecord | None:
         with self._lock:

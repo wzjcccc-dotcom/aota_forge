@@ -44,9 +44,15 @@ Invariants:
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import hashlib
 import os
+import stat
 import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,6 +107,8 @@ ADAPTER_SUCCESS_ALONE_MEANS_VERIFIED = False
 OBJECT_REF_DERIVES_FILESYSTEM_DESTINATION = False
 LOCAL_GOVERNANCE_AGENT_WRITE_CAPABILITY = False
 LOCAL_PLAN_RETIREMENT_IMPLEMENTED = False
+
+_AUTHORITY_LOCK_STATE = threading.local()
 
 
 class LocalGovernanceAdapterError(ValueError):
@@ -195,31 +203,138 @@ class LocalPlanAuthorityDestination:
             )
 
 
-def _read_raw_document(destination: LocalPlanAuthorityDestination) -> tuple[str | None, str, str]:
-    """Read the bounded raw local Plan document.
+def _trusted_plan_directory(destination: LocalPlanAuthorityDestination) -> Path:
+    """Revalidate and mechanically constrain one Plan directory."""
+    try:
+        destination.governance_root.revalidate()
+    except Exception as exc:
+        raise LocalGovernanceAdapterError(
+            f"trusted local governance root no longer revalidates: {exc}"
+        ) from exc
+    root = Path(destination.governance_root.root_path)
+    plan_directory = destination.plan_directory()
+    if plan_directory.parent != root or plan_directory.name != destination.plan_id:
+        raise LocalGovernanceAdapterError(
+            "Plan directory must be a direct project-scoped child of the bound governance root"
+        )
+    if plan_directory.is_symlink():
+        raise LocalGovernanceAdapterError("Plan directory must not be a symlink")
+    if not plan_directory.exists():
+        return plan_directory
+    if not plan_directory.is_dir():
+        raise LocalGovernanceAdapterError("Plan path exists and is not a directory")
+    try:
+        resolved = plan_directory.resolve(strict=True)
+    except OSError as exc:
+        raise LocalGovernanceAdapterError(
+            f"Plan directory cannot be resolved under the trusted root: {exc}"
+        ) from exc
+    if (
+        resolved != plan_directory
+        or resolved.parent != root
+        or not resolved.is_relative_to(root)
+    ):
+        raise LocalGovernanceAdapterError(
+            "Plan directory must remain the exact direct child of the trusted governance root"
+        )
+    return plan_directory
 
-    Returns ``(source_revision, raw_digest, raw_body)``; an absent document is
-    revision ``None`` with the canonical absent/empty raw digest and an empty
-    body. Never follows a symlinked document or directory.
-    """
-    document = destination.plan_document_path()
+
+def _lock_root(destination: LocalPlanAuthorityDestination) -> Path:
+    try:
+        destination.governance_root.revalidate()
+    except Exception as exc:
+        raise LocalGovernanceAdapterError(
+            f"trusted local governance root no longer revalidates: {exc}"
+        ) from exc
+    return Path(destination.governance_root.root_path)
+
+
+@contextmanager
+def _authority_lock(destination: LocalPlanAuthorityDestination) -> Iterator[None]:
+    """Serialize trusted local authority reads and canonical mutations."""
+    root = _lock_root(destination)
+    held_roots = getattr(_AUTHORITY_LOCK_STATE, "roots", None)
+    if held_roots is None:
+        held_roots = set()
+        _AUTHORITY_LOCK_STATE.roots = held_roots
+    key = str(root)
+    if key in held_roots:
+        yield
+        return
+
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            str(root),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise LocalGovernanceAdapterError(
+            f"trusted local governance root cannot be locked: {exc}"
+        ) from exc
+    held_roots.add(key)
+    try:
+        yield
+    finally:
+        held_roots.discard(key)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _read_raw_document(destination: LocalPlanAuthorityDestination) -> tuple[str | None, str, str]:
+    """Read the bounded raw local Plan document without following links."""
+    plan_directory = _trusted_plan_directory(destination)
+    document = plan_directory / PLAN_DOCUMENT_FILENAME
     if document.is_symlink():
         raise LocalGovernanceAdapterError("local Plan document must not be a symlink")
-    if not document.exists():
+    try:
+        path_metadata = os.stat(document, follow_symlinks=False)
+    except FileNotFoundError:
         return (None, ABSENT_RAW_DOCUMENT_DIGEST, "")
-    if not document.is_file():
+    except OSError as exc:
+        raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
+    if stat.S_ISLNK(path_metadata.st_mode):
+        raise LocalGovernanceAdapterError("local Plan document must not be a symlink")
+    if not stat.S_ISREG(path_metadata.st_mode):
         raise LocalGovernanceAdapterError("local Plan document path is not a regular file")
-    try:
-        size = document.stat().st_size
-    except OSError as exc:
-        raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
-    if size > MAX_PLAN_BYTES:
+    if path_metadata.st_size > MAX_PLAN_BYTES:
         raise LocalGovernanceAdapterError("local Plan document exceeds the bounded Plan size")
+    descriptor: int | None = None
     try:
-        with document.open("rb") as handle:
+        descriptor = os.open(
+            str(document),
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except FileNotFoundError:
+        return (None, ABSENT_RAW_DOCUMENT_DIGEST, "")
+    except OSError as exc:
+        if getattr(exc, "errno", None) == errno.ELOOP:
+            raise LocalGovernanceAdapterError(
+                "local Plan document must not be a symlink"
+            ) from exc
+        raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise LocalGovernanceAdapterError("local Plan document path is not a regular file")
+        if metadata.st_size > MAX_PLAN_BYTES:
+            raise LocalGovernanceAdapterError("local Plan document exceeds the bounded Plan size")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
             raw_body = handle.read(MAX_PLAN_BYTES + 1)
+    except LocalGovernanceAdapterError:
+        raise
     except OSError as exc:
         raise LocalGovernanceAdapterError(f"local Plan document unreadable: {exc}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
     if len(raw_body) > MAX_PLAN_BYTES:
         raise LocalGovernanceAdapterError("local Plan document exceeds the bounded Plan size")
     try:
@@ -318,14 +433,21 @@ class LocalPlanAuthorityReadAdapter(PlanAuthorityReadAdapter):
     def plan_authority(self) -> str:
         return self._binding.authority_ref
 
+    @contextmanager
+    def authority_guard(self) -> Iterator[None]:
+        """Hold the same trusted-root guard used by local Plan mutation."""
+        with _authority_lock(self._destination):
+            yield
+
     def load(self) -> PlanAuthoritySnapshot:
-        revision, digest, body = _read_raw_document(self._destination)
-        return PlanAuthoritySnapshot(
-            body=body,
-            revision=revision,
-            digest=digest,
-            control_projections={},
-        )
+        with self.authority_guard():
+            revision, digest, body = _read_raw_document(self._destination)
+            return PlanAuthoritySnapshot(
+                body=body,
+                revision=revision,
+                digest=digest,
+                control_projections={},
+            )
 
 
 def load_local_portable_plan(adapter: LocalPlanAuthorityReadAdapter) -> PortablePlanDocument:
@@ -378,15 +500,23 @@ class LocalPlanAuthorityAdapter(PlanAuthorityMutationPort):
 
     def read_raw_authority(self, target: ObjectRef) -> tuple[str | int | None, str | None, str]:
         self._destination.require_target(target)
-        self.read_count += 1
-        return _read_raw_document(self._destination)
+        with _authority_lock(self._destination):
+            self.read_count += 1
+            return _read_raw_document(self._destination)
 
     def verify(self, target: ObjectRef) -> tuple[str | int | None, str | None, str]:
         self._destination.require_target(target)
-        self.verify_count += 1
-        return _read_raw_document(self._destination)
+        with _authority_lock(self._destination):
+            self.verify_count += 1
+            return _read_raw_document(self._destination)
 
     def mutate(self, request: PortablePlanMutationRequest) -> PortablePlanMutationResponse:
+        with _authority_lock(self._destination):
+            return self._mutate_unlocked(request)
+
+    def _mutate_unlocked(
+        self, request: PortablePlanMutationRequest
+    ) -> PortablePlanMutationResponse:
         self.mutate_count += 1
         if not isinstance(request, PortablePlanMutationRequest):
             raise LocalGovernanceAdapterError("mutate requires a PortablePlanMutationRequest")
@@ -493,15 +623,7 @@ class LocalPlanAuthorityAdapter(PlanAuthorityMutationPort):
 
     def _materialize(self, body: str) -> tuple[str, str]:
         destination = self._destination
-        destination.governance_root.revalidate()
-        root = Path(destination.governance_root.root_path)
-        plan_directory = destination.plan_directory()
-        if plan_directory.parent != root or plan_directory.name != destination.plan_id:
-            raise LocalGovernanceAdapterError(
-                "Plan directory must be a direct project-scoped child of the bound governance root"
-            )
-        if plan_directory.is_symlink():
-            raise LocalGovernanceAdapterError("Plan directory must not be a symlink")
+        plan_directory = _trusted_plan_directory(destination)
         if not plan_directory.exists():
             plan_directory.mkdir(mode=0o755)
         elif not plan_directory.is_dir():

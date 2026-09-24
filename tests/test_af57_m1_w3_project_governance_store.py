@@ -785,6 +785,7 @@ class TestCompositionIsolation:
     def test_port_surface_is_minimal(self):
         assert ProjectGovernanceStore.__abstractmethods__ == {
             "put_plan",
+            "discard_plan_if_exact",
             "get_plan",
             "list_plans",
             "compare_and_swap_plan",

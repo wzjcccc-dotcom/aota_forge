@@ -258,6 +258,194 @@ def test_authority_change_before_write_fails_closed(tmp_path: Path, monkeypatch:
         assert store.list_plans(PROJECT_ID) == ()
     finally:
         store.close()
+    reopened = open_project_governance_store(store_path)
+    try:
+        assert reopened.get_plan(PROJECT_ID, PLAN_ID) is None
+    finally:
+        reopened.close()
+
+
+def test_authority_change_at_record_establishment_leaves_no_stale_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, governance_base, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = governance_base / PROJECT_ID / PLAN_ID / "plan.md"
+
+    store = open_project_governance_store(store_path)
+    original_put_plan = store.put_plan
+
+    def mutate_before_establishment(record, **kwargs):
+        authority_path.write_text(PLAN_BODY + "\n", encoding="utf-8")
+        return original_put_plan(record, **kwargs)
+
+    monkeypatch.setattr(store, "put_plan", mutate_before_establishment)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_AUTHORITY_CHANGED_DURING_REHYDRATION"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+
+
+def test_authority_change_after_establishment_is_rolled_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, governance_base, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = governance_base / PROJECT_ID / PLAN_ID / "plan.md"
+    store = open_project_governance_store(store_path)
+    original_put_plan = store.put_plan
+
+    def establish_then_mutate(record, **kwargs):
+        result = original_put_plan(record, **kwargs)
+        authority_path.write_text(PLAN_BODY + "\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(store, "put_plan", establish_then_mutate)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_AUTHORITY_CHANGED_DURING_REHYDRATION"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+    reopened = open_project_governance_store(store_path)
+    try:
+        assert reopened.get_plan(PROJECT_ID, PLAN_ID) is None
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("PROJECT_ID", "PROJECT_ID=foreign_project"),
+        ("PLAN_ID", "PLAN_ID=plan_conflicting_identity"),
+        ("PLAN_REVISION", "PLAN_REVISION=R4"),
+    ),
+)
+def test_conflicting_duplicate_plan_identity_values_fail_closed(
+    tmp_path: Path, field: str, replacement: str
+) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    body = PLAN_BODY.replace(
+        f"{field}={PROJECT_ID}" if field == "PROJECT_ID" else (
+            f"PLAN_ID=\n{PLAN_ID}" if field == "PLAN_ID" else "PLAN_REVISION=R3"
+        ),
+        (
+            f"{field}={PROJECT_ID}\n{replacement}"
+            if field == "PROJECT_ID"
+            else (
+                f"PLAN_ID=\n{PLAN_ID}\n{replacement}"
+                if field == "PLAN_ID"
+                else f"PLAN_REVISION=R3\n{replacement}"
+            )
+        ),
+    )
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(body, encoding="utf-8")
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+
+
+def test_identical_duplicate_plan_identity_value_is_accepted(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(
+        PLAN_BODY.replace("PLAN_REVISION=R3", "PLAN_REVISION=R3\nPLAN_REVISION=R3"),
+        encoding="utf-8",
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        record = _rehydrate(project_binding, governance_root, store)
+        assert record.plan_id == PLAN_ID
+    finally:
+        store.close()
+
+
+def test_conflicting_duplicate_plan_status_fails_closed(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(
+        PLAN_BODY.replace(
+            "PLAN_STATUS=active", "PLAN_STATUS=active\nPLAN_STATUS=retired", 1
+        ),
+        encoding="utf-8",
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+
+
+def test_conflicting_current_milestone_fails_closed_without_write(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(
+        PLAN_BODY.replace(
+            "CURRENT_MILESTONE=M1", "CURRENT_MILESTONE=M1\nCURRENT_MILESTONE=M2", 1
+        ),
+        encoding="utf-8",
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_AUTHORITY_INVALID"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+
+
+def test_historical_identity_does_not_override_current_identity(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(
+        PLAN_BODY
+        + f"\n## Historical Plan Identity\n\n"
+        + "```text\n"
+        + "PROJECT_ID=old_project\nPLAN_ID=plan_old\nPLAN_REVISION=R1\nPLAN_STATUS=retired\n"
+        + "```\n",
+        encoding="utf-8",
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        record = _rehydrate(project_binding, governance_root, store)
+        assert record.project_id == PROJECT_ID
+        assert record.plan_id == PLAN_ID
+    finally:
+        store.close()
+
+
+def test_contradictory_project_identity_across_current_sections_fails_closed(
+    tmp_path: Path,
+) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
+    authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
+    authority_path.write_text(
+        PLAN_BODY
+        + "\n## Current Authority Snapshot\n\n"
+        + f"PROJECT_ID={PROJECT_ID}_other\nPLAN_ID={PLAN_ID}\n",
+        encoding="utf-8",
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
 
 
 def test_conflicting_record_fails_closed_without_mutation(tmp_path: Path) -> None:

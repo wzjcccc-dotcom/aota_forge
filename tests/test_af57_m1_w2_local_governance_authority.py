@@ -684,6 +684,58 @@ class TestLocalPlanReadPipeline:
         with pytest.raises(LocalGovernanceAdapterError):
             adapter.load()
 
+    @pytest.mark.parametrize("target_kind", ("outside", "in_root"))
+    def test_symlinked_plan_directory_rejected(self, tmp_path: Path, target_kind: str):
+        base = _governance_base(tmp_path)
+        binding = _binding(base)
+        destination = _destination(binding)
+        if target_kind == "outside":
+            target = tmp_path / "outside-plan-directory"
+        else:
+            target = base / PROJECT_ID / "other-plan-directory"
+        target.mkdir()
+        (target / "plan.md").write_text(LOCAL_PLAN_BODY, encoding="utf-8")
+        destination.plan_directory().symlink_to(target, target_is_directory=True)
+        adapter = LocalPlanAuthorityReadAdapter(
+            destination, binding=_plan_binding(destination)
+        )
+        with pytest.raises(LocalGovernanceAdapterError):
+            adapter.load()
+
+    def test_plan_path_that_is_not_a_directory_is_rejected(self, tmp_path: Path):
+        base = _governance_base(tmp_path)
+        binding = _binding(base)
+        destination = _destination(binding)
+        destination.plan_directory().write_text("not a directory", encoding="utf-8")
+        adapter = LocalPlanAuthorityReadAdapter(
+            destination, binding=_plan_binding(destination)
+        )
+        with pytest.raises(LocalGovernanceAdapterError):
+            adapter.load()
+
+    def test_non_regular_plan_document_is_rejected(self, tmp_path: Path):
+        base = _governance_base(tmp_path)
+        binding = _binding(base)
+        destination = _destination(binding)
+        destination.plan_directory().mkdir()
+        destination.plan_document_path().mkdir()
+        adapter = LocalPlanAuthorityReadAdapter(
+            destination, binding=_plan_binding(destination)
+        )
+        with pytest.raises(LocalGovernanceAdapterError):
+            adapter.load()
+
+    def test_trusted_governance_root_is_revalidated_before_read(self, tmp_path: Path):
+        base = _governance_base(tmp_path)
+        binding = _binding(base)
+        destination = _destination(binding)
+        (base / PROJECT_ID).rename(tmp_path / "moved-project-scope")
+        adapter = LocalPlanAuthorityReadAdapter(
+            destination, binding=_plan_binding(destination)
+        )
+        with pytest.raises(LocalGovernanceAdapterError):
+            adapter.load()
+
     def test_absent_document_is_not_an_authoritative_plan(self, tmp_path: Path):
         base = _governance_base(tmp_path)
         destination = _destination(_binding(base))

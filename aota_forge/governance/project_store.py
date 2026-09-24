@@ -49,10 +49,11 @@ is no generic migration framework, no ORM and no second grant database.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
 import hashlib
 import re
-from typing import Any, Mapping
+from typing import Any
 
 from aota_forge.adapters.plan_authority.binding import (
     PlanAuthorityBinding,
@@ -552,8 +553,23 @@ class ProjectGovernanceStore(ABC):
     """
 
     @abstractmethod
-    def put_plan(self, record: ProjectPlanRecord) -> ProjectPlanRecord:
-        """Create one new Plan governance record at revision 1 (create-only)."""
+    def put_plan(
+        self,
+        record: ProjectPlanRecord,
+        *,
+        verify_current: Callable[[], None] | None = None,
+    ) -> ProjectPlanRecord:
+        """Create one record, optionally proving its source before commit.
+
+        ``verify_current`` is a narrow establishment guard, not a general
+        transaction callback: when supplied, it runs after the insert and
+        before commit, and any exception rolls the create back.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def discard_plan_if_exact(self, record: ProjectPlanRecord) -> bool:
+        """Remove only an exact revision-1 record during bounded rollback."""
         raise NotImplementedError
 
     @abstractmethod
