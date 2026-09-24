@@ -166,6 +166,36 @@ def _rehydrate(
     )
 
 
+def _identity_current_body(*, identity_value: str, current_value: str, field: str) -> str:
+    identity = {
+        "PROJECT_ID": PROJECT_ID,
+        "PLAN_ID": PLAN_ID,
+        "PLAN_REVISION": "R3",
+        "PLAN_STATUS": "active",
+        "CURRENT_MILESTONE": "M1",
+    }
+    current = {
+        "PROJECT_ID": PROJECT_ID,
+        "PLAN_ID": PLAN_ID,
+        "PLAN_REVISION": "R3",
+        "PLAN_STATUS": "active",
+        "CURRENT_MILESTONE": "M1",
+    }
+    identity[field] = identity_value
+    current[field] = current_value
+    return (
+        "# R3A identity consistency fixture\n\n"
+        "## Plan Identity\n\n"
+        "```text\n"
+        + "\n".join(f"{key}={value}" for key, value in identity.items())
+        + "\n```\n\n"
+        "## Current State\n\n"
+        "```text\n"
+        + "\n".join(f"{key}={value}" for key, value in current.items())
+        + "\n```\n"
+    )
+
+
 def test_zero_byte_target_rehydrates_without_plan_mutation_or_projection(tmp_path: Path) -> None:
     project_root, governance_base, store_path, project_binding, governance_root = _fixture(tmp_path)
     before = (governance_base / PROJECT_ID / PLAN_ID / "plan.md").read_bytes()
@@ -363,8 +393,10 @@ def test_identical_duplicate_plan_identity_value_is_accepted(tmp_path: Path) -> 
     )
     store = open_project_governance_store(store_path)
     try:
-        record = _rehydrate(project_binding, governance_root, store)
-        assert record.plan_id == PLAN_ID
+        first = _rehydrate(project_binding, governance_root, store)
+        second = _rehydrate(project_binding, governance_root, store)
+        assert second == first
+        assert second.revision == 1
     finally:
         store.close()
 
@@ -411,10 +443,15 @@ def test_historical_identity_does_not_override_current_identity(tmp_path: Path) 
     _, _, store_path, project_binding, governance_root = _fixture(tmp_path)
     authority_path = Path(governance_root.root_path) / PLAN_ID / "plan.md"
     authority_path.write_text(
-        PLAN_BODY
+        PLAN_BODY.replace(
+            "PLAN_REVISION=R3\nPLAN_STATUS=active",
+            "PLAN_REVISION=R3\nPLAN_STATUS=active\nCURRENT_MILESTONE=M1",
+            1,
+        )
         + f"\n## Historical Plan Identity\n\n"
         + "```text\n"
-        + "PROJECT_ID=old_project\nPLAN_ID=plan_old\nPLAN_REVISION=R1\nPLAN_STATUS=retired\n"
+        + "PROJECT_ID=old_project\nPLAN_ID=plan_old\nPLAN_REVISION=R1\n"
+        + "PLAN_STATUS=retired\nCURRENT_MILESTONE=M0\n"
         + "```\n",
         encoding="utf-8",
     )
@@ -423,6 +460,97 @@ def test_historical_identity_does_not_override_current_identity(tmp_path: Path) 
         record = _rehydrate(project_binding, governance_root, store)
         assert record.project_id == PROJECT_ID
         assert record.plan_id == PLAN_ID
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("field", "identity_value", "current_value"),
+    (
+        ("PROJECT_ID", "foreign_project", PROJECT_ID),
+        ("PLAN_ID", "plan_conflicting_identity", PLAN_ID),
+        ("PLAN_REVISION", "R4", "R3"),
+        ("PLAN_STATUS", "retired", "active"),
+        ("CURRENT_MILESTONE", "M1", "M2"),
+    ),
+)
+def test_all_consumed_identity_fields_mismatch_fail_closed_without_record_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    identity_value: str,
+    current_value: str,
+) -> None:
+    body = _identity_current_body(
+        field=field, identity_value=identity_value, current_value=current_value
+    )
+    _, _, store_path, project_binding, governance_root = _fixture(tmp_path, body=body)
+    store = open_project_governance_store(store_path)
+    write_attempted = False
+
+    def record_write_attempt(*args, **kwargs):
+        nonlocal write_attempted
+        write_attempted = True
+
+    monkeypatch.setattr(store, "put_plan", record_write_attempt)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert write_attempted is False
+        assert store.get_plan(PROJECT_ID, PLAN_ID) is None
+        assert store.list_plans(PROJECT_ID) == ()
+    finally:
+        store.close()
+
+
+def test_current_milestone_mismatch_fails_closed_before_record_write(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(
+        tmp_path,
+        body=_identity_current_body(
+            field="CURRENT_MILESTONE", identity_value="M1", current_value="M2"
+        ),
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert store.get_plan(PROJECT_ID, PLAN_ID) is None
+    finally:
+        store.close()
+
+
+def test_reverse_current_milestone_mismatch_fails_closed_identically(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(
+        tmp_path,
+        body=_identity_current_body(
+            field="CURRENT_MILESTONE", identity_value="M2", current_value="M1"
+        ),
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        with pytest.raises(PlanRecordRehydrationError) as excinfo:
+            _rehydrate(project_binding, governance_root, store)
+        assert excinfo.value.code == "PLAN_IDENTITY_CONTRADICTION"
+        assert store.get_plan(PROJECT_ID, PLAN_ID) is None
+    finally:
+        store.close()
+
+
+def test_matching_current_milestone_rehydrates_normally(tmp_path: Path) -> None:
+    _, _, store_path, project_binding, governance_root = _fixture(
+        tmp_path,
+        body=_identity_current_body(
+            field="CURRENT_MILESTONE", identity_value="M1", current_value="M1"
+        ),
+    )
+    store = open_project_governance_store(store_path)
+    try:
+        first = _rehydrate(project_binding, governance_root, store)
+        second = _rehydrate(project_binding, governance_root, store)
+        assert second == first
+        assert second.revision == 1
     finally:
         store.close()
 

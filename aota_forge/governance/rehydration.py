@@ -50,9 +50,16 @@ FAKE_HISTORICAL_RECORD_REVISION = False
 FAKE_PLAN_INIT_JOURNAL_EVENT = False
 NEW_PUBLIC_OPERATION = False
 
-_TRUSTED_PLAN_TRUTH_KEYS = frozenset(
-    {"PROJECT_ID", "PLAN_ID", "PLAN_REVISION", "PLAN_STATUS", "CURRENT_MILESTONE"}
-)
+# The value records whether the Plan Identity echo may be absent while the
+# current section still carries the field.  CURRENT_MILESTONE was optional in
+# the existing R3A grammar; all other entries retain their prior semantics.
+_CONSUMED_PLAN_IDENTITY_FIELDS = {
+    "PROJECT_ID": False,
+    "PLAN_ID": False,
+    "PLAN_REVISION": False,
+    "PLAN_STATUS": False,
+    "CURRENT_MILESTONE": True,
+}
 
 
 class PlanRecordRehydrationError(ValueError):
@@ -129,7 +136,7 @@ def _plan_identity(body: str) -> dict[str, str]:
         )
     identity = identity_sections[0]
     for key, values in identity.duplicates:
-        if key in _TRUSTED_PLAN_TRUTH_KEYS and len(set(values)) > 1:
+        if key in _CONSUMED_PLAN_IDENTITY_FIELDS and len(set(values)) > 1:
             raise _error(
                 "PLAN_IDENTITY_CONTRADICTION",
                 f"Plan Identity key {key!r} has contradictory values: {values!r}",
@@ -140,7 +147,7 @@ def _plan_identity(body: str) -> dict[str, str]:
         if section.kind != KIND_CURRENT:
             continue
         for key, value in section.key_values.items():
-            if key not in _TRUSTED_PLAN_TRUTH_KEYS:
+            if key not in _CONSUMED_PLAN_IDENTITY_FIELDS:
                 continue
             previous = current_values.get(key)
             if previous is not None and previous != value:
@@ -151,13 +158,18 @@ def _plan_identity(body: str) -> dict[str, str]:
                 )
             current_values[key] = value
 
-    for key in ("PROJECT_ID", "PLAN_ID", "PLAN_REVISION"):
+    for key, identity_optional in _CONSUMED_PLAN_IDENTITY_FIELDS.items():
         current_value = current_values.get(key)
-        if current_value is not None and current_value != identity.key_values.get(key):
+        if current_value is None:
+            continue
+        identity_value = identity.key_values.get(key)
+        if identity_value is None and identity_optional:
+            continue
+        if current_value != identity_value:
             raise _error(
                 "PLAN_IDENTITY_CONTRADICTION",
                 f"current Plan truth key {key!r} contradicts Plan Identity: "
-                f"{identity.key_values.get(key)!r} vs {current_value!r}",
+                f"{identity_value!r} vs {current_value!r}",
             )
     return identity.key_values
 
