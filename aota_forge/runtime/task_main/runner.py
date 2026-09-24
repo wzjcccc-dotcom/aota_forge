@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
@@ -74,8 +75,14 @@ from aota_forge.runtime.task_main.reconciliation import (
     reconcile_review_completion,
     reconcile_worker_completion,
 )
+from aota_forge.runtime.task_main.review_adoption import (
+    AcceptedFrontierAuthorization,
+    adopt_accepted_frontier_for_review,
+    review_only_adoption_from_state,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
+from aota_forge.work_plane.steward_finalizer import GitPort
 
 # ---------------------------------------------------------------------------
 # Governance markers
@@ -348,6 +355,7 @@ def _find_pending_reviewer_reconciliation(
     # Reviewer completions are keyed by canonical_task_id in reconciled_completions with kind REVIEW.
     # An unreconciled reviewer is a terminal execution record whose card exists but whose
     # canonical_task_id is absent from reconciled_completions and whose agent role is reviewer.
+    review_only_adoption = review_only_adoption_from_state(state)
     for record in execution_store.list_all():
         if not record.canonical_task_state.is_terminal:
             continue
@@ -367,6 +375,8 @@ def _find_pending_reviewer_reconciliation(
         if card.agent_work_role != AgentWorkRole.REVIEWER:
             continue
         cid = record.canonical_task_id
+        if review_only_adoption is not None and cid != review_only_adoption.reviewer_canonical_task_id:
+            continue
         if cid in state.reconciled_completions:
             continue
         # Only consider reviewer tasks that logically belong to this milestone:
@@ -378,6 +388,18 @@ def _find_pending_reviewer_reconciliation(
 
 
 def _is_integrated_review_required(state: TaskMainCoordinatorState) -> bool:
+    review_only_adoption = review_only_adoption_from_state(state)
+    if review_only_adoption is not None:
+        # The marker is the only durable transition.  Work Item status/history
+        # remains untouched; the reviewer path consumes a transient projection.
+        for payload in state.reconciled_completions.values():
+            try:
+                receipt = CompletionReconciliationReceipt.from_dict(payload)
+            except Exception:  # noqa: BLE001, S112
+                continue
+            if receipt.completion_kind == "MILESTONE_REVIEW":
+                return False
+        return True
     # All source WIs have sema reconciled and reviewer not yet reconciled.
     if not state.work_items:
         return False
@@ -447,6 +469,9 @@ def advance_milestone_once(
     session_available: bool = True,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
     reviewer_dispatch_resolver: Callable[[], Mapping[str, Any]] | None = None,
+    accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+    review_adoption_worktree_root: str | Path | None = None,
+    review_adoption_git: GitPort | None = None,
 ) -> RunnerOutcome:
     """Advance one bounded autonomous step for the governed current Milestone.
 
@@ -485,6 +510,23 @@ def advance_milestone_once(
         raise TypeError("governed_review_resolver must be callable or None")
     if reviewer_dispatch_resolver is not None and not callable(reviewer_dispatch_resolver):
         raise TypeError("reviewer_dispatch_resolver must be callable or None")
+    if accepted_frontier_authorization is not None and not isinstance(
+        accepted_frontier_authorization, AcceptedFrontierAuthorization
+    ):
+        raise TypeError(
+            "accepted_frontier_authorization must be AcceptedFrontierAuthorization or None"
+        )
+    if accepted_frontier_authorization is None and (
+        review_adoption_worktree_root is not None or review_adoption_git is not None
+    ):
+        raise TypeError(
+            "review_adoption_worktree_root/review_adoption_git require "
+            "accepted_frontier_authorization"
+        )
+    if accepted_frontier_authorization is not None and review_adoption_worktree_root is None:
+        raise TypeError(
+            "review_adoption_worktree_root is required with accepted_frontier_authorization"
+        )
     session_available = _require_strict_bool(session_available, "session_available")
 
     # ---- recover durable truth (fail-closed on drift / session loss) ----
@@ -573,6 +615,17 @@ def advance_milestone_once(
             coordinator_id=coordinator_id,
             coordinator_revision=state.coordinator_revision,
             reasons=(f"coordinator {state.status.value}",),
+        )
+
+    if accepted_frontier_authorization is not None:
+        state = adopt_accepted_frontier_for_review(
+            store=coordinator_store,
+            execution_store=execution_store,
+            coordinator_id=coordinator_id,
+            live_plan_view=live_plan_view,
+            authorization=accepted_frontier_authorization,
+            worktree_root=review_adoption_worktree_root,
+            git=review_adoption_git,
         )
 
     # Next milestone gate: if current milestone is closure-ready and next milestone exists but unapproved, stop.
@@ -839,6 +892,46 @@ def advance_milestone_once(
             receipt=outcome.receipt,
         )
 
+    # Review-only adoption intentionally leaves every W status PENDING.  Once
+    # a reviewer receipt exists, do not let the normal ready-W branch mistake
+    # that transient state for an invitation to redispatch W.
+    if review_only_adoption_from_state(state) is not None:
+        review_receipt: CompletionReconciliationReceipt | None = None
+        for payload in state.reconciled_completions.values():
+            try:
+                candidate = CompletionReconciliationReceipt.from_dict(payload)
+            except Exception:  # noqa: BLE001, S112
+                continue
+            if candidate.completion_kind == "MILESTONE_REVIEW":
+                review_receipt = candidate
+                break
+        if review_receipt is not None:
+            if review_receipt.progression_disposition == "REVIEW_READY_FOR_STEWARD":
+                return RunnerOutcome(
+                    disposition=DISPOSITION_MILESTONE_CLOSURE_READY,
+                    coordinator_id=coordinator_id,
+                    coordinator_revision=state.coordinator_revision,
+                    milestone_closure_ready=True,
+                    reasons=("review-only adoption closure ready; Work Items remain un-dispatched",),
+                    receipt=review_receipt,
+                )
+            retained_disposition = {
+                "REVIEW_REPAIR_REQUIRED": DISPOSITION_REPAIR_REQUIRED,
+                "REVIEW_RV2_REQUIRED": DISPOSITION_RV2_REQUIRED,
+                "REVIEW_REPLAN_REQUIRED": DISPOSITION_PLAN_CHANGE_USER_GATE,
+                "REVIEW_BLOCKED_ENVIRONMENT": DISPOSITION_RUNTIME_REVALIDATION_REQUIRED,
+                "REVIEW_BLOCKED": DISPOSITION_BLOCKED,
+            }.get(review_receipt.progression_disposition, DISPOSITION_BLOCKED)
+            return RunnerOutcome(
+                disposition=retained_disposition,
+                coordinator_id=coordinator_id,
+                coordinator_revision=state.coordinator_revision,
+                reconciled_canonical_task_id=review_receipt.canonical_task_id,
+                user_gate_required=retained_disposition == DISPOSITION_PLAN_CHANGE_USER_GATE,
+                reasons=("review-only adoption retained reviewer disposition; Work Items remain un-dispatched",),
+                receipt=review_receipt,
+            )
+
     # ---- AF #49 M1/W6: unbound origin must never create child execution ----
     # Mechanical defense-in-depth projection of the ExecutionDispatcher gate:
     # while the trusted task-main origin is the pre-session placeholder, the
@@ -933,6 +1026,11 @@ def advance_milestone_once(
             )
         else:
             reviewer_cid = f"{state.project_id}:{state.milestone_id}:RV1:attempt-1"
+        review_only_adoption = review_only_adoption_from_state(state)
+        if review_only_adoption is not None and reviewer_cid != review_only_adoption.reviewer_canonical_task_id:
+            raise TaskMainCoordinatorError(
+                "reviewer dispatch identity contradicts the adopted reviewer task"
+            )
         if durable_review_handoff is not None and reviewer_cid != durable_review_handoff.get(
             "canonical_task_id"
         ):
@@ -1127,6 +1225,9 @@ class TaskMainMilestoneRunner:
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
         reviewer_dispatch_resolver: Callable[[], Mapping[str, Any]] | None = None,
+        accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+        review_adoption_worktree_root: str | Path | None = None,
+        review_adoption_git: GitPort | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -1159,6 +1260,9 @@ class TaskMainMilestoneRunner:
         self._next_view = next_milestone_view
         self._reviewer_cid_resolver = reviewer_canonical_task_id_resolver
         self._reviewer_dispatch_resolver = reviewer_dispatch_resolver
+        self._accepted_frontier_authorization = accepted_frontier_authorization
+        self._review_adoption_worktree_root = review_adoption_worktree_root
+        self._review_adoption_git = review_adoption_git
         # If caller supplied a placeholder before activation, re-resolve to the durable id that now exists.
         state = self._store.get(coordinator_id)
         if state is None:
@@ -1188,6 +1292,9 @@ class TaskMainMilestoneRunner:
             session_available=session_available,
             reviewer_canonical_task_id_resolver=self._reviewer_cid_resolver,
             reviewer_dispatch_resolver=self._reviewer_dispatch_resolver,
+            accepted_frontier_authorization=self._accepted_frontier_authorization,
+            review_adoption_worktree_root=self._review_adoption_worktree_root,
+            review_adoption_git=self._review_adoption_git,
         )
 
     def update_live_plan_view(self, view: MilestonePlanView) -> None:
@@ -1251,6 +1358,7 @@ __all__ = [
     "TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED",
     "WORKER_CAN_CALL_TASK_MAIN_CONTROL",
     "RunnerOutcome",
+    "AcceptedFrontierAuthorization",
     "TaskMainMilestoneRunner",
     "advance_milestone_once",
 ]

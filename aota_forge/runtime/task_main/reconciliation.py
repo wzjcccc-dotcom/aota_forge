@@ -97,6 +97,10 @@ from aota_forge.runtime.task_main.coordinator_store import (
     StaleCoordinatorRevisionError,
     TaskMainCoordinatorStore,
 )
+from aota_forge.runtime.task_main.review_adoption import (
+    review_only_adoption_from_state,
+    review_only_progression_for,
+)
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
 from aota_forge.work_plane.milestone_closure import evaluate_milestone_closure_readiness
 from aota_forge.work_plane.milestone_review import (
@@ -214,6 +218,23 @@ def _now_iso() -> str:
 
 def _digest_of(payload: Mapping[str, Any], *, path: str) -> str:
     return hashlib.sha256(canonical_json(canonicalize(dict(payload), path=path)).encode("utf-8")).hexdigest()
+
+
+def _frontier_text(value: Any, label: str) -> str:
+    if isinstance(value, SemanticReference):
+        return value.ref
+    if isinstance(value, str) and type(value) is str:
+        value = value.strip()
+        if value:
+            return value
+    if isinstance(value, Mapping):
+        ref = value.get("ref")
+        if isinstance(ref, str) and ref.strip():
+            return ref.strip()
+    ref = getattr(value, "ref", None)
+    if isinstance(ref, str) and ref.strip():
+        return ref.strip()
+    raise ReconciliationError(f"{label} must carry a non-empty frontier ref")
 
 
 def build_ack_token(*, canonical_task_id: str, card_digest: str) -> str:
@@ -1388,6 +1409,14 @@ def reconcile_review_completion(
     card_digest = _require_non_empty_str(card_digest, "card_digest", max_length=128)
 
     state = _require_active_for_reconciliation(store, coordinator_id, live_plan_view)
+    review_only_adoption = review_only_adoption_from_state(state)
+    if (
+        review_only_adoption is not None
+        and reviewer_canonical_task_id != review_only_adoption.reviewer_canonical_task_id
+    ):
+        raise ReconciliationError(
+            "reviewer completion identity contradicts the adopted reviewer task"
+        )
 
     existing_payload = state.reconciled_completions.get(reviewer_canonical_task_id)
     if existing_payload is not None:
@@ -1429,7 +1458,11 @@ def reconcile_review_completion(
         current_work_item=None,
     )
     current_progression: ProgressionDisposition | None = None
-    if progress_list:
+    if review_only_adoption is not None:
+        # This projection is intentionally in-memory.  The review receipt is
+        # durable, but no Work Item completion/status/history is reconstructed.
+        current_progression = review_only_progression_for(state, review_only_adoption)
+    elif progress_list:
         current_progression = evaluate_milestone_progression(
             _graph_for(state),
             progress_list,
@@ -1441,6 +1474,21 @@ def reconcile_review_completion(
             task_handoffs=handoffs,
         )
 
+    expected_review_frontier = governed_review.expected_frontier
+    expected_final_frontier = governed_review.expected_final_frontier
+    if review_only_adoption is not None:
+        adopted_frontier = review_only_adoption.frontier_ref
+        if expected_review_frontier is None:
+            expected_review_frontier = SemanticReference(ref=adopted_frontier)
+        elif _frontier_text(expected_review_frontier, "expected review frontier") != adopted_frontier:
+            raise ReconciliationError("governed review expected frontier contradicts adopted frontier")
+        if expected_final_frontier is None:
+            expected_final_frontier = SemanticReference(ref=adopted_frontier)
+        elif _frontier_text(expected_final_frontier, "expected final frontier") != adopted_frontier:
+            raise ReconciliationError("governed review expected final frontier contradicts adopted frontier")
+        if evidence.reviewed_frontier_ref.ref != adopted_frontier:
+            raise ReconciliationError("review evidence frontier contradicts adopted frontier")
+
     review_kwargs: dict[str, Any] = {
         "milestone_ref": SemanticReference(ref=state.milestone_id),
         "repair_evidences": list(governed_review.repair_evidences),
@@ -1450,9 +1498,9 @@ def reconcile_review_completion(
         "post_failure_fingerprints": list(governed_review.post_failure_fingerprints),
         "semantic_boundary_exceeded": governed_review.semantic_boundary_exceeded,
     }
-    if governed_review.expected_frontier is not None:
-        review_kwargs["expected_rv1_frontier"] = governed_review.expected_frontier
-        review_kwargs["expected_rv2_frontier"] = governed_review.expected_frontier
+    if expected_review_frontier is not None:
+        review_kwargs["expected_rv1_frontier"] = expected_review_frontier
+        review_kwargs["expected_rv2_frontier"] = expected_review_frontier
     if evidence.review_cycle == ReviewCycle.RV2:
         review_kwargs.update(
             {
@@ -1482,14 +1530,14 @@ def reconcile_review_completion(
     if (
         workflow.disposition == WorkflowDisposition.READY_FOR_STEWARD
         and current_progression is not None
-        and governed_review.expected_final_frontier is not None
+        and expected_final_frontier is not None
     ):
         closure = evaluate_milestone_closure_readiness(
             graph=_graph_for(state),
             progression_disposition=current_progression,
             workflow_disposition=workflow,
             final_review_evidence=evidence,
-            expected_frontier_ref=governed_review.expected_final_frontier,
+            expected_frontier_ref=expected_final_frontier,
             final_review_result_card=reviewer_card,
             final_review_task_handoff=governed_review.review_task_handoff,
             repair_evidences=list(governed_review.repair_evidences),
