@@ -73,7 +73,6 @@ import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
@@ -100,6 +99,7 @@ from aota_forge.runtime.task_main.coordinator_store import (
 )
 from aota_forge.runtime.task_main.review_adoption import (
     ReviewAdoptionError,
+    TrustedPlanAuthority,
     review_only_adoption_from_state,
     review_only_progression_for,
     revalidate_adopted_frontier,
@@ -136,6 +136,7 @@ from aota_forge.work_plane.risk_review import (
     WorkItemRiskDelta,
     evaluate_work_item_risk_policy,
 )
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.session_checkpoint import WorkingTruthProjection
 
@@ -1469,8 +1470,9 @@ def reconcile_review_completion(
     card_digest: str,
     live_plan_view: MilestonePlanView,
     governed_review: GovernedReviewEvidence,
-    review_adoption_worktree_root: str | Path | None = None,
+    review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
     review_adoption_git: Any | None = None,
+    trusted_plan_authority: TrustedPlanAuthority | None = None,
 ) -> ReconciliationOutcome:
     """Reconcile one milestone-level reviewer completion through review seams.
 
@@ -1494,7 +1496,9 @@ def reconcile_review_completion(
     card_digest = _require_non_empty_str(card_digest, "card_digest", max_length=128)
 
     state = _require_active_for_reconciliation(store, coordinator_id, live_plan_view)
-    review_only_adoption = review_only_adoption_from_state(state)
+    review_only_adoption = review_only_adoption_from_state(
+        state, trusted_authority=trusted_plan_authority
+    )
     if (
         review_only_adoption is not None
         and reviewer_canonical_task_id != review_only_adoption.reviewer_canonical_task_id
@@ -1509,6 +1513,7 @@ def reconcile_review_completion(
                 live_plan_view=live_plan_view,
                 worktree_root=review_adoption_worktree_root,
                 git=review_adoption_git,
+                trusted_authority=trusted_plan_authority,
             )
         except PlanDriftError:
             raise

@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -221,6 +222,12 @@ def _handoff_dir(sandbox: WorktreeSandboxBoundary) -> Path:
         raise ValueError("handoff store requires WorktreeSandboxBoundary")
     root = Path(sandbox.worktree_root)
     d = root / ".aota" / HANDOFF_DURABLE_DIR
+    if d.is_symlink():
+        raise ValueError(f"handoff dir is symlink: {d}")
+    try:
+        d.resolve(strict=False).relative_to(root.resolve(strict=True))
+    except (ValueError, OSError) as exc:
+        raise ValueError(f"handoff dir containment failed: {exc}") from exc
     return d
 
 
@@ -241,6 +248,38 @@ def _handoff_path(sandbox: WorktreeSandboxBoundary, digest: str) -> Path:
     if not isinstance(digest, str) or len(digest) != 64 or not all(c in "0123456789abcdef" for c in digest.lower()):
         raise ValueError(f"digest must be 64 hex chars, got {digest!r}")
     return _handoff_dir(sandbox) / f"{digest.lower()}.json"
+
+
+def _read_handoff_text(path: Path) -> str:
+    """Read one bounded handoff through a no-follow regular-file descriptor."""
+
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            str(path),
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("handoff artifact must be a regular file")
+        if metadata.st_size > MAX_HANDOFF_BYTES:
+            raise ValueError("handoff artifact exceeds bounded size")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            raw = handle.read(MAX_HANDOFF_BYTES + 1)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError(f"handoff artifact read failed: {exc}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(raw) > MAX_HANDOFF_BYTES:
+        raise ValueError("handoff artifact exceeds bounded size")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("handoff artifact must be valid UTF-8") from exc
 
 
 def _compute_digest(mode: str, envelope_without_digest: dict[str, Any], semantic: dict[str, Any]) -> str:
@@ -503,7 +542,7 @@ def handoff_write(
         raise ValueError(f"handoff persist failed: {exc}") from exc
     # Verify written digest
     try:
-        written_text = handoff_path.read_text(encoding="utf-8")
+        written_text = _read_handoff_text(handoff_path)
         written = json.loads(written_text)
         if written.get("digest") != digest:
             raise ValueError("written handoff digest mismatch — tamper fail closed")
@@ -514,11 +553,81 @@ def handoff_write(
         recomputed = _compute_digest(written.get("mode", m), re_env, re_sem)
         if recomputed != digest or re_digest_stored != digest:
             raise ValueError("written handoff digest recompute mismatch — tamper fail closed")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise ValueError(f"post-write verification failed: {exc}") from exc
     # Build ref — include project/worktree for cross-project fail-closed without file read
     ref_str = f"handoff://{proj_id}/{wt_id}/{m}/{artifact_id}/{digest}"
     return HandoffRef(ref=ref_str, digest=digest, mode=m, project_id=proj_id, worktree_id=wt_id, artifact_id=artifact_id)
+
+
+def find_handoffs_by_provenance(
+    *,
+    mode: str,
+    provenance_key: str,
+    provenance_value: str,
+    sandbox: WorktreeSandboxBoundary,
+    max_matches: int = 2,
+) -> tuple[HandoffRef, ...]:
+    """Find bounded durable handoffs by an exact control provenance fact.
+
+    This is an internal restart/idempotency lookup. It does not add an index or
+    a second store; each candidate is digest-verified before it is returned.
+    Multiple matches fail closed at the caller via ``max_matches``.
+    """
+
+    m = _validate_mode(mode)
+    key = _bounded_str(provenance_key, "provenance_key", max_len=128)
+    value = _bounded_str(provenance_value, "provenance_value")
+    if isinstance(max_matches, bool) or not isinstance(max_matches, int) or max_matches < 1:
+        raise ValueError("max_matches must be a positive integer")
+    handoff_dir = _handoff_dir(sandbox)
+    if not handoff_dir.exists():
+        return ()
+    paths = sorted(path for path in handoff_dir.iterdir() if path.suffix == ".json")
+    if len(paths) > 512:
+        raise ValueError("handoff provenance lookup exceeds bounded artifact count")
+    matches: list[HandoffRef] = []
+    for path in paths:
+        if path.is_symlink() or len(path.stem) != 64 or any(
+            char not in "0123456789abcdef" for char in path.stem.lower()
+        ):
+            raise ValueError("handoff provenance lookup encountered an invalid artifact path")
+        text = _read_handoff_text(path)
+        data = json.loads(text)
+        if not isinstance(data, Mapping):
+            raise ValueError("handoff provenance lookup encountered a malformed artifact")
+        digest = path.stem.lower()
+        if data.get("digest") != digest or data.get("mode") != m:
+            continue
+        envelope = data.get("envelope")
+        semantic = data.get("semantic")
+        if not isinstance(envelope, Mapping) or not isinstance(semantic, Mapping):
+            raise ValueError("handoff provenance lookup encountered an incomplete artifact")
+        if envelope.get("project_id") != sandbox.project_id or envelope.get("worktree_id") != sandbox.worktree_id:
+            continue
+        provenance = envelope.get("provenance")
+        if not isinstance(provenance, Mapping) or provenance.get(key) != value:
+            continue
+        env_without_digest = dict(envelope)
+        env_digest = env_without_digest.pop("digest", None)
+        if env_digest != digest or _compute_digest(m, env_without_digest, dict(semantic)) != digest:
+            raise ValueError("matching handoff provenance has an invalid digest")
+        artifact_id = envelope.get("artifact_id")
+        if not isinstance(artifact_id, str) or not artifact_id.strip():
+            raise ValueError("matching handoff provenance has no artifact identity")
+        matches.append(
+            HandoffRef(
+                ref=f"handoff://{sandbox.project_id}/{sandbox.worktree_id}/{m}/{artifact_id}/{digest}",
+                digest=digest,
+                mode=m,
+                project_id=sandbox.project_id,
+                worktree_id=sandbox.worktree_id,
+                artifact_id=artifact_id,
+            )
+        )
+        if len(matches) >= max_matches:
+            break
+    return tuple(matches)
 
 
 def _parse_ref_str(ref_input: Any) -> tuple[str, str]:
@@ -565,6 +674,39 @@ def _parse_ref_str(ref_input: Any) -> tuple[str, str]:
     raise TypeError(f"ref must be HandoffRef, dict, or string, got {type(ref_input).__name__}")
 
 
+def _parse_full_ref_identity(ref_input: Any) -> HandoffRef | None:
+    raw: Any = ref_input
+    if isinstance(ref_input, HandoffRef):
+        raw = ref_input.ref
+    elif isinstance(ref_input, Mapping):
+        raw = ref_input.get("ref")
+    if not isinstance(raw, str) or not raw.startswith("handoff://"):
+        return None
+    try:
+        parsed = HandoffRef.from_value(raw)
+    except Exception as exc:
+        raise ValueError(f"malformed canonical handoff ref: {raw!r}") from exc
+    if parsed.ref != raw or not parsed.project_id or not parsed.worktree_id or not parsed.artifact_id:
+        raise ValueError("canonical handoff ref has an empty identity component")
+    if isinstance(ref_input, HandoffRef):
+        if (
+            not isinstance(ref_input.digest, str)
+            or ref_input.digest.lower() != parsed.digest
+            or ref_input.mode != parsed.mode
+            or ref_input.project_id != parsed.project_id
+            or ref_input.worktree_id != parsed.worktree_id
+            or ref_input.artifact_id != parsed.artifact_id
+        ):
+            raise ValueError("HandoffRef fields do not match its canonical ref")
+    elif isinstance(ref_input, Mapping):
+        supplied_digest = ref_input.get("digest")
+        if supplied_digest is not None and (
+            not isinstance(supplied_digest, str) or supplied_digest.lower() != parsed.digest
+        ):
+            raise ValueError("handoff mapping digest does not match its canonical ref")
+    return parsed
+
+
 def handoff_open(
     ref: Any,
     view: str = "full",
@@ -582,10 +724,21 @@ def handoff_open(
 
     Fail-closed on cross-project, tampered digest, malformed ref.
     """
-    mode_parsed, digest = _parse_ref_str(ref)
+    full_ref = _parse_full_ref_identity(ref)
+    mode_parsed, digest = _parse_ref_str(full_ref.ref if full_ref is not None else ref)
+    if full_ref is not None:
+        if full_ref.mode != mode_parsed or full_ref.digest != digest:
+            raise ValueError("canonical handoff ref mode/digest mismatch")
+        if full_ref.project_id != sandbox.project_id or full_ref.worktree_id != sandbox.worktree_id:
+            raise ValueError(
+                "canonical handoff ref cross-project/cross-worktree scope does not match "
+                "the trusted sandbox"
+            )
     view_norm = _validate_view(view)
     # Load file by digest (mode from parsed is hint, but actual mode from file is authority)
     handoff_path = _handoff_path(sandbox, digest)
+    if handoff_path.is_symlink():
+        raise ValueError("handoff artifact must not be a symlink")
     if not handoff_path.exists():
         raise ValueError(f"handoff not found for digest {digest!r}")
     # Containment check: ensure path is inside handoff dir
@@ -595,7 +748,7 @@ def handoff_open(
     except Exception as exc:
         raise ValueError(f"handoff path containment failed: {exc}") from exc
     try:
-        text = handoff_path.read_text(encoding="utf-8")
+        text = _read_handoff_text(handoff_path)
         data = json.loads(text)
     except Exception as exc:
         raise ValueError(f"handoff load failed: {exc}") from exc
@@ -619,6 +772,11 @@ def handoff_open(
         raise ValueError(f"cross-project handoff denied: envelope project {env_proj!r} != caller {sandbox.project_id!r} — fail closed")
     if env_wt != sandbox.worktree_id:
         raise ValueError(f"cross-worktree handoff denied: envelope worktree {env_wt!r} != caller {sandbox.worktree_id!r} — fail closed")
+    if full_ref is not None:
+        artifact_id = envelope.get("artifact_id")
+        expected_ref = f"handoff://{env_proj}/{env_wt}/{stored_mode}/{artifact_id}/{digest}"
+        if full_ref.ref != expected_ref:
+            raise ValueError("canonical handoff ref does not match the durable artifact identity")
     # Tamper: recompute digest from envelope without digest + semantic + mode
     env_without_digest = dict(envelope)
     env_digest = env_without_digest.pop("digest", None)
@@ -712,4 +870,5 @@ __all__ = [
     "HandoffRef",
     "handoff_write",
     "handoff_open",
+    "find_handoffs_by_provenance",
 ]

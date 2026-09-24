@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from aota_forge.core.context import bind_trusted_context
+from aota_forge.core.contracts.canonical import canonical_json
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
@@ -80,6 +81,13 @@ from aota_forge.runtime.task_main.reconciliation import (
     CompletionReconciliationReceipt,
     GovernedReviewEvidence,
     GovernedWorkItemEvidence,
+)
+from aota_forge.runtime.task_main.review_adoption import (
+    ReviewAdoptionError,
+    TrustedPlanAuthority,
+    mint_accepted_frontier_authorization,
+    read_trusted_git_frontier,
+    trusted_plan_authority_from_binding,
 )
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
 from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
@@ -303,7 +311,15 @@ def _trusted_plan_identity_from_bootstrap(
                 f"bootstrap Plan authority binding invalid: {exc}"
             ) from exc
         raw_plan_id = data.get("plan_id")
-        if raw_plan_id is not None and raw_plan_id != plan_binding.plan_id:
+        if raw_plan_id is None:
+            raise TrustedBindingError(
+                "bootstrap Plan authority binding requires a top-level plan_id"
+            )
+        if not is_plan_id(raw_plan_id):
+            raise TrustedBindingError(
+                "bootstrap plan_id must be a canonical internal Plan ID"
+            )
+        if raw_plan_id != plan_binding.plan_id:
             raise TrustedBindingError(
                 "bootstrap Plan authority binding does not match plan_id"
             )
@@ -856,6 +872,7 @@ def _materialize_reviewer_work_handoff(
     from aota_forge.runtime.task_main.coordinator import compute_work_source_digest
     from aota_forge.work_plane.handoff_store import (
         HANDOFF_CONTROL_FIELDS,
+        find_handoffs_by_provenance,
         handoff_open,
         handoff_write,
     )
@@ -959,6 +976,70 @@ def _materialize_reviewer_work_handoff(
         evidence_refs=tuple(SemanticReference(ref=r) for r in evidence_refs),
         skill_refs=(SemanticReference(ref="aota-implementation-review@1.0.0"),),
     )
+    materialization_payload = {
+        "frontier_ref": (
+            state.frontier_ref.get("ref")
+            if isinstance(getattr(state, "frontier_ref", None), Mapping)
+            else ""
+        ),
+        "handoff_digest": enriched.compute_handoff_digest(),
+        "milestone_id": live_view.milestone_id,
+        "parent_task_identity": parent_task_identity,
+        "plan_digest": live_view.plan_digest,
+        "plan_id": plan_id or "",
+        "plan_source_revision": live_view.plan_source_revision or "",
+        "project_id": project_id,
+        "reviewer_task_id": reviewer_task_id,
+    }
+    materialization_id = hashlib.sha256(
+        canonical_json(materialization_payload).encode("utf-8")
+    ).hexdigest()
+    existing_materializations = find_handoffs_by_provenance(
+        mode="work_item",
+        provenance_key="materialization_id",
+        provenance_value=materialization_id,
+        sandbox=sandbox,
+        max_matches=2,
+    )
+    if len(existing_materializations) > 1:
+        raise TrustedBindingError(
+            "multiple durable reviewer handoffs match the same materialization identity"
+        )
+    if existing_materializations:
+        existing_ref = existing_materializations[0]
+        try:
+            opened = handoff_open(existing_ref, "full", sandbox=sandbox)
+            existing_handoff = load_trusted_work_item_task_handoff(
+                opened=opened,
+                sandbox=sandbox,
+                require_explicit_work_role=True,
+                require_explicit_work_identity=True,
+            )
+            envelope = opened.get("envelope")
+            provenance = envelope.get("provenance") if isinstance(envelope, Mapping) else None
+            if (
+                not isinstance(envelope, Mapping)
+                or not isinstance(provenance, Mapping)
+                or envelope.get("task_id") != reviewer_task_id
+                or envelope.get("target_role") != "reviewer"
+                or provenance.get("frontier_ref", "") != materialization_payload["frontier_ref"]
+            ):
+                raise ValueError("durable reviewer handoff materialization does not match trusted input")
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"durable reviewer handoff materialization reuse failed: {exc}"
+            ) from exc
+        record: dict[str, Any] = {
+            "handoff": existing_handoff,
+            "handoff_ref": existing_ref.ref,
+            "handoff_digest": existing_ref.digest,
+            "canonical_task_id": reviewer_task_id,
+            "dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+            "handoff_sandbox": sandbox,
+        }
+        if isinstance(getattr(state, "frontier_ref", None), Mapping):
+            record["frontier_ref"] = state.frontier_ref.get("ref")
+        return record
     # Durable semantic payload: bounded, store-compatible (lists of strings,
     # no control fields). Digests for evidence refs are resolvable from the
     # durable artifacts themselves.
@@ -980,7 +1061,9 @@ def _materialize_reviewer_work_handoff(
         if key in HANDOFF_CONTROL_FIELDS:
             del semantic[key]
     handoff_provenance: dict[str, Any] = {
+        "materialization_id": materialization_id,
         "plan_digest": live_view.plan_digest,
+        "plan_source_revision": live_view.plan_source_revision or "",
         "review_dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
     }
     if isinstance(getattr(state, "frontier_ref", None), Mapping):
@@ -1040,6 +1123,11 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
     runtime_config_path = Path(str(data["runtime_config_path"])).resolve()
     raw_governance_store = str(data.get("governance_store_path") or "").strip()
     governance_store_path = Path(raw_governance_store).resolve() if raw_governance_store else None
+    raw_governance_base = str(data.get("governance_base") or "").strip()
+    if raw_governance_base:
+        governance_base = Path(raw_governance_base)
+        if governance_base.is_symlink() or not governance_base.is_dir():
+            raise TrustedBindingError("bootstrap governance_base must be an existing non-symlink directory")
 
     # Bootstrap location must be derived from trusted env, not CWD or model path
     # Verify worktree_root matches the trusted env root (scope matching)
@@ -1288,6 +1376,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     coordinator_store_path = Path(str(data["coordinator_store_path"])).resolve()
     execution_store_path = Path(str(data["execution_store_path"])).resolve()
     runtime_config_path = Path(str(data["runtime_config_path"])).resolve()
+    raw_governance_base = str(data.get("governance_base") or "").strip()
+    governance_base = Path(raw_governance_base).resolve() if raw_governance_base else None
     raw_governance_store = str(data.get("governance_store_path") or "").strip()
     governance_store_path = Path(raw_governance_store).resolve() if raw_governance_store else None
     origin_session = str(data["origin_task_main_session_ref"])
@@ -2089,6 +2179,85 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # object only; durable recovery always re-reads the durable handoff store.
     _w2_holder["sandbox"] = sandbox
 
+    trusted_review_authority: TrustedPlanAuthority | None = None
+    accepted_frontier_authorization = None
+    if (
+        trusted_plan.authority_binding is not None
+        and trusted_plan.authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        and plan_id is not None
+    ):
+        if governance_base is None or governance_store_path is None:
+            raise TrustedBindingError(
+                "local Plan authority requires governance_base and governance_store_path "
+                "for an independent source re-read"
+            )
+        authority_store = None
+        try:
+            from aota_forge.adapters.plan_authority.local_governance import (
+                LocalPlanAuthorityDestination,
+            )
+            from aota_forge.composition.plan_authority import resolve_bound_plan_authority
+            from aota_forge.composition.project_governance import open_project_governance_store
+            from aota_forge.core.identity.ids import make_id
+            from aota_forge.core.identity.kinds import IdKind, SubjectKind
+            from aota_forge.core.identity.refs import object_ref_subject
+            from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
+
+            local_root = LocalGovernanceRootBinding.from_trusted_base(
+                governance_base,
+                project_id=project_id,
+            )
+            local_destination = LocalPlanAuthorityDestination(
+                governance_root=local_root,
+                plan_id=plan_id,
+                expected_ref=object_ref_subject(
+                    make_id(IdKind.SUBJECT, plan_id, sub_kind=SubjectKind.PLAN)
+                ),
+            )
+            authority_store = open_project_governance_store(governance_store_path)
+            authority_reader = resolve_bound_plan_authority(
+                trusted_plan.authority_binding,
+                local_destination=local_destination,
+                governance_store=authority_store,
+            )
+            observed_binding = getattr(authority_reader, "binding", None)
+            snapshot = authority_reader.load()
+            if not isinstance(observed_binding, PlanAuthorityBinding):
+                raise ReviewAdoptionError("resolved local Plan authority exposes no binding")
+            if (
+                snapshot.revision != observed_binding.source_revision
+                or snapshot.digest != observed_binding.source_digest
+            ):
+                raise ReviewAdoptionError(
+                    "local Plan authority changed after the bound source observation"
+                )
+            trusted_review_authority = trusted_plan_authority_from_binding(
+                project_id=project_id,
+                binding=observed_binding,
+                authoritative_reader=authority_reader,
+            )
+            current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+            current_state = coord_store.get(current_coordinator_id)
+            if current_state is not None:
+                trusted_frontier = read_trusted_git_frontier(
+                    sandbox,
+                    entry_base=live_view.entry_base,
+                )
+                accepted_frontier_authorization = mint_accepted_frontier_authorization(
+                    state=current_state,
+                    live_plan_view=live_view,
+                    plan_id=plan_id,
+                    trusted_frontier=trusted_frontier,
+                    trusted_authority=trusted_review_authority,
+                )
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"trusted local Plan authority re-read failed: {exc}"
+            ) from exc
+        finally:
+            if authority_store is not None:
+                authority_store.close()
+
     # AF #57 M3/W3: the production legacy composition owns the trusted
     # checkpoint reconstruction and semantic dispatch factory. Deterministic
     # checkpoints never invoke the factory; semantic checkpoints use the
@@ -2129,6 +2298,9 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         stewardship_repo_path=worktree_root,
         stewardship_origin_session_ref=origin_session,
         governance_store=governance_store_path,
+        accepted_frontier_authorization=accepted_frontier_authorization,
+        review_adoption_worktree_root=sandbox,
+        trusted_plan_authority=trusted_review_authority,
     )
     # Build the trusted task-main context (operator-owned)
     ctx = TrustedTaskMainRuntimeContext(
@@ -2237,6 +2409,7 @@ def write_bootstrap_file(
     coordinator_id: str | None = None,
     plan_id: str | None = None,
     plan_authority_binding: PlanAuthorityBinding | None = None,
+    governance_base: Path | None = None,
     governance_store_path: Path | None = None,
     work_semantics: Mapping[str, WorkSemanticProjection | Mapping[str, Any]] | None = None,
     stewardship_semantic_facts: Mapping[str, Any] | SemanticFactSet | None = None,
@@ -2323,6 +2496,8 @@ def write_bootstrap_file(
                 "plan_authority_binding must match the live Plan authority"
             )
         payload["plan_authority_binding"] = plan_authority_binding.to_dict()
+    if governance_base is not None:
+        payload["governance_base"] = str(Path(governance_base).resolve())
     if governance_store_path is not None:
         payload["governance_store_path"] = str(governance_store_path.resolve())
     if stewardship_semantic_facts is not None:

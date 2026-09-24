@@ -8,15 +8,19 @@ from pathlib import Path
 
 import pytest
 
+from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter, PlanAuthoritySnapshot
 from aota_forge.adapters.plan_authority.local_governance import (
     local_plan_authority_reference,
 )
+from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.composition import task_main_host_bootstrap
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView, PlanDriftError, TaskMainCoordinatorError
 from aota_forge.runtime.task_main.review_adoption import (
     AcceptedFrontierAuthorization,
     ReviewAdoptionError,
     TrustedGitFrontier,
     mint_accepted_frontier_authorization,
+    trusted_plan_authority_from_binding,
 )
 from aota_forge.runtime.task_main.runner import (
     DISPOSITION_DISPATCHED_REVIEW,
@@ -58,6 +62,18 @@ class FakeGit(GitPort):
         return TREE
 
 
+class _AuthorityReader(PlanAuthorityReadAdapter):
+    def __init__(self, binding: PlanAuthorityBinding) -> None:
+        self.binding = binding
+
+    def load(self) -> PlanAuthoritySnapshot:
+        return PlanAuthoritySnapshot(
+            body="authoritative test Plan",
+            revision=PLAN_SOURCE_REVISION,
+            digest=PLAN_DIGEST,
+        )
+
+
 def _view() -> MilestonePlanView:
     return MilestonePlanView(
         plan_authority=PLAN_AUTHORITY,
@@ -75,17 +91,28 @@ def _authorization(world: World, root: Path) -> AcceptedFrontierAuthorization:
     handle = world.activate(view)
     state = world.coord_store.get(handle.coordinator_id)
     assert state is not None
+    authority_binding = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind="local_governance",
+        authority_ref=PLAN_AUTHORITY,
+        source_revision=PLAN_SOURCE_REVISION,
+        source_digest=PLAN_DIGEST,
+    )
     return mint_accepted_frontier_authorization(
         state=state,
         live_plan_view=view,
         plan_id=PLAN_ID,
-        authorization_ref="local-governance-adoption://aota_forge/M1/R3B",
         trusted_frontier=TrustedGitFrontier(
             worktree_root=str(root.resolve()),
             entry_base=ENTRY_BASE,
             frontier_ref=FRONTIER,
             tree_ref=TREE,
             clean=True,
+        ),
+        trusted_authority=trusted_plan_authority_from_binding(
+            project_id=PROJECT_ID,
+            binding=authority_binding,
+            authoritative_reader=_AuthorityReader(authority_binding),
         ),
     )
 
@@ -157,6 +184,7 @@ def _clean_observation(*, dirty: bool = False, head: str = FRONTIER) -> dict[str
         "available": True,
         "is_dirty": dirty,
         "head_sha": head,
+        "ignored": {"paths": [], "truncated": False},
     }
 
 
@@ -164,7 +192,7 @@ def _patch_git_observation(monkeypatch: pytest.MonkeyPatch, *, dirty: bool = Fal
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
-        lambda _root, boundary=None: _clean_observation(dirty=dirty, head=head),
+        lambda _root, boundary=None, **_kwargs: _clean_observation(dirty=dirty, head=head),
     )
 
 
@@ -183,6 +211,13 @@ def _runner(
         else None
     )
     coordinator_id = world.activate(view).coordinator_id if activate else f"{PROJECT_ID}:{MILESTONE_ID}"
+    authority_binding = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind="local_governance",
+        authority_ref=PLAN_AUTHORITY,
+        source_revision=PLAN_SOURCE_REVISION,
+        source_digest=PLAN_DIGEST,
+    )
     return TaskMainMilestoneRunner(
         coordinator_store=world.coord_store,
         execution_store=world.exec_store,
@@ -195,8 +230,13 @@ def _runner(
         reviewer_dispatch_resolver=durable_resolver,
         coordinator_id=coordinator_id,
         accepted_frontier_authorization=auth,
-        review_adoption_worktree_root=root,
+        review_adoption_worktree_root=_reviewer_sandbox(root),
         review_adoption_git=FakeGit(),
+        trusted_plan_authority=trusted_plan_authority_from_binding(
+            project_id=PROJECT_ID,
+            binding=authority_binding,
+            authoritative_reader=_AuthorityReader(authority_binding),
+        ),
     )
 
 
@@ -271,13 +311,139 @@ def test_caller_constructed_authorization_has_no_adoption_authority(
         world.close()
 
 
+def test_tampered_authorization_rehashed_by_caller_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-rehashed-authorization")
+    try:
+        view = _view()
+        valid = _authorization(world, tmp_path)
+        frontier = TrustedGitFrontier(
+            worktree_root=str(tmp_path.resolve()),
+            entry_base=ENTRY_BASE,
+            frontier_ref=FRONTIER,
+            tree_ref=TREE,
+            clean=True,
+        )
+        tampered = dataclasses.replace(
+            valid,
+            authorization_ref="attacker://self-issued",
+            provenance_digest="",
+        )
+        tampered = dataclasses.replace(
+            tampered,
+            provenance_digest=review_adoption_module._authorization_provenance_digest(
+                tampered, frontier
+            ),
+        )
+
+        with pytest.raises(ReviewAdoptionError, match="derived from the trusted authority"):
+            _runner(world, view, tampered, tmp_path).advance_once()
+        assert world.exec_store.list_all() == []
+    finally:
+        world.close()
+
+
+def test_durable_tamper_and_rehash_is_rejected_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-durable-rehashed-authorization")
+    try:
+        view = _view()
+        runner = _runner(world, view, _authorization(world, tmp_path), tmp_path)
+        assert runner.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+        coordinator_id = runner.coordinator_id
+        original_state = world.coord_store.get(coordinator_id)
+        assert original_state is not None
+        original_auth, original_frontier = review_adoption_module._authorization_provenance_from_reason(
+            original_state.review_gates["reason"]
+        )
+        tampered = dataclasses.replace(
+            original_auth,
+            authorization_ref="attacker://self-issued",
+            provenance_digest="",
+        )
+        tampered = dataclasses.replace(
+            tampered,
+            provenance_digest=review_adoption_module._authorization_provenance_digest(
+                tampered, original_frontier
+            ),
+        )
+        persisted = json.loads(world.coord_path.read_text(encoding="utf-8"))
+        record = persisted[coordinator_id]
+        proof = review_adoption_module._proof_digest(tampered, original_frontier)
+        record["review_gates"]["ref"] = tampered.authorization_ref
+        record["review_gates"]["digest"] = proof
+        record["review_gates"]["reason"] = review_adoption_module._authorization_provenance_reason(
+            tampered, original_frontier
+        )
+        record["integrated_review"]["digest"] = proof
+        record["frontier_ref"]["digest"] = proof
+        persisted[coordinator_id] = record
+        world.close()
+        world.coord_path.write_text(json.dumps(persisted), encoding="utf-8")
+
+        restarted = World(tmp_path, name="r3b-durable-rehashed-authorization")
+        try:
+            with pytest.raises(ReviewAdoptionError, match="derived from the trusted authority"):
+                _runner(restarted, view, None, tmp_path, activate=False).advance_once()
+            assert len(restarted.exec_store.list_all()) == 1
+        finally:
+            restarted.close()
+    finally:
+        try:
+            world.close()
+        except Exception:
+            pass
+
+
+def test_reviewer_handoff_materialization_reuses_identity_after_pre_binding_crash(
+    tmp_path: Path,
+) -> None:
+    world = World(tmp_path, name="r3b-handoff-materialization-reuse")
+    try:
+        view = _view()
+        handle = world.activate(view)
+        state = world.coord_store.get(handle.coordinator_id)
+        assert state is not None
+        sandbox = _reviewer_sandbox(tmp_path)
+        first = task_main_host_bootstrap._materialize_reviewer_work_handoff(
+            base_handoff=_reviewer_handoff(),
+            sandbox=sandbox,
+            live_view=view,
+            state=state,
+            project_id=PROJECT_ID,
+            reviewer_task_id=REVIEWER_TASK_ID,
+            plan_id=PLAN_ID,
+            parent_task_identity="session-1",
+        )
+        second = task_main_host_bootstrap._materialize_reviewer_work_handoff(
+            base_handoff=_reviewer_handoff(),
+            sandbox=sandbox,
+            live_view=view,
+            state=state,
+            project_id=PROJECT_ID,
+            reviewer_task_id=REVIEWER_TASK_ID,
+            plan_id=PLAN_ID,
+            parent_task_identity="session-1",
+        )
+
+        assert second["handoff_ref"] == first["handoff_ref"]
+        assert second["handoff_digest"] == first["handoff_digest"]
+        assert len(list((tmp_path / ".aota" / "handoffs").glob("*.json"))) == 1
+    finally:
+        world.close()
+
+
 def test_untracked_runtime_database_is_excluded_but_source_changes_are_not(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
-        lambda _root, boundary=None: {
+        lambda _root, boundary=None, **_kwargs: {
             "available": True,
             "is_dirty": True,
             "head_sha": FRONTIER,
@@ -290,6 +456,7 @@ def test_untracked_runtime_database_is_excluded_but_source_changes_are_not(
                     ".aota/governance.sqlite3-shm",
                 ]
             },
+            "ignored": {"paths": [], "truncated": False},
         },
     )
     world = World(tmp_path, name="r3b-runtime-db")
@@ -329,13 +496,14 @@ def test_exact_runtime_owner_paths_are_allowed(
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
-        lambda _root, boundary=None: {
+        lambda _root, boundary=None, **_kwargs: {
             "available": True,
             "is_dirty": True,
             "head_sha": FRONTIER,
             "staged": {"paths": [], "truncated": False},
             "unstaged": {"paths": [], "truncated": False},
             "untracked": {"paths": [runtime_path], "truncated": False},
+            "ignored": {"paths": [], "truncated": False},
         },
     )
     world = World(tmp_path, name=f"r3b-runtime-{runtime_path.rsplit('/', 1)[-1]}")
@@ -353,13 +521,14 @@ def test_unknown_aota_path_is_source_dirty_and_never_adopted(
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
-        lambda _root, boundary=None: {
+        lambda _root, boundary=None, **_kwargs: {
             "available": True,
             "is_dirty": True,
             "head_sha": FRONTIER,
             "staged": {"paths": [], "truncated": False},
             "unstaged": {"paths": [], "truncated": False},
             "untracked": {"paths": [".aota/arbitrary.json"], "truncated": False},
+            "ignored": {"paths": [], "truncated": False},
         },
     )
     world = World(tmp_path, name="r3b-unknown-runtime")
@@ -382,7 +551,7 @@ def test_truncated_git_status_fails_closed(
     monkeypatch.setattr(
         review_adoption_module,
         "inspect_git",
-        lambda _root, boundary=None: {
+        lambda _root, boundary=None, **_kwargs: {
             "available": True,
             "is_dirty": True,
             "head_sha": FRONTIER,
@@ -392,6 +561,7 @@ def test_truncated_git_status_fails_closed(
                 "paths": [".aota/governance.sqlite3"],
                 "truncated": True,
             },
+            "ignored": {"paths": [], "truncated": False},
         },
     )
     world = World(tmp_path, name="r3b-truncated-status")

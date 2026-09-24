@@ -18,12 +18,14 @@ import json
 import re
 import zlib
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from aota_forge.adapters.plan_authority import PlanAuthorityReadAdapter
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
 )
 from aota_forge.adapters.plan_authority.local_governance import (
     local_plan_authority_reference,
@@ -52,6 +54,7 @@ from aota_forge.work_plane.progression import (
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import GitPort, SubprocessGitPort
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 
 REVIEW_ONLY_ADOPTION_ENABLED = True
@@ -71,6 +74,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_REF_LENGTH = 512
 _EXPECTED_REVIEWER_ATTEMPT = 1
 _AUTHORIZATION_PROVENANCE_VERSION = 1
+_TRUSTED_GIT_MAX_OBSERVED_PATHS = 4096
 _RUNTIME_DIGEST_FILE_RE = re.compile(r"^[0-9a-f]{64}\.(?:bin|json)$")
 _HANDOFF_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
 _WORKER_BINDING_FILE_RE = re.compile(
@@ -96,16 +100,113 @@ _RUNTIME_ARTIFACT_DIRECTORY_PREFIXES = (
     ".aota/durable_payloads/",
     ".aota/pre-resolved-bindings/",
     ".aota/task_return_receipts/",
+    ".pytest_cache/",
 )
 _RUNTIME_ARTIFACT_DIRECTORY_PATHS = frozenset(
     path
     for prefix in _RUNTIME_ARTIFACT_DIRECTORY_PREFIXES
     for path in (prefix.rstrip("/"), prefix)
 )
+_OPENCODE_INSTANCE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]{1,96}$")
+_OPENCODE_ENVELOPE_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
+_PYTHON_BYTECODE_FILE_RE = re.compile(r"^[A-Za-z0-9._-]+\.pyc$")
+_TRUSTED_AUTHORITY_CAPABILITY = object()
 
 
 class ReviewAdoptionError(TaskMainCoordinatorError):
     """Fail-closed refusal to establish or consume review-only adoption."""
+
+
+@dataclass(frozen=True)
+class TrustedPlanAuthority:
+    """Operator-bound Plan source facts used to validate durable adoption."""
+
+    project_id: str
+    plan_id: str
+    authority_source_kind: str
+    authority_ref: str
+    source_revision: str
+    source_digest: str
+    _capability: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._capability is not _TRUSTED_AUTHORITY_CAPABILITY:
+            raise TypeError("TrustedPlanAuthority must be created by trusted composition")
+        object.__setattr__(self, "project_id", _require_non_empty_str(self.project_id, "project_id"))
+        object.__setattr__(self, "plan_id", _require_non_empty_str(self.plan_id, "plan_id"))
+        object.__setattr__(
+            self,
+            "authority_source_kind",
+            _require_non_empty_str(self.authority_source_kind, "authority_source_kind"),
+        )
+        object.__setattr__(self, "authority_ref", _require_non_empty_str(self.authority_ref, "authority_ref"))
+        object.__setattr__(
+            self,
+            "source_revision",
+            _require_non_empty_str(self.source_revision, "source_revision", max_length=128),
+        )
+        object.__setattr__(self, "source_digest", _require_sha256(self.source_digest, "source_digest"))
+
+    def canonical_dict(self) -> dict[str, str]:
+        return {
+            "authority_ref": self.authority_ref,
+            "authority_source_kind": self.authority_source_kind,
+            "plan_id": self.plan_id,
+            "project_id": self.project_id,
+            "source_digest": self.source_digest,
+            "source_revision": self.source_revision,
+        }
+
+
+def trusted_plan_authority_from_binding(
+    *,
+    project_id: str,
+    binding: PlanAuthorityBinding,
+    authoritative_reader: PlanAuthorityReadAdapter,
+) -> TrustedPlanAuthority:
+    """Create the review authority carrier from a re-read bound source."""
+
+    if not isinstance(binding, PlanAuthorityBinding):
+        raise TypeError(f"binding must be PlanAuthorityBinding, got {type(binding).__name__}")
+    if not isinstance(authoritative_reader, PlanAuthorityReadAdapter):
+        raise TypeError(
+            "authoritative_reader must be a PlanAuthorityReadAdapter"
+        )
+    if binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+        raise ReviewAdoptionError(
+            "review-only adoption requires an observed local_governance Plan source"
+        )
+    if binding.source_revision is None or binding.source_digest is None:
+        raise ReviewAdoptionError(
+            "review-only adoption requires source revision and digest from the bound Plan authority"
+        )
+    observed_binding = getattr(authoritative_reader, "binding", None)
+    if observed_binding != binding:
+        raise ReviewAdoptionError(
+            "authoritative Plan reader does not expose the requested bound source"
+        )
+    try:
+        snapshot = authoritative_reader.load()
+    except Exception as exc:
+        raise ReviewAdoptionError(
+            f"authoritative Plan source could not be re-read: {exc}"
+        ) from exc
+    if (
+        snapshot.revision != binding.source_revision
+        or snapshot.digest != binding.source_digest
+    ):
+        raise ReviewAdoptionError(
+            "authoritative Plan source revision/digest changed during authority binding"
+        )
+    return TrustedPlanAuthority(
+        project_id=project_id,
+        plan_id=binding.plan_id,
+        authority_source_kind=binding.source_kind,
+        authority_ref=binding.authority_ref,
+        source_revision=str(binding.source_revision),
+        source_digest=binding.source_digest,
+        _capability=_TRUSTED_AUTHORITY_CAPABILITY,
+    )
 
 
 def _is_known_runtime_artifact_path(path: str) -> bool:
@@ -120,6 +221,27 @@ def _is_known_runtime_artifact_path(path: str) -> bool:
         return False
     if normalized in _RUNTIME_ARTIFACT_EXACT_PATHS:
         return True
+    if _PYTHON_BYTECODE_FILE_RE.fullmatch(normalized.rsplit("/", 1)[-1]) is not None:
+        return True
+    if normalized == ".aota/opencode/active_binding.json":
+        return True
+    opencode_parts = normalized.split("/")
+    if (
+        len(opencode_parts) == 7
+        and opencode_parts[:3] == [".aota", "opencode", "instances"]
+        and _OPENCODE_INSTANCE_KEY_RE.fullmatch(opencode_parts[3]) is not None
+        and opencode_parts[4:6] == [".aota", "opencode"]
+        and opencode_parts[6] == "active_binding.json"
+    ):
+        return True
+    if (
+        len(opencode_parts) == 7
+        and opencode_parts[:3] == [".aota", "opencode", "instances"]
+        and _OPENCODE_INSTANCE_KEY_RE.fullmatch(opencode_parts[3]) is not None
+        and opencode_parts[4:6] == [".aota", "pre-resolved-bindings"]
+        and _OPENCODE_ENVELOPE_FILE_RE.fullmatch(opencode_parts[6]) is not None
+    ):
+        return True
     if (
         normalized.startswith(".aota/")
         and "/" not in normalized[len(".aota/") :]
@@ -131,6 +253,8 @@ def _is_known_runtime_artifact_path(path: str) -> bool:
         if not normalized.startswith(prefix):
             continue
         filename = normalized[len(prefix) :]
+        if prefix == ".pytest_cache/":
+            return True
         if "/" in filename:
             return False
         if prefix == ".aota/handoffs/":
@@ -293,6 +417,20 @@ def _authorization_provenance_digest(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _canonical_authorization_ref(
+    authority: TrustedPlanAuthority,
+    *,
+    milestone_id: str,
+    frontier_ref: str,
+) -> str:
+    _require_commit(frontier_ref, "frontier_ref")
+    return (
+        "review-authority://"
+        f"{authority.authority_source_kind}/{authority.project_id}/"
+        f"{authority.plan_id}/{_require_non_empty_str(milestone_id, 'milestone_id')}"
+    )
+
+
 def _authorization_provenance_reason(
     authorization: AcceptedFrontierAuthorization,
     frontier: TrustedGitFrontier,
@@ -383,19 +521,19 @@ class ReviewOnlyAdoption:
 
 
 def read_trusted_git_frontier(
-    worktree_root: str | Path,
+    worktree_root: WorktreeSandboxBoundary,
     *,
     entry_base: str,
     git: GitPort | None = None,
 ) -> TrustedGitFrontier:
     """Observe a clean canonical Git HEAD and verify ``entry_base`` ancestry."""
 
-    if isinstance(worktree_root, str):
-        root = Path(worktree_root)
-    elif isinstance(worktree_root, Path):
-        root = worktree_root
-    else:
-        raise TypeError(f"worktree_root must be str or Path, got {type(worktree_root).__name__}")
+    if not isinstance(worktree_root, WorktreeSandboxBoundary):
+        raise TypeError(
+            "worktree_root must be the trusted WorktreeSandboxBoundary, "
+            f"got {type(worktree_root).__name__}"
+        )
+    root = Path(worktree_root.worktree_root)
     if root.is_symlink():
         raise ReviewAdoptionError("trusted worktree root must not be a symlink")
     try:
@@ -407,7 +545,11 @@ def read_trusted_git_frontier(
 
     entry = _require_commit(entry_base, "entry_base")
     try:
-        observation = inspect_git(root, boundary=root)
+        observation = inspect_git(
+            root,
+            boundary=root,
+            max_entries=_TRUSTED_GIT_MAX_OBSERVED_PATHS,
+        )
     except Exception as exc:
         raise ReviewAdoptionError(f"trusted Git inspection failed: {exc}") from exc
     if observation.get("available") is not True:
@@ -475,9 +617,12 @@ def _expected_reviewer_task_id(project_id: str, milestone_id: str) -> str:
     return f"{project_id}:{milestone_id}:RV1:attempt-{_EXPECTED_REVIEWER_ATTEMPT}"
 
 
-def _reported_dirty_paths(observation: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+def _reported_paths(
+    observation: Mapping[str, Any],
+    categories: tuple[str, ...],
+) -> tuple[tuple[str, str], ...]:
     paths: list[tuple[str, str]] = []
-    for category in ("staged", "unstaged", "untracked"):
+    for category in categories:
         payload = observation.get(category)
         if not isinstance(payload, Mapping):
             continue
@@ -493,13 +638,23 @@ def _reported_dirty_paths(observation: Mapping[str, Any]) -> tuple[tuple[str, st
     return tuple(paths)
 
 
+def _reported_dirty_paths(observation: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    return _reported_paths(observation, ("staged", "unstaged", "untracked"))
+
+
 def _trusted_source_is_clean(observation: Mapping[str, Any]) -> bool:
     """Apply the source-cleanliness policy to a trusted Git observation."""
 
-    for category in ("staged", "unstaged", "untracked"):
+    ignored_payload = observation.get("ignored")
+    if not isinstance(ignored_payload, Mapping):
+        return False
+    for category in ("staged", "unstaged", "untracked", "ignored"):
         payload = observation.get(category)
         if isinstance(payload, Mapping) and payload.get("truncated") is True:
             return False
+    ignored_paths = _reported_paths(observation, ("ignored",))
+    if any(not _is_known_runtime_artifact_path(path) for _, path in ignored_paths):
+        return False
     if observation.get("is_dirty") is False:
         return not _reported_dirty_paths(observation)
     if observation.get("is_dirty") is not True:
@@ -516,9 +671,17 @@ def _validate_authorization(
     view: MilestonePlanView,
     authorization: AcceptedFrontierAuthorization,
     frontier: TrustedGitFrontier,
+    trusted_authority: TrustedPlanAuthority,
 ) -> None:
     if authorization.authority_source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
         raise ReviewAdoptionError("review-only adoption requires local_governance authority")
+    _validate_authorization_against_trusted_authority(
+        state=state,
+        view=view,
+        authorization=authorization,
+        frontier=frontier,
+        trusted_authority=trusted_authority,
+    )
     try:
         expected_authority = local_plan_authority_reference(
             authorization.project_id, authorization.plan_id
@@ -561,11 +724,19 @@ def _validate_authorization_against_state(
     state: TaskMainCoordinatorState,
     authorization: AcceptedFrontierAuthorization,
     frontier: TrustedGitFrontier,
+    trusted_authority: TrustedPlanAuthority,
 ) -> None:
     """Validate durable authorization facts without requiring a live Plan view."""
 
     if authorization.authority_source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
         raise ReviewAdoptionError("durable review authorization has an untrusted authority source")
+    _validate_authorization_against_trusted_authority(
+        state=state,
+        view=None,
+        authorization=authorization,
+        frontier=frontier,
+        trusted_authority=trusted_authority,
+    )
     try:
         expected_authority = local_plan_authority_reference(
             authorization.project_id, authorization.plan_id
@@ -598,15 +769,64 @@ def _validate_authorization_against_state(
         raise ReviewAdoptionError("durable trusted Git frontier is not clean")
 
 
+def _validate_authorization_against_trusted_authority(
+    *,
+    state: TaskMainCoordinatorState,
+    view: MilestonePlanView | None,
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+    trusted_authority: TrustedPlanAuthority,
+) -> None:
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise ReviewAdoptionError("review-only adoption requires a trusted Plan authority binding")
+    try:
+        expected_authority = local_plan_authority_reference(
+            trusted_authority.project_id, trusted_authority.plan_id
+        )
+    except Exception as exc:
+        raise ReviewAdoptionError(f"trusted Plan authority identity is invalid: {exc}") from exc
+    if trusted_authority.authority_source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+        raise ReviewAdoptionError("trusted review authority source is not local_governance")
+    if trusted_authority.authority_ref != expected_authority:
+        raise ReviewAdoptionError("trusted review authority reference is not canonical")
+    if trusted_authority.project_id != state.project_id:
+        raise ReviewAdoptionError("trusted review authority project identity mismatch")
+    if authorization.plan_id != trusted_authority.plan_id:
+        raise ReviewAdoptionError("authorization Plan identity does not match the trusted authority")
+    if authorization.plan_authority != trusted_authority.authority_ref:
+        raise ReviewAdoptionError("authorization Plan authority does not match the trusted authority")
+    if authorization.authority_source_kind != trusted_authority.authority_source_kind:
+        raise ReviewAdoptionError("authorization source kind does not match the trusted authority")
+    if authorization.plan_digest != trusted_authority.source_digest:
+        raise ReviewAdoptionError("authorization Plan digest does not match the trusted authority source")
+    if authorization.plan_source_revision != trusted_authority.source_revision:
+        raise ReviewAdoptionError("authorization Plan source revision does not match the trusted authority source")
+    if view is not None and (
+        view.plan_digest != trusted_authority.source_digest
+        or (view.plan_source_revision or "") != trusted_authority.source_revision
+    ):
+        raise ReviewAdoptionError("live Plan view does not match the trusted authority source")
+    expected_ref = _canonical_authorization_ref(
+        trusted_authority,
+        milestone_id=authorization.milestone_id,
+        frontier_ref=authorization.candidate_frontier_ref,
+    )
+    if authorization.authorization_ref != expected_ref:
+        raise ReviewAdoptionError("authorization reference is not derived from the trusted authority")
+    if frontier.worktree_root != frontier.worktree_root.strip():
+        raise ReviewAdoptionError("trusted Git worktree identity is malformed")
+
+
 def mint_accepted_frontier_authorization(
     *,
     state: TaskMainCoordinatorState,
     live_plan_view: MilestonePlanView,
     plan_id: str,
-    authorization_ref: str,
+    authorization_ref: str | None = None,
     trusted_frontier: TrustedGitFrontier,
+    trusted_authority: TrustedPlanAuthority,
 ) -> AcceptedFrontierAuthorization:
-    """Mint the value object from trusted runtime/operator observations."""
+    """Mint the value object from a trusted bound Plan source and Git frontier."""
 
     if not isinstance(state, TaskMainCoordinatorState):
         raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
@@ -616,12 +836,25 @@ def mint_accepted_frontier_authorization(
         raise TypeError(
             f"trusted_frontier must be TrustedGitFrontier, got {type(trusted_frontier).__name__}"
         )
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise TypeError(
+            f"trusted_authority must be TrustedPlanAuthority, got {type(trusted_authority).__name__}"
+        )
+    if plan_id != trusted_authority.plan_id:
+        raise ReviewAdoptionError("minted authorization Plan identity does not match the trusted authority")
     try:
         _check_live_binding(state, live_plan_view)
     except PlanDriftError:
         raise
     except Exception as exc:
         raise ReviewAdoptionError(f"trusted runtime Plan binding failed: {exc}") from exc
+    canonical_ref = _canonical_authorization_ref(
+        trusted_authority,
+        milestone_id=live_plan_view.milestone_id,
+        frontier_ref=trusted_frontier.frontier_ref,
+    )
+    if authorization_ref is not None and authorization_ref != canonical_ref:
+        raise ReviewAdoptionError("authorization_ref must be derived from the trusted Plan authority")
     authorization = AcceptedFrontierAuthorization(
         project_id=state.project_id,
         plan_id=plan_id,
@@ -632,7 +865,7 @@ def mint_accepted_frontier_authorization(
         milestone_id=live_plan_view.milestone_id,
         entry_base=live_plan_view.entry_base,
         candidate_frontier_ref=trusted_frontier.frontier_ref,
-        authorization_ref=authorization_ref,
+        authorization_ref=canonical_ref,
         reviewer_canonical_task_id=_expected_reviewer_task_id(
             state.project_id, state.milestone_id
         ),
@@ -646,6 +879,7 @@ def mint_accepted_frontier_authorization(
         view=live_plan_view,
         authorization=authorization,
         frontier=trusted_frontier,
+        trusted_authority=trusted_authority,
     )
     return authorization
 
@@ -731,8 +965,9 @@ def adopt_accepted_frontier_for_review(
     coordinator_id: str,
     live_plan_view: MilestonePlanView,
     authorization: AcceptedFrontierAuthorization,
-    worktree_root: str | Path,
+    worktree_root: WorktreeSandboxBoundary,
     git: GitPort | None = None,
+    trusted_authority: TrustedPlanAuthority | None = None,
 ) -> TaskMainCoordinatorState:
     """CAS-adopt an exact clean Git frontier for the existing RV1 path.
 
@@ -756,6 +991,8 @@ def adopt_accepted_frontier_for_review(
             "authorization must be AcceptedFrontierAuthorization, "
             f"got {type(authorization).__name__}"
         )
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise TypeError("trusted_authority must be TrustedPlanAuthority")
     coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
     state = store.get(coordinator_id)
     if state is None:
@@ -790,6 +1027,7 @@ def adopt_accepted_frontier_for_review(
         view=live_plan_view,
         authorization=authorization,
         frontier=frontier,
+        trusted_authority=trusted_authority,
     )
     if not _has_trusted_authorization_provenance(authorization, frontier):
         raise ReviewAdoptionError(
@@ -811,6 +1049,7 @@ def adopt_accepted_frontier_for_review(
             state=state,
             authorization=stored_authorization,
             frontier=stored_frontier,
+            trusted_authority=trusted_authority,
         )
         if stored_authorization != authorization or stored_frontier != frontier:
             raise ReviewAdoptionError(
@@ -855,6 +1094,8 @@ def adopt_accepted_frontier_for_review(
 
 def review_only_adoption_from_state(
     state: TaskMainCoordinatorState,
+    *,
+    trusted_authority: TrustedPlanAuthority | None = None,
 ) -> ReviewOnlyAdoption | None:
     """Parse and cross-check the existing optional adoption marker."""
 
@@ -863,6 +1104,10 @@ def review_only_adoption_from_state(
     fields = (state.review_gates, state.integrated_review, state.frontier_ref)
     if all(value is None for value in fields):
         return None
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise ReviewAdoptionError(
+            "durable review-only adoption requires a trusted Plan authority binding"
+        )
     if any(not isinstance(value, Mapping) for value in fields):
         raise ReviewAdoptionError("review-only adoption marker is malformed")
     gates, review, frontier = fields
@@ -896,6 +1141,7 @@ def review_only_adoption_from_state(
         state=state,
         authorization=authorization,
         frontier=authorized_frontier,
+        trusted_authority=trusted_authority,
     )
     if not _has_trusted_authorization_provenance(authorization, authorized_frontier):
         raise ReviewAdoptionError("durable authorization provenance digest is invalid")
@@ -950,8 +1196,9 @@ def revalidate_adopted_frontier(
     *,
     state: TaskMainCoordinatorState,
     live_plan_view: MilestonePlanView,
-    worktree_root: str | Path | None,
+    worktree_root: WorktreeSandboxBoundary | None,
     git: GitPort | None = None,
+    trusted_authority: TrustedPlanAuthority | None = None,
 ) -> TrustedGitFrontier:
     """Re-observe the adopted frontier immediately before review work."""
 
@@ -959,7 +1206,9 @@ def revalidate_adopted_frontier(
         raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
     if not isinstance(live_plan_view, MilestonePlanView):
         raise TypeError(f"live_plan_view must be MilestonePlanView, got {type(live_plan_view).__name__}")
-    adoption = review_only_adoption_from_state(state)
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise TypeError("trusted_authority must be TrustedPlanAuthority")
+    adoption = review_only_adoption_from_state(state, trusted_authority=trusted_authority)
     if adoption is None:
         raise ReviewAdoptionError("review frontier revalidation requires review-only adoption")
     try:
@@ -991,6 +1240,7 @@ def revalidate_adopted_frontier(
         state=state,
         authorization=authorization,
         frontier=frontier,
+        trusted_authority=trusted_authority,
     )
     if not _has_trusted_authorization_provenance(authorization, frontier):
         raise ReviewAdoptionError("durable authorization provenance digest is invalid")
@@ -1056,6 +1306,7 @@ def record_review_dispatch_binding(
     store: TaskMainCoordinatorStore,
     coordinator_id: str,
     binding: Mapping[str, Any],
+    trusted_authority: TrustedPlanAuthority | None = None,
 ) -> TaskMainCoordinatorState:
     """CAS-bind reviewer identity before the reviewer can be dispatched."""
 
@@ -1064,18 +1315,39 @@ def record_review_dispatch_binding(
     coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
     if not isinstance(binding, Mapping):
         raise TypeError(f"binding must be a mapping, got {type(binding).__name__}")
+    if not isinstance(trusted_authority, TrustedPlanAuthority):
+        raise TypeError("trusted_authority must be TrustedPlanAuthority")
     handoff_ref = binding.get("handoff_ref")
     handoff_digest = binding.get("handoff_digest")
     if not isinstance(handoff_ref, str) or not handoff_ref.startswith("handoff://"):
         raise ReviewAdoptionError("reviewer durable binding requires a handoff_ref")
     try:
-        _require_sha256(handoff_digest, "reviewer durable binding handoff_digest")
+        handoff_digest = _require_sha256(
+            handoff_digest, "reviewer durable binding handoff_digest"
+        )
     except (TypeError, ValueError) as exc:
         raise ReviewAdoptionError(str(exc)) from exc
     state = store.get(coordinator_id)
     if state is None:
         raise ReviewAdoptionError(f"coordinator {coordinator_id!r} does not exist")
-    review_only_adoption_from_state(state)
+    from aota_forge.work_plane.handoff_store import HandoffRef
+
+    try:
+        parsed_ref = HandoffRef.from_value(handoff_ref)
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(f"reviewer durable binding handoff_ref is malformed: {exc}") from exc
+    if (
+        parsed_ref.ref != handoff_ref
+        or parsed_ref.mode != "work_item"
+        or parsed_ref.project_id != state.project_id
+        or parsed_ref.worktree_id == ""
+        or parsed_ref.artifact_id == ""
+        or parsed_ref.digest != handoff_digest
+    ):
+        raise ReviewAdoptionError(
+            "reviewer durable binding handoff_ref does not match its canonical identity"
+        )
+    review_only_adoption_from_state(state, trusted_authority=trusted_authority)
     current_marker = state.integrated_review
     if not isinstance(current_marker, Mapping):
         raise ReviewAdoptionError("review-only adoption has no integrated-review marker")
@@ -1138,6 +1410,7 @@ __all__ = [
     "AcceptedFrontierAuthorization",
     "ReviewAdoptionError",
     "ReviewOnlyAdoption",
+    "TrustedPlanAuthority",
     "TrustedGitFrontier",
     "adopt_accepted_frontier_for_review",
     "build_review_dispatch_binding",
@@ -1147,4 +1420,5 @@ __all__ = [
     "revalidate_adopted_frontier",
     "review_only_adoption_from_state",
     "review_only_progression_for",
+    "trusted_plan_authority_from_binding",
 ]

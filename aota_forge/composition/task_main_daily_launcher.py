@@ -1078,6 +1078,9 @@ class DailyTaskMainLauncher:
             coordinator_id=coordinator_id,
             plan_id=plan_id,
             plan_authority_binding=plan_authority_binding,
+            governance_base=Path(governance_base).resolve()
+            if governance_base is not None
+            else None,
             governance_store_path=Path(governance_store_path).resolve()
             if governance_store_path is not None
             else None,

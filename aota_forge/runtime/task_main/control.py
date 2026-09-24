@@ -43,7 +43,13 @@ from aota_forge.runtime.task_main.runner import (
     RunnerOutcome,
     TaskMainMilestoneRunner,
 )
+from aota_forge.runtime.task_main.review_adoption import (
+    AcceptedFrontierAuthorization,
+    TrustedPlanAuthority,
+)
 from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.steward_finalizer import GitPort
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 
 RunnerFactory = Callable[..., Any]
@@ -120,6 +126,10 @@ class TaskMainControlService:
         completion_coordinator: DurableCompletionCoordinator | None = None,
         runner_factory: RunnerFactory | None = None,
         projection_refresh_hook: Callable[[], Any] | None = None,
+        accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+        review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
+        review_adoption_git: GitPort | None = None,
+        trusted_plan_authority: TrustedPlanAuthority | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -137,6 +147,30 @@ class TaskMainControlService:
         if projection_refresh_hook is not None and not callable(projection_refresh_hook):
             raise TypeError("projection_refresh_hook must be callable or None")
         self._projection_refresh_hook = projection_refresh_hook
+        if accepted_frontier_authorization is not None and not isinstance(
+            accepted_frontier_authorization, AcceptedFrontierAuthorization
+        ):
+            raise TypeError("accepted_frontier_authorization must be AcceptedFrontierAuthorization or None")
+        if review_adoption_worktree_root is not None and not isinstance(
+            review_adoption_worktree_root, WorktreeSandboxBoundary
+        ):
+            raise TypeError("review_adoption_worktree_root must be WorktreeSandboxBoundary or None")
+        if review_adoption_git is not None and review_adoption_worktree_root is None:
+            raise TypeError("review_adoption_git requires review_adoption_worktree_root")
+        if accepted_frontier_authorization is not None and (
+            review_adoption_worktree_root is None or trusted_plan_authority is None
+        ):
+            raise TypeError(
+                "accepted_frontier_authorization requires trusted review adoption context"
+            )
+        if trusted_plan_authority is not None and not isinstance(
+            trusted_plan_authority, TrustedPlanAuthority
+        ):
+            raise TypeError("trusted_plan_authority must be TrustedPlanAuthority or None")
+        self._accepted_frontier_authorization = accepted_frontier_authorization
+        self._review_adoption_worktree_root = review_adoption_worktree_root
+        self._review_adoption_git = review_adoption_git
+        self._trusted_plan_authority = trusted_plan_authority
 
     def _refresh_projection_after_transition(self) -> None:
         """Refresh derived Governance views after durable task-main mutation."""
@@ -294,6 +328,7 @@ class TaskMainControlService:
         session_available: bool = True,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
         reviewer_dispatch_resolver: Callable[[], Any] | None = None,
+        accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
     ) -> RunnerOutcome:
         _require_task_main_profile(profile)
         runner = self.create_runner(
@@ -307,6 +342,10 @@ class TaskMainControlService:
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
             reviewer_dispatch_resolver=reviewer_dispatch_resolver,
+            accepted_frontier_authorization=accepted_frontier_authorization,
+            review_adoption_worktree_root=self._review_adoption_worktree_root,
+            review_adoption_git=self._review_adoption_git,
+            trusted_plan_authority=self._trusted_plan_authority,
         )
         outcome = runner.advance_once(session_available=session_available)
         self._refresh_projection_after_transition()
@@ -507,6 +546,9 @@ class TaskMainControlService:
             card_digest=card_digest,
             live_plan_view=live_plan_view,
             governed_review=governed_review,
+            review_adoption_worktree_root=self._review_adoption_worktree_root,
+            review_adoption_git=self._review_adoption_git,
+            trusted_plan_authority=self._trusted_plan_authority,
         )
         self._refresh_projection_after_transition()
         return result
@@ -524,8 +566,37 @@ class TaskMainControlService:
         coordinator_id: str | None = None,
         reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
         reviewer_dispatch_resolver: Callable[[], Any] | None = None,
+        accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+        review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
+        review_adoption_git: GitPort | None = None,
+        trusted_plan_authority: TrustedPlanAuthority | None = None,
     ) -> Any:
         _require_task_main_profile(profile)
+        selected_authorization = self._accepted_frontier_authorization
+        if accepted_frontier_authorization is not None:
+            if not isinstance(accepted_frontier_authorization, AcceptedFrontierAuthorization):
+                raise TypeError(
+                    "accepted_frontier_authorization must be AcceptedFrontierAuthorization or None"
+                )
+            if (
+                selected_authorization is not None
+                and accepted_frontier_authorization != selected_authorization
+            ):
+                raise CoordinatorBindingError(
+                    "accepted_frontier_authorization conflicts with the trusted control binding"
+                )
+            selected_authorization = accepted_frontier_authorization
+        selected_worktree_root = (
+            self._review_adoption_worktree_root
+            if review_adoption_worktree_root is None
+            else review_adoption_worktree_root
+        )
+        selected_review_git = self._review_adoption_git if review_adoption_git is None else review_adoption_git
+        selected_plan_authority = (
+            self._trusted_plan_authority
+            if trusted_plan_authority is None
+            else trusted_plan_authority
+        )
         runner = self._runner_factory(
             coordinator_store=self._coord_store,
             execution_store=self._exec_store,
@@ -540,6 +611,10 @@ class TaskMainControlService:
             coordinator_id=coordinator_id,
             reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
             reviewer_dispatch_resolver=reviewer_dispatch_resolver,
+            accepted_frontier_authorization=selected_authorization,
+            review_adoption_worktree_root=selected_worktree_root,
+            review_adoption_git=selected_review_git,
+            trusted_plan_authority=selected_plan_authority,
         )
         if not callable(getattr(runner, "advance_once", None)):
             raise TypeError("runner_factory must return a runner with advance_once")

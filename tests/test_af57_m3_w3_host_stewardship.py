@@ -185,6 +185,24 @@ def test_host_rebuilds_local_plan_identity_without_github_parser() -> None:
     assert identity.authority_binding == binding
 
 
+def test_host_rejects_bound_plan_without_top_level_plan_id() -> None:
+    local_ref = local_plan_authority_reference(PROJECT_ID, PLAN_ID)
+    binding = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        authority_ref=local_ref,
+    )
+
+    with pytest.raises(TrustedBindingError, match="top-level plan_id"):
+        host._trusted_plan_identity_from_bootstrap(
+            replace(_plan_view(), plan_authority=local_ref),
+            {
+                "project_id": PROJECT_ID,
+                "plan_authority_binding": binding.to_dict(),
+            },
+        )
+
+
 def test_host_steward_factories_defer_residual_construction_for_deterministic_close(
     tmp_path: Path,
 ) -> None:

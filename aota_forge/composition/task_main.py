@@ -61,6 +61,10 @@ from aota_forge.runtime.task_main.reconciliation import (
     reconcile_review_completion,
     reconcile_worker_completion,
 )
+from aota_forge.runtime.task_main.review_adoption import (
+    AcceptedFrontierAuthorization,
+    TrustedPlanAuthority,
+)
 from aota_forge.runtime.task_main.runner import (
     DISPOSITION_BLOCKED,
     RunnerOutcome,
@@ -71,6 +75,7 @@ from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.steward_dispatch import StewardResult
 from aota_forge.work_plane.steward_finalizer import (
     GhCliGitHubPort,
+    GitPort,
     SubprocessGitPort,
     TrustedStewardFinalizer,
 )
@@ -408,6 +413,10 @@ def create_task_main_runner(
     coordinator_id: str | None = None,
     reviewer_canonical_task_id_resolver: Callable[[], str] | None = None,
     reviewer_dispatch_resolver: Any | None = None,
+    accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+    review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
+    review_adoption_git: GitPort | None = None,
+    trusted_plan_authority: TrustedPlanAuthority | None = None,
     stewardship_checkpoint: StewardshipCheckpoint | None = None,
     stewardship_checkpoint_resolver: Callable[[RunnerOutcome], StewardshipCheckpoint] | None = None,
     stewardship_dispatch: Callable[[TaskHandoff], StewardResult | None] | None = None,
@@ -444,6 +453,10 @@ def create_task_main_runner(
         coordinator_id=coordinator_id,
         reviewer_canonical_task_id_resolver=reviewer_canonical_task_id_resolver,
         reviewer_dispatch_resolver=reviewer_dispatch_resolver,
+        accepted_frontier_authorization=accepted_frontier_authorization,
+        review_adoption_worktree_root=review_adoption_worktree_root,
+        review_adoption_git=review_adoption_git,
+        trusted_plan_authority=trusted_plan_authority,
     )
     if stewardship_checkpoint is None and stewardship_checkpoint_resolver is None:
         return legacy_runner
@@ -583,6 +596,10 @@ def create_task_main_control_service(
     governance_store: ProjectGovernanceStore | str | Path | None = None,
     stewardship_local_plan_lifecycle_coordinator: Any | None = None,
     projection_refresh_hook: Callable[[], Any] | None = None,
+    accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
+    review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
+    review_adoption_git: GitPort | None = None,
+    trusted_plan_authority: TrustedPlanAuthority | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
     store = (
@@ -621,6 +638,10 @@ def create_task_main_control_service(
         completion_coordinator=completion_coordinator,
         runner_factory=production_runner_factory,
         projection_refresh_hook=projection_refresh_hook,
+        accepted_frontier_authorization=accepted_frontier_authorization,
+        review_adoption_worktree_root=review_adoption_worktree_root,
+        review_adoption_git=review_adoption_git,
+        trusted_plan_authority=trusted_plan_authority,
     )
 
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from aota_forge.core.contracts.errors import GitBoundaryViolationError, GitNotFoundError
 
 GIT_TIMEOUT = 10
-HARD_MAX_ENTRIES = 500
+HARD_MAX_ENTRIES = 4096
 
 _GIT_ENV = {
     "GIT_TERMINAL_PROMPT": "0",
@@ -144,13 +144,23 @@ def inspect_git(project_root: Path, boundary: Path | None = None, max_entries: i
         raise GitNotFoundError("git status failed")
     staged, unstaged, untracked = _porcelain_split(porcelain)
 
+    ignored_raw, ignored_stderr, rc = _run_git(
+        git_root,
+        ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+    )
+    if rc != 0:
+        raise GitNotFoundError(f"git ignored-file inspection failed: {ignored_stderr.strip() or 'unknown error'}")
+    ignored = [path for path in ignored_raw.split("\x00") if path]
+
     truncated = lambda items, n=max_entries: len(items) > n
     staged_truncated = truncated(staged)
     unstaged_truncated = truncated(unstaged)
     untracked_truncated = truncated(untracked)
+    ignored_truncated = truncated(ignored)
     staged = staged[:max_entries]
     unstaged = unstaged[:max_entries]
     untracked = untracked[:max_entries]
+    ignored = ignored[:max_entries]
 
     relative = git_root.relative_to(boundary.resolve())
     repo_root = "." if relative == Path(".") else relative.as_posix()
@@ -165,5 +175,6 @@ def inspect_git(project_root: Path, boundary: Path | None = None, max_entries: i
         "staged": {"count": len(staged), "paths": staged, "truncated": staged_truncated},
         "unstaged": {"count": len(unstaged), "paths": unstaged, "truncated": unstaged_truncated},
         "untracked": {"count": len(untracked), "paths": untracked, "truncated": untracked_truncated},
+        "ignored": {"count": len(ignored), "paths": ignored, "truncated": ignored_truncated},
         "boundary": str(boundary.resolve()),
     }
