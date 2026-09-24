@@ -12,13 +12,14 @@ the existing integrated-review dispatch path may run.
 
 from __future__ import annotations
 
+import base64
 import hashlib
-import hmac
+import json
 import re
+import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-import secrets
 from typing import Any
 
 from aota_forge.adapters.plan_authority.binding import (
@@ -69,18 +70,78 @@ _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_REF_LENGTH = 512
 _EXPECTED_REVIEWER_ATTEMPT = 1
-_AUTHORIZATION_PROVENANCE_SECRET = secrets.token_bytes(32)
-_IGNORED_UNTRACKED_RUNTIME_PATHS = frozenset(
+_AUTHORIZATION_PROVENANCE_VERSION = 1
+_RUNTIME_DIGEST_FILE_RE = re.compile(r"^[0-9a-f]{64}\.(?:bin|json)$")
+_HANDOFF_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
+_WORKER_BINDING_FILE_RE = re.compile(
+    r"^(?:worker-[A-Za-z0-9._-]{1,64}-[0-9a-f]{8}|task-main-[0-9a-f]{8}-[0-9a-f]{8})\.json$"
+)
+_OBSERVATION_EVIDENCE_FILE_RE = re.compile(
+    r"^observation-evidence(?:-[A-Za-z0-9._-]{1,64})?\.jsonl$"
+)
+_RUNTIME_ARTIFACT_EXACT_PATHS = frozenset(
     {
         ".aota/governance.sqlite3",
         ".aota/governance.sqlite3-wal",
         ".aota/governance.sqlite3-shm",
+        ".aota/governance-journal.json",
+        ".aota/coordinator.json",
+        ".aota/execution.json",
+        ".aota/task-main-bootstrap.json",
+        ".aota/task-main-thin-bootstrap.json",
     }
+)
+_RUNTIME_ARTIFACT_DIRECTORY_PREFIXES = (
+    ".aota/handoffs/",
+    ".aota/durable_payloads/",
+    ".aota/pre-resolved-bindings/",
+    ".aota/task_return_receipts/",
+)
+_RUNTIME_ARTIFACT_DIRECTORY_PATHS = frozenset(
+    path
+    for prefix in _RUNTIME_ARTIFACT_DIRECTORY_PREFIXES
+    for path in (prefix.rstrip("/"), prefix)
 )
 
 
 class ReviewAdoptionError(TaskMainCoordinatorError):
     """Fail-closed refusal to establish or consume review-only adoption."""
+
+
+def _is_known_runtime_artifact_path(path: str) -> bool:
+    normalized = path.strip().replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized or normalized.startswith("/") or "\x00" in normalized:
+        return False
+    if normalized in _RUNTIME_ARTIFACT_DIRECTORY_PATHS:
+        return True
+    if any(part in ("", ".", "..") for part in normalized.split("/")):
+        return False
+    if normalized in _RUNTIME_ARTIFACT_EXACT_PATHS:
+        return True
+    if (
+        normalized.startswith(".aota/")
+        and "/" not in normalized[len(".aota/") :]
+        and _OBSERVATION_EVIDENCE_FILE_RE.fullmatch(normalized[len(".aota/") :])
+        is not None
+    ):
+        return True
+    for prefix in _RUNTIME_ARTIFACT_DIRECTORY_PREFIXES:
+        if not normalized.startswith(prefix):
+            continue
+        filename = normalized[len(prefix) :]
+        if "/" in filename:
+            return False
+        if prefix == ".aota/handoffs/":
+            return _HANDOFF_FILE_RE.fullmatch(filename) is not None
+        if prefix == ".aota/durable_payloads/":
+            return _RUNTIME_DIGEST_FILE_RE.fullmatch(filename) is not None
+        if prefix == ".aota/pre-resolved-bindings/":
+            return _WORKER_BINDING_FILE_RE.fullmatch(filename) is not None
+        if prefix == ".aota/task_return_receipts/":
+            return _HANDOFF_FILE_RE.fullmatch(filename) is not None
+    return False
 
 
 def _require_non_empty_str(value: Any, label: str, *, max_length: int = _MAX_REF_LENGTH) -> str:
@@ -229,7 +290,66 @@ def _authorization_provenance_digest(
             path="AcceptedFrontierAuthorizationProvenance",
         )
     ).encode("utf-8")
-    return hmac.new(_AUTHORIZATION_PROVENANCE_SECRET, encoded, hashlib.sha256).hexdigest()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _authorization_provenance_reason(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> str:
+    """Encode the complete provenance in the existing bounded gate field.
+
+    ``review_gates.reason`` is already a durable coordinator field.  Keeping
+    the canonical facts there avoids adding a coordinator schema/store while
+    still making a fresh process independent of the original authorization
+    object.  Compression keeps the bounded string usable for normal trusted
+    runtime paths; oversized provenance fails closed.
+    """
+
+    payload = {
+        "version": _AUTHORIZATION_PROVENANCE_VERSION,
+        "payload": _authorization_provenance_payload(authorization, frontier),
+    }
+    encoded = canonical_json(canonicalize(payload, path="AcceptedFrontierAuthorizationRecord")).encode("utf-8")
+    compressed = base64.urlsafe_b64encode(zlib.compress(encoded, level=9)).decode("ascii")
+    result = f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:{compressed}"
+    if len(result) > _MAX_REF_LENGTH:
+        raise ReviewAdoptionError("authorization provenance exceeds the durable coordinator bound")
+    return result
+
+
+def _authorization_provenance_from_reason(reason: Any) -> tuple[AcceptedFrontierAuthorization, TrustedGitFrontier]:
+    if not isinstance(reason, str) or not reason.startswith(f"authprov{_AUTHORIZATION_PROVENANCE_VERSION}:"):
+        raise ReviewAdoptionError("review-only adoption is missing durable authorization provenance")
+    encoded = reason.split(":", 1)[1]
+    try:
+        raw = zlib.decompress(base64.urlsafe_b64decode(encoded.encode("ascii")))
+        if len(raw) > 32 * 1024:
+            raise ValueError("provenance payload exceeds bound")
+        record = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise ReviewAdoptionError(f"durable authorization provenance cannot be decoded: {exc}") from exc
+    if not isinstance(record, Mapping) or record.get("version") != _AUTHORIZATION_PROVENANCE_VERSION:
+        raise ReviewAdoptionError("durable authorization provenance version is invalid")
+    payload = record.get("payload")
+    if not isinstance(payload, Mapping):
+        raise ReviewAdoptionError("durable authorization provenance payload is malformed")
+    authorization_raw = payload.get("authorization")
+    frontier_raw = payload.get("git")
+    if not isinstance(authorization_raw, Mapping) or not isinstance(frontier_raw, Mapping):
+        raise ReviewAdoptionError("durable authorization provenance facts are incomplete")
+    try:
+        frontier = TrustedGitFrontier(**dict(frontier_raw))
+        authorization = AcceptedFrontierAuthorization(**dict(authorization_raw))
+    except Exception as exc:
+        raise ReviewAdoptionError(f"durable authorization provenance facts are invalid: {exc}") from exc
+    if authorization.provenance_digest:
+        raise ReviewAdoptionError("durable authorization provenance must not self-embed its digest")
+    authorization = replace(
+        authorization,
+        provenance_digest=_authorization_provenance_digest(authorization, frontier),
+    )
+    return authorization, frontier
 
 
 def _has_trusted_authorization_provenance(
@@ -239,7 +359,7 @@ def _has_trusted_authorization_provenance(
     if not authorization.provenance_digest:
         return False
     expected = _authorization_provenance_digest(authorization, frontier)
-    return hmac.compare_digest(authorization.provenance_digest, expected)
+    return authorization.provenance_digest == expected
 
 
 @dataclass(frozen=True)
@@ -387,10 +507,7 @@ def _trusted_source_is_clean(observation: Mapping[str, Any]) -> bool:
     dirty_paths = _reported_dirty_paths(observation)
     if not dirty_paths:
         return False
-    return all(
-        category == "untracked" and path in _IGNORED_UNTRACKED_RUNTIME_PATHS
-        for category, path in dirty_paths
-    )
+    return all(category == "untracked" and _is_known_runtime_artifact_path(path) for category, path in dirty_paths)
 
 
 def _validate_authorization(
@@ -437,6 +554,48 @@ def _validate_authorization(
             )
     if not frontier.clean:
         raise ReviewAdoptionError("trusted Git frontier is not clean")
+
+
+def _validate_authorization_against_state(
+    *,
+    state: TaskMainCoordinatorState,
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> None:
+    """Validate durable authorization facts without requiring a live Plan view."""
+
+    if authorization.authority_source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+        raise ReviewAdoptionError("durable review authorization has an untrusted authority source")
+    try:
+        expected_authority = local_plan_authority_reference(
+            authorization.project_id, authorization.plan_id
+        )
+    except Exception as exc:
+        raise ReviewAdoptionError(f"durable authorization Plan identity is invalid: {exc}") from exc
+    if authorization.plan_authority != expected_authority:
+        raise ReviewAdoptionError("durable authorization Plan authority is not trusted")
+    checks = (
+        (authorization.project_id, state.project_id, "project identity"),
+        (authorization.plan_authority, state.plan_authority, "Plan authority"),
+        (authorization.plan_digest, state.plan_digest, "Plan digest"),
+        (authorization.plan_source_revision, state.plan_source_revision, "Plan source revision"),
+        (authorization.milestone_id, state.milestone_id, "Milestone"),
+        (authorization.entry_base, state.entry_base, "entry base"),
+        (authorization.entry_base, frontier.entry_base, "observed entry base"),
+        (authorization.candidate_frontier_ref, frontier.frontier_ref, "candidate frontier"),
+        (
+            authorization.reviewer_canonical_task_id,
+            _expected_reviewer_task_id(state.project_id, state.milestone_id),
+            "reviewer task identity",
+        ),
+    )
+    for supplied, expected, label in checks:
+        if supplied != expected:
+            raise ReviewAdoptionError(
+                f"{label} mismatch: authorized {supplied!r}, durable state {expected!r}"
+            )
+    if not frontier.clean:
+        raise ReviewAdoptionError("durable trusted Git frontier is not clean")
 
 
 def mint_accepted_frontier_authorization(
@@ -524,6 +683,7 @@ def _adoption_updates(
             "ref": authorization.authorization_ref,
             "digest": proof_digest,
             "freshness": "trusted_git_clean_descendant",
+            "reason": _authorization_provenance_reason(authorization, frontier),
             "status": REVIEW_ONLY_GATE_STATUS,
             "required": True,
             "integrated_state": REVIEW_ONLY_ADOPTION_STATE,
@@ -642,6 +802,20 @@ def adopt_accepted_frontier_for_review(
         proof_digest=proof_digest,
     )
     if state.integrated_review is not None or state.review_gates is not None or state.frontier_ref is not None:
+        stored_authorization, stored_frontier = _authorization_provenance_from_reason(
+            state.review_gates.get("reason")
+            if isinstance(state.review_gates, Mapping)
+            else None
+        )
+        _validate_authorization_against_state(
+            state=state,
+            authorization=stored_authorization,
+            frontier=stored_frontier,
+        )
+        if stored_authorization != authorization or stored_frontier != frontier:
+            raise ReviewAdoptionError(
+                "conflicting durable authorization provenance blocks adoption"
+            )
         if _existing_exact_adoption(state, updates):
             _require_no_conflicting_active_execution(
                 execution_store,
@@ -717,12 +891,27 @@ def review_only_adoption_from_state(
         raise ReviewAdoptionError("review-only adoption marker has missing proof digest")
     if len(set(digests)) != 1 or not _SHA256_RE.fullmatch(digests[0]):
         raise ReviewAdoptionError("review-only adoption marker proof digests conflict")
+    authorization, authorized_frontier = _authorization_provenance_from_reason(gates.get("reason"))
+    _validate_authorization_against_state(
+        state=state,
+        authorization=authorization,
+        frontier=authorized_frontier,
+    )
+    if not _has_trusted_authorization_provenance(authorization, authorized_frontier):
+        raise ReviewAdoptionError("durable authorization provenance digest is invalid")
     adoption = ReviewOnlyAdoption(
         authorization_ref=refs[0],
         reviewer_canonical_task_id=refs[1],
         frontier_ref=refs[2],
         proof_digest=digests[0],
     )
+    if (
+        authorization.authorization_ref != adoption.authorization_ref
+        or authorization.reviewer_canonical_task_id != adoption.reviewer_canonical_task_id
+        or authorized_frontier.frontier_ref != adoption.frontier_ref
+        or _proof_digest(authorization, authorized_frontier) != adoption.proof_digest
+    ):
+        raise ReviewAdoptionError("review-only adoption marker disagrees with durable authorization facts")
     if adoption.reviewer_canonical_task_id != _expected_reviewer_task_id(
         state.project_id, state.milestone_id
     ):
@@ -746,6 +935,14 @@ def review_only_adoption_from_state(
         for supplied, expected, label in binding_checks:
             if supplied != expected:
                 raise ReviewAdoptionError(f"{label} binding mismatch")
+        handoff_ref = reviewer_binding.get("handoff_ref")
+        handoff_digest = reviewer_binding.get("handoff_digest")
+        if not isinstance(handoff_ref, str) or not handoff_ref.startswith("handoff://"):
+            raise ReviewAdoptionError("reviewer binding has no durable handoff_ref")
+        try:
+            _require_sha256(handoff_digest, "reviewer binding handoff_digest")
+        except (TypeError, ValueError) as exc:
+            raise ReviewAdoptionError(str(exc)) from exc
     return adoption
 
 
@@ -775,15 +972,30 @@ def revalidate_adopted_frontier(
         raise ReviewAdoptionError(
             "review-only adoption requires trusted source revalidation before dispatch/reconciliation"
         )
+    authorization, authorized_frontier = _authorization_provenance_from_reason(
+        state.review_gates.get("reason")
+        if isinstance(state.review_gates, Mapping)
+        else None
+    )
     frontier = read_trusted_git_frontier(
         worktree_root,
         entry_base=state.entry_base,
         git=git,
     )
-    if frontier.frontier_ref != adoption.frontier_ref:
+    if frontier.canonical_dict() != authorized_frontier.canonical_dict():
         raise ReviewAdoptionError(
-            f"adopted frontier changed: marker {adoption.frontier_ref!r} vs trusted {frontier.frontier_ref!r}"
+            f"adopted trusted Git observation changed: marker {authorized_frontier.frontier_ref!r}"
+            f"/{authorized_frontier.tree_ref!r} vs trusted {frontier.frontier_ref!r}/{frontier.tree_ref!r}"
         )
+    _validate_authorization_against_state(
+        state=state,
+        authorization=authorization,
+        frontier=frontier,
+    )
+    if not _has_trusted_authorization_provenance(authorization, frontier):
+        raise ReviewAdoptionError("durable authorization provenance digest is invalid")
+    if _proof_digest(authorization, frontier) != adoption.proof_digest:
+        raise ReviewAdoptionError("review-only proof digest no longer matches durable authorization")
     return frontier
 
 
@@ -814,13 +1026,14 @@ def build_review_dispatch_binding(
             raise ReviewAdoptionError("reviewer handoff Plan digest contradicts coordinator")
     if handoff.milestone_ref is not None and handoff.milestone_ref.ref != state.milestone_id:
         raise ReviewAdoptionError("reviewer handoff Milestone contradicts coordinator")
-    if (handoff_ref is None) != (handoff_digest is None):
-        raise ReviewAdoptionError("reviewer durable handoff ref/digest must be supplied together")
-    if handoff_ref is not None:
-        handoff_ref = _require_non_empty_str(handoff_ref, "reviewer handoff_ref")
-        if not handoff_ref.startswith("handoff://"):
-            raise ReviewAdoptionError("reviewer handoff_ref is not a durable handoff reference")
-        handoff_digest = _require_sha256(handoff_digest, "reviewer handoff_digest")
+    if handoff_ref is None or handoff_digest is None:
+        raise ReviewAdoptionError(
+            "reviewer durable handoff ref/digest are required before physical dispatch"
+        )
+    handoff_ref = _require_non_empty_str(handoff_ref, "reviewer handoff_ref")
+    if not handoff_ref.startswith("handoff://"):
+        raise ReviewAdoptionError("reviewer handoff_ref is not a durable handoff reference")
+    handoff_digest = _require_sha256(handoff_digest, "reviewer handoff_digest")
     return {
         "canonical_task_id": adoption.reviewer_canonical_task_id,
         "attempt": _EXPECTED_REVIEWER_ATTEMPT,
@@ -851,6 +1064,14 @@ def record_review_dispatch_binding(
     coordinator_id = _require_non_empty_str(coordinator_id, "coordinator_id")
     if not isinstance(binding, Mapping):
         raise TypeError(f"binding must be a mapping, got {type(binding).__name__}")
+    handoff_ref = binding.get("handoff_ref")
+    handoff_digest = binding.get("handoff_digest")
+    if not isinstance(handoff_ref, str) or not handoff_ref.startswith("handoff://"):
+        raise ReviewAdoptionError("reviewer durable binding requires a handoff_ref")
+    try:
+        _require_sha256(handoff_digest, "reviewer durable binding handoff_digest")
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
     state = store.get(coordinator_id)
     if state is None:
         raise ReviewAdoptionError(f"coordinator {coordinator_id!r} does not exist")

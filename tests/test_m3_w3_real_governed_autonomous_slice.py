@@ -89,6 +89,7 @@ from aota_forge.work_plane.compiler import (
     compile_handoff_to_execution_package,
 )
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.handoff_store import handoff_write
 from aota_forge.work_plane.progression import (
     FocusedValidationEvidence,
     FocusedValidationVerdict,
@@ -101,6 +102,7 @@ from aota_forge.work_plane.result_card import (
 from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.stop import MechanicalFailure
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 FAKE_EXECUTOR_ID = "m3w3-fake"
 TEST_SCOPE = "m3w3-fake:coder"
@@ -174,6 +176,7 @@ def _handoff(work_item_id: str, milestone_ref: str = MILESTONE_ID, role: str = "
 
 
 def _reviewer_handoff() -> TaskHandoff:
+    plan_digest, _ = _plan_digest()
     return TaskHandoff(
         work_role="reviewer",
         task_kind="m3w3-review",
@@ -181,9 +184,58 @@ def _reviewer_handoff() -> TaskHandoff:
         bounded_scope="m3w3 bounded review scope",
         validation_expectations=("review binding validation",),
         semantic_stop_expectations=("review semantic stop",),
-        work_item_ref=SemanticReference(ref="M3/RV1"),
+        project_ref=SemanticReference(ref=PROJECT_ID),
+        plan_ref=SemanticReference(ref=PLAN_AUTHORITY, digest=plan_digest),
+        work_item_ref=SemanticReference(ref="RV1"),
         milestone_ref=SemanticReference(ref=MILESTONE_ID),
     )
+
+
+def _durable_reviewer_dispatch(world: "World", view: MilestonePlanView) -> Callable[[], dict[str, Any]]:
+    sandbox = WorktreeSandboxBoundary(
+        workspace_id="m3w3-test-workspace",
+        workspace_root=str(world.root.resolve()),
+        project_id=PROJECT_ID,
+        project_root=str(world.root.resolve()),
+        worktree_id="m3w3-test-worktree",
+        worktree_root=str(world.root.resolve()),
+        registry_fingerprint="1" * 64,
+        candidate_fingerprint="2" * 64,
+    )
+
+    def _resolve() -> dict[str, Any]:
+        handoff = _reviewer_handoff()
+        ref = handoff_write(
+            mode="work_item",
+            semantic={
+                "work_role": handoff.work_role.value,
+                "task_kind": handoff.task_kind,
+                "objective": handoff.objective,
+                "bounded_scope": handoff.bounded_scope,
+                "validation_expectations": list(handoff.validation_expectations),
+                "semantic_stop_expectations": list(handoff.semantic_stop_expectations),
+                "milestone_ref": view.milestone_id,
+                "work_item_ref": "RV1",
+                "project_ref": PROJECT_ID,
+            },
+            caller_role="task-main",
+            sandbox=sandbox,
+            plan_ref=view.plan_authority,
+            milestone_id=view.milestone_id,
+            work_item_id="RV1",
+            target_role="reviewer",
+            task_id=f"{PROJECT_ID}:{view.milestone_id}:RV1:attempt-1",
+            provenance={"plan_digest": view.plan_digest},
+        )
+        return {
+            "handoff": handoff,
+            "handoff_ref": ref.ref,
+            "handoff_digest": ref.digest,
+            "canonical_task_id": f"{PROJECT_ID}:{view.milestone_id}:RV1:attempt-1",
+            "handoff_sandbox": sandbox,
+        }
+
+    return _resolve
 
 
 def _resolver(work_items: list[str]) -> Callable[[str], TaskHandoff]:
@@ -275,6 +327,7 @@ class M3W3FakeAdapter(ExecutorAdapter):
 
 class World:
     def __init__(self, tmp_path: Path, *, name: str = "default", limits: dict[str, int] | None = None, use_completion: bool = False):
+        self.root = tmp_path
         self.coord_path = tmp_path / f"{name}.coordinator.json"
         self.exec_path = tmp_path / f"{name}.execution.json"
         self.coord_store = FileBackedTaskMainCoordinatorStore(self.coord_path)
@@ -435,7 +488,7 @@ class TestDeterministicRunner:
             view = _view(["W1"])
             handle = w.activate(view)
             # Dispatch via runner
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             out_dispatch = runner.advance_once()
             assert out_dispatch.disposition == DISPOSITION_DISPATCHED_WORK
             cid = w.exec_store.get(_cid("W1")) and _cid("W1")
@@ -528,7 +581,7 @@ class TestDeterministicRunner:
         try:
             view = _view(["W1"])
             handle = w.activate(view)
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             runner.advance_once()
             _run_to_terminal(w, view, ["W1"], "W1")
             out_recon = runner.advance_once()
@@ -567,7 +620,7 @@ class TestDeterministicRunner:
         try:
             view = _view(["W1"])
             handle = w.activate(view)
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             runner.advance_once()
             _run_to_terminal(w, view, ["W1"], "W1")
             runner.advance_once()  # reconcile -> integrated review
@@ -598,7 +651,7 @@ class TestDeterministicRunner:
         try:
             view = _view(["W1"])
             handle = w.activate(view)
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             runner.advance_once()
             _run_to_terminal(w, view, ["W1"], "W1")
             runner.advance_once()
@@ -629,7 +682,7 @@ class TestDeterministicRunner:
         try:
             view = _view(["W1"])
             handle = w.activate(view)
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             runner.advance_once()
             _run_to_terminal(w, view, ["W1"], "W1")
             runner.advance_once()
@@ -669,7 +722,7 @@ class TestDeterministicRunner:
         try:
             view = _view(["W1"])
             handle = w.activate(view)
-            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=handle.coordinator_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w.coord_store, execution_store=w.exec_store, execution_dispatcher=w.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w, view), coordinator_id=handle.coordinator_id)
             runner.advance_once()
             _run_to_terminal(w, view, ["W1"], "W1")
             runner.advance_once()
@@ -875,7 +928,7 @@ class TestRestartC1C8:
             view = _view(["W1"])
             h = w1.activate(view)
             coord_id = h.coordinator_id
-            runner = TaskMainMilestoneRunner(coordinator_store=w1.coord_store, execution_store=w1.exec_store, execution_dispatcher=w1.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=coord_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w1.coord_store, execution_store=w1.exec_store, execution_dispatcher=w1.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w1, view), coordinator_id=coord_id)
             runner.advance_once()
             _run_to_terminal(w1, view, ["W1"], "W1")
             runner.advance_once()
@@ -918,7 +971,7 @@ class TestRestartC1C8:
             view = _view(["W1"])
             h = w1.activate(view)
             coord_id = h.coordinator_id
-            runner = TaskMainMilestoneRunner(coordinator_store=w1.coord_store, execution_store=w1.exec_store, execution_dispatcher=w1.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), coordinator_id=coord_id)
+            runner = TaskMainMilestoneRunner(coordinator_store=w1.coord_store, execution_store=w1.exec_store, execution_dispatcher=w1.dispatcher, live_plan_view=view, handoff_resolver=_resolver(["W1"]), governed_evidence_resolver=_governed_resolver({"W1": _evidence("W1")}), reviewer_dispatch_resolver=_durable_reviewer_dispatch(w1, view), coordinator_id=coord_id)
             runner.advance_once()
             _run_to_terminal(w1, view, ["W1"], "W1")
             runner.advance_once()
@@ -1192,4 +1245,3 @@ class TestAutonomy:
             assert state is not None
         finally:
             w.close()
-

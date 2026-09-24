@@ -23,6 +23,7 @@ from aota_forge.composition.worker_vertical_slice import build_worker_binding
 from aota_forge.core_ingress import CanonicalDispatchBinding, dispatch_tool_operation
 from aota_forge.mcp_transport import _to_canonical_binding
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.observation_correlation import clear_runtime_observation_scope
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane import runtime_observation as ro
 
@@ -54,9 +55,11 @@ def _binding(root: Path, *, role: AgentWorkRole = AgentWorkRole.CODER) -> Canoni
 @pytest.fixture(autouse=True)
 def _clean_sink():
     ro.clear_runtime_observation_sink()
+    clear_runtime_observation_scope()
     ro.reset_runtime_observation_health()
     yield
     ro.clear_runtime_observation_sink()
+    clear_runtime_observation_scope()
     ro.reset_runtime_observation_health()
 
 

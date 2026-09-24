@@ -189,16 +189,16 @@ MAX_GIT_COMMIT_MESSAGE_BYTES: int = 2048
 MAX_GIT_SHA_LENGTH: int = 64
 
 # AF runtime state that is mechanically never part of a governed checkpoint
-# commit. Rule: any UNTRACKED path under .aota/ is runtime bookkeeping
-# (execution store, handoffs, durable payloads, envelopes, observation
-# evidence, bootstraps, stray env-expansion artifacts) EXCEPT the canonical
-# governance source tree .aota/contracts/. Tracked files (including
-# .aota/project.yaml or any tracked .aota/contracts/ file) are unaffected:
-# they enter through normal tracked-change staging, never this exclusion.
-# Control-plane constant; the model cannot widen or narrow it.
+# commit. Only exact owner-produced paths are excluded. Unknown .aota paths
+# remain source changes and are staged; tracked files are always handled by
+# normal tracked-change staging.
 GIT_CHECKPOINT_UNTRACKED_ALLOW_PREFIXES: tuple[str, ...] = (".aota/contracts/", ".aota/project.yaml")
 GIT_CHECKPOINT_RUNTIME_EXCLUSIONS: frozenset[str] = frozenset(
     {
+        ".aota/governance.sqlite3",
+        ".aota/governance.sqlite3-wal",
+        ".aota/governance.sqlite3-shm",
+        ".aota/governance-journal.json",
         ".aota/execution.json",
         ".aota/coordinator.json",
         ".aota/task-main-bootstrap.json",
@@ -209,6 +209,10 @@ GIT_CHECKPOINT_RUNTIME_EXCLUSIONS: frozenset[str] = frozenset(
         ".aota/task_return_receipts/",
     }
 )
+_OBSERVATION_EVIDENCE_FILE_RE = re.compile(
+    r"^\.aota/observation-evidence(?:-[A-Za-z0-9._-]{1,64})?\.jsonl$"
+)
+_HANDOFF_ARTIFACT_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
 
 # ---------------------------------------------------------------------------
 # Descriptors — canonical YAML projection (thin compatibility reference)
@@ -494,8 +498,40 @@ def _is_runtime_excluded_untracked(path: str) -> bool:
     for keep in GIT_CHECKPOINT_UNTRACKED_ALLOW_PREFIXES:
         if normalized.startswith(keep):
             return False
-    # every other untracked .aota path is AF runtime bookkeeping
-    return True
+    if normalized in GIT_CHECKPOINT_RUNTIME_EXCLUSIONS:
+        return True
+    if _OBSERVATION_EVIDENCE_FILE_RE.fullmatch(normalized) is not None:
+        return True
+    if normalized in {
+        ".aota/handoffs",
+        ".aota/handoffs/",
+        ".aota/durable_payloads",
+        ".aota/durable_payloads/",
+        ".aota/pre-resolved-bindings",
+        ".aota/pre-resolved-bindings/",
+        ".aota/task_return_receipts",
+        ".aota/task_return_receipts/",
+    }:
+        return True
+    if any(part in ("", ".", "..") for part in normalized.split("/")):
+        return False
+    runtime_prefix = next(
+        (prefix for prefix in (".aota/handoffs/", ".aota/durable_payloads/", ".aota/pre-resolved-bindings/", ".aota/task_return_receipts/") if normalized.startswith(prefix)),
+        None,
+    )
+    if runtime_prefix is None:
+        return False
+    filename = normalized[len(runtime_prefix) :]
+    if "/" in filename:
+        return False
+    if runtime_prefix in (".aota/handoffs/", ".aota/task_return_receipts/"):
+        return _HANDOFF_ARTIFACT_FILE_RE.fullmatch(filename) is not None
+    if runtime_prefix == ".aota/durable_payloads/":
+        return re.fullmatch(r"[0-9a-f]{64}\.bin", filename) is not None
+    return re.fullmatch(
+        r"(?:worker-[A-Za-z0-9._-]{1,64}-[0-9a-f]{8}|task-main-[0-9a-f]{8}-[0-9a-f]{8})\.json",
+        filename,
+    ) is not None
 
 
 def _validate_max_entries(value: object) -> int:

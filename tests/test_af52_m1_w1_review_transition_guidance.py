@@ -40,6 +40,7 @@ from aota_forge.runtime.trusted_runtime_binding import (
 )
 from aota_forge.work_plane.af_roles import curated_eager_guidance
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.handoff_store import handoff_write
 from aota_forge.work_plane.role_bootstrap import BOOTSTRAP_EAGER_MATERIALIZED_MAX_CHARS
 from aota_forge.work_plane.tool_surface import create_role_tool_surface
 from tests.test_af51_m1_w1_normal_path_progression_binding import (
@@ -72,9 +73,43 @@ def _reviewer_handoff() -> TaskHandoff:
         bounded_scope="bounded review scope",
         validation_expectations=("integrated review validation",),
         semantic_stop_expectations=("stop if review scope unclear",),
-        work_item_ref=SemanticReference(ref="M1/RV1"),
+        work_item_ref=SemanticReference(ref="RV1"),
         milestone_ref=SemanticReference(ref="M1"),
     )
+
+
+def _durable_reviewer_dispatch(env) -> dict[str, object]:
+    handoff = _reviewer_handoff()
+    reviewer_task_id = f"{PROJECT_ID}:{env.live.milestone_id}:RV1:attempt-1"
+    ref = handoff_write(
+        mode="work_item",
+        semantic={
+            "work_role": handoff.work_role.value,
+            "task_kind": handoff.task_kind,
+            "objective": handoff.objective,
+            "bounded_scope": handoff.bounded_scope,
+            "validation_expectations": list(handoff.validation_expectations),
+            "semantic_stop_expectations": list(handoff.semantic_stop_expectations),
+            "milestone_ref": env.live.milestone_id,
+            "work_item_ref": "RV1",
+            "project_ref": PROJECT_ID,
+        },
+        caller_role="task-main",
+        sandbox=env.sandbox,
+        plan_ref=env.live.plan_authority,
+        milestone_id=env.live.milestone_id,
+        work_item_id="RV1",
+        target_role="reviewer",
+        task_id=reviewer_task_id,
+        provenance={"plan_digest": env.live.plan_digest},
+    )
+    return {
+        "handoff": handoff,
+        "handoff_ref": ref.ref,
+        "handoff_digest": ref.digest,
+        "canonical_task_id": reviewer_task_id,
+        "handoff_sandbox": env.sandbox,
+    }
 
 
 def _task_main_context(live, sandbox, service, coordinator_id):
@@ -277,7 +312,11 @@ class TestReviewTransitionReachability:
         assert not any(":RV" in pkg.canonical_task_id for pkg in env.recording.packages)
 
         # Phase 2: same live session/state, runtime resolves the reviewer handoff.
-        ctx2 = dataclasses.replace(ctx1, reviewer_handoff_resolver=_reviewer_handoff)
+        ctx2 = dataclasses.replace(
+            ctx1,
+            reviewer_handoff_resolver=_reviewer_handoff,
+            reviewer_dispatch_resolver=lambda: _durable_reviewer_dispatch(env),
+        )
         adapter2 = _SharedAotaMcpAdapter(_mcp_binding(env, ctx2))
         second = adapter2.invoke("task_main.advance_once", {})
         assert second["ok"] is True, second

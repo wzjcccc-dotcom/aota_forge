@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ import pytest
 from aota_forge.adapters.plan_authority.local_governance import (
     local_plan_authority_reference,
 )
-from aota_forge.runtime.task_main.coordinator import MilestonePlanView
+from aota_forge.runtime.task_main.coordinator import MilestonePlanView, PlanDriftError, TaskMainCoordinatorError
 from aota_forge.runtime.task_main.review_adoption import (
     AcceptedFrontierAuthorization,
     ReviewAdoptionError,
@@ -30,6 +31,8 @@ from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 from aota_forge.work_plane.result_card import WorkerResultCard, project_worker_result_card
 from aota_forge.work_plane.steward_finalizer import GitPort
 from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.handoff_store import handoff_write
+from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.runtime.task_main.reconciliation import GovernedReviewEvidence, ReconciliationError
 from tests.test_m3_w3_real_governed_autonomous_slice import World
 from aota_forge.runtime.task_main import review_adoption as review_adoption_module
@@ -95,9 +98,58 @@ def _reviewer_handoff() -> TaskHandoff:
         bounded_scope="review-only adopted frontier",
         validation_expectations=("validate adopted frontier",),
         semantic_stop_expectations=("stop on review ambiguity",),
-        work_item_ref=SemanticReference(ref="M1/RV1"),
+        project_ref=SemanticReference(ref=PROJECT_ID),
+        plan_ref=SemanticReference(ref=PLAN_AUTHORITY, digest=PLAN_DIGEST),
+        work_item_ref=SemanticReference(ref="RV1"),
         milestone_ref=SemanticReference(ref=MILESTONE_ID),
     )
+
+
+def _reviewer_sandbox(root: Path) -> WorktreeSandboxBoundary:
+    return WorktreeSandboxBoundary(
+        workspace_id="test-workspace",
+        workspace_root=str(root.resolve()),
+        project_id=PROJECT_ID,
+        project_root=str(root.resolve()),
+        worktree_id="r3b-test-worktree",
+        worktree_root=str(root.resolve()),
+        registry_fingerprint="1" * 64,
+        candidate_fingerprint="2" * 64,
+    )
+
+
+def _durable_reviewer_handoff(root: Path) -> dict[str, object]:
+    handoff = _reviewer_handoff()
+    ref = handoff_write(
+        mode="work_item",
+        semantic={
+            "work_role": handoff.work_role.value,
+            "task_kind": handoff.task_kind,
+            "objective": handoff.objective,
+            "bounded_scope": handoff.bounded_scope,
+            "validation_expectations": list(handoff.validation_expectations),
+            "semantic_stop_expectations": list(handoff.semantic_stop_expectations),
+            "milestone_ref": MILESTONE_ID,
+            "work_item_ref": "RV1",
+            "project_ref": PROJECT_ID,
+        },
+        caller_role="task-main",
+        sandbox=_reviewer_sandbox(root),
+        plan_ref=PLAN_AUTHORITY,
+        milestone_id=MILESTONE_ID,
+        work_item_id="RV1",
+        target_role="reviewer",
+        task_id=REVIEWER_TASK_ID,
+        provenance={"plan_digest": PLAN_DIGEST, "frontier_ref": FRONTIER},
+    )
+    return {
+        "handoff": handoff,
+        "handoff_ref": ref.ref,
+        "handoff_digest": ref.digest,
+        "canonical_task_id": REVIEWER_TASK_ID,
+        "frontier_ref": FRONTIER,
+        "handoff_sandbox": _reviewer_sandbox(root),
+    }
 
 
 def _clean_observation(*, dirty: bool = False, head: str = FRONTIER) -> dict[str, object]:
@@ -119,11 +171,18 @@ def _patch_git_observation(monkeypatch: pytest.MonkeyPatch, *, dirty: bool = Fal
 def _runner(
     world: World,
     view: MilestonePlanView,
-    auth: AcceptedFrontierAuthorization,
+    auth: AcceptedFrontierAuthorization | None,
     root: Path,
     *,
     reviewer_handoff_resolver=_reviewer_handoff,
+    activate: bool = True,
 ) -> TaskMainMilestoneRunner:
+    durable_resolver = (
+        (lambda: _durable_reviewer_handoff(root))
+        if reviewer_handoff_resolver is not None
+        else None
+    )
+    coordinator_id = world.activate(view).coordinator_id if activate else f"{PROJECT_ID}:{MILESTONE_ID}"
     return TaskMainMilestoneRunner(
         coordinator_store=world.coord_store,
         execution_store=world.exec_store,
@@ -133,7 +192,8 @@ def _runner(
             AssertionError(f"W handoff resolver must not run: {work_item_id}")
         ),
         reviewer_handoff_resolver=reviewer_handoff_resolver,
-        coordinator_id=world.activate(view).coordinator_id,
+        reviewer_dispatch_resolver=durable_resolver,
+        coordinator_id=coordinator_id,
         accepted_frontier_authorization=auth,
         review_adoption_worktree_root=root,
         review_adoption_git=FakeGit(),
@@ -241,6 +301,81 @@ def test_untracked_runtime_database_is_excluded_but_source_changes_are_not(
         world.close()
 
 
+@pytest.mark.parametrize(
+    "runtime_path",
+    (
+        ".aota/governance-journal.json",
+        ".aota/coordinator.json",
+        ".aota/execution.json",
+        ".aota/task-main-bootstrap.json",
+        ".aota/task-main-thin-bootstrap.json",
+        ".aota/observation-evidence.jsonl",
+        ".aota/observation-evidence-w4A.jsonl",
+        ".aota/handoffs/",
+        ".aota/durable_payloads/",
+        ".aota/pre-resolved-bindings/",
+        ".aota/task_return_receipts/",
+        ".aota/handoffs/" + "a" * 64 + ".json",
+        ".aota/durable_payloads/" + "b" * 64 + ".bin",
+        ".aota/pre-resolved-bindings/worker-r3b-review-deadbeef.json",
+        ".aota/pre-resolved-bindings/task-main-12345678-abcdef12.json",
+        ".aota/task_return_receipts/" + "c" * 64 + ".json",
+    ),
+)
+def test_exact_runtime_owner_paths_are_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime_path: str
+) -> None:
+    _patch_git_observation(monkeypatch)
+    monkeypatch.setattr(
+        review_adoption_module,
+        "inspect_git",
+        lambda _root, boundary=None: {
+            "available": True,
+            "is_dirty": True,
+            "head_sha": FRONTIER,
+            "staged": {"paths": [], "truncated": False},
+            "unstaged": {"paths": [], "truncated": False},
+            "untracked": {"paths": [runtime_path], "truncated": False},
+        },
+    )
+    world = World(tmp_path, name=f"r3b-runtime-{runtime_path.rsplit('/', 1)[-1]}")
+    try:
+        view = _view()
+        outcome = _runner(world, view, _authorization(world, tmp_path), tmp_path).advance_once()
+        assert outcome.disposition == DISPOSITION_DISPATCHED_REVIEW
+    finally:
+        world.close()
+
+
+def test_unknown_aota_path_is_source_dirty_and_never_adopted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        review_adoption_module,
+        "inspect_git",
+        lambda _root, boundary=None: {
+            "available": True,
+            "is_dirty": True,
+            "head_sha": FRONTIER,
+            "staged": {"paths": [], "truncated": False},
+            "unstaged": {"paths": [], "truncated": False},
+            "untracked": {"paths": [".aota/arbitrary.json"], "truncated": False},
+        },
+    )
+    world = World(tmp_path, name="r3b-unknown-runtime")
+    try:
+        view = _view()
+        handle = world.activate(view)
+        before = world.coord_store.get(handle.coordinator_id)
+        assert before is not None
+        with pytest.raises(ReviewAdoptionError, match="dirty"):
+            _runner(world, view, _authorization(world, tmp_path), tmp_path).advance_once()
+        assert world.coord_store.get(handle.coordinator_id) == before
+        assert world.exec_store.list_all() == []
+    finally:
+        world.close()
+
+
 def test_truncated_git_status_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -328,7 +463,7 @@ def test_adoption_rehydrates_after_restart_without_w_redispatch(
         assert runner.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
 
         restarted = world.reopen()
-        recovered = _runner(restarted, view, auth, tmp_path)
+        recovered = _runner(restarted, view, None, tmp_path)
         outcome = recovered.advance_once()
 
         assert outcome.disposition == DISPOSITION_WAITING_FOR_WORKERS
@@ -339,6 +474,105 @@ def test_adoption_rehydrates_after_restart_without_w_redispatch(
             restarted.close()
         else:
             world.close()
+
+
+@pytest.mark.parametrize(
+    "tampered_field",
+    ("authorization_ref", "plan_digest", "proof_digest", "frontier_ref"),
+)
+def test_restart_rejects_tampered_durable_review_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tampered_field: str,
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name=f"r3b-tamper-{tampered_field}")
+    try:
+        view = _view()
+        runner = _runner(world, view, _authorization(world, tmp_path), tmp_path)
+        assert runner.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+        coordinator_id = runner.coordinator_id
+        world.close()
+
+        persisted = json.loads(world.coord_path.read_text(encoding="utf-8"))
+        record = persisted[coordinator_id]
+        if tampered_field == "authorization_ref":
+            record["review_gates"]["ref"] = "tampered-authorization-ref"
+        elif tampered_field == "plan_digest":
+            record["plan_digest"] = "e" * 64
+        elif tampered_field == "proof_digest":
+            record["review_gates"]["digest"] = "0" * 64
+        else:
+            record["frontier_ref"]["ref"] = "f" * 40
+        world.coord_path.write_text(json.dumps(persisted), encoding="utf-8")
+
+        restarted = World(tmp_path, name=f"r3b-tamper-{tampered_field}")
+        try:
+            recovered = _runner(restarted, view, None, tmp_path, activate=False)
+            with pytest.raises((ReviewAdoptionError, PlanDriftError)):
+                recovered.advance_once()
+            assert len(restarted.exec_store.list_all()) == 1
+        finally:
+            restarted.close()
+    finally:
+        if world.coord_store is not None:
+            try:
+                world.close()
+            except Exception:
+                pass
+
+
+def test_reviewer_handoff_only_resolver_cannot_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-no-in-memory-review")
+    try:
+        view = _view()
+        runner = _runner(world, view, _authorization(world, tmp_path), tmp_path)
+        runner._reviewer_dispatch_resolver = None
+        with pytest.raises(TaskMainCoordinatorError, match="reviewer_handoff_resolver-only"):
+            runner.advance_once()
+        assert world.exec_store.list_all() == []
+    finally:
+        world.close()
+
+
+@pytest.mark.parametrize("missing_field", ("handoff_ref", "handoff_digest"))
+def test_reviewer_durable_binding_requires_ref_and_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_field: str
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name=f"r3b-missing-{missing_field}")
+    try:
+        view = _view()
+        runner = _runner(world, view, _authorization(world, tmp_path), tmp_path)
+        record = _durable_reviewer_handoff(tmp_path)
+        record.pop(missing_field)
+        runner._reviewer_dispatch_resolver = lambda: record
+        with pytest.raises(TaskMainCoordinatorError, match="durable handoff"):
+            runner.advance_once()
+        assert world.exec_store.list_all() == []
+    finally:
+        world.close()
+
+
+def test_reviewer_durable_binding_requires_adopted_frontier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-wrong-review-frontier")
+    try:
+        view = _view()
+        runner = _runner(world, view, _authorization(world, tmp_path), tmp_path)
+        record = _durable_reviewer_handoff(tmp_path)
+        record["frontier_ref"] = "f" * 40
+        runner._reviewer_dispatch_resolver = lambda: record
+        with pytest.raises(TaskMainCoordinatorError, match="frontier"):
+            runner.advance_once()
+        assert world.exec_store.list_all() == []
+    finally:
+        world.close()
 
 
 def test_dirty_frontier_fails_closed_without_state_mutation(

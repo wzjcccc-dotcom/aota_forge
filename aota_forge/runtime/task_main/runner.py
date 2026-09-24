@@ -86,6 +86,7 @@ from aota_forge.runtime.task_main.review_adoption import (
 )
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
+from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import GitPort
 
 # ---------------------------------------------------------------------------
@@ -976,9 +977,13 @@ def advance_milestone_once(
     if (
         review_only_adoption is not None
         and _is_integrated_review_required(state)
-        and reviewer_handoff_resolver is None
         and reviewer_dispatch_resolver is None
     ):
+        if reviewer_handoff_resolver is not None:
+            raise TaskMainCoordinatorError(
+                "reviewer_handoff_resolver-only dispatch is forbidden; "
+                "the trusted runtime must provide a durable reviewer handoff"
+            )
         return RunnerOutcome(
             disposition=DISPOSITION_INTEGRATED_REVIEW_REQUIRED,
             coordinator_id=coordinator_id,
@@ -991,6 +996,11 @@ def advance_milestone_once(
     if _is_integrated_review_required(state) and (
         reviewer_handoff_resolver is not None or reviewer_dispatch_resolver is not None
     ):
+        if reviewer_dispatch_resolver is None:
+            raise TaskMainCoordinatorError(
+                "reviewer_handoff_resolver-only dispatch is forbidden; "
+                "the trusted runtime must provide a durable reviewer handoff"
+            )
         if _origin_unbound:
             return RunnerOutcome(
                 disposition=DISPOSITION_BLOCKED,
@@ -1027,12 +1037,9 @@ def advance_milestone_once(
                 reasons=("integrated reviewer dispatched; awaiting completion",),
             )
         # Dispatch reviewer via dispatcher (one bounded dispatch)
-        # AF #57 M3/RV1 lifecycle repair: when the trusted runtime provides the
-        # durable materializer, it writes the reviewer work-item handoff BEFORE
-        # this dispatch and returns the exact durable ref/digest; the dispatch
-        # below then carries a resolvable durable handoff identity. The legacy
-        # in-memory reviewer handoff resolver is preserved for callers that do
-        # not own a durable store (existing bounded tests).
+        # AF #57 M3/RV1 lifecycle repair: the trusted runtime writes the
+        # reviewer work-item handoff BEFORE this dispatch and returns the exact
+        # durable ref/digest. There is no in-memory reviewer fallback.
         from aota_forge.work_plane.task_facade import (
             propagate_trusted_work_handoff,
         )
@@ -1056,23 +1063,28 @@ def advance_milestone_once(
                     "reviewer_dispatch_resolver returned no durable handoff ref; "
                     "refusing a reviewer dispatch with an unresolvable handoff digest"
                 )
+            if not durable_ref.startswith("handoff://"):
+                raise TaskMainCoordinatorError(
+                    "reviewer_dispatch_resolver returned a non-durable handoff ref"
+                )
             if not isinstance(durable_digest, str) or not durable_digest.strip():
                 raise TaskMainCoordinatorError(
                     "reviewer_dispatch_resolver returned no durable handoff digest; "
                     "refusing a reviewer dispatch with an unresolvable handoff digest"
                 )
+            durable_digest = durable_digest.strip().lower()
+            if len(durable_digest) != 64 or any(c not in "0123456789abcdef" for c in durable_digest):
+                raise TaskMainCoordinatorError(
+                    "reviewer_dispatch_resolver returned an invalid durable handoff digest"
+                )
             if not isinstance(bound_task_id, str) or not bound_task_id.strip():
                 raise TaskMainCoordinatorError(
                     "reviewer_dispatch_resolver returned no canonical reviewer task id"
                 )
-        else:
-            if reviewer_handoff_resolver is None:
-                raise TaskMainCoordinatorError(
-                    "trusted reviewer handoff resolver is unavailable; refusing reviewer dispatch"
-                )
-            handoff = reviewer_handoff_resolver()
-            if not isinstance(handoff, TaskHandoff):
-                raise TypeError("reviewer_handoff_resolver must return TaskHandoff")
+        else:  # pragma: no cover - guarded above
+            raise TaskMainCoordinatorError(
+                "trusted durable reviewer handoff resolver is unavailable; refusing reviewer dispatch"
+            )
         # Resolve reviewer canonical id deterministically or via resolver param
         if review_only_adoption is not None:
             # Adoption derives identity from its durable marker, never from a
@@ -1099,6 +1111,54 @@ def advance_milestone_once(
                 f"{durable_review_handoff.get('canonical_task_id')!r} contradicts the resolved "
                 f"canonical reviewer task {reviewer_cid!r}; refusing dispatch"
             )
+        sandbox = durable_review_handoff.get("handoff_sandbox")
+        from aota_forge.work_plane.task_facade import (
+            load_trusted_work_item_task_handoff,
+        )
+        from aota_forge.work_plane.handoff_store import handoff_open
+        from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
+
+        if not isinstance(sandbox, WorktreeSandboxBoundary):
+            raise TaskMainCoordinatorError(
+                "reviewer durable dispatch has no trusted handoff sandbox"
+            )
+        try:
+            opened = handoff_open(durable_ref, "full", sandbox=sandbox)
+            if opened.get("mode") != "work_item" or opened.get("digest") != durable_digest:
+                raise ValueError("durable reviewer handoff mode/digest mismatch")
+            envelope = opened.get("envelope")
+            provenance = envelope.get("provenance") if isinstance(envelope, Mapping) else None
+            if not isinstance(envelope, Mapping) or not isinstance(provenance, Mapping):
+                raise ValueError("durable reviewer handoff lacks control provenance")
+            if (
+                envelope.get("task_id") != reviewer_cid
+                or envelope.get("target_role") != AgentWorkRole.REVIEWER.value
+                or envelope.get("plan_ref") != state.plan_authority
+                or envelope.get("milestone_id") != state.milestone_id
+                or provenance.get("plan_digest") != state.plan_digest
+            ):
+                raise ValueError("durable reviewer handoff identity/provenance mismatch")
+            if review_only_adoption is not None:
+                durable_frontier_ref = durable_review_handoff.get("frontier_ref")
+                if durable_frontier_ref != review_only_adoption.frontier_ref:
+                    raise ValueError("durable reviewer handoff frontier binding mismatch")
+                if provenance.get("frontier_ref") != review_only_adoption.frontier_ref:
+                    raise ValueError("durable reviewer handoff provenance frontier mismatch")
+            durable_handoff = load_trusted_work_item_task_handoff(
+                opened=opened,
+                sandbox=sandbox,
+                require_explicit_work_role=True,
+                require_explicit_work_identity=True,
+            )
+            if durable_handoff.work_role != AgentWorkRole.REVIEWER:
+                raise ValueError("durable reviewer handoff role is not reviewer")
+            # Dispatch only the handoff reconstructed from the durable artifact;
+            # the resolver's in-memory object is never authoritative.
+            handoff = durable_handoff
+        except Exception as exc:
+            raise TaskMainCoordinatorError(
+                f"durable reviewer handoff reopen failed: {exc}"
+            ) from exc
         if review_only_adoption is not None:
             # Revalidate source after materialization and bind all reviewer
             # identity facts before the physical dispatch call.

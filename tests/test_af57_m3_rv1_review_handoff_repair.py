@@ -213,6 +213,30 @@ class TestReviewerDispatchMaterialization:
         assert evidence_opened["digest"] == result_ref.digest
         assert evidence_opened["mode"] == "result"
 
+    def test_materializer_reopens_existing_binding_after_pre_execution_restart(
+        self, tmp_path: Path
+    ) -> None:
+        live, _ = _live()
+        env = _production_env(tmp_path, live)
+        first = _materialize(env, live=live)
+        state = SimpleNamespace(
+            integrated_review={
+                "reviewer_binding": {
+                    "canonical_task_id": REVIEWER_CID,
+                    "handoff_ref": first["handoff_ref"],
+                    "handoff_digest": first["handoff_digest"],
+                }
+            },
+            frontier_ref=None,
+        )
+
+        reopened = _materialize(env, state=state, live=live)
+
+        assert reopened["handoff_ref"] == first["handoff_ref"]
+        assert reopened["handoff_digest"] == first["handoff_digest"]
+        assert reopened["handoff"].objective == first["handoff"].objective
+        assert len(list((env.root / ".aota" / "handoffs").glob("*.json"))) == 1
+
     def test_reviewer_env_binds_durable_ref_and_bootstrap_exposes_it(
         self, tmp_path: Path
     ) -> None:

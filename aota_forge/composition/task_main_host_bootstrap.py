@@ -854,7 +854,77 @@ def _materialize_reviewer_work_handoff(
     import dataclasses
 
     from aota_forge.runtime.task_main.coordinator import compute_work_source_digest
-    from aota_forge.work_plane.handoff_store import HANDOFF_CONTROL_FIELDS, handoff_write
+    from aota_forge.work_plane.handoff_store import (
+        HANDOFF_CONTROL_FIELDS,
+        handoff_open,
+        handoff_write,
+    )
+    from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+
+    existing_binding = (
+        state.integrated_review.get("reviewer_binding")
+        if isinstance(getattr(state, "integrated_review", None), Mapping)
+        else None
+    )
+    if isinstance(existing_binding, Mapping):
+        existing_ref = existing_binding.get("handoff_ref")
+        existing_digest = existing_binding.get("handoff_digest")
+        if (
+            isinstance(existing_ref, str)
+            and existing_ref.startswith("handoff://")
+            and isinstance(existing_digest, str)
+            and existing_digest.strip()
+        ):
+            if existing_binding.get("canonical_task_id") not in (None, reviewer_task_id):
+                raise TrustedBindingError(
+                    "existing reviewer handoff binding has a different canonical task id"
+                )
+            try:
+                opened = handoff_open(existing_ref, "full", sandbox=sandbox)
+                envelope = opened.get("envelope")
+                provenance = envelope.get("provenance") if isinstance(envelope, Mapping) else None
+                expected_frontier = (
+                    state.frontier_ref.get("ref")
+                    if isinstance(getattr(state, "frontier_ref", None), Mapping)
+                    else None
+                )
+                if (
+                    opened.get("mode") != "work_item"
+                    or opened.get("digest") != existing_digest.strip().lower()
+                    or not isinstance(envelope, Mapping)
+                    or envelope.get("task_id") != reviewer_task_id
+                    or envelope.get("target_role") != "reviewer"
+                    or envelope.get("plan_ref") != live_view.plan_authority
+                    or envelope.get("milestone_id") != live_view.milestone_id
+                    or not isinstance(provenance, Mapping)
+                    or provenance.get("plan_digest") != live_view.plan_digest
+                    or (
+                        expected_frontier is not None
+                        and provenance.get("frontier_ref") != expected_frontier
+                    )
+                ):
+                    raise ValueError("existing reviewer handoff binding does not match trusted state")
+                existing_handoff = load_trusted_work_item_task_handoff(
+                    opened=opened,
+                    sandbox=sandbox,
+                    require_explicit_work_role=True,
+                    require_explicit_work_identity=True,
+                )
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"existing reviewer handoff reopen failed: {exc}"
+                ) from exc
+            record: dict[str, Any] = {
+                "handoff": existing_handoff,
+                "handoff_ref": existing_ref,
+                "handoff_digest": existing_digest.strip().lower(),
+                "canonical_task_id": reviewer_task_id,
+                "dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+                "handoff_sandbox": sandbox,
+            }
+            if isinstance(getattr(state, "frontier_ref", None), Mapping):
+                record["frontier_ref"] = state.frontier_ref.get("ref")
+            return record
 
     evidence_refs = _reviewer_evidence_refs(
         sandbox=sandbox, live_view=live_view, state=state
@@ -909,6 +979,12 @@ def _materialize_reviewer_work_handoff(
     for key in tuple(semantic):
         if key in HANDOFF_CONTROL_FIELDS:
             del semantic[key]
+    handoff_provenance: dict[str, Any] = {
+        "plan_digest": live_view.plan_digest,
+        "review_dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+    }
+    if isinstance(getattr(state, "frontier_ref", None), Mapping):
+        handoff_provenance["frontier_ref"] = state.frontier_ref.get("ref")
     ref = handoff_write(
         mode="work_item",
         semantic=semantic,
@@ -919,18 +995,19 @@ def _materialize_reviewer_work_handoff(
         work_item_id="RV1",
         target_role="reviewer",
         task_id=reviewer_task_id,
-        provenance={
-            "plan_digest": live_view.plan_digest,
-            "review_dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
-        },
+        provenance=handoff_provenance,
     )
-    return {
+    record: dict[str, Any] = {
         "handoff": enriched,
         "handoff_ref": ref.ref,
         "handoff_digest": ref.digest,
         "canonical_task_id": reviewer_task_id,
         "dispatch_mode": REVIEW_DISPATCH_MODE_RUNTIME_RESOLVED,
+        "handoff_sandbox": sandbox,
     }
+    if isinstance(getattr(state, "frontier_ref", None), Mapping):
+        record["frontier_ref"] = state.frontier_ref.get("ref")
+    return record
 
 
 def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Path | None) -> None:
@@ -1850,6 +1927,59 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         return _auto_resolver(wi)
 
     def reviewer_handoff_resolver():
+        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        try:
+            current_state = coord_store.get(current_coordinator_id)
+        except Exception:
+            current_state = None
+        current_marker = getattr(current_state, "integrated_review", None)
+        current_binding = (
+            current_marker.get("reviewer_binding")
+            if isinstance(current_marker, Mapping)
+            else None
+        )
+        current_ref = current_binding.get("handoff_ref") if isinstance(current_binding, Mapping) else None
+        current_digest = current_binding.get("handoff_digest") if isinstance(current_binding, Mapping) else None
+        sandbox = _w2_holder.get("sandbox")
+        if (
+            isinstance(current_ref, str)
+            and current_ref.startswith("handoff://")
+            and isinstance(current_digest, str)
+            and current_digest.strip()
+        ):
+            if sandbox is None:
+                raise TrustedBindingError(
+                    "bound reviewer handoff requires the trusted worktree sandbox"
+                )
+            from aota_forge.work_plane.handoff_store import handoff_open
+            from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+
+            try:
+                opened = handoff_open(current_ref, "full", sandbox=sandbox)
+                envelope = opened.get("envelope")
+                provenance = envelope.get("provenance") if isinstance(envelope, Mapping) else None
+                if (
+                    opened.get("mode") != "work_item"
+                    or opened.get("digest") != current_digest.strip().lower()
+                    or not isinstance(envelope, Mapping)
+                    or envelope.get("task_id") != reviewer_canonical_task_id_resolver()
+                    or envelope.get("target_role") != "reviewer"
+                    or envelope.get("plan_ref") != live_view.plan_authority
+                    or envelope.get("milestone_id") != live_view.milestone_id
+                    or not isinstance(provenance, Mapping)
+                    or provenance.get("plan_digest") != live_view.plan_digest
+                ):
+                    raise ValueError("bound reviewer handoff identity/provenance mismatch")
+                return load_trusted_work_item_task_handoff(
+                    opened=opened,
+                    sandbox=sandbox,
+                    require_explicit_work_role=True,
+                    require_explicit_work_identity=True,
+                )
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"bound reviewer handoff reopen failed: {exc}"
+                ) from exc
         return _reviewer_handoff(
             milestone_ref=live_view.milestone_id,
             project_id=project_id,
