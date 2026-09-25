@@ -42,6 +42,8 @@ from datetime import datetime, timezone
 from enum import Enum, unique
 from typing import Any
 
+from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
+
 COORDINATOR_STATE_SCHEMA_VERSION = 2
 
 COORDINATOR_STATE_IS_PLAN_AUTHORITY = False
@@ -216,6 +218,7 @@ _ALLOWED_STATE_FIELDS: frozenset[str] = frozenset(
         "open_blockers",
         "next_action",
         "work_projections",
+        "context_binding",
         "created_at",
         "updated_at",
         "coordinator_revision",
@@ -866,6 +869,9 @@ class TaskMainCoordinatorState:
     # M1/W1-R1 task-main-owned bounded Work projections (durable, bound to
     # trusted Plan/Milestone/Project/Work identities; no raw transcript).
     work_projections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # M1/W4: optional immutable trusted Project/Plan/session evidence carried
+    # by the existing coordinator record; it is never Plan authority.
+    context_binding: DurableTaskMainContextBinding | None = None
     created_at: str = ""
     updated_at: str = ""
     coordinator_revision: int = 1
@@ -970,6 +976,12 @@ class TaskMainCoordinatorState:
             "work_projections",
             _normalize_work_projections(self.work_projections, canonical_items),
         )
+        if self.context_binding is not None and not isinstance(
+            self.context_binding, DurableTaskMainContextBinding
+        ):
+            raise TypeError(
+                "context_binding must be DurableTaskMainContextBinding or None"
+            )
 
         for wi in self.bindings:
             if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
@@ -1108,6 +1120,9 @@ class TaskMainCoordinatorState:
             "open_blockers": list(self.open_blockers),
             "next_action": self.next_action,
             "work_projections": {k: dict(v) for k, v in self.work_projections.items()},
+            "context_binding": (
+                self.context_binding.to_dict() if self.context_binding is not None else None
+            ),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "coordinator_revision": self.coordinator_revision,
@@ -1166,6 +1181,11 @@ class TaskMainCoordinatorState:
             open_blockers=tuple(data.get("open_blockers", ())),
             next_action=data.get("next_action"),
             work_projections=dict(data.get("work_projections", {})),
+            context_binding=(
+                DurableTaskMainContextBinding.from_dict(data["context_binding"])
+                if data.get("context_binding") is not None
+                else None
+            ),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             coordinator_revision=data.get("coordinator_revision", 1),
@@ -1189,6 +1209,7 @@ __all__ = [
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "COORDINATOR_STATE_SCHEMA_VERSION",
     "COORDINATOR_STATUSES",
+    "DurableTaskMainContextBinding",
     "DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH",
     "DURABLE_STATE_REQUIRES_RAW_WORKER_TRANSCRIPT",
     "EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE",

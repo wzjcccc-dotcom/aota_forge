@@ -89,6 +89,7 @@ from aota_forge.runtime.task_main.review_adoption import (
     read_trusted_git_frontier,
     trusted_plan_authority_from_binding,
 )
+from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
 from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
 from aota_forge.governance.stewardship import (
@@ -2299,6 +2300,23 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     stewardship_result_task_id_resolver_factory = (
         _production_steward_result_task_id_resolver_factory(exec_store)
     )
+    durable_context_binding = None
+    if (
+        plan_id is not None
+        and trusted_plan.authority_binding is not None
+        and trusted_plan.authority_binding.source_digest is not None
+    ):
+        try:
+            durable_context_binding = DurableTaskMainContextBinding(
+                project_id=project_id,
+                project_fingerprint=sandbox.candidate_fingerprint,
+                plan_binding=trusted_plan.authority_binding,
+                origin_task_main_session_ref=origin_session,
+            )
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"durable task-main context binding failed closed: {exc}"
+            ) from exc
     control_service = create_task_main_control_service(
         coordinator_store=coord_store,
         execution_store=exec_store,
@@ -2314,6 +2332,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         accepted_frontier_authorization=accepted_frontier_authorization,
         review_adoption_worktree_root=sandbox,
         trusted_plan_authority=trusted_review_authority,
+        context_binding=durable_context_binding,
     )
     # Build the trusted task-main context (operator-owned)
     ctx = TrustedTaskMainRuntimeContext(

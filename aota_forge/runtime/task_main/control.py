@@ -32,6 +32,7 @@ from aota_forge.runtime.task_main.coordinator import (
     recover_coordinator,
 )
 from aota_forge.runtime.task_main.coordinator_store import TaskMainCoordinatorStore
+from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
 from aota_forge.runtime.task_main.reconciliation import (
     GovernedReviewEvidence,
     GovernedWorkItemEvidence,
@@ -130,6 +131,7 @@ class TaskMainControlService:
         review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
         review_adoption_git: GitPort | None = None,
         trusted_plan_authority: TrustedPlanAuthority | None = None,
+        context_binding: DurableTaskMainContextBinding | None = None,
     ) -> None:
         if not isinstance(coordinator_store, TaskMainCoordinatorStore):
             raise TypeError("coordinator_store must be TaskMainCoordinatorStore")
@@ -171,6 +173,13 @@ class TaskMainControlService:
         self._review_adoption_worktree_root = review_adoption_worktree_root
         self._review_adoption_git = review_adoption_git
         self._trusted_plan_authority = trusted_plan_authority
+        if context_binding is not None and not isinstance(
+            context_binding, DurableTaskMainContextBinding
+        ):
+            raise TypeError(
+                "context_binding must be DurableTaskMainContextBinding or None"
+            )
+        self._context_binding = context_binding
 
     def _refresh_projection_after_transition(self) -> None:
         """Refresh derived Governance views after durable task-main mutation."""
@@ -290,6 +299,7 @@ class TaskMainControlService:
             executor_id=executor_id,
             project_id=project_id,
             coordinator_id=coordinator_id,
+            context_binding=self._context_binding,
         )
         self._refresh_projection_after_transition()
         return result
@@ -310,6 +320,7 @@ class TaskMainControlService:
             execution_dispatcher=self._dispatcher,
             completion_coordinator=self._completion,
             session_available=session_available,
+            context_binding=self._context_binding,
         )
         self._refresh_projection_after_transition()
         return result

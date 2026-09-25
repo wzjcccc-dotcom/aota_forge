@@ -54,6 +54,7 @@ from aota_forge.runtime.task_main.coordinator_store import (
     FileBackedTaskMainCoordinatorStore,
     TaskMainCoordinatorStore,
 )
+from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
 from aota_forge.runtime.task_main.reconciliation import (
     GovernedReviewEvidence,
     GovernedWorkItemEvidence,
@@ -600,6 +601,7 @@ def create_task_main_control_service(
     review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
     review_adoption_git: GitPort | None = None,
     trusted_plan_authority: TrustedPlanAuthority | None = None,
+    context_binding: DurableTaskMainContextBinding | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
     store = (
@@ -642,6 +644,7 @@ def create_task_main_control_service(
         review_adoption_worktree_root=review_adoption_worktree_root,
         review_adoption_git=review_adoption_git,
         trusted_plan_authority=trusted_plan_authority,
+        context_binding=context_binding,
     )
 
 

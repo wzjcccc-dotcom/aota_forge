@@ -77,6 +77,10 @@ from aota_forge.runtime.task_main.coordinator_store import (
     CoordinatorNotFoundError,
     TaskMainCoordinatorStore,
 )
+from aota_forge.runtime.task_main.context_binding import (
+    ContextBindingError,
+    DurableTaskMainContextBinding,
+)
 from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
     compile_handoff_to_execution_package,
@@ -826,6 +830,37 @@ def _check_live_binding(state: TaskMainCoordinatorState, view: MilestonePlanView
         sorted(view.graph.dependencies)
     ):
         raise PlanDriftError("governed Milestone DAG changed under a durable coordinator")
+
+
+def _check_durable_context_binding(
+    *,
+    state: TaskMainCoordinatorState,
+    current: DurableTaskMainContextBinding | None,
+    live_plan_view: MilestonePlanView,
+    origin_task_main_session_ref: str,
+) -> None:
+    """Reconcile optional M1/W4 context evidence without creating authority."""
+    durable = state.context_binding
+    if durable is None:
+        if current is not None:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_REQUIRED",
+                "cannot attach new context evidence to an existing coordinator",
+            )
+        return
+    if current is None:
+        raise ContextBindingError(
+            "CONTEXT_BINDING_REQUIRED",
+            "durable context evidence requires a current trusted binding",
+        )
+    durable.assert_compatible(current)
+    current.assert_live_plan(
+        project_id=state.project_id,
+        plan_authority=live_plan_view.plan_authority,
+        plan_digest=live_plan_view.plan_digest,
+        plan_source_revision=live_plan_view.plan_source_revision,
+        origin_task_main_session_ref=origin_task_main_session_ref,
+    )
 
 
 def _require_durable_dispatcher(dispatcher: ExecutionDispatcher) -> ExecutionStateStore:
@@ -1922,6 +1957,7 @@ def activate_milestone(
     executor_id: str,
     project_id: str,
     coordinator_id: str | None = None,
+    context_binding: DurableTaskMainContextBinding | None = None,
 ) -> TaskMainCoordinator:
     """Activate an approved Milestone into a durable coordinator.
 
@@ -1956,6 +1992,18 @@ def activate_milestone(
         )
     executor_id = _require_non_empty_str(executor_id, "executor_id")
     project_id = _require_non_empty_str(project_id, "project_id")
+    if context_binding is not None:
+        if not isinstance(context_binding, DurableTaskMainContextBinding):
+            raise TypeError(
+                "context_binding must be DurableTaskMainContextBinding or None"
+            )
+        context_binding.assert_live_plan(
+            project_id=project_id,
+            plan_authority=plan_view.plan_authority,
+            plan_digest=plan_view.plan_digest,
+            plan_source_revision=plan_view.plan_source_revision,
+            origin_task_main_session_ref=session_ref,
+        )
     resolved_id = (
         _require_non_empty_str(coordinator_id, "coordinator_id")
         if coordinator_id is not None
@@ -1970,6 +2018,12 @@ def activate_milestone(
             or existing.origin_task_main_session_ref != session_ref
         ):
             raise SessionRecoveryRequiredError(resolved_id)
+        _check_durable_context_binding(
+            state=existing,
+            current=context_binding,
+            live_plan_view=plan_view,
+            origin_task_main_session_ref=session_ref,
+        )
         _check_live_binding(existing, plan_view)
         handle = TaskMainCoordinator(
             store=store,
@@ -2023,6 +2077,7 @@ def activate_milestone(
         dependencies=tuple(sorted(plan_view.graph.dependencies)),
         wi_status={wi: WorkItemCoordinatorStatus.PENDING.value for wi in plan_view.graph.work_items},
         bindings={},
+        context_binding=context_binding,
     )
     store.create(fresh)
     return TaskMainCoordinator(
@@ -2043,6 +2098,7 @@ def recover_coordinator(
     execution_dispatcher: ExecutionDispatcher,
     completion_coordinator: DurableCompletionCoordinator | None = None,
     session_available: bool,
+    context_binding: DurableTaskMainContextBinding | None = None,
 ) -> TaskMainCoordinator:
     """Recover a durable coordinator after restart (bounded, no loop).
 
@@ -2061,6 +2117,22 @@ def recover_coordinator(
     state = store.get(coordinator_id)
     if state is None:
         raise CoordinatorNotFoundError(coordinator_id)
+    if context_binding is not None and not isinstance(
+        context_binding, DurableTaskMainContextBinding
+    ):
+        raise TypeError(
+            "context_binding must be DurableTaskMainContextBinding or None"
+        )
+    _check_durable_context_binding(
+        state=state,
+        current=context_binding,
+        live_plan_view=live_plan_view,
+        origin_task_main_session_ref=(
+            context_binding.origin_task_main_session_ref
+            if context_binding is not None
+            else state.origin_task_main_session_ref
+        ),
+    )
     _check_live_binding(state, live_plan_view)
 
     handle = TaskMainCoordinator(
@@ -2174,10 +2246,12 @@ __all__ = [
     "WORK_PROJECTION_BOUND_TO_WORK_ITEM",
     "WORK_PROJECTION_DURABLE",
     "WORK_SEMANTIC_PROJECTION_IS_PLAN_AUTHORITY",
+    "ContextBindingError",
     "CoordinatorBindingError",
     "CoordinatorRuntimeError",
     "DispatchReport",
     "DispatchedWork",
+    "DurableTaskMainContextBinding",
     "MilestonePlanView",
     "PlanDriftError",
     "SessionRecoveryRequiredError",

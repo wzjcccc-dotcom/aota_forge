@@ -57,6 +57,13 @@ from aota_forge.runtime.task_main.coordinator_store import (
     StaleCoordinatorRevisionError,
     TaskMainCoordinatorStore,
 )
+from aota_forge.runtime.task_main.context_binding import (
+    CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY,
+    CONTEXT_BINDING_SCHEMA_VERSION,
+    DURABLE_CONTEXT_BINDING_IS_AUTHORITY,
+    ContextBindingError,
+    DurableTaskMainContextBinding,
+)
 from aota_forge.runtime.task_main.reconciliation import (
     ACK_BEFORE_SEMANTIC_RECONCILIATION,
     ACK_REQUIRES_DURABLE_RECONCILIATION,
@@ -122,6 +129,8 @@ __all__ = [
     "CARD_FIRST",
     "COMPLETION_INBOX_FRAMEWORK_CREATED",
     "COORDINATOR_DISPATCH_ATTEMPT",
+    "CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY",
+    "CONTEXT_BINDING_SCHEMA_VERSION",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "COORDINATOR_STATE_SCHEMA_VERSION",
     "COORDINATOR_STATUSES",
@@ -143,6 +152,7 @@ __all__ = [
     "DISPOSITION_USER_GATE_REQUIRED",
     "DISPOSITION_WAITING_FOR_WORKERS",
     "DYNAMIC_PROVIDER_ROUTING_CREATED",
+    "DURABLE_CONTEXT_BINDING_IS_AUTHORITY",
     "EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE",
     "FILE_BACKED_IS_PRODUCTION_DEFAULT",
     "GENERIC_DAG_ENGINE_CREATED",
@@ -178,6 +188,7 @@ __all__ = [
     "CompletionReconciliationReceipt",
     "ContradictoryCompletionError",
     "CoordinatorBindingError",
+    "ContextBindingError",
     "CoordinatorIdempotencyConflictError",
     "CoordinatorNotFoundError",
     "CoordinatorPersistenceFailureError",
@@ -185,6 +196,7 @@ __all__ = [
     "CoordinatorStatus",
     "DispatchReport",
     "DispatchedWork",
+    "DurableTaskMainContextBinding",
     "FileBackedTaskMainCoordinatorStore",
     "GovernedReviewEvidence",
     "GovernedWorkItemEvidence",
