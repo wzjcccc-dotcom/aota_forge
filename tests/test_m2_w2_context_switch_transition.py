@@ -11,6 +11,7 @@ from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
 from aota_forge.core.task_main_context import TrustedProjectPlanIdentity
 from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
 from aota_forge.runtime.task_main.context_switch_eligibility import (
+    SwitchEligibility,
     derive_switch_eligibility,
 )
 from aota_forge.runtime.task_main.context_switch_transition import (
@@ -129,7 +130,7 @@ def _intent(
     tmp_path: Path,
     *,
     transition_id: str = "transition-1",
-) -> ContextSwitchIntent:
+) -> tuple[ContextSwitchIntent, SwitchEligibility]:
     source = store.get("transition-project:M2")
     assert source is not None
     roots = _roots(tmp_path)
@@ -138,22 +139,23 @@ def _intent(
         plan_binding=source.context_binding.plan_binding,
     )
     eligibility = derive_switch_eligibility(identity, roots, source, ())
-    return ContextSwitchIntent.from_trusted_state(
+    intent = ContextSwitchIntent.from_trusted_state(
         source,
         _target_binding(),
         target_coordinator_id="target-project:M2",
         transition_id=transition_id,
         eligibility=eligibility,
     )
+    return intent, eligibility
 
 
 def test_prepare_apply_and_reopen_readback_is_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "coordinator.json"
     store = FileBackedTaskMainCoordinatorStore(path)
     store.create(_state(tmp_path))
-    intent = _intent(store, tmp_path)
+    intent, eligibility = _intent(store, tmp_path)
 
-    prepared = prepare_context_switch(store, intent)
+    prepared = prepare_context_switch(store, intent, eligibility=eligibility)
     assert prepared.phase is ContextSwitchTransitionPhase.PREPARED
     prepared_revision = prepared.state.coordinator_revision
     store.close()
@@ -200,10 +202,30 @@ def test_ineligible_w1_result_never_writes_transition(tmp_path: Path) -> None:
     assert store.get(source.coordinator_id).context_switch_transition is None
 
 
+def test_prepare_requires_a_clean_w1_result(tmp_path: Path) -> None:
+    store = FileBackedTaskMainCoordinatorStore(tmp_path / "coordinator.json")
+    source = store.create(_state(tmp_path))
+    intent, _ = _intent(store, tmp_path)
+    blocked = replace(source, user_approval_satisfied=False)
+    blocked_eligibility = derive_switch_eligibility(
+        TrustedProjectPlanIdentity(
+            project_id=PROJECT_ID,
+            plan_binding=source.context_binding.plan_binding,
+        ),
+        _roots(tmp_path),
+        blocked,
+        (),
+    )
+
+    with pytest.raises(ContextSwitchAdmissionError):
+        prepare_context_switch(store, intent, eligibility=blocked_eligibility)
+    assert store.get(source.coordinator_id).context_switch_transition is None
+
+
 def test_stale_source_cas_fails_closed_without_retry(tmp_path: Path) -> None:
     store = FileBackedTaskMainCoordinatorStore(tmp_path / "coordinator.json")
     created = store.create(_state(tmp_path))
-    intent = _intent(store, tmp_path)
+    intent, eligibility = _intent(store, tmp_path)
     store.compare_and_swap(
         created.coordinator_id,
         created.coordinator_revision,
@@ -212,7 +234,7 @@ def test_stale_source_cas_fails_closed_without_retry(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ContextSwitchConflictError) as exc_info:
-        prepare_context_switch(store, intent)
+        prepare_context_switch(store, intent, eligibility=eligibility)
     assert exc_info.value.safe_to_retry is False
     current = store.get(created.coordinator_id)
     assert current.context_switch_transition is None
@@ -221,8 +243,8 @@ def test_stale_source_cas_fails_closed_without_retry(tmp_path: Path) -> None:
 def test_prepared_recovery_and_unknown_outcome_are_distinct(tmp_path: Path) -> None:
     store = FileBackedTaskMainCoordinatorStore(tmp_path / "coordinator.json")
     store.create(_state(tmp_path))
-    intent = _intent(store, tmp_path)
-    prepared = prepare_context_switch(store, intent)
+    intent, eligibility = _intent(store, tmp_path)
+    prepared = prepare_context_switch(store, intent, eligibility=eligibility)
     unknown = dict(prepared.transition)
     unknown["phase"] = ContextSwitchTransitionPhase.UNKNOWN.value
     store.compare_and_swap(

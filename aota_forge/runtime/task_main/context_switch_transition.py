@@ -94,16 +94,7 @@ class ContextSwitchIntent:
             raise ContextSwitchAdmissionError(
                 "UNKNOWN_OR_CORRUPT_STATE", "target context binding is not trusted binding evidence"
             )
-        if not isinstance(eligibility, SwitchEligibility):
-            raise ContextSwitchAdmissionError(
-                "UNKNOWN_OR_CORRUPT_STATE", "W1 eligibility result is missing or corrupt"
-            )
-        if not eligibility.eligible:
-            raise ContextSwitchAdmissionError(
-                "SWITCH_INELIGIBLE",
-                "W1 eligibility blocks context switch: "
-                + ",".join(eligibility.reason_codes),
-            )
+        _assert_w1_eligibility(eligibility)
         if source.context_binding is None:
             raise ContextSwitchAdmissionError(
                 "AMBIGUOUS_TRUSTED_CONTEXT", "source coordinator has no durable context binding"
@@ -248,10 +239,14 @@ class ContextSwitchReadback:
 
 
 def prepare_context_switch(
-    store: TaskMainCoordinatorStore, intent: ContextSwitchIntent
+    store: TaskMainCoordinatorStore,
+    intent: ContextSwitchIntent,
+    *,
+    eligibility: SwitchEligibility,
 ) -> ContextSwitchReadback:
     """Durably prepare one intent with the source coordinator CAS token."""
 
+    _assert_w1_eligibility(eligibility)
     current = _load_state(store, intent.source_coordinator_id)
     existing = _matching_existing_transition(current, intent)
     if existing is not None:
@@ -453,6 +448,24 @@ def _text(value: object, label: str) -> str:
     if len(value) > 512 or "\x00" in value:
         raise ContextSwitchAdmissionError("UNKNOWN_OR_CORRUPT_STATE", f"{label} is unbounded")
     return value
+
+
+def _assert_w1_eligibility(eligibility: SwitchEligibility) -> None:
+    if not isinstance(eligibility, SwitchEligibility):
+        raise ContextSwitchAdmissionError(
+            "UNKNOWN_OR_CORRUPT_STATE", "W1 eligibility result is missing or corrupt"
+        )
+    if not eligibility.eligible:
+        raise ContextSwitchAdmissionError(
+            "SWITCH_INELIGIBLE",
+            "W1 eligibility blocks context switch: "
+            + ",".join(eligibility.reason_codes),
+        )
+    if eligibility.facts.get("trusted_state_checks_passed") is not True:
+        raise ContextSwitchAdmissionError(
+            "UNKNOWN_OR_CORRUPT_STATE",
+            "W1 eligibility lacks trusted_state_checks_passed=true",
+        )
 
 
 def _intent_payload(
