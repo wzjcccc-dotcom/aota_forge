@@ -76,6 +76,33 @@ class ContextSwitchIntent:
     target_binding: DurableTaskMainContextBinding
     intent_digest: str
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.target_binding, DurableTaskMainContextBinding):
+            raise ContextSwitchAdmissionError(
+                "UNKNOWN_OR_CORRUPT_STATE", "target context binding is not trusted binding evidence"
+            )
+        expected_digest = _digest_payload(
+            _intent_payload(
+                transition_id=self.transition_id,
+                source_coordinator_id=self.source_coordinator_id,
+                source_coordinator_revision=self.source_coordinator_revision,
+                source_revision_token=self.source_revision_token,
+                source_project_id=self.source_project_id,
+                source_plan_authority=self.source_plan_authority,
+                source_plan_digest=self.source_plan_digest,
+                source_plan_source_revision=self.source_plan_source_revision,
+                source_session_ref=self.source_session_ref,
+                source_binding_digest=self.source_binding_digest,
+                target_coordinator_id=self.target_coordinator_id,
+                target_binding=self.target_binding,
+            )
+        )
+        if self.intent_digest != expected_digest:
+            raise ContextSwitchAdmissionError(
+                "UNKNOWN_OR_CORRUPT_STATE",
+                "intent_digest does not match the trusted input bundle",
+            )
+
     @classmethod
     def from_trusted_state(
         cls,
@@ -163,24 +190,6 @@ class ContextSwitchIntent:
                 ),
                 intent_digest=transition["intent_digest"],
             )
-            expected_digest = _digest_payload(
-                _intent_payload(
-                    transition_id=intent.transition_id,
-                    source_coordinator_id=intent.source_coordinator_id,
-                    source_coordinator_revision=intent.source_coordinator_revision,
-                    source_revision_token=intent.source_revision_token,
-                    source_project_id=intent.source_project_id,
-                    source_plan_authority=intent.source_plan_authority,
-                    source_plan_digest=intent.source_plan_digest,
-                    source_plan_source_revision=intent.source_plan_source_revision,
-                    source_session_ref=intent.source_session_ref,
-                    source_binding_digest=intent.source_binding_digest,
-                    target_coordinator_id=intent.target_coordinator_id,
-                    target_binding=intent.target_binding,
-                )
-            )
-            if intent.intent_digest != expected_digest:
-                raise ValueError("durable intent_digest does not match its trusted input bundle")
             return intent
         except (KeyError, TypeError, ValueError, ContextBindingError) as exc:
             raise ContextSwitchRecoveryRequiredError(
@@ -327,6 +336,7 @@ def readback_context_switch(
         )
     if transition_id is not None and transition["transition_id"] != transition_id:
         raise ContextSwitchConflictError("durable transition_id conflicts with readback request")
+    _assert_phase_revision_evidence(current, transition)
     return ContextSwitchReadback(current, transition)
 
 
@@ -418,6 +428,24 @@ def _require_matching_transition(
     ):
         raise ContextSwitchConflictError("durable transition does not match apply intent")
     return transition
+
+
+def _assert_phase_revision_evidence(
+    state: TaskMainCoordinatorState, transition: Mapping[str, Any]
+) -> None:
+    phase = ContextSwitchTransitionPhase(transition["phase"])
+    if phase is ContextSwitchTransitionPhase.PREPARED:
+        expected_revision = transition["prepared_revision"]
+        expected_token = transition["prepared_revision_token"]
+    elif phase is ContextSwitchTransitionPhase.APPLIED:
+        expected_revision = transition["applied_revision"]
+        expected_token = transition["applied_revision_token"]
+    else:
+        return
+    if state.coordinator_revision != expected_revision or state.revision_token != expected_token:
+        raise ContextSwitchRecoveryRequiredError(
+            "durable context switch phase does not match coordinator CAS evidence"
+        )
 
 
 def _cas_transition(
