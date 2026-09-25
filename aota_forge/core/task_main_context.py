@@ -1,8 +1,9 @@
-"""Canonical task-main context contract for M1/W1.
+"""Canonical task-main context contract for M1/W2.
 
 This module owns only the inspect/bind contract and its trusted identity
-boundary. Project and Plan resolution, durable binding, projections, and live
-switching belong to later work items.
+boundary. Project and Plan resolution remain trusted composition concerns;
+this operation consumes their typed binding and authorized-root result without
+creating another resolver or state store.
 """
 
 from __future__ import annotations
@@ -178,6 +179,7 @@ def _snapshot(
     identity: TrustedProjectPlanIdentity | None,
     *,
     binding_status: str,
+    authorized_roots: Any | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "mode": mode,
@@ -188,9 +190,51 @@ def _snapshot(
     }
     if identity is not None:
         payload["context"] = identity.to_dict()
+        if authorized_roots is not None:
+            payload["context"]["authorized_roots"] = authorized_roots.public_roots()
     else:
         payload["context"] = None
     return payload
+
+
+def _trusted_authorized_roots(binding: object) -> Any | None:
+    """Read and revalidate the runtime-derived root set, if one is present."""
+    sandbox = getattr(binding, "sandbox", None)
+    if sandbox is None:
+        return None
+
+    from aota_forge.work_plane.authorized_roots import (
+        AuthorizedRootSet,
+        authorized_roots_single_root,
+        validate_root_set_against_sandbox,
+    )
+
+    try:
+        roots = getattr(binding, "effective_authorized_roots", None)
+        if callable(roots):
+            roots = roots()
+        if roots is None:
+            roots = authorized_roots_single_root(sandbox)
+    except TaskMainContextError:
+        raise
+    except Exception as exc:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "trusted authorized root set is invalid",
+        ) from exc
+    if not isinstance(roots, AuthorizedRootSet):
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "trusted authorized root set is invalid",
+        )
+    try:
+        validate_root_set_against_sandbox(roots, sandbox)
+    except Exception as exc:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "trusted authorized root set is not sandbox-derived",
+        ) from exc
+    return roots
 
 
 def dispatch_task_main_context(
@@ -213,12 +257,20 @@ def dispatch_task_main_context(
         locator = _locator_from_arguments(arguments)
         identity = trusted_identity_from_binding(binding)
         legacy_plan_binding = getattr(binding, "plan_binding", None)
+        authorized_roots = _trusted_authorized_roots(binding)
 
         if mode == CONTEXT_MODE_INSPECT:
             if identity is None:
                 return ToolResponse.success(_snapshot(mode, None, binding_status="unbound"))
             status = "bound" if identity.plan_binding.source_digest is not None else "bound_unverified"
-            return ToolResponse.success(_snapshot(mode, identity, binding_status=status))
+            return ToolResponse.success(
+                _snapshot(
+                    mode,
+                    identity,
+                    binding_status=status,
+                    authorized_roots=authorized_roots,
+                )
+            )
 
         if identity is None:
             raise TaskMainContextError(
@@ -238,7 +290,14 @@ def dispatch_task_main_context(
                     "STALE_CONTEXT",
                     "trusted Plan binding has no observed source digest",
                 )
-            return ToolResponse.success(_snapshot(mode, identity, binding_status="bound"))
+            return ToolResponse.success(
+                _snapshot(
+                    mode,
+                    identity,
+                    binding_status="bound",
+                    authorized_roots=authorized_roots,
+                )
+            )
 
         # M1/W1 defines the switch contract but does not implement live
         # switching or mutate the current trusted runtime binding.
