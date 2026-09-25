@@ -9,10 +9,12 @@ creating another resolver or state store.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import re
 from typing import Any, Mapping
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.core.contracts.canonical import canonical_json
 from aota_forge.core.providers.tool import ToolResponse
 from aota_forge.core.project.manifest import PROJECT_ID_RE
 
@@ -180,6 +182,7 @@ def _snapshot(
     *,
     binding_status: str,
     authorized_roots: Any | None = None,
+    governance_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "mode": mode,
@@ -192,6 +195,8 @@ def _snapshot(
         payload["context"] = identity.to_dict()
         if authorized_roots is not None:
             payload["context"]["authorized_roots"] = authorized_roots.public_roots()
+        if governance_context is not None:
+            payload["governance_context"] = dict(governance_context)
     else:
         payload["context"] = None
     return payload
@@ -237,6 +242,143 @@ def _trusted_authorized_roots(binding: object) -> Any | None:
     return roots
 
 
+def _trusted_governance_context(
+    binding: object,
+    identity: TrustedProjectPlanIdentity,
+) -> dict[str, Any] | None:
+    """Return a bounded projection only when it agrees with trusted identity."""
+    carrier = getattr(binding, "governance_context", None)
+    if carrier is None:
+        return None
+    if not isinstance(carrier, Mapping):
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "trusted governance context must be a mapping",
+        )
+    if carrier.get("IS_AUTHORITY") is not False or carrier.get("GOVERNANCE_CONTEXT_IS_AUTHORITY") is not False:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context must declare non-authority markers",
+        )
+    route = carrier.get("CONTEXT_ROUTE")
+    if not isinstance(route, Mapping) or route.get("is_authority") is not False:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route must be a derived projection",
+        )
+    if route.get("CONTEXT_ROUTE_IS_AUTHORITY") is not False:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route must declare non-authority",
+        )
+    if route.get("project_id") != identity.project_id:
+        raise TaskMainContextError(
+            "PROJECT_CONTEXT_MISMATCH",
+            "governance context route does not match the trusted project identity",
+        )
+    plan_binding = identity.plan_binding
+    if route.get("plan_id") != plan_binding.plan_id:
+        raise TaskMainContextError(
+            "PLAN_CONTEXT_MISMATCH",
+            "governance context route does not match the trusted Plan identity",
+        )
+    if route.get("authority_source_kind") != plan_binding.source_kind:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route source does not match the trusted Plan binding",
+        )
+
+    entries = route.get("entries")
+    if not isinstance(entries, list):
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route entries must be a list",
+        )
+    authority_entries = [
+        entry
+        for entry in entries
+        if isinstance(entry, Mapping) and entry.get("kind") == "plan_authority"
+    ]
+    if len(authority_entries) != 1:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route must contain exactly one Plan authority entry",
+        )
+    authority_entry = authority_entries[0]
+    if authority_entry.get("ref") != plan_binding.authority_ref:
+        raise TaskMainContextError(
+            "PLAN_CONTEXT_MISMATCH",
+            "governance context authority ref does not match the trusted Plan binding",
+        )
+    if authority_entry.get("source_kind") != plan_binding.source_kind:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context authority source does not match the trusted Plan binding",
+        )
+    expected_revision = (
+        str(plan_binding.source_revision)
+        if plan_binding.source_revision is not None
+        else None
+    )
+    if authority_entry.get("revision") != expected_revision:
+        raise TaskMainContextError(
+            "STALE_CONTEXT",
+            "governance context authority revision is not bound to the trusted source",
+        )
+    if authority_entry.get("digest") != plan_binding.source_digest:
+        raise TaskMainContextError(
+            "STALE_CONTEXT",
+            "governance context authority digest is not bound to the trusted source",
+        )
+
+    if type(carrier.get("CARDS_PRESENT")) is not bool:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context CARDS_PRESENT must be a bool",
+        )
+    cards = carrier.get("CARDS")
+    if cards is not None:
+        if not isinstance(cards, Mapping):
+            raise TaskMainContextError(
+                "AUTHORITY_DENIED",
+                "governance context CARDS must be a mapping or None",
+            )
+        project_card = cards.get("project")
+        if isinstance(project_card, Mapping) and project_card.get("project_id") != identity.project_id:
+            raise TaskMainContextError(
+                "PROJECT_CONTEXT_MISMATCH",
+                "governance project card does not match the trusted project identity",
+            )
+        plan_cards = cards.get("plans")
+        if isinstance(plan_cards, list) and plan_cards:
+            matching_plan_cards = [
+                card
+                for card in plan_cards
+                if isinstance(card, Mapping) and card.get("plan_id") == plan_binding.plan_id
+            ]
+            if len(matching_plan_cards) != 1:
+                raise TaskMainContextError(
+                    "PLAN_CONTEXT_MISMATCH",
+                    "governance Plan cards do not match the trusted Plan identity",
+                )
+
+    try:
+        normalized = json.loads(canonical_json(dict(carrier)))
+    except (TypeError, ValueError) as exc:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context must be bounded plain data",
+        ) from exc
+    from aota_forge.work_plane.role_bootstrap import MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES
+
+    if len(canonical_json(normalized).encode("utf-8")) > MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES:
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context exceeds its bounded carrier size",
+        )
+    return normalized
+
+
 def dispatch_task_main_context(
     arguments: Mapping[str, Any] | None,
     binding: object,
@@ -261,7 +403,13 @@ def dispatch_task_main_context(
 
         if mode == CONTEXT_MODE_INSPECT:
             if identity is None:
+                if getattr(binding, "governance_context", None) is not None:
+                    raise TaskMainContextError(
+                        "AUTHORITY_DENIED",
+                        "governance context requires a trusted Project/Plan binding",
+                    )
                 return ToolResponse.success(_snapshot(mode, None, binding_status="unbound"))
+            governance_context = _trusted_governance_context(binding, identity)
             status = "bound" if identity.plan_binding.source_digest is not None else "bound_unverified"
             return ToolResponse.success(
                 _snapshot(
@@ -269,6 +417,7 @@ def dispatch_task_main_context(
                     identity,
                     binding_status=status,
                     authorized_roots=authorized_roots,
+                    governance_context=governance_context,
                 )
             )
 
@@ -283,6 +432,7 @@ def dispatch_task_main_context(
                 f"{mode} requires project_ref or plan_ref",
             )
         _match_locator(locator, identity, legacy_plan_binding=legacy_plan_binding)
+        governance_context = _trusted_governance_context(binding, identity)
 
         if mode == CONTEXT_MODE_BIND:
             if identity.plan_binding.source_digest is None:
@@ -296,6 +446,7 @@ def dispatch_task_main_context(
                     identity,
                     binding_status="bound",
                     authorized_roots=authorized_roots,
+                    governance_context=governance_context,
                 )
             )
 
