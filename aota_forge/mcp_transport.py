@@ -119,12 +119,14 @@ try:
     from aota_forge.work_plane.task_main_descriptors import (  # type: ignore
         TASK_MAIN_ACTIVATE_DESCRIPTOR,
         TASK_MAIN_ADVANCE_DESCRIPTOR,
+        TASK_MAIN_CONTEXT_DESCRIPTOR,
         TASK_MAIN_RECOVER_DESCRIPTOR,
         TASK_MAIN_SUBMIT_DESCRIPTOR,
     )
 except Exception:  # pragma: no cover - fallback for isolated test discovery without yaml
     TASK_MAIN_ACTIVATE_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_ADVANCE_DESCRIPTOR = None  # type: ignore
+    TASK_MAIN_CONTEXT_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_RECOVER_DESCRIPTOR = None  # type: ignore
     TASK_MAIN_SUBMIT_DESCRIPTOR = None  # type: ignore
 
@@ -275,6 +277,7 @@ TASK_MAIN_OPERATIONS: tuple[str, ...] = (
     "task_main.advance_once",
     "task_main.submit_work_projection",
 )
+CONTEXT_OPERATIONS: tuple[str, ...] = ("task_main.context",)
 # W2 AF Role Bootstrap / Skill / Test — newly canonical for #41, plus existing test.run
 W2_OPERATIONS: tuple[str, ...] = (
     "role.bootstrap",
@@ -332,7 +335,7 @@ GITHUB_READ_OPERATIONS: tuple[str, ...] = ("github.issue.read", "github.issue.co
 GITHUB_MUTATION_OPERATIONS: tuple[str, ...] = ("github.issue.update", "github.issue.comment.update")
 GITHUB_OPERATIONS: tuple[str, ...] = GITHUB_READ_OPERATIONS + GITHUB_MUTATION_OPERATIONS
 LOGICAL_OPERATIONS: tuple[str, ...] = (
-    WORKSPACE_OPERATIONS + M2_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS + INTROSPECTION_OPERATIONS + GOVERNANCE_OPERATIONS + (HELP_OPERATION,)
+    WORKSPACE_OPERATIONS + M2_OPERATIONS + CONTEXT_OPERATIONS + TASK_MAIN_OPERATIONS + W2_OPERATIONS + HANDOFF_TASK_OPERATIONS + GIT_OPERATIONS + GITHUB_OPERATIONS + INTROSPECTION_OPERATIONS + GOVERNANCE_OPERATIONS + (HELP_OPERATION,)
 )
 # Back-compat aliases
 BOUNDED_MCP_OPERATIONS = WORKSPACE_OPERATIONS
@@ -382,7 +385,7 @@ if SKILL_OPEN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[SKILL_OPEN_DESCRIPTOR.name] = SKILL_OPEN_DESCRIPTOR
 if TEST_RUN_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TEST_RUN_DESCRIPTOR.name] = TEST_RUN_DESCRIPTOR
-# M3/W1 task-main descriptors (canonical, exactly 4)
+# Task-main descriptors (canonical, projection only)
 if TASK_MAIN_ACTIVATE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ACTIVATE_DESCRIPTOR.name] = TASK_MAIN_ACTIVATE_DESCRIPTOR
 if TASK_MAIN_RECOVER_DESCRIPTOR is not None:
@@ -391,6 +394,8 @@ if TASK_MAIN_ADVANCE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_ADVANCE_DESCRIPTOR.name] = TASK_MAIN_ADVANCE_DESCRIPTOR
 if TASK_MAIN_SUBMIT_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[TASK_MAIN_SUBMIT_DESCRIPTOR.name] = TASK_MAIN_SUBMIT_DESCRIPTOR
+if TASK_MAIN_CONTEXT_DESCRIPTOR is not None:
+    _DESCRIPTOR_MAP[TASK_MAIN_CONTEXT_DESCRIPTOR.name] = TASK_MAIN_CONTEXT_DESCRIPTOR
 # W5 canonical handoff/task lifecycle descriptors (exposure projection only)
 if HANDOFF_WRITE_DESCRIPTOR is not None:
     _DESCRIPTOR_MAP[HANDOFF_WRITE_DESCRIPTOR.name] = HANDOFF_WRITE_DESCRIPTOR
@@ -1669,6 +1674,8 @@ class _UnboundAotaAdapter:
         # Read-only Progress introspection: canonical Core ingress handlers.
         if operation in UNBOUND_READ_INTROSPECTION_OPERATIONS:
             return self._invoke_read_introspection(operation, arguments)
+        if operation == "task_main.context":
+            return self._invoke_unbound_context(arguments)
         if operation in GOVERNANCE_OPERATIONS:
             return _unbound_governed_error(
                 operation,
@@ -1717,6 +1724,24 @@ class _UnboundAotaAdapter:
                 _bounded_failure_message(str(exc)),
             )
         return _unbound_inline_success("skill.open", dict(payload))
+
+    def _invoke_unbound_context(self, arguments: dict[str, Any]) -> McpToolResult:
+        """Expose read-only context inspection without inventing authority."""
+        from aota_forge.core_ingress import CanonicalDispatchBinding, dispatch_tool_operation
+
+        response = dispatch_tool_operation(
+            "task_main.context",
+            arguments,
+            CanonicalDispatchBinding(unbound_host_session=True),
+        )
+        if response.ok:
+            return _unbound_inline_success("task_main.context", dict(response.payload or {}))
+        error = dict(response.error or {})
+        return _unbound_governed_error(
+            "task_main.context",
+            str(error.get("code") or "GOVERNED_OPERATION_FAILURE"),
+            str(error.get("message") or "task-main context failed"),
+        )
 
     def _invoke_unbound_help(self, arguments: dict[str, Any]) -> McpToolResult:
         """Read-only exact operation contract reader (AF #59 M2/W2-E).
@@ -1980,6 +2005,7 @@ __all__ = [
     "HERMES_AGENT_FACING_AOTA_TOOL_COUNT",
     "WORKSPACE_OPERATIONS",
     "M2_OPERATIONS",
+    "CONTEXT_OPERATIONS",
     "TASK_MAIN_OPERATIONS",
     "HANDOFF_TASK_OPERATIONS",
     "INTROSPECTION_OPERATIONS",

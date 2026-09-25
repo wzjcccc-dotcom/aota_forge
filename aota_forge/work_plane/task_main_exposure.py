@@ -44,6 +44,7 @@ TASK_MAIN_UNBOUND_EXTRAS: frozenset[str] = frozenset(
         "role.bootstrap",
         "runtime.status",
         "skill.open",
+        "task_main.context",
     }
 )
 

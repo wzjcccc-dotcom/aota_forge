@@ -88,6 +88,7 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "task_main.recover_coordinator",
     "task_main.advance_once",
     "task_main.submit_work_projection",
+    "task_main.context",
     "git.status",
     "git.diff",
     "git.checkpoint",
@@ -1593,6 +1594,11 @@ def _dispatch_tool_operation_inner(
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
             return _dispatch_task_main(operation, binding, validated)
+
+        if operation == "task_main.context":
+            from aota_forge.core.task_main_context import dispatch_task_main_context
+
+            return dispatch_task_main_context(validated, binding)
 
         if operation == "handoff.write":
             sandbox = _require_sandbox(binding)

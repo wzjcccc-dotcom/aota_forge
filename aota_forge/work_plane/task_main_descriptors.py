@@ -26,11 +26,13 @@ TASK_MAIN_ACTIVATE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_des
 TASK_MAIN_RECOVER_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.recover_coordinator")
 TASK_MAIN_ADVANCE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.advance_once")
 TASK_MAIN_SUBMIT_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.submit_work_projection")
+TASK_MAIN_CONTEXT_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("task_main.context")
 
 TASK_MAIN_ACTIVATE_DESCRIPTOR.validate()
 TASK_MAIN_RECOVER_DESCRIPTOR.validate()
 TASK_MAIN_ADVANCE_DESCRIPTOR.validate()
 TASK_MAIN_SUBMIT_DESCRIPTOR.validate()
+TASK_MAIN_CONTEXT_DESCRIPTOR.validate()
 
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path lifecycle descriptors,
 # loaded from the same single authority (.aota/contracts/operations.yaml).
