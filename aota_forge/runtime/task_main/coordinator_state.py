@@ -75,6 +75,186 @@ class WorkItemCoordinatorStatus(str, Enum):
 COORDINATOR_STATUSES: frozenset[str] = frozenset(v.value for v in CoordinatorStatus)
 WORK_ITEM_STATUSES: frozenset[str] = frozenset(v.value for v in WorkItemCoordinatorStatus)
 
+
+@unique
+class ContextSwitchTransitionPhase(str, Enum):
+    """Durable phases for the existing coordinator-owned switch seam."""
+
+    PREPARED = "PREPARED"
+    APPLIED = "APPLIED"
+    UNKNOWN = "UNKNOWN"
+
+
+CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION = 1
+CONTEXT_SWITCH_TRANSITION_PHASES: frozenset[str] = frozenset(
+    phase.value for phase in ContextSwitchTransitionPhase
+)
+
+_ALLOWED_CONTEXT_SWITCH_TRANSITION_FIELDS: frozenset[str] = frozenset(
+    {
+        "schema_version",
+        "phase",
+        "transition_id",
+        "intent_digest",
+        "source_coordinator_id",
+        "source_coordinator_revision",
+        "source_revision_token",
+        "source_project_id",
+        "source_plan_authority",
+        "source_plan_digest",
+        "source_plan_source_revision",
+        "source_session_ref",
+        "source_binding_digest",
+        "target_coordinator_id",
+        "target_binding",
+        "prepared_revision",
+        "prepared_revision_token",
+        "applied_revision",
+        "applied_revision_token",
+    }
+)
+
+
+def _normalize_context_switch_transition(raw: Any) -> dict[str, Any] | None:
+    """Validate one transition record stored by the existing coordinator."""
+
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise TypeError("context_switch_transition must be a mapping or None")
+    extra = set(raw) - _ALLOWED_CONTEXT_SWITCH_TRANSITION_FIELDS
+    if extra:
+        raise ValueError(
+            "Unknown field(s) in context_switch_transition: "
+            f"{sorted(extra)}"
+        )
+    required = (
+        "phase",
+        "transition_id",
+        "intent_digest",
+        "source_coordinator_id",
+        "source_coordinator_revision",
+        "source_revision_token",
+        "source_project_id",
+        "source_plan_authority",
+        "source_plan_digest",
+        "source_session_ref",
+        "source_binding_digest",
+        "target_coordinator_id",
+        "target_binding",
+        "prepared_revision",
+        "prepared_revision_token",
+    )
+    missing = [name for name in required if name not in raw]
+    if missing:
+        raise ValueError(
+            "context_switch_transition missing required field(s): "
+            f"{sorted(missing)}"
+        )
+    schema_version = raw.get(
+        "schema_version", CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION
+    )
+    if schema_version != CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported context_switch_transition schema_version: "
+            f"{schema_version!r}"
+        )
+    phase = raw["phase"]
+    if isinstance(phase, ContextSwitchTransitionPhase):
+        phase = phase.value
+    if not isinstance(phase, str) or phase not in CONTEXT_SWITCH_TRANSITION_PHASES:
+        raise ValueError(
+            "context_switch_transition.phase must be one of "
+            f"{sorted(CONTEXT_SWITCH_TRANSITION_PHASES)}"
+        )
+
+    def _revision(value: Any, label: str) -> int:
+        if type(value) is not int or value < 1:
+            raise ValueError(f"{label} must be an int >= 1")
+        return value
+
+    def _optional_text(value: Any, label: str) -> str | None:
+        if value is None:
+            return None
+        return _require_non_empty_str(value, label)
+
+    target_binding_raw = raw["target_binding"]
+    target_binding = DurableTaskMainContextBinding.from_dict(target_binding_raw)
+    normalized: dict[str, Any] = {
+        "schema_version": CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION,
+        "phase": phase,
+        "transition_id": _require_non_empty_str(
+            raw["transition_id"], "context_switch_transition.transition_id"
+        ),
+        "intent_digest": _require_non_empty_str(
+            raw["intent_digest"], "context_switch_transition.intent_digest", max_length=128
+        ),
+        "source_coordinator_id": _require_non_empty_str(
+            raw["source_coordinator_id"], "context_switch_transition.source_coordinator_id"
+        ),
+        "source_coordinator_revision": _revision(
+            raw["source_coordinator_revision"],
+            "context_switch_transition.source_coordinator_revision",
+        ),
+        "source_revision_token": _require_non_empty_str(
+            raw["source_revision_token"],
+            "context_switch_transition.source_revision_token",
+            max_length=128,
+        ),
+        "source_project_id": _require_non_empty_str(
+            raw["source_project_id"], "context_switch_transition.source_project_id"
+        ),
+        "source_plan_authority": _require_non_empty_str(
+            raw["source_plan_authority"],
+            "context_switch_transition.source_plan_authority",
+        ),
+        "source_plan_digest": _require_non_empty_str(
+            raw["source_plan_digest"],
+            "context_switch_transition.source_plan_digest",
+            max_length=128,
+        ),
+        "source_plan_source_revision": _optional_text(
+            raw.get("source_plan_source_revision"),
+            "context_switch_transition.source_plan_source_revision",
+        ),
+        "source_session_ref": _require_non_empty_str(
+            raw["source_session_ref"], "context_switch_transition.source_session_ref"
+        ),
+        "source_binding_digest": _require_non_empty_str(
+            raw["source_binding_digest"],
+            "context_switch_transition.source_binding_digest",
+            max_length=128,
+        ),
+        "target_coordinator_id": _require_non_empty_str(
+            raw["target_coordinator_id"],
+            "context_switch_transition.target_coordinator_id",
+        ),
+        "target_binding": target_binding.to_dict(),
+        "prepared_revision": _revision(
+            raw["prepared_revision"], "context_switch_transition.prepared_revision"
+        ),
+        "prepared_revision_token": _require_non_empty_str(
+            raw["prepared_revision_token"],
+            "context_switch_transition.prepared_revision_token",
+            max_length=128,
+        ),
+    }
+    for name in ("applied_revision", "applied_revision_token"):
+        if name in raw and raw[name] is not None:
+            normalized[name] = (
+                _revision(raw[name], f"context_switch_transition.{name}")
+                if name == "applied_revision"
+                else _require_non_empty_str(
+                    raw[name], f"context_switch_transition.{name}", max_length=128
+                )
+            )
+        else:
+            normalized[name] = None
+    if phase == ContextSwitchTransitionPhase.APPLIED.value:
+        if normalized["applied_revision"] is None or normalized["applied_revision_token"] is None:
+            raise ValueError("APPLIED context switch transition requires applied CAS evidence")
+    return normalized
+
 # M3/W2 post-reconciliation semantic status vocabulary (durable working
 # truth only — never Plan authority, never Work Item acceptance by itself).
 # The W1 dispatch lifecycle (wi_status) is untouched: a reconciled Work Item
@@ -183,6 +363,7 @@ _CAS_MUTABLE_COORDINATOR_FIELDS: frozenset[str] = frozenset(
         "open_blockers",
         "next_action",
         "work_projections",
+        "context_switch_transition",
     }
 )
 
@@ -219,6 +400,7 @@ _ALLOWED_STATE_FIELDS: frozenset[str] = frozenset(
         "next_action",
         "work_projections",
         "context_binding",
+        "context_switch_transition",
         "created_at",
         "updated_at",
         "coordinator_revision",
@@ -872,6 +1054,9 @@ class TaskMainCoordinatorState:
     # M1/W4: optional immutable trusted Project/Plan/session evidence carried
     # by the existing coordinator record; it is never Plan authority.
     context_binding: DurableTaskMainContextBinding | None = None
+    # M2/W2: transition evidence owned by this same coordinator record. This
+    # is deliberately separate from immutable coordinator identity fields.
+    context_switch_transition: dict[str, Any] | None = None
     created_at: str = ""
     updated_at: str = ""
     coordinator_revision: int = 1
@@ -982,6 +1167,11 @@ class TaskMainCoordinatorState:
             raise TypeError(
                 "context_binding must be DurableTaskMainContextBinding or None"
             )
+        object.__setattr__(
+            self,
+            "context_switch_transition",
+            _normalize_context_switch_transition(self.context_switch_transition),
+        )
 
         for wi in self.bindings:
             if self.wi_status.get(wi) == WorkItemCoordinatorStatus.PENDING.value:
@@ -1064,6 +1254,10 @@ class TaskMainCoordinatorState:
             kwargs["work_projections"] = _normalize_work_projections(
                 updates["work_projections"], self.work_items
             )
+        if "context_switch_transition" in updates:
+            kwargs["context_switch_transition"] = _normalize_context_switch_transition(
+                updates["context_switch_transition"]
+            )
         candidate = replace(
             self,
             coordinator_revision=self.coordinator_revision + 1,
@@ -1122,6 +1316,11 @@ class TaskMainCoordinatorState:
             "work_projections": {k: dict(v) for k, v in self.work_projections.items()},
             "context_binding": (
                 self.context_binding.to_dict() if self.context_binding is not None else None
+            ),
+            "context_switch_transition": (
+                dict(self.context_switch_transition)
+                if self.context_switch_transition is not None
+                else None
             ),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -1186,6 +1385,7 @@ class TaskMainCoordinatorState:
                 if data.get("context_binding") is not None
                 else None
             ),
+            context_switch_transition=data.get("context_switch_transition"),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
             coordinator_revision=data.get("coordinator_revision", 1),
@@ -1208,6 +1408,8 @@ __all__ = [
     "ATTEMPT_NEXT_DISPOSITIONS",
     "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
     "COORDINATOR_STATE_SCHEMA_VERSION",
+    "CONTEXT_SWITCH_TRANSITION_PHASES",
+    "CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION",
     "COORDINATOR_STATUSES",
     "DurableTaskMainContextBinding",
     "DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH",
@@ -1234,6 +1436,7 @@ __all__ = [
     "WI_SEMANTIC_STATUSES",
     "WORK_ITEM_STATUSES",
     "CoordinatorStatus",
+    "ContextSwitchTransitionPhase",
     "TaskMainCoordinatorState",
     "WorkItemCoordinatorStatus",
 ]
