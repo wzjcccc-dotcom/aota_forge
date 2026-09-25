@@ -24,8 +24,8 @@ from aota_forge.runtime.task_main.context_switch_transition import (
     recover_context_switch,
 )
 from aota_forge.runtime.task_main.coordinator_state import (
-    CoordinatorStatus,
     ContextSwitchTransitionPhase,
+    CoordinatorStatus,
     TaskMainCoordinatorState,
 )
 from aota_forge.runtime.task_main.coordinator_store import (

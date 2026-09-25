@@ -85,7 +85,7 @@ class ContextSwitchIntent:
         target_coordinator_id: str,
         transition_id: str,
         eligibility: SwitchEligibility,
-    ) -> "ContextSwitchIntent":
+    ) -> ContextSwitchIntent:
         if not isinstance(source, TaskMainCoordinatorState):
             raise ContextSwitchAdmissionError(
                 "UNKNOWN_OR_CORRUPT_STATE", "source coordinator state is not durable coordinator truth"
@@ -151,7 +151,7 @@ class ContextSwitchIntent:
         )
 
     @classmethod
-    def from_transition(cls, transition: Mapping[str, Any]) -> "ContextSwitchIntent":
+    def from_transition(cls, transition: Mapping[str, Any]) -> ContextSwitchIntent:
         """Rebuild only the already-durable intent for prepared recovery."""
 
         try:

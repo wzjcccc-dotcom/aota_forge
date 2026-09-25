@@ -250,9 +250,14 @@ def _normalize_context_switch_transition(raw: Any) -> dict[str, Any] | None:
             )
         else:
             normalized[name] = None
-    if phase == ContextSwitchTransitionPhase.APPLIED.value:
-        if normalized["applied_revision"] is None or normalized["applied_revision_token"] is None:
-            raise ValueError("APPLIED context switch transition requires applied CAS evidence")
+    if (
+        phase == ContextSwitchTransitionPhase.APPLIED.value
+        and (
+            normalized["applied_revision"] is None
+            or normalized["applied_revision_token"] is None
+        )
+    ):
+        raise ValueError("APPLIED context switch transition requires applied CAS evidence")
     return normalized
 
 # M3/W2 post-reconciliation semantic status vocabulary (durable working
@@ -651,9 +656,8 @@ def _normalize_human_brake(raw: Any) -> dict[str, Any] | None:
     if not isinstance(reported_at, str):
         raise TypeError("human_brake.reported_at must be str")
     # Coherence: NONE state requires NONE scope and empty affected.
-    if state == "NONE":
-        if scope != "NONE" or norm_affected:
-            raise ValueError("human_brake NONE requires NONE scope and empty affected_work")
+    if state == "NONE" and (scope != "NONE" or norm_affected):
+        raise ValueError("human_brake NONE requires NONE scope and empty affected_work")
     if scope == "NONE" and norm_affected:
         raise ValueError("human_brake NONE scope cannot carry affected_work")
     if scope == "AFFECTED_WORK" and not norm_affected:
@@ -1406,12 +1410,11 @@ __all__ = [
     "ACK_AFTER_SEMANTIC_RECONCILIATION_IMPLEMENTED",
     "ATTEMPT_FAILURE_CLASSES",
     "ATTEMPT_NEXT_DISPOSITIONS",
-    "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
-    "COORDINATOR_STATE_SCHEMA_VERSION",
     "CONTEXT_SWITCH_TRANSITION_PHASES",
     "CONTEXT_SWITCH_TRANSITION_SCHEMA_VERSION",
+    "COORDINATOR_STATE_IS_PLAN_AUTHORITY",
+    "COORDINATOR_STATE_SCHEMA_VERSION",
     "COORDINATOR_STATUSES",
-    "DurableTaskMainContextBinding",
     "DURABLE_COORDINATOR_STATE_IS_PROGRESS_TRUTH",
     "DURABLE_STATE_REQUIRES_RAW_WORKER_TRANSCRIPT",
     "EXECUTION_STATE_STORE_USED_AS_COORDINATOR_STATE",
@@ -1421,22 +1424,23 @@ __all__ = [
     "HUMAN_BRAKE_STATE_DURABLE",
     "MAX_RECONCILED_COMPLETIONS",
     "MAX_WORK_PROJECTIONS",
-    "TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION",
-    "WORK_PROJECTION_DURABLE",
     "MILESTONE_CLOSURE_AUTOMATION_IMPLEMENTED",
     "NEW_SECOND_COORDINATOR_STATE_MODEL",
     "RAW_FAILED_WORKER_TRANSCRIPTS_RETAINED_IN_TASK_MAIN",
     "REPAIR_AUTOMATION_IMPLEMENTED",
     "REVIEW_AUTOMATION_IMPLEMENTED",
     "TASK_MAIN_CHAT_CONTEXT_IS_PROGRESS_TRUTH",
+    "TASK_MAIN_OWNS_WORK_SEMANTIC_PROJECTION",
     "TASK_MAIN_RESTART_CANNOT_AUTO_RESOLVE_HUMAN_CHECKPOINT",
     "TASK_MAIN_RESTART_CANNOT_FORGET_USER_GATE",
     "W1_CARD_SEMANTIC_APPLICATION_IMPLEMENTED",
     "WI_SEMANTIC_RECONCILED",
     "WI_SEMANTIC_STATUSES",
     "WORK_ITEM_STATUSES",
-    "CoordinatorStatus",
+    "WORK_PROJECTION_DURABLE",
     "ContextSwitchTransitionPhase",
+    "CoordinatorStatus",
+    "DurableTaskMainContextBinding",
     "TaskMainCoordinatorState",
     "WorkItemCoordinatorStatus",
 ]
