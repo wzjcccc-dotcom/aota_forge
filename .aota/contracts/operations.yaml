@@ -737,7 +737,7 @@ contracts:
   - INPUT_SIZE_EXCEEDED
   protocol_version: '1.0'
 - name: task_main.context
-  description: Canonical task-main Project/Plan context contract; inspect and bind validate trusted runtime identity, while switch remains fail-closed until its later lifecycle work item
+  description: Canonical task-main Project/Plan context contract; inspect and bind validate trusted runtime identity, while switch composes the guarded durable W4 transition when the trusted runtime carrier is present
   inputs:
   - name: mode
     type: str
@@ -765,6 +765,15 @@ contracts:
   - CONTEXT_BINDING_REQUIRED
   - CONTEXT_LOCATOR_REQUIRED
   - CONTEXT_SWITCH_UNAVAILABLE
+  - CONTEXT_SWITCH_ADMISSION_DENIED
+  - CONTEXT_SWITCH_CONFLICT
+  - CONTEXT_SWITCH_RECOVERY_REQUIRED
+  - UNAUTHORIZED_TARGET
+  - CROSS_PROJECT_SWITCH_DENIED
+  - SESSION_RECOVERY_REQUIRED
+  - AUTHORIZED_ROOT_MISMATCH
+  - STALE_TARGET_AUTHORITY
+  - AMBIGUOUS_TRUSTED_CONTEXT
   - INVALID_MODE
   - INVALID_INPUT
   - PROJECT_CONTEXT_MISMATCH

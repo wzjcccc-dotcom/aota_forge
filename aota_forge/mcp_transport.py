@@ -871,6 +871,9 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # Authority binding (never authority by itself).
         plan_authority_binding=getattr(binding, "plan_authority_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
+        # M2/W4: preserve the existing-store switch composition carrier across
+        # the canonical aota.invoke boundary; it is not a second store.
+        context_switch_runtime=getattr(binding, "context_switch_runtime", None),
         allowed_operations=allowed,
         # AF #56 M3/W3: preserve the trusted project context carriers so the
         # MCP path exposes the same authorized root set / SOURCE_REPOSITORY as

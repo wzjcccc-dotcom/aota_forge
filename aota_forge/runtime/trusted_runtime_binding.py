@@ -192,6 +192,10 @@ class TrustedWorkerBinding:
     # a plan-less legacy launch keeps None.
     plan_authority_binding: Any | None = None
     trusted_task_main_context: Any | None = None
+    # M2/W4: optional executor-neutral switch composition carrier. It reads
+    # the existing coordinator/execution stores; it is not a context store or
+    # an authority source.
+    context_switch_runtime: Any | None = None
     # AF #53 M3/W1 trusted classification of the task-main production
     # composition path this binding was minted for. Mechanical carrier
     # metadata only (it decides no policy); it lets the MCP child classify an
@@ -471,6 +475,11 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("task-main context requires tool_surface work_role task-main")
             if not hasattr(ctx.control_service, "activate_milestone"):
                 raise TrustedBindingError("task-main context control_service missing activate_milestone")
+        if self.context_switch_runtime is not None:
+            if not callable(getattr(self.context_switch_runtime, "current_context", None)):
+                raise TrustedBindingError("context_switch_runtime must expose current_context")
+            if not callable(getattr(self.context_switch_runtime, "switch", None)):
+                raise TrustedBindingError("context_switch_runtime must expose switch")
         # AF #53 M3/W1: explicit trusted task-main runtime path classification.
         if self.task_main_runtime_path not in SUPPORTED_TASK_MAIN_RUNTIME_PATHS:
             raise TrustedBindingError(

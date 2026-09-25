@@ -212,6 +212,9 @@ class CanonicalDispatchBinding:
     # no policy and grants no authority.
     plan_authority_binding: Any | None = None
     trusted_task_main_context: Any | None = None
+    # M2/W4: mechanical carrier for the existing-store switch composition;
+    # never an authority source and never a second context store.
+    context_switch_runtime: Any | None = None
     allowed_operations: frozenset[str] = frozenset()
     # AF #56 M3/W3: mechanical carriers for the #55/M2 trusted project context
     # projection (task-main authorized root set + grounded SOURCE_REPOSITORY).

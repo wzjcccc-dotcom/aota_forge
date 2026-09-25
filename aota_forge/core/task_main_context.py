@@ -38,11 +38,14 @@ AUTHORITY_REF_IS_AUTHORITY = False
 LOCATOR_IS_AUTHORITY = False
 MODEL_MINTS_AUTHORITY = False
 NEW_CONTEXT_STORE_CREATED = False
-LIVE_CONTEXT_SWITCH_IMPLEMENTED = False
+# The public switch path is implemented when the trusted W4 runtime carrier is
+# composed; legacy bindings without that carrier remain fail-closed.
+LIVE_CONTEXT_SWITCH_IMPLEMENTED = True
 M1_DURABLE_BINDING_CREATED = False
 
 _MAX_LOCATOR_LENGTH = 512
 _SAFE_LOCATOR = re.compile(r"^[^\x00\r\n\t ]{1,512}$")
+_NO_GOVERNANCE_CONTEXT_OVERRIDE = object()
 
 
 class TaskMainContextError(ValueError):
@@ -245,9 +248,15 @@ def _trusted_authorized_roots(binding: object) -> Any | None:
 def _trusted_governance_context(
     binding: object,
     identity: TrustedProjectPlanIdentity,
+    *,
+    carrier_override: object = _NO_GOVERNANCE_CONTEXT_OVERRIDE,
 ) -> dict[str, Any] | None:
     """Return a bounded projection only when it agrees with trusted identity."""
-    carrier = getattr(binding, "governance_context", None)
+    carrier = (
+        getattr(binding, "governance_context", None)
+        if carrier_override is _NO_GOVERNANCE_CONTEXT_OVERRIDE
+        else carrier_override
+    )
     if carrier is None:
         return None
     if not isinstance(carrier, Mapping):
@@ -387,7 +396,8 @@ def dispatch_task_main_context(
 
     ``inspect`` is read-only. ``bind`` validates a model locator against the
     trusted runtime binding but does not resolve or persist anything. ``switch``
-    is intentionally unavailable until the later switch work item.
+    delegates to the composed W4 runtime; bindings without that trusted carrier
+    remain unavailable.
     """
 
     if not isinstance(arguments, Mapping):
@@ -397,9 +407,24 @@ def dispatch_task_main_context(
         if not isinstance(mode, str) or mode not in CONTEXT_MODES:
             raise TaskMainContextError("INVALID_MODE", "mode must be inspect, bind, or switch")
         locator = _locator_from_arguments(arguments)
-        identity = trusted_identity_from_binding(binding)
+        switch_runtime = getattr(binding, "context_switch_runtime", None)
+        runtime_governance_context: object = _NO_GOVERNANCE_CONTEXT_OVERRIDE
+        if switch_runtime is not None:
+            try:
+                runtime_view = switch_runtime.current_context()
+                identity = runtime_view.identity
+                authorized_roots = runtime_view.target.authorized_roots
+                runtime_governance_context = runtime_view.target.governance_context
+            except Exception as exc:
+                code = getattr(exc, "code", "CONTEXT_SWITCH_RECOVERY_REQUIRED")
+                raise TaskMainContextError(
+                    code if isinstance(code, str) else "CONTEXT_SWITCH_RECOVERY_REQUIRED",
+                    str(exc)[:512] or "durable context rehydration failed",
+                ) from exc
+        else:
+            identity = trusted_identity_from_binding(binding)
+            authorized_roots = _trusted_authorized_roots(binding)
         legacy_plan_binding = getattr(binding, "plan_binding", None)
-        authorized_roots = _trusted_authorized_roots(binding)
 
         if mode == CONTEXT_MODE_INSPECT:
             if identity is None:
@@ -409,7 +434,11 @@ def dispatch_task_main_context(
                         "governance context requires a trusted Project/Plan binding",
                     )
                 return ToolResponse.success(_snapshot(mode, None, binding_status="unbound"))
-            governance_context = _trusted_governance_context(binding, identity)
+            governance_context = _trusted_governance_context(
+                binding,
+                identity,
+                carrier_override=runtime_governance_context,
+            )
             status = "bound" if identity.plan_binding.source_digest is not None else "bound_unverified"
             return ToolResponse.success(
                 _snapshot(
@@ -431,8 +460,23 @@ def dispatch_task_main_context(
                 "CONTEXT_LOCATOR_REQUIRED",
                 f"{mode} requires project_ref or plan_ref",
             )
+
+        if mode == CONTEXT_MODE_SWITCH and switch_runtime is not None:
+            try:
+                return ToolResponse.success(switch_runtime.switch(locator))
+            except Exception as exc:
+                code = getattr(exc, "code", "CONTEXT_SWITCH_RECOVERY_REQUIRED")
+                raise TaskMainContextError(
+                    code if isinstance(code, str) else "CONTEXT_SWITCH_RECOVERY_REQUIRED",
+                    str(exc)[:512] or "context switch failed closed",
+                ) from exc
+
         _match_locator(locator, identity, legacy_plan_binding=legacy_plan_binding)
-        governance_context = _trusted_governance_context(binding, identity)
+        governance_context = _trusted_governance_context(
+            binding,
+            identity,
+            carrier_override=runtime_governance_context,
+        )
 
         if mode == CONTEXT_MODE_BIND:
             if identity.plan_binding.source_digest is None:
@@ -450,12 +494,12 @@ def dispatch_task_main_context(
                 )
             )
 
-        # M1/W1 defines the switch contract but does not implement live
-        # switching or mutate the current trusted runtime binding.
+        # Legacy bindings keep the original fail-closed behavior when the W4
+        # trusted runtime carrier was not composed.
         return ToolResponse.failure(
             {
                 "code": "CONTEXT_SWITCH_UNAVAILABLE",
-                "message": "live context switching is not implemented in M1/W1",
+                "message": "live context switching requires the trusted W4 runtime composition",
             }
         )
     except TaskMainContextError as exc:

@@ -477,6 +477,9 @@ class ThinTaskMainHost:
     # only when trusted durable lookup inputs were explicitly supplied.
     plan_authority_reader: Any | None = None
     governance_store: Any | None = None
+    # M2/W4: optional existing-store context-switch composition. The host
+    # remains thin; durable truth stays in the supplied coordinator store.
+    context_switch_runtime: Any | None = None
 
     @property
     def origin_session_is_bound(self) -> bool:
@@ -541,6 +544,7 @@ def compose_thin_task_main_host(
     governance_context: Mapping[str, Any] | None = None,
     governance_store_path: str | PathLike[str] | None = None,
     plan_authority_reader: Any | None = None,
+    context_switch_runtime: Any | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -854,6 +858,52 @@ def compose_thin_task_main_host(
             if isinstance(observed_binding, PlanAuthorityBinding):
                 plan_authority_binding = observed_binding
 
+    if context_switch_runtime is not None:
+        try:
+            candidates = tuple(getattr(project_evidence, "candidates", ()) or ())
+            if len(candidates) != 1:
+                raise TrustedBindingError(
+                    "context switch requires singular trusted Project evidence"
+                )
+            project_fingerprint = str(getattr(candidates[0], "candidate_fingerprint", "") or "")
+            configure_resolver = getattr(
+                context_switch_runtime,
+                "configure_local_governance_target_resolver",
+                None,
+            )
+            if (
+                callable(configure_resolver)
+                and local_governance_binding is not None
+                and resolved_governance_store is not None
+            ):
+                configure_resolver(
+                    project_id=pid,
+                    project_fingerprint=project_fingerprint,
+                    origin_task_main_session_ref=origin,
+                    authorized_roots=authorized_roots,
+                    governance_store=resolved_governance_store,
+                )
+            binder = getattr(context_switch_runtime, "bind_source", None)
+            if not callable(binder):
+                raise TrustedBindingError("context_switch_runtime must expose bind_source")
+            binder(
+                project_id=pid,
+                project_fingerprint=project_fingerprint,
+                plan_binding=plan_authority_binding,
+                origin_task_main_session_ref=origin,
+                authorized_roots=authorized_roots,
+                governance_context=governance_context,
+                sandbox=sandbox,
+            )
+        except TrustedBindingError:
+            if resolved_governance_store is not None:
+                resolved_governance_store.close()
+            raise
+        except Exception as exc:
+            if resolved_governance_store is not None:
+                resolved_governance_store.close()
+            raise TrustedBindingError(f"thin host context-switch composition failed: {exc}") from exc
+
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
         project_id=pid,
@@ -880,6 +930,7 @@ def compose_thin_task_main_host(
         # AF #57 M1/W4: the one source-neutral Plan Authority binding (None
         # for a plan-less legacy launch; never a second authority ontology).
         plan_authority_binding=plan_authority_binding,
+        context_switch_runtime=context_switch_runtime,
         # The thin seam: no TrustedTaskMainRuntimeContext => M2/W1 generic thin
         # task lifecycle; no legacy workflow object is required or passed.
         trusted_task_main_context=None,
@@ -946,6 +997,7 @@ def compose_thin_task_main_host(
         plan_authority_binding=plan_authority_binding,
         plan_authority_reader=resolved_plan_authority,
         governance_store=resolved_governance_store,
+        context_switch_runtime=context_switch_runtime,
         governance_context=governance_context,
     )
 
