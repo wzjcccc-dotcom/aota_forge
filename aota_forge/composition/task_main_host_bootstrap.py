@@ -28,53 +28,53 @@ the normal worker binding path is used.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from aota_forge.core.context import bind_trusted_context
-from aota_forge.core.contracts.canonical import canonical_json
-from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_GITHUB_ISSUE,
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
     PlanAuthorityBinding,
 )
+from aota_forge.composition.completion_evidence import (
+    create_automatic_governed_evidence_resolver,
+    derive_governed_review_evidence,
+)
 from aota_forge.composition.execution import create_production_execution_dispatcher
-from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
-from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoordinatorStore
-from aota_forge.runtime.task_main.coordinator import MilestonePlanView
+from aota_forge.composition.project_binding import (
+    resolve_trusted_project_binding,
+    resolve_trusted_project_evidence,
+)
 from aota_forge.composition.task_main import create_task_main_control_service
-from aota_forge.runtime.trusted_runtime_binding import (
-    PRE_RESOLVED_BINDING_ENV,
-    TrustedBindingError,
-    TrustedTaskMainRuntimeContext,
-    TrustedWorkerBinding,
-    create_task_main_envelope,
-    verify_envelope,
+from aota_forge.core.context import bind_trusted_context
+from aota_forge.core.contracts.canonical import canonical_json
+from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
+from aota_forge.core.plan.validation import is_plan_id
+from aota_forge.core.project.resolver import (
+    ProjectCandidateEvidence,
+    ProjectResolutionEvidence,
+)
+from aota_forge.governance.project_store import (
+    USER_GATE_STATE_SATISFIED,
+    ProjectPlanUserGateRecord,
+)
+from aota_forge.governance.stewardship import (
+    GovernanceCheckpointKind,
+    MaterializationRequest,
+    SemanticFactSet,
+    StewardshipCheckpoint,
+    build_semantic_steward_handoff,
+    evaluate_checkpoint,
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_THIN
-from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
-from aota_forge.work_plane.handoff_runtime import (
-    WorkSemanticProjection,
-    WorkScopeInsufficientError,
-    generic_fallback_scope_template,
-    generic_fallback_task_kind,
-    parse_work_semantics_table,
-    resolve_bounded_work_handoff,
+from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
+from aota_forge.runtime.task_main.coordinator import MilestonePlanView
+from aota_forge.runtime.task_main.coordinator_store import (
+    FileBackedTaskMainCoordinatorStore,
 )
-from aota_forge.work_plane.progression import MilestoneWorkItemGraph
-from aota_forge.work_plane.tool_surface import create_role_tool_surface
-from aota_forge.work_plane.workspace_tools import (
-    WORKSPACE_READ_DESCRIPTOR,
-    WORKSPACE_SEARCH_DESCRIPTOR,
-    create_workspace_authority,
-)
-from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
-from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
-from aota_forge.work_plane.progression import FocusedValidationEvidence, FocusedValidationVerdict
 from aota_forge.runtime.task_main.reconciliation import (
     COMPLETION_KIND_REVIEW,
     DISPOSITION_REVIEW_READY_FOR_STEWARD,
@@ -92,36 +92,49 @@ from aota_forge.runtime.task_main.review_adoption import (
     reviewer_task_id,
     trusted_plan_authority_from_binding,
 )
-from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
-from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
-from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
-from aota_forge.governance.stewardship import (
-    GovernanceCheckpointKind,
-    MaterializationRequest,
-    SemanticFactSet,
-    StewardshipCheckpoint,
-    build_semantic_steward_handoff,
-    evaluate_checkpoint,
+from aota_forge.runtime.trusted_runtime_binding import (
+    PRE_RESOLVED_BINDING_ENV,
+    TrustedBindingError,
+    TrustedTaskMainRuntimeContext,
+    TrustedWorkerBinding,
+    create_task_main_envelope,
+    verify_envelope,
 )
+from aota_forge.work_plane.github_tools import parse_plan_ref
+from aota_forge.work_plane.handoff import SemanticReference, TaskHandoff
+from aota_forge.work_plane.handoff_runtime import (
+    WorkScopeInsufficientError,
+    WorkSemanticProjection,
+    generic_fallback_scope_template,
+    generic_fallback_task_kind,
+    parse_work_semantics_table,
+    resolve_bounded_work_handoff,
+)
+from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
+from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
+from aota_forge.work_plane.progression import (
+    FocusedValidationEvidence,
+    FocusedValidationVerdict,
+    MilestoneWorkItemGraph,
+)
+from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
 from aota_forge.work_plane.steward_finalizer import (
     ClosurePhase,
     TrustedPlanIdentity,
     TrustedProjectBinding,
     TrustedUserGateState,
 )
-from aota_forge.work_plane.github_tools import parse_plan_ref
-from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
-from aota_forge.composition.project_binding import (
-    resolve_trusted_project_binding,
-    resolve_trusted_project_evidence,
+from aota_forge.work_plane.tool_surface import create_role_tool_surface
+from aota_forge.work_plane.workspace_tools import (
+    WORKSPACE_READ_DESCRIPTOR,
+    WORKSPACE_SEARCH_DESCRIPTOR,
+    create_workspace_authority,
 )
-from aota_forge.composition.completion_evidence import (
-    create_automatic_governed_evidence_resolver,
-    derive_governed_review_evidence,
-)
+from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
 
 BOOTSTRAP_ENV_ROOT = "AOTA_W3_MCP_ROOT"
 BOOTSTRAP_RELPATH = ".aota/task-main-bootstrap.json"
+MILESTONE_CLOSE_GATE_KIND = "milestone_close"
 # Also accept explicit path for testing harness
 BOOTSTRAP_EXPLICIT_ENV = "AOTA_TASK_MAIN_BOOTSTRAP"
 
@@ -462,6 +475,33 @@ def _readiness_from_durable_state(
     )
 
 
+def resolve_milestone_close_user_gate(
+    governance_store: Any,
+    *,
+    project_id: str,
+    plan_id: str | None,
+    milestone_id: str,
+) -> TrustedUserGateState:
+    """Resolve one exact durable milestone-close gate, fail closed otherwise."""
+    if governance_store is None or plan_id is None:
+        return TrustedUserGateState(user_approval_satisfied=False)
+    try:
+        record = governance_store.get_user_gate(project_id, plan_id)
+    except Exception:
+        return TrustedUserGateState(user_approval_satisfied=False)
+    if not isinstance(record, ProjectPlanUserGateRecord):
+        return TrustedUserGateState(user_approval_satisfied=False)
+    if (
+        record.project_id != project_id
+        or record.plan_id != plan_id
+        or record.gate_kind != MILESTONE_CLOSE_GATE_KIND
+        or record.gate_scope != milestone_id
+        or record.state != USER_GATE_STATE_SATISFIED
+    ):
+        return TrustedUserGateState(user_approval_satisfied=False)
+    return TrustedUserGateState(user_approval_satisfied=True)
+
+
 def _build_stewardship_checkpoint(
     *,
     runner_outcome: Any,
@@ -472,6 +512,7 @@ def _build_stewardship_checkpoint(
     semantic_facts: SemanticFactSet,
     plan_id: str | None,
     all_milestones_closed: bool | None = None,
+    milestone_close_user_gate: TrustedUserGateState | None = None,
 ) -> StewardshipCheckpoint:
     if getattr(runner_outcome, "milestone_closure_ready", False) is not True:
         raise TrustedBindingError(
@@ -498,18 +539,22 @@ def _build_stewardship_checkpoint(
         )
     )
     checkpoint_id = f"stewardship:{hashlib.sha256(identity_material.encode('utf-8')).hexdigest()}"
-    # The canonical Plan projection supplies the next trusted Milestone view;
-    # absence plus the durable user gate means this is an accepted final Plan
-    # closure. No model or runner text can assert the Plan-close fact.
-    next_milestone_view_is_none = (
-        all_milestones_closed is True
-        and plan_id is not None
+    # The Plan-close branch retains its existing final-Plan gate semantics.
+    # Intermediate acceptance is independently grounded in a durable gate.
+    plan_close_candidate = all_milestones_closed is True and plan_id is not None
+    plan_close_accepted = (
+        plan_close_candidate
         and state.user_approval_satisfied is True
     )
     checkpoint_kind = (
         GovernanceCheckpointKind.PLAN_CLOSE
-        if next_milestone_view_is_none
+        if plan_close_accepted
         else GovernanceCheckpointKind.MILESTONE_CLOSE
+    )
+    user_gate = (
+        TrustedUserGateState(user_approval_satisfied=state.user_approval_satisfied)
+        if plan_close_candidate
+        else milestone_close_user_gate or TrustedUserGateState(user_approval_satisfied=False)
     )
     return StewardshipCheckpoint(
         checkpoint_id=checkpoint_id,
@@ -525,18 +570,16 @@ def _build_stewardship_checkpoint(
         milestone_ref=state.milestone_id,
         closure_phase=(
             ClosurePhase.ACCEPTED_CLOSURE
-            if next_milestone_view_is_none
+            if user_gate.user_approval_satisfied
             else ClosurePhase.REVIEWED_CLOSURE
         ),
         readiness=readiness,
-        user_gate=TrustedUserGateState(
-            user_approval_satisfied=state.user_approval_satisfied,
-        ),
+        user_gate=user_gate,
         materialization=MaterializationRequest(),
         semantic_facts=semantic_facts,
         open_blocker_refs=state.open_blockers,
         plan_authority_ref=state.plan_authority,
-        all_milestones_closed=True if next_milestone_view_is_none else None,
+        all_milestones_closed=True if plan_close_accepted else None,
     )
 
 
@@ -564,8 +607,11 @@ def _production_steward_dispatch_factory(
 ):
     """Build the legacy semantic dispatch through the existing task-start seam."""
     def factory(checkpoint: StewardshipCheckpoint):
+        from aota_forge.work_plane.handoff_store import (
+            HANDOFF_CONTROL_FIELDS,
+            handoff_write,
+        )
         from aota_forge.work_plane.task_facade import task_start
-        from aota_forge.work_plane.handoff_store import HANDOFF_CONTROL_FIELDS, handoff_write
 
         if checkpoint.plan_id is None or checkpoint.plan_id != plan_id:
             raise RuntimeError("semantic Steward dispatch requires the trusted internal Plan ID")
@@ -1104,10 +1150,10 @@ def _validate_bootstrap_trust_boundary(data: dict[str, Any], bootstrap_path: Pat
     (env root, worktree scope, store locations). Prevents tamper that could
     cross project/worktree/session scope or inject foreign store paths.
     """
-    from aota_forge.runtime.trusted_runtime_binding import TrustedBindingError
-
     # Basic identifier shape
     import re
+
+    from aota_forge.runtime.trusted_runtime_binding import TrustedBindingError
 
     _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
     for field in ("project_id", "worktree_id"):
@@ -1269,6 +1315,7 @@ def validate_semantic_steward_dispatch_grounding(
     plan_id: str | None,
     all_milestones_closed: bool,
     project_id: str,
+    milestone_close_user_gate: TrustedUserGateState | None = None,
 ) -> TaskHandoff:
     """Reconcile a declared semantic Steward dispatch with trusted facts.
 
@@ -1320,6 +1367,7 @@ def validate_semantic_steward_dispatch_grounding(
         semantic_facts=semantic_facts,
         plan_id=plan_id,
         all_milestones_closed=all_milestones_closed,
+        milestone_close_user_gate=milestone_close_user_gate,
     )
     if checkpoint.project_id != project_id:
         raise _deny("semantic Steward checkpoint project does not match the trusted dispatch project")
@@ -1591,7 +1639,9 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         work_handoff_ref: str | None = None,
         work_handoff_digest: str | None = None,
     ) -> Any:
-        from aota_forge.composition.worker_vertical_slice import build_worker_child_environment
+        from aota_forge.composition.worker_vertical_slice import (
+            build_worker_child_environment,
+        )
 
         return build_worker_child_environment(
             root=_w2_worktree_root,
@@ -1829,6 +1879,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                         plan_id=plan_id,
                         all_milestones_closed=next_view is None,
                         project_id=project_id,
+                        milestone_close_user_gate=resolve_current_milestone_close_user_gate(),
                     )
                 else:
                     if is_review:
@@ -2052,7 +2103,9 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                     "bound reviewer handoff requires the trusted worktree sandbox"
                 )
             from aota_forge.work_plane.handoff_store import handoff_open
-            from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+            from aota_forge.work_plane.task_facade import (
+                load_trusted_work_item_task_handoff,
+            )
 
             try:
                 opened = handoff_open(current_ref, "full", sandbox=sandbox)
@@ -2172,7 +2225,10 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             os.environ.get("AOTA_ALLOW_SYNTHETIC_PROJECT_EVIDENCE") == "1"
             or os.environ.get("AOTA_ALLOW_LEGACY_ENV_DISCOVERY") == "1"
         ):
-            from aota_forge.core.project.resolver import ProjectCandidateEvidence, ProjectResolutionEvidence
+            from aota_forge.core.project.resolver import (
+                ProjectCandidateEvidence,
+                ProjectResolutionEvidence,
+            )
 
             synthetic = ProjectCandidateEvidence(
                 workspace_id=f"test-{project_id}",
@@ -2219,12 +2275,18 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             from aota_forge.adapters.plan_authority.local_governance import (
                 LocalPlanAuthorityDestination,
             )
-            from aota_forge.composition.plan_authority import resolve_bound_plan_authority
-            from aota_forge.composition.project_governance import open_project_governance_store
+            from aota_forge.composition.plan_authority import (
+                resolve_bound_plan_authority,
+            )
+            from aota_forge.composition.project_governance import (
+                open_project_governance_store,
+            )
             from aota_forge.core.identity.ids import make_id
             from aota_forge.core.identity.kinds import IdKind, SubjectKind
             from aota_forge.core.identity.refs import object_ref_subject
-            from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
+            from aota_forge.work_plane.authorized_roots import (
+                LocalGovernanceRootBinding,
+            )
 
             local_root = LocalGovernanceRootBinding.from_trusted_base(
                 governance_base,
@@ -2282,6 +2344,25 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             if authority_store is not None:
                 authority_store.close()
 
+    def resolve_current_milestone_close_user_gate() -> TrustedUserGateState:
+        """Read the trusted intermediate Milestone-close gate without writing."""
+        if next_view is None or governance_store_path is None or plan_id is None:
+            return TrustedUserGateState(user_approval_satisfied=False)
+        from aota_forge.composition.project_governance import (
+            open_project_governance_store,
+        )
+
+        gate_store = open_project_governance_store(governance_store_path)
+        try:
+            return resolve_milestone_close_user_gate(
+                gate_store,
+                project_id=project_id,
+                plan_id=plan_id,
+                milestone_id=live_view.milestone_id,
+            )
+        finally:
+            gate_store.close()
+
     # AF #57 M3/W3: the production legacy composition owns the trusted
     # checkpoint reconstruction and semantic dispatch factory. Deterministic
     # checkpoints never invoke the factory; semantic checkpoints use the
@@ -2300,6 +2381,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             semantic_facts=semantic_facts,
             plan_id=plan_id,
             all_milestones_closed=next_view is None,
+            milestone_close_user_gate=resolve_current_milestone_close_user_gate(),
         )
 
     stewardship_dispatch_factory = _production_steward_dispatch_factory(
@@ -2392,9 +2474,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # via broad seam (sandbox + operation, handoff as context not ACL).
     # Use the control handoff itself as context (not Worker TaskHandoff).
     from aota_forge.work_plane.workspace_tools import (
-        create_broad_workspace_read_authority,
         WORKSPACE_READ_DESCRIPTOR as _W3_READ_DESC,
+    )
+    from aota_forge.work_plane.workspace_tools import (
         WORKSPACE_SEARCH_DESCRIPTOR as _W3_SEARCH_DESC,
+    )
+    from aota_forge.work_plane.workspace_tools import (
+        create_broad_workspace_read_authority,
     )
     try:
         read_authorities = (
@@ -2404,7 +2490,10 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     except Exception:
         read_authorities = ()
     # W3 restricted shell for task-main: inspection + git_inspection only
-    from aota_forge.work_plane.restricted_shell import create_restricted_shell_authority, RESTRICTED_SHELL_DESCRIPTOR as _W3_SHELL_DESC
+    from aota_forge.work_plane.restricted_shell import (
+        RESTRICTED_SHELL_DESCRIPTOR as _W3_SHELL_DESC,
+    )
+    from aota_forge.work_plane.restricted_shell import create_restricted_shell_authority
     try:
         restricted_shell_authority = create_restricted_shell_authority(sandbox, handoff, (), _W3_SHELL_DESC)
     except Exception:
