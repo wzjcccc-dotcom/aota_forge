@@ -31,8 +31,14 @@ from aota_forge.runtime.task_main.coordinator_store import TaskMainCoordinatorSt
 from aota_forge.runtime.task_main.reconciliation import GovernedWorkItemEvidence, ReconciliationError
 from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.progression import FocusedValidationEvidence, FocusedValidationVerdict
-from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
+from aota_forge.work_plane.risk_review import (
+    MilestoneRiskEnvelope,
+    ProcessDepth,
+    ReviewTrigger,
+    parse_review_trigger,
+)
 from aota_forge.work_plane.handoff import SemanticReference
+from aota_forge.work_plane.milestone_review import ReviewCycle, parse_review_cycle
 
 
 def _neutral_envelope(milestone_id: str) -> MilestoneRiskEnvelope:
@@ -209,6 +215,8 @@ def derive_governed_review_evidence(
     live_plan_view: MilestonePlanView,
     reviewed_frontier_ref: str | SemanticReference,
     reviewer_handoff_resolver: Callable[[], TaskHandoff],
+    review_cycle: ReviewCycle | str | None = None,
+    review_triggers: tuple[ReviewTrigger | str, ...] | list[ReviewTrigger | str] = (),
 ) -> dict:
     """Minimal helper for review evidence derivation (reviewer card -> GovernedReviewEvidence).
 
@@ -230,8 +238,36 @@ def derive_governed_review_evidence(
         raise ReconciliationError("reviewed_frontier_ref must be a trusted string or SemanticReference")
     if not frontier_ref:
         raise ReconciliationError("reviewed_frontier_ref must be non-empty")
-    if frontier_ref == f"frontier-{live_plan_view.milestone_id}-rv1":
+    if review_cycle is None:
+        try:
+            from aota_forge.runtime.task_main.review_adoption import (
+                review_cycle_from_canonical_task_id,
+            )
+
+            review_cycle = review_cycle_from_canonical_task_id(reviewer_canonical_task_id)
+        except (TypeError, ValueError):
+            review_cycle = ReviewCycle.RV1
+    else:
+        try:
+            review_cycle = parse_review_cycle(review_cycle)
+        except (TypeError, ValueError) as exc:
+            raise ReconciliationError(f"review_cycle is invalid: {exc}") from exc
+    if frontier_ref in {
+        f"frontier-{live_plan_view.milestone_id}-rv1",
+        f"frontier-{live_plan_view.milestone_id}-rv2",
+    }:
         raise ReconciliationError("synthetic milestone frontier is not a trusted review frontier")
+    if not isinstance(review_triggers, (tuple, list)):
+        raise ReconciliationError("review_triggers must be tuple/list")
+    try:
+        parsed_review_triggers = tuple(
+            sorted(
+                {parse_review_trigger(trigger) for trigger in review_triggers},
+                key=lambda trigger: trigger.value,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReconciliationError(f"review_triggers are invalid: {exc}") from exc
 
     record = execution_store.get(reviewer_canonical_task_id)
     if record is None or record.worker_result_card is None:
@@ -246,7 +282,7 @@ def derive_governed_review_evidence(
     handoff = reviewer_handoff_resolver()
     ev = MilestoneReviewEvidence(
         milestone_ref=SemanticReference(ref=live_plan_view.milestone_id),
-        review_cycle=ReviewCycle.RV1,
+        review_cycle=review_cycle,
         reviewed_frontier_ref=SemanticReference(ref=frontier_ref),
         review_result_ref=card.result_handoff_ref,
         review_result_digest=card.compute_card_digest(),
@@ -258,6 +294,7 @@ def derive_governed_review_evidence(
         review_task_handoff=handoff,
         expected_frontier=SemanticReference(ref=frontier_ref),
         expected_final_frontier=SemanticReference(ref=frontier_ref),
+        review_triggers=parsed_review_triggers,
     )
 
 

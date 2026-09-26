@@ -36,6 +36,7 @@ from aota_forge.work_plane.milestone_review import (
 from aota_forge.work_plane.progression import FocusedValidationEvidence, FocusedValidationVerdict
 from aota_forge.work_plane.result_card import ResultHandoffRef, WorkerResultCard
 from aota_forge.work_plane.roles import AgentWorkRole
+from aota_forge.work_plane.risk_review import ReviewTrigger, parse_review_trigger
 from aota_forge.work_plane.stop import MechanicalFailure, SemanticStop, SemanticStopReason, StopKind
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ CONDITIONAL_PREDECESSOR_REVISION_GATE_RETAINED: bool = True
 CONDITIONAL_PREDECESSOR_REVISION_GATE_TRIGGERED: bool = False
 
 RV2_ONLY_IF_REPAIR: bool = True
+RV2_TRIGGERED_BY_TRUSTED_REVIEW_TRIGGER: bool = True
 RV3_RV4_GENERIC_LOOP_CREATED: bool = False
 UNBOUNDED_REVIEW_REPAIR_LOOP: bool = False
 
@@ -922,6 +924,7 @@ def evaluate_milestone_review_workflow(
     post_failure_fingerprints: tuple[FailureFingerprint, ...] | list[FailureFingerprint] | None = None,
     milestone_ref: SemanticReference | str | Mapping[str, Any] | None = None,
     semantic_boundary_exceeded: bool = False,
+    review_triggers: tuple[ReviewTrigger | str, ...] | list[ReviewTrigger | str] | None = None,
     **kwargs: Any,
 ) -> MilestoneReviewWorkflowDisposition:
     """Pure deterministic workflow disposition evaluator.
@@ -964,7 +967,6 @@ def evaluate_milestone_review_workflow(
     failure_fingerprints_t: tuple[FailureFingerprint, ...] = tuple(failure_fingerprints) if failure_fingerprints else ()
     pre_fps_t: tuple[FailureFingerprint, ...] = tuple(pre_failure_fingerprints) if pre_failure_fingerprints else ()
     post_fps_t: tuple[FailureFingerprint, ...] = tuple(post_failure_fingerprints) if post_failure_fingerprints else ()
-
     # Combine failure fingerprints for repeated detection
     # If failure_fingerprints provided as generic list, treat as post?
     # Merge pre+post+f generic for overflow checks etc
@@ -1015,6 +1017,19 @@ def evaluate_milestone_review_workflow(
             supporting_refs=(),
             reasons=(reason[:MAX_REASON_LENGTH],),
         )
+
+    if review_triggers is None:
+        review_triggers_t: tuple[ReviewTrigger, ...] = ()
+    else:
+        if not isinstance(review_triggers, (tuple, list)):
+            return _blocked("review_triggers must be tuple/list")
+        try:
+            review_triggers_t = tuple(
+                sorted({parse_review_trigger(trigger) for trigger in review_triggers}, key=lambda item: item.value)
+            )
+        except (TypeError, ValueError) as exc:
+            return _blocked(f"review trigger validation error: {exc}")
+    triggered_rv2 = ReviewTrigger.CORE_CONTRACT_OR_PROTOCOL_CHANGE in review_triggers_t
 
     # --- Precedence: invalid/conflicting -> BLOCKED ---
     if rv1_evidence is None:
@@ -1139,8 +1154,9 @@ def evaluate_milestone_review_workflow(
     # For simplicity, if failure_fingerprints_t has at least two distinct fingerprints and they are not same, treat as different failure -> BLOCKED?
     # But without pre/post distinction, we cannot know. So we only handle pre/post case.
 
-    # --- RV2 without repair fail closed ---
-    if rv2_evidence is not None and repair_count == 0 and history_count == 0:
+    # --- RV2 without repair normally fails closed; a trusted core-contract
+    # trigger is the bounded exception for a clean RV1 frontier rollover. ---
+    if rv2_evidence is not None and repair_count == 0 and history_count == 0 and not triggered_rv2:
         return _blocked("rv2 without repair")
 
     # --- Repair evidence validation for blocking findings ---
@@ -1153,7 +1169,64 @@ def evaluate_milestone_review_workflow(
         # Also no repair history with entries
         if history_count > 0:
             return _blocked("contradictory repair history for clean rv1")
-        # RV2 without repair already checked, but clean RV1 with RV2 should be blocked (since RV2 only if repair)
+        if triggered_rv2:
+            if expected_rv2_frontier is None:
+                return _blocked("triggered rv2 requires an explicit expected frontier")
+            try:
+                rv1_frontier = _normalize_frontier(rv1_evidence.reviewed_frontier_ref)
+                expected_rv2 = _normalize_frontier(expected_rv2_frontier)
+            except Exception as exc:
+                return _blocked(f"triggered rv2 frontier validation error: {exc}")
+            if expected_rv2 == rv1_frontier:
+                return _blocked("triggered rv2 requires a changed trusted frontier")
+            if rv2_evidence is None:
+                return MilestoneReviewWorkflowDisposition(
+                    disposition=WorkflowDisposition.RV2_REQUIRED,
+                    milestone_ref=rv1_evidence.milestone_ref,
+                    final_frontier_ref=SemanticReference(ref=expected_rv2),
+                    affected_finding_refs=(),
+                    supporting_refs=(),
+                    reasons=("trusted core-contract trigger requires one RV2",),
+                )
+            if not isinstance(rv2_evidence, MilestoneReviewEvidence):
+                return _blocked("rv2 evidence wrong type")
+            if rv2_evidence.review_cycle != ReviewCycle.RV2:
+                return _blocked("rv2 cycle must be RV2")
+            if rv2_evidence.milestone_ref.ref != rv1_evidence.milestone_ref.ref:
+                return _blocked("rv2 milestone mismatch")
+            if _normalize_frontier(rv2_evidence.reviewed_frontier_ref) != expected_rv2:
+                return _blocked("wrong expected rv2 frontier")
+            if expected_final_frontier is not None:
+                try:
+                    if _normalize_frontier(expected_final_frontier) != expected_rv2:
+                        return _blocked("wrong expected final frontier")
+                except Exception as exc:
+                    return _blocked(f"final frontier validation error: {exc}")
+            ok, msg = _validate_review_binding(rv2_evidence, rv2_result_card, rv2_task_handoff)
+            if not ok:
+                return _blocked(f"rv2 {msg}")
+            ok, msg = _validate_finding_set(rv2_evidence, rv2_findings_t)
+            if not ok:
+                return _blocked(f"rv2 {msg}")
+            rv2_blocking = tuple(
+                finding
+                for finding in rv2_findings_t
+                if finding.classification == ReviewFindingClassification.BLOCKING
+            )
+            if rv2_blocking:
+                return _replan(
+                    "rv2 blocking",
+                    frontier=rv2_evidence.reviewed_frontier_ref,
+                    affected=tuple(finding.finding_ref for finding in rv2_blocking),
+                )
+            return MilestoneReviewWorkflowDisposition(
+                disposition=WorkflowDisposition.READY_FOR_STEWARD,
+                milestone_ref=rv2_evidence.milestone_ref,
+                final_frontier_ref=rv2_evidence.reviewed_frontier_ref,
+                affected_finding_refs=(),
+                supporting_refs=(),
+                reasons=("clean rv2 after trusted core-contract trigger",),
+            )
         if rv2_evidence is not None:
             return _blocked("rv2 without repair for clean rv1")
         # No blocking, no repair -> READY_FOR_STEWARD
@@ -1480,6 +1553,7 @@ __all__ = [
     "CONDITIONAL_PREDECESSOR_REVISION_GATE_RETAINED",
     "CONDITIONAL_PREDECESSOR_REVISION_GATE_TRIGGERED",
     "RV2_ONLY_IF_REPAIR",
+    "RV2_TRIGGERED_BY_TRUSTED_REVIEW_TRIGGER",
     "RV3_RV4_GENERIC_LOOP_CREATED",
     "UNBOUNDED_REVIEW_REPAIR_LOOP",
     "REPEATED_FAILURE_CANNOT_BLINDLY_REPLAY_SIDE_EFFECT",

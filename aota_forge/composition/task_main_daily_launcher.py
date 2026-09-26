@@ -143,6 +143,7 @@ from aota_forge.runtime.config import (
     task_main_host_profile,
 )
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
+from aota_forge.work_plane.milestone_review import ReviewCycle
 
 # ---------------------------------------------------------------------------
 # Task-main startup prompt surface (M1/W1 — Operator RuntimeConfig & User Startup Surface)
@@ -843,6 +844,7 @@ class DailyTaskMainLauncher:
         git_remote: str | None = None,
         plan_ref: str | None = None,
         plan_id: str | None = None,
+        review_cycle: ReviewCycle | str = ReviewCycle.RV1,
         governance_base: Path | str | None = None,
         evidence_base: Path | str | None = None,
         governance_store_path: Path | str | None = None,
@@ -1094,6 +1096,7 @@ class DailyTaskMainLauncher:
             next_milestone_view=next_view,
             coordinator_id=coordinator_id,
             plan_id=plan_id,
+            review_cycle=review_cycle,
             plan_authority_binding=plan_authority_binding,
             governance_base=Path(governance_base).resolve()
             if governance_base is not None
@@ -1144,6 +1147,7 @@ class DailyTaskMainLauncher:
         git_remote: str | None = None,
         plan_ref: str | None = None,
         plan_id: str | None = None,
+        review_cycle: ReviewCycle | str = ReviewCycle.RV1,
         governance_base: Path | str | None = None,
         evidence_base: Path | str | None = None,
         governance_store_path: Path | str | None = None,
@@ -1167,6 +1171,7 @@ class DailyTaskMainLauncher:
             git_remote=git_remote,
             plan_ref=plan_ref,
             plan_id=plan_id,
+            review_cycle=review_cycle,
             governance_base=governance_base,
             evidence_base=evidence_base,
             governance_store_path=governance_store_path,
@@ -1264,6 +1269,7 @@ class DailyTaskMainLauncher:
         git_remote: str | None = None,
         plan_ref: str | None = None,
         plan_id: str | None = None,
+        review_cycle: ReviewCycle | str = ReviewCycle.RV1,
         governance_base: Path | str | None = None,
         evidence_base: Path | str | None = None,
         governance_store_path: Path | str | None = None,
@@ -1340,6 +1346,7 @@ class DailyTaskMainLauncher:
                 git_remote=git_remote,
                 plan_ref=plan_ref,
                 plan_id=plan_id,
+                review_cycle=review_cycle,
                 governance_base=governance_base,
                 evidence_base=evidence_base,
                 governance_store_path=governance_store_path,
@@ -1361,6 +1368,7 @@ class DailyTaskMainLauncher:
             git_remote=git_remote,
             plan_ref=plan_ref,
             plan_id=plan_id,
+            review_cycle=review_cycle,
             governance_base=governance_base,
             evidence_base=evidence_base,
             governance_store_path=governance_store_path,
@@ -1422,6 +1430,7 @@ class DailyTaskMainLauncher:
             git_remote=git_remote,
             plan_ref=plan_ref,
             plan_id=plan_id,
+            review_cycle=review_cycle,
             governance_base=governance_base,
             evidence_base=evidence_base,
             governance_store_path=governance_store_path,
@@ -1644,6 +1653,7 @@ class DailyTaskMainLauncher:
         git_remote: str | None,
         plan_ref: str | None,
         plan_id: str | None,
+        review_cycle: ReviewCycle | str,
         governance_base: Path | str | None,
         evidence_base: Path | str | None,
         governance_store_path: Path | str | None,
@@ -1739,6 +1749,7 @@ class DailyTaskMainLauncher:
             git_remote=git_remote,
             plan_ref=plan_ref,
             plan_id=plan_id,
+            review_cycle=review_cycle,
             governance_base=governance_base,
             evidence_base=evidence_base,
             governance_store_path=governance_store_path,
@@ -2203,6 +2214,7 @@ def launch_daily_task_main(
     git_remote: str | None = None,
     plan_ref: str | None = None,
     plan_id: str | None = None,
+    review_cycle: ReviewCycle | str = ReviewCycle.RV1,
     governance_base: str | os.PathLike[str] | None = None,
     evidence_base: str | os.PathLike[str] | None = None,
     governance_store_path: str | os.PathLike[str] | None = None,
@@ -2235,6 +2247,7 @@ def launch_daily_task_main(
         git_remote=git_remote,
         plan_ref=plan_ref,
         plan_id=plan_id,
+        review_cycle=review_cycle,
         governance_base=governance_base,
         evidence_base=evidence_base,
         governance_store_path=governance_store_path,

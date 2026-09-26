@@ -607,6 +607,8 @@ class ProjectGovernanceStore(ABC):
         plan_id: str,
         expected_revision: int,
         *,
+        gate_kind: str | None = None,
+        gate_scope: str | None = None,
         state: str | None = None,
         approval_ref: str | None = None,
         approval_digest: str | None = None,

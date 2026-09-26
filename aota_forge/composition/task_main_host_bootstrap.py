@@ -57,7 +57,12 @@ from aota_forge.core.project.resolver import (
     ProjectCandidateEvidence,
     ProjectResolutionEvidence,
 )
+from aota_forge.governance.cross_project_grant import UserGateApproval
 from aota_forge.governance.project_store import (
+    GovernanceMetadataAlreadyExistsError,
+    GovernanceMetadataNotFoundError,
+    StaleGovernanceMetadataRevisionError,
+    USER_GATE_STATE_REQUIRED,
     USER_GATE_STATE_SATISFIED,
     ProjectPlanUserGateRecord,
 )
@@ -87,8 +92,10 @@ from aota_forge.runtime.task_main.review_adoption import (
     ReviewAdoptionError,
     TrustedPlanAuthority,
     mint_accepted_frontier_authorization,
+    normalize_review_cycle,
     normalize_reviewer_attempt,
     read_trusted_git_frontier,
+    review_cycle_from_canonical_task_id,
     reviewer_task_id,
     trusted_plan_authority_from_binding,
 )
@@ -111,13 +118,18 @@ from aota_forge.work_plane.handoff_runtime import (
     resolve_bounded_work_handoff,
 )
 from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
-from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence
+from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle
 from aota_forge.work_plane.progression import (
     FocusedValidationEvidence,
     FocusedValidationVerdict,
     MilestoneWorkItemGraph,
 )
-from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth
+from aota_forge.work_plane.risk_review import (
+    MilestoneRiskEnvelope,
+    ProcessDepth,
+    ReviewTrigger,
+    parse_review_trigger,
+)
 from aota_forge.work_plane.steward_finalizer import (
     ClosurePhase,
     TrustedPlanIdentity,
@@ -137,6 +149,22 @@ BOOTSTRAP_RELPATH = ".aota/task-main-bootstrap.json"
 MILESTONE_CLOSE_GATE_KIND = "milestone_close"
 # Also accept explicit path for testing harness
 BOOTSTRAP_EXPLICIT_ENV = "AOTA_TASK_MAIN_BOOTSTRAP"
+
+
+def _normalize_review_triggers(value: Any) -> tuple[ReviewTrigger, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (tuple, list)):
+        raise ValueError("review_triggers must be tuple/list")
+    try:
+        return tuple(
+            sorted(
+                {parse_review_trigger(trigger) for trigger in value},
+                key=lambda trigger: trigger.value,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"review_triggers are invalid: {exc}") from exc
 
 # M1/W1-R1 task-main-owned Work projection authority (AF #45 repair).
 # Production normal path: task-main planning layer commits a bounded
@@ -502,6 +530,149 @@ def resolve_milestone_close_user_gate(
     return TrustedUserGateState(user_approval_satisfied=True)
 
 
+def materialize_milestone_close_user_gate(
+    governance_store: Any,
+    *,
+    project_id: str,
+    plan_id: str,
+    milestone_id: str,
+    approval: UserGateApproval,
+) -> ProjectPlanUserGateRecord:
+    """Persist one trusted operator approval and return its verified record.
+
+    The caller must already hold a typed Control-Plane approval fact.  A record
+    for another milestone may roll over through the existing CAS seam; a
+    conflicting approval for the same milestone never gets overwritten.
+    """
+    if governance_store is None:
+        raise TrustedBindingError("user-gate materialization requires a governance store")
+    if not isinstance(approval, UserGateApproval):
+        raise TrustedBindingError("user-gate materialization requires a typed UserGateApproval")
+    try:
+        candidate = ProjectPlanUserGateRecord.from_approval(
+            project_id,
+            plan_id,
+            MILESTONE_CLOSE_GATE_KIND,
+            milestone_id,
+            approval,
+            state=USER_GATE_STATE_SATISFIED,
+        )
+        current = governance_store.get_user_gate(project_id, plan_id)
+    except Exception as exc:
+        raise TrustedBindingError(f"user-gate materialization read failed: {exc}") from exc
+
+    def _matches(record: Any) -> bool:
+        return (
+            isinstance(record, ProjectPlanUserGateRecord)
+            and record.project_id == candidate.project_id
+            and record.plan_id == candidate.plan_id
+            and record.gate_kind == candidate.gate_kind
+            and record.gate_scope == candidate.gate_scope
+            and record.approval_ref == candidate.approval_ref
+            and record.approval_digest == candidate.approval_digest
+            and record.state == candidate.state
+        )
+
+    if current is None:
+        try:
+            governance_store.put_user_gate(candidate)
+        except GovernanceMetadataAlreadyExistsError:
+            try:
+                current = governance_store.get_user_gate(project_id, plan_id)
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"user-gate materialization race read failed: {exc}"
+                ) from exc
+            if not _matches(current):
+                raise TrustedBindingError(
+                    "user-gate materialization lost a conflicting create race"
+                )
+            return current
+        except Exception as exc:
+            raise TrustedBindingError(f"user-gate materialization write failed: {exc}") from exc
+        try:
+            verified = governance_store.get_user_gate(project_id, plan_id)
+        except Exception as exc:
+            raise TrustedBindingError(
+                f"user-gate materialization verification failed: {exc}"
+            ) from exc
+        if not _matches(verified):
+            raise TrustedBindingError("user-gate materialization readback mismatch")
+        return verified
+
+    if _matches(current):
+        return current
+    if not isinstance(current, ProjectPlanUserGateRecord):
+        raise TrustedBindingError("durable user-gate record has an invalid type")
+    if current.gate_kind != MILESTONE_CLOSE_GATE_KIND:
+        raise TrustedBindingError("durable user-gate record has a foreign gate kind")
+    if current.gate_scope == milestone_id:
+        if (
+            current.approval_ref != candidate.approval_ref
+            or current.approval_digest != candidate.approval_digest
+        ):
+            raise TrustedBindingError("conflicting approval for the same milestone-close gate")
+        if current.state == USER_GATE_STATE_REQUIRED:
+            try:
+                governance_store.compare_and_swap_user_gate(
+                    project_id,
+                    plan_id,
+                    current.revision,
+                    gate_kind=candidate.gate_kind,
+                    gate_scope=candidate.gate_scope,
+                    state=candidate.state,
+                    approval_ref=candidate.approval_ref,
+                    approval_digest=candidate.approval_digest,
+                )
+            except StaleGovernanceMetadataRevisionError as exc:
+                raise TrustedBindingError(
+                    "user-gate materialization lost a stale CAS race; refusing retry"
+                ) from exc
+            except GovernanceMetadataNotFoundError as exc:
+                raise TrustedBindingError("user-gate materialization record disappeared") from exc
+            except Exception as exc:
+                raise TrustedBindingError(f"user-gate materialization CAS failed: {exc}") from exc
+            try:
+                verified = governance_store.get_user_gate(project_id, plan_id)
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"user-gate materialization CAS readback failed: {exc}"
+                ) from exc
+            if not _matches(verified):
+                raise TrustedBindingError("user-gate materialization CAS readback mismatch")
+            return verified
+        raise TrustedBindingError("same milestone-close gate is not currently satisfied")
+
+    try:
+        governance_store.compare_and_swap_user_gate(
+            project_id,
+            plan_id,
+            current.revision,
+            gate_kind=candidate.gate_kind,
+            gate_scope=candidate.gate_scope,
+            state=candidate.state,
+            approval_ref=candidate.approval_ref,
+            approval_digest=candidate.approval_digest,
+        )
+    except StaleGovernanceMetadataRevisionError as exc:
+        raise TrustedBindingError(
+            "user-gate materialization lost a stale CAS race; refusing retry"
+        ) from exc
+    except GovernanceMetadataNotFoundError as exc:
+        raise TrustedBindingError("user-gate materialization record disappeared") from exc
+    except Exception as exc:
+        raise TrustedBindingError(f"user-gate materialization CAS failed: {exc}") from exc
+    try:
+        verified = governance_store.get_user_gate(project_id, plan_id)
+    except Exception as exc:
+        raise TrustedBindingError(
+            f"user-gate materialization CAS readback failed: {exc}"
+        ) from exc
+    if not _matches(verified):
+        raise TrustedBindingError("user-gate materialization CAS readback mismatch")
+    return verified
+
+
 def _build_stewardship_checkpoint(
     *,
     runner_outcome: Any,
@@ -814,9 +985,11 @@ def _reviewer_handoff(
     project_id: str | None = None,
     plan_authority: str | None = None,
     plan_digest: str | None = None,
+    review_cycle: ReviewCycle = ReviewCycle.RV1,
 ) -> TaskHandoff:
+    review_cycle = normalize_review_cycle(review_cycle)
     return _handoff_for(
-        "RV1",
+        review_cycle.value,
         milestone_ref=milestone_ref,
         project_id=project_id,
         plan_authority=plan_authority,
@@ -908,6 +1081,7 @@ def _materialize_reviewer_work_handoff(
     reviewer_task_id: str,
     plan_id: str | None = None,
     parent_task_identity: str = "",
+    review_cycle: ReviewCycle = ReviewCycle.RV1,
 ) -> dict[str, Any]:
     """Materialize the durable integrated-reviewer work_item handoff (AF #57 M3/RV1).
 
@@ -917,6 +1091,7 @@ def _materialize_reviewer_work_handoff(
     context/refs ride the semantic payload, and the returned real ref/digest
     are what the dispatch and the reviewer bootstrap consume.
     """
+    review_cycle = normalize_review_cycle(review_cycle)
     import dataclasses
 
     from aota_forge.runtime.task_main.coordinator import compute_work_source_digest
@@ -1104,7 +1279,7 @@ def _materialize_reviewer_work_handoff(
         "evidence_refs": [r.ref for r in enriched.evidence_refs],
         "skill_refs": [r.ref for r in enriched.skill_refs],
         "milestone_ref": live_view.milestone_id,
-        "work_item_ref": "RV1",
+        "work_item_ref": review_cycle.value,
         "project_ref": project_id,
     }
     for key in tuple(semantic):
@@ -1125,7 +1300,7 @@ def _materialize_reviewer_work_handoff(
         sandbox=sandbox,
         plan_ref=live_view.plan_authority,
         milestone_id=live_view.milestone_id,
-        work_item_id="RV1",
+        work_item_id=review_cycle.value,
         target_role="reviewer",
         task_id=reviewer_task_id,
         provenance=handoff_provenance,
@@ -1441,6 +1616,14 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         )
     except (TypeError, ValueError) as exc:
         raise TrustedBindingError(f"bootstrap reviewer_attempt invalid: {exc}") from exc
+    try:
+        review_cycle = normalize_review_cycle(data.get("review_cycle", ReviewCycle.RV1))
+    except (TypeError, ValueError) as exc:
+        raise TrustedBindingError(f"bootstrap review_cycle invalid: {exc}") from exc
+    try:
+        review_triggers = _normalize_review_triggers(data.get("review_triggers", ()))
+    except (TypeError, ValueError) as exc:
+        raise TrustedBindingError(f"bootstrap review_triggers invalid: {exc}") from exc
     live_view_dict = data["live_plan_view"]
     next_view_dict = data.get("next_milestone_view")
     raw_plan_id = data.get("plan_id")
@@ -2138,6 +2321,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             project_id=project_id,
             plan_authority=live_view.plan_authority,
             plan_digest=live_view.plan_digest,
+            review_cycle=review_cycle,
         )
 
     # Bind resolvers for the W2 Worker explicit-env seam (closures resolve at call time).
@@ -2168,11 +2352,18 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             live_plan_view=live_view,
             reviewed_frontier_ref=trusted_frontier_ref,
             reviewer_handoff_resolver=reviewer_handoff_resolver,
+            review_cycle=review_cycle_from_canonical_task_id(cid),
+            review_triggers=review_triggers,
         )
 
     def reviewer_canonical_task_id_resolver():
         # The bounded attempt is operator/runtime-owned bootstrap data.
-        return reviewer_task_id(project_id, live_view.milestone_id, reviewer_attempt)
+        return reviewer_task_id(
+            project_id,
+            live_view.milestone_id,
+            reviewer_attempt,
+            review_cycle=review_cycle,
+        )
 
     def reviewer_dispatch_resolver():
         # AF #57 M3/RV1: the trusted runtime review dispatch materializes the
@@ -2197,6 +2388,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             reviewer_task_id=reviewer_canonical_task_id_resolver(),
             plan_id=plan_id,
             parent_task_identity=origin_session,
+            review_cycle=review_cycle,
         )
 
     _w2_holder["reviewer_dispatch_resolver"] = reviewer_dispatch_resolver
@@ -2335,6 +2527,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                     trusted_frontier=trusted_frontier,
                     trusted_authority=trusted_review_authority,
                     reviewer_attempt=reviewer_attempt,
+                    review_cycle=review_cycle,
                 )
         except Exception as exc:
             raise TrustedBindingError(
@@ -2540,6 +2733,8 @@ def write_bootstrap_file(
     coordinator_id: str | None = None,
     plan_id: str | None = None,
     reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+    review_cycle: ReviewCycle | str = ReviewCycle.RV1,
+    review_triggers: tuple[ReviewTrigger | str, ...] | list[ReviewTrigger | str] = (),
     plan_authority_binding: PlanAuthorityBinding | None = None,
     governance_base: Path | None = None,
     governance_store_path: Path | None = None,
@@ -2555,6 +2750,8 @@ def write_bootstrap_file(
     """
     worktree_root = worktree_root.resolve()
     reviewer_attempt = normalize_reviewer_attempt(reviewer_attempt)
+    review_cycle = normalize_review_cycle(review_cycle)
+    review_triggers = _normalize_review_triggers(review_triggers)
     dest = worktree_root / BOOTSTRAP_RELPATH
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2617,6 +2814,10 @@ def write_bootstrap_file(
     }
     if reviewer_attempt != DEFAULT_REVIEWER_ATTEMPT:
         payload["reviewer_attempt"] = reviewer_attempt
+    if review_cycle != ReviewCycle.RV1:
+        payload["review_cycle"] = review_cycle.value
+    if review_triggers:
+        payload["review_triggers"] = [trigger.value for trigger in review_triggers]
     if plan_id is not None:
         if not is_plan_id(plan_id):
             raise ValueError("plan_id must be a canonical internal Plan ID when supplied")

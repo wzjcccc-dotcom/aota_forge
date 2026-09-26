@@ -52,6 +52,7 @@ from aota_forge.work_plane.progression import (
     ProgressionDisposition,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
+from aota_forge.work_plane.milestone_review import ReviewCycle, parse_review_cycle
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import GitPort, SubprocessGitPort
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
@@ -71,7 +72,9 @@ NO_PUBLIC_REVIEW_ADOPTION_OPERATION = True
 
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_REVIEWER_TASK_ATTEMPT_RE = re.compile(r":RV1:attempt-(?P<attempt>[0-9]+)$")
+_REVIEWER_TASK_ID_RE = re.compile(
+    r":(?P<review_cycle>RV1|RV2):attempt-(?P<attempt>[0-9]+)$"
+)
 _MAX_REF_LENGTH = 512
 DEFAULT_REVIEWER_ATTEMPT = 1
 _SUPPORTED_REVIEWER_ATTEMPTS = frozenset({1, 2})
@@ -297,19 +300,41 @@ def normalize_reviewer_attempt(value: Any) -> int:
     return value
 
 
-def reviewer_attempt_from_canonical_task_id(value: Any) -> int:
-    """Extract the bounded attempt from a canonical RV1 task identity."""
+def normalize_review_cycle(value: Any) -> ReviewCycle:
+    try:
+        return parse_review_cycle(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"review_cycle must be RV1 or RV2: {exc}") from exc
 
+
+def _reviewer_task_id_match(value: Any) -> re.Match[str]:
     task_id = _require_non_empty_str(value, "reviewer_canonical_task_id")
-    match = _REVIEWER_TASK_ATTEMPT_RE.search(task_id)
+    match = _REVIEWER_TASK_ID_RE.search(task_id)
     if match is None:
         raise ValueError(
-            "reviewer_canonical_task_id must end with ':RV1:attempt-<1|2>'"
+            "reviewer_canonical_task_id must end with ':RV1|RV2:attempt-<1|2>'"
         )
+    return match
+
+
+def reviewer_attempt_from_canonical_task_id(value: Any) -> int:
+    """Extract the bounded attempt from a canonical RV1/RV2 task identity."""
+
+    match = _reviewer_task_id_match(value)
     try:
         return normalize_reviewer_attempt(int(match.group("attempt")))
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"reviewer task identity has an unsupported attempt: {task_id!r}") from exc
+        raise ValueError(f"reviewer task identity has an unsupported attempt: {value!r}") from exc
+
+
+def review_cycle_from_canonical_task_id(value: Any) -> ReviewCycle:
+    """Extract the bounded review cycle from a canonical reviewer identity."""
+
+    match = _reviewer_task_id_match(value)
+    try:
+        return parse_review_cycle(match.group("review_cycle"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"reviewer task identity has an unsupported review cycle: {value!r}") from exc
 
 
 def _require_commit(value: Any, label: str) -> str:
@@ -347,6 +372,7 @@ class AcceptedFrontierAuthorization:
     authorization_ref: str
     reviewer_canonical_task_id: str
     provenance_digest: str = ""
+    review_cycle: ReviewCycle = ReviewCycle.RV1
 
     def __post_init__(self) -> None:
         for label in (
@@ -361,6 +387,9 @@ class AcceptedFrontierAuthorization:
             "reviewer_canonical_task_id",
         ):
             object.__setattr__(self, label, _require_non_empty_str(getattr(self, label), label))
+        object.__setattr__(self, "review_cycle", normalize_review_cycle(self.review_cycle))
+        if review_cycle_from_canonical_task_id(self.reviewer_canonical_task_id) != self.review_cycle:
+            raise ValueError("review_cycle does not match reviewer_canonical_task_id")
         object.__setattr__(self, "entry_base", _require_commit(self.entry_base, "entry_base"))
         object.__setattr__(
             self,
@@ -430,6 +459,30 @@ def _authorization_provenance_payload(
             "plan_source_revision": authorization.plan_source_revision,
             "project_id": authorization.project_id,
             "reviewer_canonical_task_id": authorization.reviewer_canonical_task_id,
+            "review_cycle": authorization.review_cycle.value,
+        },
+        "git": frontier.canonical_dict(),
+    }
+
+
+def _legacy_authorization_provenance_payload(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> dict[str, Any]:
+    """Reconstruct the pre-review-cycle provenance payload for durable replay."""
+    return {
+        "authorization": {
+            "authority_source_kind": authorization.authority_source_kind,
+            "authorization_ref": authorization.authorization_ref,
+            "candidate_frontier_ref": authorization.candidate_frontier_ref,
+            "entry_base": authorization.entry_base,
+            "milestone_id": authorization.milestone_id,
+            "plan_authority": authorization.plan_authority,
+            "plan_digest": authorization.plan_digest,
+            "plan_id": authorization.plan_id,
+            "plan_source_revision": authorization.plan_source_revision,
+            "project_id": authorization.project_id,
+            "reviewer_canonical_task_id": authorization.reviewer_canonical_task_id,
         },
         "git": frontier.canonical_dict(),
     }
@@ -442,6 +495,19 @@ def _authorization_provenance_digest(
     encoded = canonical_json(
         canonicalize(
             _authorization_provenance_payload(authorization, frontier),
+            path="AcceptedFrontierAuthorizationProvenance",
+        )
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _legacy_authorization_provenance_digest(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> str:
+    encoded = canonical_json(
+        canonicalize(
+            _legacy_authorization_provenance_payload(authorization, frontier),
             path="AcceptedFrontierAuthorizationProvenance",
         )
     ).encode("utf-8")
@@ -563,6 +629,7 @@ def _authorization_from_coordinator_state(
     if not isinstance(state, TaskMainCoordinatorState):
         raise TypeError(f"state must be TaskMainCoordinatorState, got {type(state).__name__}")
     try:
+        reviewer_task = _coordinator_marker_ref(state, "integrated_review")
         return AcceptedFrontierAuthorization(
             project_id=state.project_id,
             plan_id=_plan_id_from_coordinator_authority(state),
@@ -574,7 +641,8 @@ def _authorization_from_coordinator_state(
             entry_base=state.entry_base,
             candidate_frontier_ref=_coordinator_marker_ref(state, "frontier_ref"),
             authorization_ref=_coordinator_marker_ref(state, "review_gates"),
-            reviewer_canonical_task_id=_coordinator_marker_ref(state, "integrated_review"),
+            reviewer_canonical_task_id=reviewer_task,
+            review_cycle=review_cycle_from_canonical_task_id(reviewer_task),
         )
     except ReviewAdoptionError:
         raise
@@ -646,7 +714,8 @@ def _has_trusted_authorization_provenance(
     if not authorization.provenance_digest:
         return False
     expected = _authorization_provenance_digest(authorization, frontier)
-    return authorization.provenance_digest == expected
+    legacy = _legacy_authorization_provenance_digest(authorization, frontier)
+    return authorization.provenance_digest in {expected, legacy}
 
 
 @dataclass(frozen=True)
@@ -671,6 +740,10 @@ class ReviewOnlyAdoption:
     @property
     def reviewer_attempt(self) -> int:
         return reviewer_attempt_from_canonical_task_id(self.reviewer_canonical_task_id)
+
+    @property
+    def review_cycle(self) -> ReviewCycle:
+        return review_cycle_from_canonical_task_id(self.reviewer_canonical_task_id)
 
 
 def read_trusted_git_frontier(
@@ -758,6 +831,33 @@ def _proof_digest(
             "plan_source_revision": authorization.plan_source_revision,
             "project_id": authorization.project_id,
             "reviewer_canonical_task_id": authorization.reviewer_canonical_task_id,
+            "review_cycle": authorization.review_cycle.value,
+        },
+        "git": frontier.canonical_dict(),
+    }
+    return hashlib.sha256(
+        canonical_json(canonicalize(payload, path="ReviewOnlyAdoptionProof")).encode("utf-8")
+    ).hexdigest()
+
+
+def _legacy_proof_digest(
+    authorization: AcceptedFrontierAuthorization,
+    frontier: TrustedGitFrontier,
+) -> str:
+    """Reconstruct the pre-review-cycle adoption proof for durable replay."""
+    payload = {
+        "authorization": {
+            "authorization_ref": authorization.authorization_ref,
+            "authority_source_kind": authorization.authority_source_kind,
+            "candidate_frontier_ref": authorization.candidate_frontier_ref,
+            "entry_base": authorization.entry_base,
+            "milestone_id": authorization.milestone_id,
+            "plan_authority": authorization.plan_authority,
+            "plan_digest": authorization.plan_digest,
+            "plan_id": authorization.plan_id,
+            "plan_source_revision": authorization.plan_source_revision,
+            "project_id": authorization.project_id,
+            "reviewer_canonical_task_id": authorization.reviewer_canonical_task_id,
         },
         "git": frontier.canonical_dict(),
     }
@@ -770,19 +870,29 @@ def _expected_reviewer_task_id(
     project_id: str,
     milestone_id: str,
     reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+    *,
+    review_cycle: ReviewCycle | str = ReviewCycle.RV1,
 ) -> str:
     attempt = normalize_reviewer_attempt(reviewer_attempt)
-    return f"{project_id}:{milestone_id}:RV1:attempt-{attempt}"
+    cycle = normalize_review_cycle(review_cycle)
+    return f"{project_id}:{milestone_id}:{cycle.value}:attempt-{attempt}"
 
 
 def reviewer_task_id(
     project_id: str,
     milestone_id: str,
     reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+    *,
+    review_cycle: ReviewCycle | str = ReviewCycle.RV1,
 ) -> str:
-    """Build one canonical bounded RV1 reviewer identity."""
+    """Build one canonical bounded RV1/RV2 reviewer identity."""
 
-    return _expected_reviewer_task_id(project_id, milestone_id, reviewer_attempt)
+    return _expected_reviewer_task_id(
+        project_id,
+        milestone_id,
+        reviewer_attempt,
+        review_cycle=review_cycle,
+    )
 
 
 def _reported_paths(
@@ -881,7 +991,10 @@ def _validate_authorization(
         (
             authorization.reviewer_canonical_task_id,
             _expected_reviewer_task_id(
-                state.project_id, state.milestone_id, reviewer_attempt
+                state.project_id,
+                state.milestone_id,
+                reviewer_attempt,
+                review_cycle=authorization.review_cycle,
             ),
             "reviewer task identity",
         ),
@@ -939,7 +1052,10 @@ def _validate_authorization_against_state(
         (
             authorization.reviewer_canonical_task_id,
             _expected_reviewer_task_id(
-                state.project_id, state.milestone_id, reviewer_attempt
+                state.project_id,
+                state.milestone_id,
+                reviewer_attempt,
+                review_cycle=authorization.review_cycle,
             ),
             "reviewer task identity",
         ),
@@ -1010,6 +1126,7 @@ def mint_accepted_frontier_authorization(
     trusted_frontier: TrustedGitFrontier,
     trusted_authority: TrustedPlanAuthority,
     reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+    review_cycle: ReviewCycle | str = ReviewCycle.RV1,
 ) -> AcceptedFrontierAuthorization:
     """Mint the value object from a trusted bound Plan source and Git frontier."""
 
@@ -1029,6 +1146,10 @@ def mint_accepted_frontier_authorization(
         raise ReviewAdoptionError("minted authorization Plan identity does not match the trusted authority")
     try:
         reviewer_attempt = normalize_reviewer_attempt(reviewer_attempt)
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
+    try:
+        review_cycle = normalize_review_cycle(review_cycle)
     except (TypeError, ValueError) as exc:
         raise ReviewAdoptionError(str(exc)) from exc
     try:
@@ -1056,8 +1177,12 @@ def mint_accepted_frontier_authorization(
         candidate_frontier_ref=trusted_frontier.frontier_ref,
         authorization_ref=canonical_ref,
         reviewer_canonical_task_id=_expected_reviewer_task_id(
-            state.project_id, state.milestone_id, reviewer_attempt
+            state.project_id,
+            state.milestone_id,
+            reviewer_attempt,
+            review_cycle=review_cycle,
         ),
+        review_cycle=review_cycle,
     )
     authorization = replace(
         authorization,
@@ -1241,25 +1366,95 @@ def adopt_accepted_frontier_for_review(
             frontier=stored_frontier,
             trusted_authority=trusted_authority,
         )
-        if stored_authorization != authorization or stored_frontier != frontier:
-            raise ReviewAdoptionError(
-                "conflicting durable authorization provenance blocks adoption"
-            )
-        if _existing_exact_adoption(state, updates):
+        if stored_authorization == authorization and stored_frontier == frontier:
             _require_no_conflicting_active_execution(
                 execution_store,
                 authorization.reviewer_canonical_task_id,
             )
+            allowed_review_tasks = {
+                stored_authorization.reviewer_canonical_task_id,
+                authorization.reviewer_canonical_task_id,
+            }
+            if authorization.review_cycle is ReviewCycle.RV2:
+                # The preceding RV1 may have used a different bounded retry
+                # attempt. Preserve the actual durable RV1 receipt identity
+                # instead of deriving it from the new RV2 task.
+                for completion in state.reconciled_completions.values():
+                    if not isinstance(completion, Mapping):
+                        continue
+                    if completion.get("completion_kind") != "MILESTONE_REVIEW":
+                        continue
+                    task_id = completion.get("canonical_task_id")
+                    try:
+                        if review_cycle_from_canonical_task_id(task_id) is ReviewCycle.RV1:
+                            allowed_review_tasks.add(task_id)
+                    except (TypeError, ValueError):
+                        raise ReviewAdoptionError(
+                            "review-only adoption contains an invalid reviewer completion identity"
+                        ) from None
             for payload in state.reconciled_completions.values():
                 if (
                     not isinstance(payload, Mapping)
                     or payload.get("completion_kind") != "MILESTONE_REVIEW"
-                    or payload.get("canonical_task_id") != authorization.reviewer_canonical_task_id
+                    or payload.get("canonical_task_id") not in allowed_review_tasks
                 ):
                     raise ReviewAdoptionError(
                         "review-only adoption contains non-review completion truth"
                     )
             return state
+
+        if (
+            stored_authorization.review_cycle is ReviewCycle.RV1
+            and authorization.review_cycle is ReviewCycle.RV2
+        ):
+            if stored_frontier.frontier_ref == frontier.frontier_ref:
+                raise ReviewAdoptionError(
+                    "RV2 adoption must use a changed trusted frontier"
+                )
+            prior_receipt_found = False
+            from aota_forge.runtime.task_main.reconciliation import (
+                CompletionReconciliationReceipt,
+            )
+            for payload in state.reconciled_completions.values():
+                try:
+                    receipt = CompletionReconciliationReceipt.from_dict(payload)
+                except (TypeError, ValueError) as exc:
+                    raise ReviewAdoptionError(
+                        f"durable review receipt is invalid during RV2 rollover: {exc}"
+                    ) from exc
+                if receipt.completion_kind != "MILESTONE_REVIEW":
+                    raise ReviewAdoptionError(
+                        "RV2 adoption cannot roll over Work Item completion truth"
+                    )
+                if receipt.canonical_task_id == stored_authorization.reviewer_canonical_task_id:
+                    prior_receipt_found = True
+            if not prior_receipt_found:
+                raise ReviewAdoptionError(
+                    "RV2 adoption requires the durable RV1 review receipt"
+                )
+            _require_no_conflicting_active_execution(
+                execution_store,
+                authorization.reviewer_canonical_task_id,
+            )
+            try:
+                return store.compare_and_swap(
+                    coordinator_id,
+                    state.coordinator_revision,
+                    updates,
+                    state.revision_token,
+                )
+            except StaleCoordinatorRevisionError:
+                refreshed = store.get(coordinator_id)
+                if refreshed is not None and _existing_exact_adoption(refreshed, updates):
+                    return refreshed
+                raise ReviewAdoptionError("RV2 adoption CAS lost a conflicting race") from None
+            except Exception as exc:
+                raise ReviewAdoptionError(f"RV2 adoption CAS failed: {exc}") from exc
+
+        if stored_authorization != authorization or stored_frontier != frontier:
+            raise ReviewAdoptionError(
+                "conflicting durable authorization provenance blocks adoption"
+            )
         raise ReviewAdoptionError("conflicting coordinator review/frontier state blocks adoption")
 
     if state.reconciled_completions or state.working_truth is not None:
@@ -1351,11 +1546,21 @@ def review_only_adoption_from_state(
         authorization.authorization_ref != adoption.authorization_ref
         or authorization.reviewer_canonical_task_id != adoption.reviewer_canonical_task_id
         or authorized_frontier.frontier_ref != adoption.frontier_ref
-        or _proof_digest(authorization, authorized_frontier) != adoption.proof_digest
+        or (
+            _proof_digest(authorization, authorized_frontier) != adoption.proof_digest
+            and (
+                authorization.review_cycle is not ReviewCycle.RV1
+                or _legacy_proof_digest(authorization, authorized_frontier)
+                != adoption.proof_digest
+            )
+        )
     ):
         raise ReviewAdoptionError("review-only adoption marker disagrees with durable authorization facts")
     if adoption.reviewer_canonical_task_id != _expected_reviewer_task_id(
-        state.project_id, state.milestone_id, reviewer_attempt
+        state.project_id,
+        state.milestone_id,
+        reviewer_attempt,
+        review_cycle=adoption.review_cycle,
     ):
         raise ReviewAdoptionError("review-only marker reviewer identity is not canonical")
     reviewer_binding = review.get("reviewer_binding")
@@ -1372,7 +1577,11 @@ def review_only_adoption_from_state(
             (reviewer_binding.get("plan_source_revision"), state.plan_source_revision, "reviewer Plan source revision"),
             (reviewer_binding.get("milestone_id"), state.milestone_id, "reviewer Milestone"),
             (reviewer_binding.get("frontier_ref"), adoption.frontier_ref, "reviewer frontier"),
-            (reviewer_binding.get("review_cycle"), "RV1", "review cycle"),
+            (
+                reviewer_binding.get("review_cycle"),
+                adoption.review_cycle.value,
+                "review cycle",
+            ),
         )
         for supplied, expected, label in binding_checks:
             if supplied != expected:
@@ -1491,7 +1700,7 @@ def build_review_dispatch_binding(
         "plan_source_revision": state.plan_source_revision,
         "milestone_id": state.milestone_id,
         "frontier_ref": adoption.frontier_ref,
-        "review_cycle": "RV1",
+        "review_cycle": adoption.review_cycle.value,
         "task_handoff_digest": handoff.compute_handoff_digest(),
         "handoff_ref": handoff_ref,
         "handoff_digest": handoff_digest,
@@ -1614,10 +1823,12 @@ __all__ = [
     "build_review_dispatch_binding",
     "mint_accepted_frontier_authorization",
     "normalize_reviewer_attempt",
+    "normalize_review_cycle",
     "read_trusted_git_frontier",
     "record_review_dispatch_binding",
     "revalidate_adopted_frontier",
     "reviewer_attempt_from_canonical_task_id",
+    "review_cycle_from_canonical_task_id",
     "reviewer_task_id",
     "review_only_adoption_from_state",
     "review_only_progression_for",

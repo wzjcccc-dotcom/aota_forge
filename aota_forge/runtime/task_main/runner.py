@@ -413,7 +413,11 @@ def _is_integrated_review_required(
                 receipt = CompletionReconciliationReceipt.from_dict(payload)
             except Exception:  # noqa: BLE001, S112
                 continue
-            if receipt.completion_kind == "MILESTONE_REVIEW":
+            if (
+                receipt.completion_kind == "MILESTONE_REVIEW"
+                and receipt.canonical_task_id
+                == review_only_adoption.reviewer_canonical_task_id
+            ):
                 return False
         return True
     # All source WIs have sema reconciled and reviewer not yet reconciled.
@@ -435,13 +439,20 @@ def _is_integrated_review_required(
     return True
 
 
-def _is_closure_ready(state: TaskMainCoordinatorState) -> bool:
+def _is_closure_ready(
+    state: TaskMainCoordinatorState,
+    reviewer_task_id: str | None = None,
+) -> bool:
     for payload in state.reconciled_completions.values():
         try:
             receipt = CompletionReconciliationReceipt.from_dict(payload)
         except Exception:  # noqa: BLE001, S112
             continue
-        if receipt.completion_kind == "MILESTONE_REVIEW" and receipt.progression_disposition == "REVIEW_READY_FOR_STEWARD":
+        if (
+            receipt.completion_kind == "MILESTONE_REVIEW"
+            and (reviewer_task_id is None or receipt.canonical_task_id == reviewer_task_id)
+            and receipt.progression_disposition == "REVIEW_READY_FOR_STEWARD"
+        ):
             return True
     return False
 
@@ -669,7 +680,12 @@ def advance_milestone_once(
             raise
 
     # Next milestone gate: if current milestone is closure-ready and next milestone exists but unapproved, stop.
-    if _is_closure_ready(state) and next_milestone_view is not None:  # noqa: SIM102
+    if _is_closure_ready(
+        state,
+        review_only_adoption.reviewer_canonical_task_id
+        if review_only_adoption is not None
+        else None,
+    ) and next_milestone_view is not None:  # noqa: SIM102
         if next_milestone_view.milestone_id != state.milestone_id:
             # Next milestone must require explicit approval; runner must never auto activate.
             if not next_milestone_view.milestone_user_approval_satisfied or next_milestone_view.plan_amendment_required:
@@ -863,6 +879,7 @@ def advance_milestone_once(
                     ack_token=outcome.ack_token,
                     replayed=outcome.replayed,
                     milestone_closure_ready=True,
+                    user_gate_required=outcome.user_gate_required,
                     next_milestone_gate=next_milestone_view is not None,
                     reasons=tuple(outcome.reasons),
                     receipt=outcome.receipt,
@@ -876,6 +893,7 @@ def advance_milestone_once(
                 ack_token=outcome.ack_token,
                 replayed=outcome.replayed,
                 milestone_closure_ready=True,
+                user_gate_required=outcome.user_gate_required,
                 reasons=tuple(outcome.reasons),
                 receipt=outcome.receipt,
             )
@@ -957,16 +975,21 @@ def advance_milestone_once(
     # Review-only adoption intentionally leaves every W status PENDING.  Once
     # a reviewer receipt exists, do not let the normal ready-W branch mistake
     # that transient state for an invitation to redispatch W.
-    if review_only_adoption_from_state(
+    current_review_adoption = review_only_adoption_from_state(
         state, trusted_authority=trusted_plan_authority
-    ) is not None:
+    )
+    if current_review_adoption is not None:
         review_receipt: CompletionReconciliationReceipt | None = None
         for payload in state.reconciled_completions.values():
             try:
                 candidate = CompletionReconciliationReceipt.from_dict(payload)
             except Exception:  # noqa: BLE001, S112
                 continue
-            if candidate.completion_kind == "MILESTONE_REVIEW":
+            if (
+                candidate.completion_kind == "MILESTONE_REVIEW"
+                and candidate.canonical_task_id
+                == current_review_adoption.reviewer_canonical_task_id
+            ):
                 review_receipt = candidate
                 break
         if review_receipt is not None:

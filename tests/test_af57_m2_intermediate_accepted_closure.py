@@ -283,6 +283,82 @@ def test_mismatched_or_inactive_gate_fails_closed(tmp_path: Path, record_kwargs:
         store.close()
 
 
+def test_user_gate_materialization_replays_and_rolls_scope_with_cas(tmp_path: Path) -> None:
+    store = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
+    try:
+        first = host.materialize_milestone_close_user_gate(
+            store,
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            milestone_id="M2",
+            approval=UserGateApproval("friday-user-gate:m2", "a" * 64),
+        )
+        replay = host.materialize_milestone_close_user_gate(
+            store,
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            milestone_id="M2",
+            approval=UserGateApproval("friday-user-gate:m2", "a" * 64),
+        )
+        assert replay == first
+        assert replay.revision == 1
+
+        rolled = host.materialize_milestone_close_user_gate(
+            store,
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            milestone_id="M3",
+            approval=UserGateApproval("friday-user-gate:m3", "b" * 64),
+        )
+        assert rolled.gate_scope == "M3"
+        assert rolled.approval_ref == "friday-user-gate:m3"
+        assert rolled.revision == 2
+
+        with pytest.raises(host.TrustedBindingError, match="same milestone-close gate"):
+            host.materialize_milestone_close_user_gate(
+                store,
+                project_id=PROJECT_ID,
+                plan_id=PLAN_ID,
+                milestone_id="M3",
+                approval=UserGateApproval("friday-user-gate:foreign", "c" * 64),
+            )
+    finally:
+        store.close()
+
+
+def test_user_gate_materialization_satisfies_existing_required_gate(tmp_path: Path) -> None:
+    store = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
+    try:
+        _put_gate(store, state=USER_GATE_STATE_REQUIRED)
+        satisfied = host.materialize_milestone_close_user_gate(
+            store,
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            milestone_id=MILESTONE,
+            approval=UserGateApproval("approval:m2-close", "a" * 64),
+        )
+        assert satisfied.state == "satisfied"
+        assert satisfied.revision == 2
+    finally:
+        store.close()
+
+
+def test_foreign_user_gate_kind_is_not_overwritten(tmp_path: Path) -> None:
+    store = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
+    try:
+        _put_gate(store, gate_kind="construction")
+        with pytest.raises(host.TrustedBindingError, match="foreign gate kind"):
+            host.materialize_milestone_close_user_gate(
+                store,
+                project_id=PROJECT_ID,
+                plan_id=PLAN_ID,
+                milestone_id=MILESTONE,
+                approval=UserGateApproval("friday-user-gate:m2", "a" * 64),
+            )
+    finally:
+        store.close()
+
+
 def test_plan_close_branch_remains_bounded_and_accepted(tmp_path: Path) -> None:
     checkpoint = _checkpoint(tmp_path, all_milestones_closed=True)
     assert checkpoint.kind is GovernanceCheckpointKind.PLAN_CLOSE

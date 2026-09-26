@@ -1,4 +1,4 @@
-"""Trusted operator-side RV1 lifecycle over the generic thin task seam.
+"""Trusted operator-side RV1/RV2 lifecycle over the generic thin task seam.
 
 This composition owns the small amount of review-only orchestration that a
 thin task-main host intentionally does not own.  It reuses the existing
@@ -39,6 +39,7 @@ from aota_forge.work_plane.handoff_store import (
     handoff_open,
     handoff_write,
 )
+from aota_forge.work_plane.milestone_review import ReviewCycle
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import GitPort
 from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
@@ -89,7 +90,13 @@ def _materialization_id(
     ).hexdigest()
 
 
-def _semantic_from_handoff(handoff: TaskHandoff, *, project_id: str, milestone_id: str) -> dict[str, Any]:
+def _semantic_from_handoff(
+    handoff: TaskHandoff,
+    *,
+    project_id: str,
+    milestone_id: str,
+    review_cycle: ReviewCycle,
+) -> dict[str, Any]:
     if handoff.work_role != AgentWorkRole.REVIEWER:
         raise ThinReviewLifecycleError("reviewer handoff must carry the reviewer role")
     if handoff.project_ref is not None and handoff.project_ref.ref != project_id:
@@ -107,7 +114,7 @@ def _semantic_from_handoff(handoff: TaskHandoff, *, project_id: str, milestone_i
         "evidence_refs": _ref_values(handoff.evidence_refs),
         "skill_refs": _ref_values(handoff.skill_refs),
         "milestone_ref": milestone_id,
-        "work_item_ref": "RV1",
+        "work_item_ref": review_cycle.value,
         "project_ref": project_id,
     }
 
@@ -212,6 +219,7 @@ def _materialize_reviewer_handoff(
         base_handoff,
         project_id=state.project_id,
         milestone_id=state.milestone_id,
+        review_cycle=adoption.review_cycle,
     )
     ref = handoff_write(
         mode="work_item",
@@ -220,7 +228,7 @@ def _materialize_reviewer_handoff(
         sandbox=sandbox,
         plan_ref=state.plan_authority,
         milestone_id=state.milestone_id,
-        work_item_id="RV1",
+        work_item_id=adoption.review_cycle.value,
         target_role=AgentWorkRole.REVIEWER.value,
         task_id=reviewer_task_id,
         provenance={
@@ -251,7 +259,7 @@ def _materialize_reviewer_handoff(
 
 @dataclass(frozen=True)
 class ThinReviewLifecycle:
-    """Operator-side RV1 lifecycle using a generic thin task-main host."""
+    """Operator-side bounded RV1/RV2 lifecycle using a thin task-main host."""
 
     host: Any
     coordinator_store: TaskMainCoordinatorStore
@@ -263,6 +271,7 @@ class ThinReviewLifecycle:
     parent_task_identity: str = ""
     plan_id: str | None = None
     review_adoption_git: GitPort | None = None
+    review_cycle: ReviewCycle = ReviewCycle.RV1
 
     def __post_init__(self) -> None:
         if not isinstance(self.coordinator_store, TaskMainCoordinatorStore):
@@ -273,6 +282,12 @@ class ThinReviewLifecycle:
             raise TypeError("authorization must be AcceptedFrontierAuthorization")
         if not isinstance(self.trusted_plan_authority, TrustedPlanAuthority):
             raise TypeError("trusted_plan_authority must be TrustedPlanAuthority")
+        try:
+            object.__setattr__(self, "review_cycle", ReviewCycle(self.review_cycle))
+        except (TypeError, ValueError) as exc:
+            raise TypeError("review_cycle must be ReviewCycle.RV1 or ReviewCycle.RV2") from exc
+        if self.authorization.review_cycle != self.review_cycle:
+            raise ValueError("review_cycle does not match the trusted authorization")
         if not isinstance(self.coordinator_id, str) or not self.coordinator_id.strip():
             raise ValueError("coordinator_id must be non-empty")
         if not callable(getattr(self.host, "invoke", None)):
@@ -410,6 +425,7 @@ class ThinReviewLifecycle:
             live_plan_view=self.live_plan_view,
             reviewed_frontier_ref=adoption.frontier_ref,
             reviewer_handoff_resolver=handoff_resolver,
+            review_cycle=self.review_cycle,
         )
         governed = replace(
             governed,

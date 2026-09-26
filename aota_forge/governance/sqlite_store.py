@@ -977,6 +977,8 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
         plan_id: str,
         expected_revision: int,
         *,
+        gate_kind: str | None = None,
+        gate_scope: str | None = None,
         state: str | None = None,
         approval_ref: str | None = None,
         approval_digest: str | None = None,
@@ -1019,8 +1021,8 @@ class SQLiteProjectGovernanceStore(ProjectGovernanceStore):
                 candidate = ProjectPlanUserGateRecord(
                     project_id=current.project_id,
                     plan_id=current.plan_id,
-                    gate_kind=current.gate_kind,
-                    gate_scope=current.gate_scope,
+                    gate_kind=gate_kind if gate_kind is not None else current.gate_kind,
+                    gate_scope=gate_scope if gate_scope is not None else current.gate_scope,
                     approval_ref=approval_ref if approval_ref is not None else current.approval_ref,
                     approval_digest=(
                         approval_digest if approval_digest is not None else current.approval_digest

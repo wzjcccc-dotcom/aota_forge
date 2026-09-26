@@ -16,6 +16,7 @@ from aota_forge.adapters.plan_authority.local_governance import (
 )
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
 from aota_forge.composition import task_main_host_bootstrap
+from aota_forge.composition.completion_evidence import derive_governed_review_evidence
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView, PlanDriftError, TaskMainCoordinatorError
 from aota_forge.runtime.task_main.review_adoption import (
     AcceptedFrontierAuthorization,
@@ -33,6 +34,7 @@ from aota_forge.runtime.task_main.runner import (
 )
 from aota_forge.core.result_governance import ResultGovernanceProjection
 from aota_forge.work_plane.milestone_review import MilestoneReviewEvidence, ReviewCycle
+from aota_forge.work_plane.risk_review import ReviewTrigger
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
 from aota_forge.work_plane.result_card import WorkerResultCard, project_worker_result_card
 from aota_forge.work_plane.steward_finalizer import GitPort
@@ -55,6 +57,8 @@ FRONTIER = "a" * 40
 TREE = "b" * 40
 REVIEWER_TASK_ID = f"{PROJECT_ID}:{MILESTONE_ID}:RV1:attempt-1"
 REVIEWER_TASK_ID_ATTEMPT_2 = f"{PROJECT_ID}:{MILESTONE_ID}:RV1:attempt-2"
+REVIEWER_TASK_ID_RV2 = f"{PROJECT_ID}:{MILESTONE_ID}:RV2:attempt-1"
+RV2_FRONTIER = "c" * 40
 
 
 class FakeGit(GitPort):
@@ -94,6 +98,8 @@ def _authorization(
     root: Path,
     *,
     reviewer_attempt: int = 1,
+    review_cycle: ReviewCycle = ReviewCycle.RV1,
+    frontier: str = FRONTIER,
 ) -> AcceptedFrontierAuthorization:
     view = _view()
     handle = world.activate(view)
@@ -113,7 +119,7 @@ def _authorization(
         trusted_frontier=TrustedGitFrontier(
             worktree_root=str(root.resolve()),
             entry_base=ENTRY_BASE,
-            frontier_ref=FRONTIER,
+            frontier_ref=frontier,
             tree_ref=TREE,
             clean=True,
         ),
@@ -123,10 +129,11 @@ def _authorization(
             authoritative_reader=_AuthorityReader(authority_binding),
         ),
         reviewer_attempt=reviewer_attempt,
+        review_cycle=review_cycle,
     )
 
 
-def _reviewer_handoff() -> TaskHandoff:
+def _reviewer_handoff(review_cycle: ReviewCycle = ReviewCycle.RV1) -> TaskHandoff:
     return TaskHandoff(
         work_role="reviewer",
         task_kind="r3b-review",
@@ -136,7 +143,7 @@ def _reviewer_handoff() -> TaskHandoff:
         semantic_stop_expectations=("stop on review ambiguity",),
         project_ref=SemanticReference(ref=PROJECT_ID),
         plan_ref=SemanticReference(ref=PLAN_AUTHORITY, digest=PLAN_DIGEST),
-        work_item_ref=SemanticReference(ref="RV1"),
+        work_item_ref=SemanticReference(ref=review_cycle.value),
         milestone_ref=SemanticReference(ref=MILESTONE_ID),
     )
 
@@ -158,8 +165,10 @@ def _durable_reviewer_handoff(
     root: Path,
     *,
     reviewer_task_id: str = REVIEWER_TASK_ID,
+    review_cycle: ReviewCycle = ReviewCycle.RV1,
+    frontier: str = FRONTIER,
 ) -> dict[str, object]:
-    handoff = _reviewer_handoff()
+    handoff = _reviewer_handoff(review_cycle)
     ref = handoff_write(
         mode="work_item",
         semantic={
@@ -170,24 +179,24 @@ def _durable_reviewer_handoff(
             "validation_expectations": list(handoff.validation_expectations),
             "semantic_stop_expectations": list(handoff.semantic_stop_expectations),
             "milestone_ref": MILESTONE_ID,
-            "work_item_ref": "RV1",
+            "work_item_ref": review_cycle.value,
             "project_ref": PROJECT_ID,
         },
         caller_role="task-main",
         sandbox=_reviewer_sandbox(root),
         plan_ref=PLAN_AUTHORITY,
         milestone_id=MILESTONE_ID,
-        work_item_id="RV1",
+        work_item_id=review_cycle.value,
         target_role="reviewer",
         task_id=reviewer_task_id,
-        provenance={"plan_digest": PLAN_DIGEST, "frontier_ref": FRONTIER},
+        provenance={"plan_digest": PLAN_DIGEST, "frontier_ref": frontier},
     )
     return {
         "handoff": handoff,
         "handoff_ref": ref.ref,
         "handoff_digest": ref.digest,
         "canonical_task_id": reviewer_task_id,
-        "frontier_ref": FRONTIER,
+        "frontier_ref": frontier,
         "handoff_sandbox": _reviewer_sandbox(root),
     }
 
@@ -369,7 +378,14 @@ def _runner(
 ) -> TaskMainMilestoneRunner:
     durable_task_id = auth.reviewer_canonical_task_id if auth is not None else REVIEWER_TASK_ID
     durable_resolver = (
-        (lambda: _durable_reviewer_handoff(root, reviewer_task_id=durable_task_id))
+        (
+            lambda: _durable_reviewer_handoff(
+                root,
+                reviewer_task_id=durable_task_id,
+                review_cycle=auth.review_cycle if auth is not None else ReviewCycle.RV1,
+                frontier=auth.candidate_frontier_ref if auth is not None else FRONTIER,
+            )
+        )
         if reviewer_handoff_resolver is not None
         else None
     )
@@ -1107,6 +1123,101 @@ def test_reviewer_reconciliation_uses_adopted_frontier_for_closure(
         replay = runner.advance_once()
         assert replay.disposition == DISPOSITION_MILESTONE_CLOSURE_READY
         assert world.coord_store.get(runner.coordinator_id).coordinator_revision == revision
+    finally:
+        world.close()
+
+
+def test_clean_rv1_rolls_to_one_triggered_rv2_with_durable_lineage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-rv2-rollover")
+    try:
+        view = _view()
+        # Exercise RV1 attempt-2 -> RV2 attempt-1 lineage rollover; RV2 must
+        # retain the actual durable RV1 receipt rather than derive attempt-1.
+        auth1 = _authorization(world, tmp_path, reviewer_attempt=2)
+        runner1 = _runner(world, view, auth1, tmp_path)
+        assert runner1.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+
+        canonical1 = world.dispatcher.result(REVIEWER_TASK_ID_ATTEMPT_2)
+        card1 = project_worker_result_card(
+            canonical1,
+            ResultGovernanceProjection.success(),
+            "reviewer",
+            summary="RV1 clean review",
+        )
+        world.dispatcher.attach_worker_result_card(REVIEWER_TASK_ID_ATTEMPT_2, card1)
+
+        def rv1_resolver(canonical_task_id: str, card_digest: str) -> GovernedReviewEvidence:
+            reviewer_card = WorkerResultCard.from_dict(
+                world.exec_store.get(canonical_task_id).worker_result_card  # type: ignore[union-attr]
+            )
+            evidence = MilestoneReviewEvidence(
+                milestone_ref=SemanticReference(ref=MILESTONE_ID),
+                review_cycle=ReviewCycle.RV1,
+                reviewed_frontier_ref=SemanticReference(ref=FRONTIER),
+                review_result_ref=reviewer_card.result_handoff_ref,
+                review_result_digest=card_digest,
+                finding_refs=(),
+            )
+            return GovernedReviewEvidence(
+                review_evidence=evidence,
+                review_task_handoff=_reviewer_handoff(),
+                expected_final_frontier=SemanticReference(ref=FRONTIER),
+            )
+
+        runner1._governed_review_resolver = rv1_resolver
+        assert runner1.advance_once().disposition == DISPOSITION_MILESTONE_CLOSURE_READY
+
+        _patch_git_observation(monkeypatch, head=RV2_FRONTIER)
+        auth2 = _authorization(
+            world,
+            tmp_path,
+            review_cycle=ReviewCycle.RV2,
+            frontier=RV2_FRONTIER,
+        )
+        runner2 = _runner(
+            world,
+            view,
+            auth2,
+            tmp_path,
+            reviewer_handoff_resolver=lambda: _reviewer_handoff(ReviewCycle.RV2),
+        )
+        assert runner2.advance_once().disposition == DISPOSITION_DISPATCHED_REVIEW
+
+        canonical2 = world.dispatcher.result(REVIEWER_TASK_ID_RV2)
+        card2 = project_worker_result_card(
+            canonical2,
+            ResultGovernanceProjection.success(),
+            "reviewer",
+            summary="RV2 clean review after core contract change",
+        )
+        world.dispatcher.attach_worker_result_card(REVIEWER_TASK_ID_RV2, card2)
+
+        def rv2_resolver(canonical_task_id: str, card_digest: str) -> GovernedReviewEvidence:
+            return derive_governed_review_evidence(
+                reviewer_canonical_task_id=canonical_task_id,
+                card_digest=card_digest,
+                execution_store=world.exec_store,
+                live_plan_view=view,
+                reviewed_frontier_ref=RV2_FRONTIER,
+                reviewer_handoff_resolver=lambda: _reviewer_handoff(ReviewCycle.RV2),
+                review_cycle=ReviewCycle.RV2,
+                review_triggers=(ReviewTrigger.CORE_CONTRACT_OR_PROTOCOL_CHANGE,),
+            )
+
+        runner2._governed_review_resolver = rv2_resolver
+        final = runner2.advance_once()
+
+        assert final.disposition == DISPOSITION_MILESTONE_CLOSURE_READY
+        state = world.coord_store.get(runner2.coordinator_id)
+        assert state is not None
+        assert set(state.reconciled_completions) == {
+            REVIEWER_TASK_ID_ATTEMPT_2,
+            REVIEWER_TASK_ID_RV2,
+        }
+        assert state.integrated_review["reviewer_binding"]["review_cycle"] == "RV2"
     finally:
         world.close()
 

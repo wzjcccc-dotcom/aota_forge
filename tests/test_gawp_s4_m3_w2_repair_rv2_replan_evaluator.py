@@ -55,9 +55,11 @@ from aota_forge.work_plane.milestone_review_workflow import (
     PERSISTENT_WORKFLOW_STATE_CREATED,
     W1_REVIEW_CONTRACTS_REUSED,
     RV2_ONLY_IF_REPAIR,
+    RV2_TRIGGERED_BY_TRUSTED_REVIEW_TRIGGER,
     RV3_RV4_GENERIC_LOOP_CREATED,
     REPEATED_FAILURE_CANNOT_BLINDLY_REPLAY_SIDE_EFFECT,
 )
+from aota_forge.work_plane.risk_review import ReviewTrigger
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1132,6 +1134,51 @@ def test_valid_clean_rv2_to_steward():
         expected_rv2_frontier=_semantic("frontier:def456"),
     )
     assert disp.disposition == WorkflowDisposition.READY_FOR_STEWARD
+
+
+def test_clean_rv1_core_contract_trigger_requires_one_changed_frontier_rv2():
+    rv1_card = _make_card("review-task-1", outcome="success", role=AgentWorkRole.REVIEWER)
+    rv1_handoff = _task_handoff(milestone_ref="S4/M3")
+    rv1 = MilestoneReviewEvidence(
+        milestone_ref=_semantic("S4/M3"),
+        review_cycle=ReviewCycle.RV1,
+        reviewed_frontier_ref=_semantic("frontier:before"),
+        review_result_ref=rv1_card.result_handoff_ref,
+        review_result_digest=rv1_card.card_digest,
+        finding_refs=(),
+    )
+    common = {
+        "rv1_evidence": rv1,
+        "rv1_findings": (),
+        "rv1_result_card": rv1_card,
+        "rv1_task_handoff": rv1_handoff,
+        "review_triggers": (ReviewTrigger.CORE_CONTRACT_OR_PROTOCOL_CHANGE,),
+        "expected_rv2_frontier": _semantic("frontier:after"),
+    }
+
+    pending = evaluate_milestone_review_workflow(**common)
+
+    assert RV2_TRIGGERED_BY_TRUSTED_REVIEW_TRIGGER is True
+    assert pending.disposition == WorkflowDisposition.RV2_REQUIRED
+
+    rv2_card = _make_card("review-task-2", outcome="success", role=AgentWorkRole.REVIEWER)
+    rv2 = MilestoneReviewEvidence(
+        milestone_ref=_semantic("S4/M3"),
+        review_cycle=ReviewCycle.RV2,
+        reviewed_frontier_ref=_semantic("frontier:after"),
+        review_result_ref=rv2_card.result_handoff_ref,
+        review_result_digest=rv2_card.card_digest,
+        finding_refs=(),
+    )
+    ready = evaluate_milestone_review_workflow(
+        **common,
+        rv2_evidence=rv2,
+        rv2_findings=(),
+        rv2_result_card=rv2_card,
+        rv2_task_handoff=_task_handoff(milestone_ref="S4/M3"),
+    )
+
+    assert ready.disposition == WorkflowDisposition.READY_FOR_STEWARD
 
 def test_rv2_blocking_to_replan():
     f1 = _finding("F1", ReviewFindingClassification.BLOCKING)

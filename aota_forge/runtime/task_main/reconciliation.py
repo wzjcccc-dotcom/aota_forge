@@ -102,6 +102,7 @@ from aota_forge.runtime.task_main.review_adoption import (
     TrustedPlanAuthority,
     review_only_adoption_from_state,
     reviewer_attempt_from_canonical_task_id,
+    review_cycle_from_canonical_task_id,
     review_only_progression_for,
     revalidate_adopted_frontier,
 )
@@ -516,6 +517,14 @@ class GovernedReviewEvidence:
     semantic_boundary_exceeded: bool = False
     review_handoff_ref: str | None = None
     review_handoff_digest: str | None = None
+    rv1_evidence: MilestoneReviewEvidence | None = None
+    rv1_findings: tuple[ReviewFindingEvidence, ...] = ()
+    rv1_result_card: WorkerResultCard | None = None
+    rv1_task_handoff: TaskHandoff | None = None
+    repair_result_cards: Mapping[str, WorkerResultCard] | tuple[WorkerResultCard, ...] | None = None
+    repair_task_handoffs: Mapping[str, TaskHandoff] | tuple[TaskHandoff, ...] | None = None
+    validation_evidences: tuple[FocusedValidationEvidence, ...] = ()
+    review_triggers: tuple[ReviewTrigger | str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.review_evidence, MilestoneReviewEvidence):
@@ -570,6 +579,57 @@ class GovernedReviewEvidence:
                 "review_handoff_digest",
                 _require_non_empty_str(self.review_handoff_digest, "review_handoff_digest", max_length=128),
             )
+        if self.rv1_evidence is not None and not isinstance(self.rv1_evidence, MilestoneReviewEvidence):
+            raise TypeError(
+                "rv1_evidence must be MilestoneReviewEvidence or None, "
+                f"got {type(self.rv1_evidence).__name__}"
+            )
+        for label in ("rv1_findings", "validation_evidences"):
+            val = getattr(self, label)
+            if not isinstance(val, (tuple, list)):
+                raise TypeError(f"{label} must be tuple/list, got {type(val).__name__}")
+        for idx, finding in enumerate(self.rv1_findings):
+            if not isinstance(finding, ReviewFindingEvidence):
+                raise TypeError(f"rv1_findings[{idx}] must be ReviewFindingEvidence")
+        for idx, validation in enumerate(self.validation_evidences):
+            if not isinstance(validation, FocusedValidationEvidence):
+                raise TypeError(f"validation_evidences[{idx}] must be FocusedValidationEvidence")
+        object.__setattr__(self, "rv1_findings", tuple(self.rv1_findings))
+        object.__setattr__(self, "validation_evidences", tuple(self.validation_evidences))
+        if not isinstance(self.review_triggers, (tuple, list)):
+            raise TypeError(f"review_triggers must be tuple/list, got {type(self.review_triggers).__name__}")
+        for idx, trigger in enumerate(self.review_triggers):
+            if not isinstance(trigger, (ReviewTrigger, str)):
+                raise TypeError(f"review_triggers[{idx}] must be ReviewTrigger or str")
+        object.__setattr__(self, "review_triggers", tuple(self.review_triggers))
+        if self.rv1_result_card is not None and not isinstance(self.rv1_result_card, WorkerResultCard):
+            raise TypeError(
+                "rv1_result_card must be WorkerResultCard or None, "
+                f"got {type(self.rv1_result_card).__name__}"
+            )
+        if self.rv1_task_handoff is not None and not isinstance(self.rv1_task_handoff, TaskHandoff):
+            raise TypeError(
+                "rv1_task_handoff must be TaskHandoff or None, "
+                f"got {type(self.rv1_task_handoff).__name__}"
+            )
+        for label, expected_type in (
+            ("repair_result_cards", WorkerResultCard),
+            ("repair_task_handoffs", TaskHandoff),
+        ):
+            val = getattr(self, label)
+            if val is None:
+                continue
+            if isinstance(val, Mapping):
+                values = tuple(val.values())
+                object.__setattr__(self, label, dict(val))
+            elif isinstance(val, (tuple, list)):
+                values = tuple(val)
+                object.__setattr__(self, label, values)
+            else:
+                raise TypeError(f"{label} must be mapping/tuple/list or None")
+            for idx, item in enumerate(values):
+                if not isinstance(item, expected_type):
+                    raise TypeError(f"{label}[{idx}] must be {expected_type.__name__}")
 
 
 @dataclass(frozen=True)
@@ -678,6 +738,7 @@ def _validate_adopted_review_binding(
         reviewer_attempt = reviewer_attempt_from_canonical_task_id(
             adoption.reviewer_canonical_task_id
         )
+        review_cycle = review_cycle_from_canonical_task_id(adoption.reviewer_canonical_task_id)
     except (TypeError, ValueError) as exc:
         raise ReconciliationError(str(exc)) from exc
     expected = (
@@ -690,15 +751,15 @@ def _validate_adopted_review_binding(
         (binding.get("plan_source_revision"), state.plan_source_revision, "reviewer Plan source revision"),
         (binding.get("milestone_id"), state.milestone_id, "reviewer Milestone"),
         (binding.get("frontier_ref"), adoption.frontier_ref, "reviewer frontier"),
-        (binding.get("review_cycle"), ReviewCycle.RV1.value, "review cycle"),
+        (binding.get("review_cycle"), review_cycle.value, "review cycle"),
     )
     for supplied, expected_value, label in expected:
         if supplied != expected_value:
             raise ReconciliationError(f"{label} binding mismatch")
 
     evidence = governed_review.review_evidence
-    if evidence.review_cycle != ReviewCycle.RV1:
-        raise ReconciliationError("review-only adoption requires the bound RV1 cycle")
+    if evidence.review_cycle != review_cycle:
+        raise ReconciliationError("review-only adoption requires the bound review cycle")
     if evidence.reviewed_frontier_ref.ref != adoption.frontier_ref:
         raise ReconciliationError("review evidence frontier contradicts adopted frontier")
     handoff = governed_review.review_task_handoff
@@ -850,6 +911,85 @@ def _stored_governed_inputs(receipt_payload: Mapping[str, Any]) -> Mapping[str, 
     if not isinstance(governed, Mapping):
         raise ReconciliationError("durable receipt carries no governed evidence inputs")
     return governed
+
+
+def _hydrate_prior_rv1_review(
+    *,
+    state: TaskMainCoordinatorState,
+    execution_store: ExecutionStateStore,
+    worktree_root: WorktreeSandboxBoundary | None,
+    provided_handoff: TaskHandoff | None = None,
+) -> tuple[
+    MilestoneReviewEvidence,
+    tuple[ReviewFindingEvidence, ...],
+    WorkerResultCard,
+    TaskHandoff,
+]:
+    """Rebuild the durable RV1 bundle required before an RV2 evaluation."""
+    candidates: list[CompletionReconciliationReceipt] = []
+    for payload in state.reconciled_completions.values():
+        try:
+            receipt = CompletionReconciliationReceipt.from_dict(payload)
+        except (TypeError, ValueError) as exc:
+            raise ReconciliationError(f"durable receipt fails strict validation: {exc}") from exc
+        if receipt.completion_kind != COMPLETION_KIND_REVIEW:
+            continue
+        raw_review = receipt.governed_evidence.get("review_evidence")
+        if not isinstance(raw_review, Mapping):
+            continue
+        try:
+            review = MilestoneReviewEvidence.from_dict(raw_review)
+        except (TypeError, ValueError) as exc:
+            raise ReconciliationError(f"durable RV1 evidence fails strict validation: {exc}") from exc
+        if review.review_cycle is ReviewCycle.RV1:
+            candidates.append(receipt)
+    if not candidates:
+        raise ReconciliationError("RV2 reconciliation requires one durable RV1 review receipt")
+    candidates.sort(key=lambda item: (item.next_coordinator_revision, item.canonical_task_id))
+    receipt = candidates[-1]
+    try:
+        evidence = MilestoneReviewEvidence.from_dict(
+            receipt.governed_evidence["review_evidence"]
+        )
+        findings = tuple(
+            ReviewFindingEvidence.from_dict(item)
+            for item in receipt.governed_evidence.get("review_findings", ())
+        )
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ReconciliationError(f"durable RV1 review bundle is invalid: {exc}") from exc
+    _, card = _hydrate_completion(
+        execution_store,
+        coordinator_id=state.coordinator_id,
+        canonical_task_id=receipt.canonical_task_id,
+        card_digest=receipt.card_digest,
+    )
+    handoff_ref = receipt.governed_evidence.get("review_handoff_ref")
+    handoff_digest = receipt.governed_evidence.get("review_handoff_digest")
+    if not isinstance(handoff_ref, str) or not isinstance(handoff_digest, str):
+        raise ReconciliationError("durable RV1 review receipt has no handoff identity")
+    if provided_handoff is not None:
+        if provided_handoff.compute_handoff_digest() != handoff_digest:
+            raise ReconciliationError("governed RV1 handoff contradicts durable RV1 handoff digest")
+        handoff = provided_handoff
+    else:
+        if worktree_root is None:
+            raise ReconciliationError("RV2 reconciliation requires the durable RV1 handoff sandbox")
+        try:
+            from aota_forge.work_plane.handoff_store import handoff_open
+            from aota_forge.work_plane.task_facade import load_trusted_work_item_task_handoff
+
+            opened = handoff_open(handoff_ref, "full", sandbox=worktree_root)
+            if opened.get("digest") != handoff_digest:
+                raise ValueError("durable RV1 handoff digest mismatch")
+            handoff = load_trusted_work_item_task_handoff(
+                opened=opened,
+                sandbox=worktree_root,
+                require_explicit_work_role=True,
+                require_explicit_work_identity=True,
+            )
+        except Exception as exc:
+            raise ReconciliationError(f"durable RV1 handoff reopen failed: {exc}") from exc
+    return evidence, findings, card, handoff
 
 
 def _rebuild_work_item_inputs(
@@ -1451,7 +1591,7 @@ def _map_workflow_disposition(
             DISPOSITION_REVIEW_RV2_REQUIRED,
             False,
             True,
-            ("RV2 required after bounded repair; RV2 is not auto-executed",),
+            ("RV2 required after a trusted bounded review transition; RV2 is not auto-executed",),
         )
     if workflow_disposition == WorkflowDisposition.REPLAN_REQUIRED:
         return (
@@ -1603,19 +1743,82 @@ def reconcile_review_completion(
         if evidence.reviewed_frontier_ref.ref != adopted_frontier:
             raise ReconciliationError("review evidence frontier contradicts adopted frontier")
 
+    expected_review_frontier = expected_review_frontier or evidence.reviewed_frontier_ref
+    review_triggers = list(governed_review.review_triggers)
+    for payload in state.reconciled_completions.values():
+        try:
+            prior_receipt = CompletionReconciliationReceipt.from_dict(payload)
+        except (TypeError, ValueError) as exc:
+            raise ReconciliationError(f"durable receipt fails strict validation: {exc}") from exc
+        if prior_receipt.completion_kind not in {
+            COMPLETION_KIND_WORK_ITEM,
+            COMPLETION_KIND_REVIEW,
+        }:
+            continue
+        prior_governed = prior_receipt.governed_evidence
+        raw_triggers = prior_governed.get("review_triggers", ())
+        if not isinstance(raw_triggers, (tuple, list)):
+            raise ReconciliationError("durable review trigger evidence must be tuple/list")
+        review_triggers.extend(raw_triggers)
+    review_triggers = list(
+        dict.fromkeys(
+            trigger.value if isinstance(trigger, ReviewTrigger) else str(trigger)
+            for trigger in review_triggers
+        )
+    )
+    rv1_evidence = governed_review.rv1_evidence
+    rv1_findings = tuple(governed_review.rv1_findings)
+    rv1_result_card = governed_review.rv1_result_card
+    rv1_task_handoff = governed_review.rv1_task_handoff
+    if evidence.review_cycle is ReviewCycle.RV2:
+        durable_rv1 = _hydrate_prior_rv1_review(
+            state=state,
+            execution_store=execution_store,
+            worktree_root=review_adoption_worktree_root,
+            provided_handoff=governed_review.rv1_task_handoff,
+        )
+        durable_rv1_evidence, durable_rv1_findings, durable_rv1_card, durable_rv1_handoff = durable_rv1
+        if rv1_evidence is not None and rv1_evidence != durable_rv1_evidence:
+            raise ReconciliationError("governed RV1 evidence contradicts durable RV1 receipt")
+        if rv1_evidence is not None and rv1_findings != durable_rv1_findings:
+            raise ReconciliationError("governed RV1 findings contradict durable RV1 receipt")
+        if rv1_result_card is not None and rv1_result_card != durable_rv1_card:
+            raise ReconciliationError("governed RV1 CARD contradicts durable RV1 receipt")
+        if rv1_task_handoff is not None and rv1_task_handoff != durable_rv1_handoff:
+            raise ReconciliationError("governed RV1 handoff contradicts durable RV1 receipt")
+        rv1_evidence = durable_rv1_evidence
+        rv1_findings = durable_rv1_findings
+        rv1_result_card = durable_rv1_card
+        rv1_task_handoff = durable_rv1_handoff
+
     review_kwargs: dict[str, Any] = {
         "milestone_ref": SemanticReference(ref=state.milestone_id),
         "repair_evidences": list(governed_review.repair_evidences),
+        "repair_result_cards": governed_review.repair_result_cards,
+        "repair_task_handoffs": governed_review.repair_task_handoffs,
+        "validation_evidences": list(governed_review.validation_evidences),
+        "review_triggers": review_triggers,
         "repair_history": governed_review.repair_history,
         "failure_fingerprints": list(governed_review.failure_fingerprints),
         "pre_failure_fingerprints": list(governed_review.pre_failure_fingerprints),
         "post_failure_fingerprints": list(governed_review.post_failure_fingerprints),
         "semantic_boundary_exceeded": governed_review.semantic_boundary_exceeded,
     }
-    if expected_review_frontier is not None:
-        review_kwargs["expected_rv1_frontier"] = expected_review_frontier
-        review_kwargs["expected_rv2_frontier"] = expected_review_frontier
+    if expected_final_frontier is not None:
+        review_kwargs["expected_final_frontier"] = expected_final_frontier
     if evidence.review_cycle == ReviewCycle.RV2:
+        if rv1_evidence is None or rv1_result_card is None or rv1_task_handoff is None:
+            raise ReconciliationError("RV2 reconciliation requires a complete durable RV1 review bundle")
+        review_kwargs.update(
+            {
+                "rv1_evidence": rv1_evidence,
+                "rv1_findings": list(rv1_findings),
+                "rv1_result_card": rv1_result_card,
+                "rv1_task_handoff": rv1_task_handoff,
+                "expected_rv1_frontier": rv1_evidence.reviewed_frontier_ref,
+                "expected_rv2_frontier": expected_review_frontier,
+            }
+        )
         review_kwargs.update(
             {
                 "rv2_evidence": evidence,
@@ -1625,6 +1828,7 @@ def reconcile_review_completion(
             }
         )
     else:
+        review_kwargs["expected_rv1_frontier"] = expected_review_frontier
         review_kwargs.update(
             {
                 "rv1_evidence": evidence,
@@ -1656,6 +1860,8 @@ def reconcile_review_completion(
             final_review_task_handoff=governed_review.review_task_handoff,
             repair_evidences=list(governed_review.repair_evidences),
             repair_history=governed_review.repair_history,
+            rv1_evidence=rv1_evidence,
+            review_triggers=review_triggers,
             milestone_ref=SemanticReference(ref=state.milestone_id),
         )
         milestone_closure_ready = bool(closure.ready_for_project_steward)
@@ -1700,6 +1906,11 @@ def reconcile_review_completion(
             "review_findings": [finding.to_dict() for finding in governed_review.review_findings],
             "review_handoff_ref": governed_review.review_handoff_ref,
             "review_handoff_digest": governed_review.review_handoff_digest,
+            "review_triggers": review_triggers,
+            "repair_evidences": [repair.to_dict() for repair in governed_review.repair_evidences],
+            "validation_evidences": [
+                validation.to_dict() for validation in governed_review.validation_evidences
+            ],
             "workflow_disposition": workflow.disposition.value,
             "workflow_digest": workflow.digest,
             "closure_ready": milestone_closure_ready,

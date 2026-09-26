@@ -34,6 +34,7 @@ from aota_forge.work_plane.milestone_review_workflow import (
     RepairEvidence,
     RepairHistory,
 )
+from aota_forge.work_plane.risk_review import ReviewTrigger, parse_review_trigger
 from aota_forge.work_plane.progression import (
     MilestoneWorkItemGraph,
     ProgressionDisposition,
@@ -381,6 +382,7 @@ def evaluate_milestone_closure_readiness(
     repair_evidences: tuple[RepairEvidence, ...] | list[RepairEvidence] | None = None,
     repair_history: RepairHistory | None = None,
     rv1_evidence: MilestoneReviewEvidence | None = None,
+    review_triggers: tuple[ReviewTrigger | str, ...] | list[ReviewTrigger | str] = (),
     # Optional explicit milestone_ref for cross-milestone check
     milestone_ref: SemanticReference | str | Mapping[str, Any] | None = None,
     # Optional additional supporting refs (not authority)
@@ -430,6 +432,14 @@ def evaluate_milestone_closure_readiness(
         raise TypeError(f"repair_history must be RepairHistory or None, got {type(repair_history).__name__}")
     if rv1_evidence is not None and not isinstance(rv1_evidence, MilestoneReviewEvidence):
         raise TypeError(f"rv1_evidence must be MilestoneReviewEvidence or None, got {type(rv1_evidence).__name__}")
+    if not isinstance(review_triggers, (tuple, list)):
+        raise TypeError(f"review_triggers must be tuple/list, got {type(review_triggers).__name__}")
+    try:
+        parsed_review_triggers = tuple(
+            sorted({parse_review_trigger(trigger) for trigger in review_triggers}, key=lambda item: item.value)
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"review_triggers are invalid: {exc}") from exc
     if supporting_evidence_refs is not None:
         if not isinstance(supporting_evidence_refs, (tuple, list)):
             raise TypeError(f"supporting_evidence_refs must be tuple/list or None, got {type(supporting_evidence_refs).__name__}")
@@ -589,7 +599,8 @@ def evaluate_milestone_closure_readiness(
     elif repair_history is not None and len(repair_history.entries) > 0:
         repair_path_exists = True
 
-    expected_cycle = ReviewCycle.RV2 if repair_path_exists else ReviewCycle.RV1
+    triggered_rv2 = ReviewTrigger.CORE_CONTRACT_OR_PROTOCOL_CHANGE in parsed_review_triggers
+    expected_cycle = ReviewCycle.RV2 if repair_path_exists or triggered_rv2 else ReviewCycle.RV1
     if final_review_evidence.review_cycle != expected_cycle:
         add(f"final review cycle mismatch: expected {expected_cycle.value} got {final_review_evidence.review_cycle.value}")
     # Also check closure's final cycle should equal final evidence cycle (by definition)
@@ -636,10 +647,11 @@ def evaluate_milestone_closure_readiness(
                 add(f"stale frontier: closure expected old RV1 frontier {rv1_frontier_str!r} after repair")
 
     else:
-        # No repair: ensure rv1_evidence if provided matches final
+        # No repair: a trusted core-contract trigger is the bounded frontier
+        # rollover that makes RV2 current; otherwise final remains RV1.
         if rv1_evidence is not None:
             rv1_frontier_str = _normalize_frontier(rv1_evidence.reviewed_frontier_ref)
-            if rv1_frontier_str != final_frontier_str:
+            if rv1_frontier_str != final_frontier_str and not triggered_rv2:
                 # If rv1 provided and no repair, final should be rv1
                 add(f"frontier mismatch: rv1 {rv1_frontier_str!r} vs final {final_frontier_str!r}")
 
