@@ -83,10 +83,13 @@ from aota_forge.runtime.task_main.reconciliation import (
     GovernedWorkItemEvidence,
 )
 from aota_forge.runtime.task_main.review_adoption import (
+    DEFAULT_REVIEWER_ATTEMPT,
     ReviewAdoptionError,
     TrustedPlanAuthority,
     mint_accepted_frontier_authorization,
+    normalize_reviewer_attempt,
     read_trusted_git_frontier,
+    reviewer_task_id,
     trusted_plan_authority_from_binding,
 )
 from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
@@ -1384,6 +1387,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     origin_session = str(data["origin_task_main_session_ref"])
     executor_id = str(data.get("executor_id", "hermes"))
     coordinator_id = data.get("coordinator_id")  # may be None
+    try:
+        reviewer_attempt = normalize_reviewer_attempt(
+            data.get("reviewer_attempt", DEFAULT_REVIEWER_ATTEMPT)
+        )
+    except (TypeError, ValueError) as exc:
+        raise TrustedBindingError(f"bootstrap reviewer_attempt invalid: {exc}") from exc
     live_view_dict = data["live_plan_view"]
     next_view_dict = data.get("next_milestone_view")
     raw_plan_id = data.get("plan_id")
@@ -2109,8 +2118,8 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         )
 
     def reviewer_canonical_task_id_resolver():
-        # Deterministic reviewer task id for this slice
-        return f"{project_id}:{live_view.milestone_id}:RV1:attempt-1"
+        # The bounded attempt is operator/runtime-owned bootstrap data.
+        return reviewer_task_id(project_id, live_view.milestone_id, reviewer_attempt)
 
     def reviewer_dispatch_resolver():
         # AF #57 M3/RV1: the trusted runtime review dispatch materializes the
@@ -2263,6 +2272,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                     plan_id=plan_id,
                     trusted_frontier=trusted_frontier,
                     trusted_authority=trusted_review_authority,
+                    reviewer_attempt=reviewer_attempt,
                 )
         except Exception as exc:
             raise TrustedBindingError(
@@ -2440,6 +2450,7 @@ def write_bootstrap_file(
     executor_id: str = "hermes",
     coordinator_id: str | None = None,
     plan_id: str | None = None,
+    reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
     plan_authority_binding: PlanAuthorityBinding | None = None,
     governance_base: Path | None = None,
     governance_store_path: Path | None = None,
@@ -2454,6 +2465,7 @@ def write_bootstrap_file(
     durable coordinator store; the resolver prefers that durable path.
     """
     worktree_root = worktree_root.resolve()
+    reviewer_attempt = normalize_reviewer_attempt(reviewer_attempt)
     dest = worktree_root / BOOTSTRAP_RELPATH
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2514,6 +2526,8 @@ def write_bootstrap_file(
         "live_plan_view": view_to_dict(live_plan_view),
         "next_milestone_view": view_to_dict(next_milestone_view) if next_milestone_view else None,
     }
+    if reviewer_attempt != DEFAULT_REVIEWER_ATTEMPT:
+        payload["reviewer_attempt"] = reviewer_attempt
     if plan_id is not None:
         if not is_plan_id(plan_id):
             raise ValueError("plan_id must be a canonical internal Plan ID when supplied")

@@ -82,6 +82,7 @@ from aota_forge.runtime.task_main.review_adoption import (
     build_review_dispatch_binding,
     record_review_dispatch_binding,
     review_only_adoption_from_state,
+    reviewer_task_id,
     revalidate_adopted_frontier,
 )
 from aota_forge.work_plane.handoff import TaskHandoff
@@ -1131,7 +1132,7 @@ def advance_milestone_once(
                 durable_review_handoff.get("canonical_task_id"), "reviewer_canonical_task_id"
             )
         else:
-            reviewer_cid = f"{state.project_id}:{state.milestone_id}:RV1:attempt-1"
+            reviewer_cid = reviewer_task_id(state.project_id, state.milestone_id)
         if review_only_adoption is not None and reviewer_cid != review_only_adoption.reviewer_canonical_task_id:
             raise TaskMainCoordinatorError(
                 "reviewer dispatch identity contradicts the adopted reviewer task"

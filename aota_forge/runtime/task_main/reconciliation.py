@@ -101,6 +101,7 @@ from aota_forge.runtime.task_main.review_adoption import (
     ReviewAdoptionError,
     TrustedPlanAuthority,
     review_only_adoption_from_state,
+    reviewer_attempt_from_canonical_task_id,
     review_only_progression_for,
     revalidate_adopted_frontier,
 )
@@ -673,9 +674,15 @@ def _validate_adopted_review_binding(
     binding = marker.get("reviewer_binding")
     if not isinstance(binding, Mapping):
         raise ReconciliationError("review-only adoption has no durable reviewer binding")
+    try:
+        reviewer_attempt = reviewer_attempt_from_canonical_task_id(
+            adoption.reviewer_canonical_task_id
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReconciliationError(str(exc)) from exc
     expected = (
         (binding.get("canonical_task_id"), adoption.reviewer_canonical_task_id, "reviewer task"),
-        (binding.get("attempt"), 1, "reviewer attempt"),
+        (binding.get("attempt"), reviewer_attempt, "reviewer attempt"),
         (binding.get("role"), AgentWorkRole.REVIEWER.value, "reviewer role"),
         (binding.get("project_id"), state.project_id, "reviewer project"),
         (binding.get("plan_authority"), state.plan_authority, "reviewer Plan authority"),

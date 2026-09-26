@@ -71,8 +71,10 @@ NO_PUBLIC_REVIEW_ADOPTION_OPERATION = True
 
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_REVIEWER_TASK_ATTEMPT_RE = re.compile(r":RV1:attempt-(?P<attempt>[0-9]+)$")
 _MAX_REF_LENGTH = 512
-_EXPECTED_REVIEWER_ATTEMPT = 1
+DEFAULT_REVIEWER_ATTEMPT = 1
+_SUPPORTED_REVIEWER_ATTEMPTS = frozenset({1, 2})
 _AUTHORIZATION_PROVENANCE_LEGACY_VERSION = 1
 _AUTHORIZATION_PROVENANCE_VERSION = 2
 _TRUSTED_GIT_MAX_OBSERVED_PATHS = 4096
@@ -281,6 +283,33 @@ def _require_non_empty_str(value: Any, label: str, *, max_length: int = _MAX_REF
     if "\x00" in stripped:
         raise ValueError(f"{label} must not contain NUL")
     return stripped
+
+
+def normalize_reviewer_attempt(value: Any) -> int:
+    """Validate the bounded trusted runtime reviewer-attempt selector."""
+
+    if type(value) is not int:
+        raise TypeError(f"reviewer_attempt must be an integer, got {type(value).__name__}")
+    if value not in _SUPPORTED_REVIEWER_ATTEMPTS:
+        raise ValueError(
+            "reviewer_attempt must be one of the bounded supported attempts: 1 or 2"
+        )
+    return value
+
+
+def reviewer_attempt_from_canonical_task_id(value: Any) -> int:
+    """Extract the bounded attempt from a canonical RV1 task identity."""
+
+    task_id = _require_non_empty_str(value, "reviewer_canonical_task_id")
+    match = _REVIEWER_TASK_ATTEMPT_RE.search(task_id)
+    if match is None:
+        raise ValueError(
+            "reviewer_canonical_task_id must end with ':RV1:attempt-<1|2>'"
+        )
+    try:
+        return normalize_reviewer_attempt(int(match.group("attempt")))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"reviewer task identity has an unsupported attempt: {task_id!r}") from exc
 
 
 def _require_commit(value: Any, label: str) -> str:
@@ -639,6 +668,10 @@ class ReviewOnlyAdoption:
         )
         object.__setattr__(self, "proof_digest", _require_sha256(self.proof_digest, "proof_digest"))
 
+    @property
+    def reviewer_attempt(self) -> int:
+        return reviewer_attempt_from_canonical_task_id(self.reviewer_canonical_task_id)
+
 
 def read_trusted_git_frontier(
     worktree_root: WorktreeSandboxBoundary,
@@ -733,8 +766,23 @@ def _proof_digest(
     ).hexdigest()
 
 
-def _expected_reviewer_task_id(project_id: str, milestone_id: str) -> str:
-    return f"{project_id}:{milestone_id}:RV1:attempt-{_EXPECTED_REVIEWER_ATTEMPT}"
+def _expected_reviewer_task_id(
+    project_id: str,
+    milestone_id: str,
+    reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+) -> str:
+    attempt = normalize_reviewer_attempt(reviewer_attempt)
+    return f"{project_id}:{milestone_id}:RV1:attempt-{attempt}"
+
+
+def reviewer_task_id(
+    project_id: str,
+    milestone_id: str,
+    reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
+) -> str:
+    """Build one canonical bounded RV1 reviewer identity."""
+
+    return _expected_reviewer_task_id(project_id, milestone_id, reviewer_attempt)
 
 
 def _reported_paths(
@@ -810,6 +858,12 @@ def _validate_authorization(
         raise ReviewAdoptionError(f"authorization Plan identity is invalid: {exc}") from exc
     if authorization.plan_authority != expected_authority:
         raise ReviewAdoptionError("authorization Plan authority is not the trusted local_governance authority")
+    try:
+        reviewer_attempt = reviewer_attempt_from_canonical_task_id(
+            authorization.reviewer_canonical_task_id
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
     checks = (
         (authorization.project_id, state.project_id, "project identity"),
         (authorization.plan_authority, state.plan_authority, "Plan authority"),
@@ -826,7 +880,9 @@ def _validate_authorization(
         (authorization.candidate_frontier_ref, frontier.frontier_ref, "candidate frontier"),
         (
             authorization.reviewer_canonical_task_id,
-            _expected_reviewer_task_id(state.project_id, state.milestone_id),
+            _expected_reviewer_task_id(
+                state.project_id, state.milestone_id, reviewer_attempt
+            ),
             "reviewer task identity",
         ),
     )
@@ -865,6 +921,12 @@ def _validate_authorization_against_state(
         raise ReviewAdoptionError(f"durable authorization Plan identity is invalid: {exc}") from exc
     if authorization.plan_authority != expected_authority:
         raise ReviewAdoptionError("durable authorization Plan authority is not trusted")
+    try:
+        reviewer_attempt = reviewer_attempt_from_canonical_task_id(
+            authorization.reviewer_canonical_task_id
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
     checks = (
         (authorization.project_id, state.project_id, "project identity"),
         (authorization.plan_authority, state.plan_authority, "Plan authority"),
@@ -876,7 +938,9 @@ def _validate_authorization_against_state(
         (authorization.candidate_frontier_ref, frontier.frontier_ref, "candidate frontier"),
         (
             authorization.reviewer_canonical_task_id,
-            _expected_reviewer_task_id(state.project_id, state.milestone_id),
+            _expected_reviewer_task_id(
+                state.project_id, state.milestone_id, reviewer_attempt
+            ),
             "reviewer task identity",
         ),
     )
@@ -945,6 +1009,7 @@ def mint_accepted_frontier_authorization(
     authorization_ref: str | None = None,
     trusted_frontier: TrustedGitFrontier,
     trusted_authority: TrustedPlanAuthority,
+    reviewer_attempt: int = DEFAULT_REVIEWER_ATTEMPT,
 ) -> AcceptedFrontierAuthorization:
     """Mint the value object from a trusted bound Plan source and Git frontier."""
 
@@ -962,6 +1027,10 @@ def mint_accepted_frontier_authorization(
         )
     if plan_id != trusted_authority.plan_id:
         raise ReviewAdoptionError("minted authorization Plan identity does not match the trusted authority")
+    try:
+        reviewer_attempt = normalize_reviewer_attempt(reviewer_attempt)
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
     try:
         _check_live_binding(state, live_plan_view)
     except PlanDriftError:
@@ -987,7 +1056,7 @@ def mint_accepted_frontier_authorization(
         candidate_frontier_ref=trusted_frontier.frontier_ref,
         authorization_ref=canonical_ref,
         reviewer_canonical_task_id=_expected_reviewer_task_id(
-            state.project_id, state.milestone_id
+            state.project_id, state.milestone_id, reviewer_attempt
         ),
     )
     authorization = replace(
@@ -1274,6 +1343,10 @@ def review_only_adoption_from_state(
         frontier_ref=refs[2],
         proof_digest=digests[0],
     )
+    try:
+        reviewer_attempt = adoption.reviewer_attempt
+    except (TypeError, ValueError) as exc:
+        raise ReviewAdoptionError(str(exc)) from exc
     if (
         authorization.authorization_ref != adoption.authorization_ref
         or authorization.reviewer_canonical_task_id != adoption.reviewer_canonical_task_id
@@ -1282,7 +1355,7 @@ def review_only_adoption_from_state(
     ):
         raise ReviewAdoptionError("review-only adoption marker disagrees with durable authorization facts")
     if adoption.reviewer_canonical_task_id != _expected_reviewer_task_id(
-        state.project_id, state.milestone_id
+        state.project_id, state.milestone_id, reviewer_attempt
     ):
         raise ReviewAdoptionError("review-only marker reviewer identity is not canonical")
     reviewer_binding = review.get("reviewer_binding")
@@ -1291,7 +1364,7 @@ def review_only_adoption_from_state(
             raise ReviewAdoptionError("review-only reviewer binding is malformed")
         binding_checks = (
             (reviewer_binding.get("canonical_task_id"), adoption.reviewer_canonical_task_id, "reviewer task"),
-            (reviewer_binding.get("attempt"), _EXPECTED_REVIEWER_ATTEMPT, "reviewer attempt"),
+            (reviewer_binding.get("attempt"), reviewer_attempt, "reviewer attempt"),
             (reviewer_binding.get("role"), AgentWorkRole.REVIEWER.value, "reviewer role"),
             (reviewer_binding.get("project_id"), state.project_id, "reviewer project"),
             (reviewer_binding.get("plan_authority"), state.plan_authority, "reviewer Plan authority"),
@@ -1410,7 +1483,7 @@ def build_review_dispatch_binding(
     handoff_digest = _require_sha256(handoff_digest, "reviewer handoff_digest")
     return {
         "canonical_task_id": adoption.reviewer_canonical_task_id,
-        "attempt": _EXPECTED_REVIEWER_ATTEMPT,
+        "attempt": adoption.reviewer_attempt,
         "role": AgentWorkRole.REVIEWER.value,
         "project_id": state.project_id,
         "plan_authority": state.plan_authority,
@@ -1532,6 +1605,7 @@ __all__ = [
     "REVIEW_ONLY_ADOPTION_STATUS",
     "REVIEW_ONLY_FRONTIER_STATUS",
     "AcceptedFrontierAuthorization",
+    "DEFAULT_REVIEWER_ATTEMPT",
     "ReviewAdoptionError",
     "ReviewOnlyAdoption",
     "TrustedPlanAuthority",
@@ -1539,9 +1613,12 @@ __all__ = [
     "adopt_accepted_frontier_for_review",
     "build_review_dispatch_binding",
     "mint_accepted_frontier_authorization",
+    "normalize_reviewer_attempt",
     "read_trusted_git_frontier",
     "record_review_dispatch_binding",
     "revalidate_adopted_frontier",
+    "reviewer_attempt_from_canonical_task_id",
+    "reviewer_task_id",
     "review_only_adoption_from_state",
     "review_only_progression_for",
     "trusted_plan_authority_from_binding",

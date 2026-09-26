@@ -54,6 +54,7 @@ ENTRY_BASE = "c" * 40
 FRONTIER = "a" * 40
 TREE = "b" * 40
 REVIEWER_TASK_ID = f"{PROJECT_ID}:{MILESTONE_ID}:RV1:attempt-1"
+REVIEWER_TASK_ID_ATTEMPT_2 = f"{PROJECT_ID}:{MILESTONE_ID}:RV1:attempt-2"
 
 
 class FakeGit(GitPort):
@@ -88,7 +89,12 @@ def _view() -> MilestonePlanView:
     )
 
 
-def _authorization(world: World, root: Path) -> AcceptedFrontierAuthorization:
+def _authorization(
+    world: World,
+    root: Path,
+    *,
+    reviewer_attempt: int = 1,
+) -> AcceptedFrontierAuthorization:
     view = _view()
     handle = world.activate(view)
     state = world.coord_store.get(handle.coordinator_id)
@@ -116,6 +122,7 @@ def _authorization(world: World, root: Path) -> AcceptedFrontierAuthorization:
             binding=authority_binding,
             authoritative_reader=_AuthorityReader(authority_binding),
         ),
+        reviewer_attempt=reviewer_attempt,
     )
 
 
@@ -147,7 +154,11 @@ def _reviewer_sandbox(root: Path) -> WorktreeSandboxBoundary:
     )
 
 
-def _durable_reviewer_handoff(root: Path) -> dict[str, object]:
+def _durable_reviewer_handoff(
+    root: Path,
+    *,
+    reviewer_task_id: str = REVIEWER_TASK_ID,
+) -> dict[str, object]:
     handoff = _reviewer_handoff()
     ref = handoff_write(
         mode="work_item",
@@ -168,14 +179,14 @@ def _durable_reviewer_handoff(root: Path) -> dict[str, object]:
         milestone_id=MILESTONE_ID,
         work_item_id="RV1",
         target_role="reviewer",
-        task_id=REVIEWER_TASK_ID,
+        task_id=reviewer_task_id,
         provenance={"plan_digest": PLAN_DIGEST, "frontier_ref": FRONTIER},
     )
     return {
         "handoff": handoff,
         "handoff_ref": ref.ref,
         "handoff_digest": ref.digest,
-        "canonical_task_id": REVIEWER_TASK_ID,
+        "canonical_task_id": reviewer_task_id,
         "frontier_ref": FRONTIER,
         "handoff_sandbox": _reviewer_sandbox(root),
     }
@@ -356,8 +367,9 @@ def _runner(
     reviewer_handoff_resolver=_reviewer_handoff,
     activate: bool = True,
 ) -> TaskMainMilestoneRunner:
+    durable_task_id = auth.reviewer_canonical_task_id if auth is not None else REVIEWER_TASK_ID
     durable_resolver = (
-        (lambda: _durable_reviewer_handoff(root))
+        (lambda: _durable_reviewer_handoff(root, reviewer_task_id=durable_task_id))
         if reviewer_handoff_resolver is not None
         else None
     )
@@ -418,6 +430,113 @@ def test_adoption_routes_directly_to_reviewer_without_w_dispatch(
         assert state.frontier_ref["ref"] == FRONTIER
     finally:
         world.close()
+
+
+def test_trusted_attempt_2_dispatches_distinct_reviewer_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-attempt-2")
+    try:
+        view = _view()
+        auth = _authorization(world, tmp_path, reviewer_attempt=2)
+        runner = _runner(world, view, auth, tmp_path)
+
+        outcome = runner.advance_once()
+
+        assert outcome.disposition == DISPOSITION_DISPATCHED_REVIEW
+        assert outcome.dispatched == (REVIEWER_TASK_ID_ATTEMPT_2,)
+        assert world.exec_store.get(REVIEWER_TASK_ID) is None
+        record = world.exec_store.get(REVIEWER_TASK_ID_ATTEMPT_2)
+        assert record is not None
+        state = world.coord_store.get(runner.coordinator_id)
+        assert state is not None
+        assert state.integrated_review["reviewer_binding"]["canonical_task_id"] == (
+            REVIEWER_TASK_ID_ATTEMPT_2
+        )
+        assert state.integrated_review["reviewer_binding"]["attempt"] == 2
+
+        canonical = world.dispatcher.result(REVIEWER_TASK_ID_ATTEMPT_2)
+        card = project_worker_result_card(
+            canonical,
+            ResultGovernanceProjection.success(),
+            "reviewer",
+            summary="R3B bounded retry review",
+        )
+        world.dispatcher.attach_worker_result_card(REVIEWER_TASK_ID_ATTEMPT_2, card)
+
+        def review_resolver(canonical_task_id: str, card_digest: str) -> GovernedReviewEvidence:
+            assert canonical_task_id == REVIEWER_TASK_ID_ATTEMPT_2
+            reviewer_card = WorkerResultCard.from_dict(
+                world.exec_store.get(canonical_task_id).worker_result_card  # type: ignore[union-attr]
+            )
+            evidence = MilestoneReviewEvidence(
+                milestone_ref=SemanticReference(ref=MILESTONE_ID),
+                review_cycle=ReviewCycle.RV1,
+                reviewed_frontier_ref=SemanticReference(ref=FRONTIER),
+                review_result_ref=reviewer_card.result_handoff_ref,
+                review_result_digest=card_digest,
+                finding_refs=(),
+            )
+            return GovernedReviewEvidence(
+                review_evidence=evidence,
+                review_findings=(),
+                review_task_handoff=_reviewer_handoff(),
+                expected_final_frontier=SemanticReference(ref=FRONTIER),
+            )
+
+        runner._governed_review_resolver = review_resolver
+        reconciled = runner.advance_once()
+        assert reconciled.disposition == DISPOSITION_MILESTONE_CLOSURE_READY
+        assert state.integrated_review["reviewer_binding"]["attempt"] == 2
+    finally:
+        world.close()
+
+
+def test_reviewer_attempt_3_is_rejected_by_trusted_mint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_git_observation(monkeypatch)
+    world = World(tmp_path, name="r3b-attempt-3-denied")
+    try:
+        with pytest.raises(ReviewAdoptionError, match="bounded supported attempts"):
+            _authorization(world, tmp_path, reviewer_attempt=3)
+    finally:
+        world.close()
+
+
+def test_legacy_bootstrap_carries_only_explicit_bounded_retry_attempt(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "bootstrap-attempt-2"
+    bootstrap = task_main_host_bootstrap.write_bootstrap_file(
+        worktree_root=root,
+        project_id=PROJECT_ID,
+        worktree_id="r3b-bootstrap",
+        coordinator_store_path=root / ".aota" / "coordinator.json",
+        execution_store_path=root / ".aota" / "execution.json",
+        runtime_config_path=root / ".aota" / "runtime.json",
+        origin_task_main_session_ref="session-r3b-bootstrap",
+        live_plan_view=_view(),
+        next_milestone_view=None,
+        reviewer_attempt=2,
+    )
+    payload = json.loads(bootstrap.read_text(encoding="utf-8"))
+    assert payload["reviewer_attempt"] == 2
+
+    with pytest.raises(ValueError, match="bounded supported attempts"):
+        task_main_host_bootstrap.write_bootstrap_file(
+            worktree_root=tmp_path / "bootstrap-attempt-3",
+            project_id=PROJECT_ID,
+            worktree_id="r3b-bootstrap",
+            coordinator_store_path=tmp_path / "bootstrap-attempt-3" / ".aota" / "coordinator.json",
+            execution_store_path=tmp_path / "bootstrap-attempt-3" / ".aota" / "execution.json",
+            runtime_config_path=tmp_path / "bootstrap-attempt-3" / ".aota" / "runtime.json",
+            origin_task_main_session_ref="session-r3b-bootstrap",
+            live_plan_view=_view(),
+            next_milestone_view=None,
+            reviewer_attempt=3,
+        )
 
 
 def test_adoption_does_not_fall_back_to_work_when_reviewer_is_unavailable(
