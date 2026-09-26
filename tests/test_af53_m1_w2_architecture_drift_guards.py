@@ -119,6 +119,20 @@ REVIEWER_SPECIAL_MACHINERY_RE = re.compile(
 )
 
 LEGACY_PACKAGE = "aota_forge.runtime.task_main"
+W4_SAFETY_RUNTIME_MODULES: frozenset[str] = frozenset(
+    {
+        "aota_forge.runtime.task_main.context_binding",
+        "aota_forge.runtime.task_main.context_switch_eligibility",
+        "aota_forge.runtime.task_main.context_switch_guard",
+        "aota_forge.runtime.task_main.context_switch_transition",
+        "aota_forge.runtime.task_main.context_switch_runtime",
+        "aota_forge.runtime.task_main.coordinator_state",
+        "aota_forge.runtime.task_main.coordinator_store",
+    }
+)
+W4_SAFETY_RUNTIME_IMPORTERS: frozenset[str] = frozenset(
+    {"aota_forge.composition.task_main_runtime_selection"}
+)
 
 # ---------------------------------------------------------------------------
 # G: explicit thin-path / legacy compatibility architecture seam.
@@ -423,7 +437,10 @@ def _imports_of(tree: ast.Module) -> tuple[set[str], set[tuple[str, str]]]:
 
 
 def _is_legacy_module(name: str) -> bool:
-    return name == LEGACY_PACKAGE or name.startswith(LEGACY_PACKAGE + ".")
+    return (
+        (name == LEGACY_PACKAGE or name.startswith(LEGACY_PACKAGE + "."))
+        and name not in W4_SAFETY_RUNTIME_MODULES
+    )
 
 
 def _legacy_import_offenders(
@@ -436,7 +453,7 @@ def _legacy_import_offenders(
         if _is_legacy_module(module):
             continue
         legacy = sorted(name for name in imported if _is_legacy_module(name))
-        if legacy and module not in allowed:
+        if legacy and module not in allowed and module not in W4_SAFETY_RUNTIME_IMPORTERS:
             offenders[module] = legacy
     return offenders
 

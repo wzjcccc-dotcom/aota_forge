@@ -118,6 +118,17 @@ AF_ROOT = REPO_ROOT / "aota_forge"
 THIN_HOST_MODULE = AF_ROOT / "composition" / "thin_task_main_host.py"
 
 LEGACY_PACKAGE = "aota_forge.runtime.task_main"
+W4_SAFETY_RUNTIME_MODULES: frozenset[str] = frozenset(
+    {
+        "aota_forge.runtime.task_main.context_binding",
+        "aota_forge.runtime.task_main.context_switch_eligibility",
+        "aota_forge.runtime.task_main.context_switch_guard",
+        "aota_forge.runtime.task_main.context_switch_transition",
+        "aota_forge.runtime.task_main.context_switch_runtime",
+        "aota_forge.runtime.task_main.coordinator_state",
+        "aota_forge.runtime.task_main.coordinator_store",
+    }
+)
 LEGACY_HOST_MODULES = (
     "aota_forge.composition.task_main_host_bootstrap",
     "aota_forge.composition.task_main",
@@ -440,7 +451,10 @@ def _production_modules() -> dict[str, Path]:
 
 
 def _is_legacy_module(name: str) -> bool:
-    return name == LEGACY_PACKAGE or name.startswith(LEGACY_PACKAGE + ".")
+    return (
+        (name == LEGACY_PACKAGE or name.startswith(LEGACY_PACKAGE + "."))
+        and name not in W4_SAFETY_RUNTIME_MODULES
+    )
 
 
 def _thin_host_import_closure() -> set[str]:

@@ -837,6 +837,7 @@ class DailyTaskMainLauncher:
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         origin_task_main_session_ref: str | None = None,
         coordinator_id: str | None = None,
+        coordinator_store_path: Path | str | None = None,
         work_semantics: Mapping[str, Any] | None = None,
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
@@ -910,8 +911,10 @@ class DailyTaskMainLauncher:
                     "stewardship_semantic_facts requires the legacy task-main runtime path"
                 )
             # Thin production candidate: trusted operator bootstrap only. No
-            # Plan read/interpretation, no MilestonePlanView, no coordinator
-            # store, no TaskMainControlService, no review/READY state.
+            # Plan read/interpretation, no MilestonePlanView, no legacy
+            # TaskMainControlService, no review/READY state. W4 may carry the
+            # existing durable coordinator reference for safe context switch
+            # composition; it never creates coordinator truth here.
             #
             # AF #56 M3/W1: the shared trusted preparation is host-neutral. The
             # Hermes executable is a Hermes-host-only deployment fact and is
@@ -942,6 +945,18 @@ class DailyTaskMainLauncher:
                 except Exception:
                     pass
 
+            thin_coordinator_store_path = None
+            if coordinator_id is not None and str(coordinator_id).strip():
+                if coordinator_store_path is None or not str(coordinator_store_path).strip():
+                    raise RuntimeError(
+                        "thin coordinator_id requires the trusted coordinator_store_path"
+                    )
+                thin_coordinator_store_path = Path(coordinator_store_path).resolve()
+            elif coordinator_store_path is not None and str(coordinator_store_path).strip():
+                raise RuntimeError(
+                    "thin coordinator_store_path requires an exact coordinator_id"
+                )
+
             bootstrap_path = materialize_thin_task_main_bootstrap(
                 worktree_root=worktree_root,
                 project_id=project_id,
@@ -949,6 +964,8 @@ class DailyTaskMainLauncher:
                 runtime_config_path=runtime_config_path,
                 origin_task_main_session_ref=origin_task_main_session_ref,
                 execution_store_path=execution_store_path,
+                coordinator_store_path=thin_coordinator_store_path,
+                coordinator_id=coordinator_id,
                 executor_id=runtime_config.executor,
                 observation_evidence_path=os.environ.get("AOTA_RUNTIME_OBSERVATION_SINK", "").strip() or None,
                 observation_run_ref=os.environ.get("AOTA_RUNTIME_OBSERVATION_RUN_REF", "").strip() or None,
@@ -975,7 +992,7 @@ class DailyTaskMainLauncher:
                 project_id=project_id,
                 worktree_id=worktree_id,
                 runtime_config_path=runtime_config_path,
-                coordinator_store_path=None,
+                coordinator_store_path=thin_coordinator_store_path,
                 execution_store_path=execution_store_path,
                 live_plan_view=None,
                 next_milestone_view=None,
@@ -1120,6 +1137,8 @@ class DailyTaskMainLauncher:
         runtime_config_path: Path | str | None = None,
         plan_adapter: PlanAuthorityReadAdapter | None = None,
         origin_task_main_session_ref: str | None = None,
+        coordinator_id: str | None = None,
+        coordinator_store_path: Path | str | None = None,
         work_semantics: Mapping[str, Any] | None = None,
         git_integration_branch: str | None = None,
         git_remote: str | None = None,
@@ -1141,6 +1160,8 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=origin_task_main_session_ref,
+            coordinator_id=coordinator_id,
+            coordinator_store_path=coordinator_store_path,
             work_semantics=work_semantics,
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
@@ -1232,6 +1253,8 @@ class DailyTaskMainLauncher:
         worktree_id: str = "aota_forge-main",
         runtime_config_path: Path | str | None = None,
         plan_adapter: PlanAuthorityReadAdapter | None = None,
+        coordinator_id: str | None = None,
+        coordinator_store_path: Path | str | None = None,
         initial_prompt: str | None = None,
         timeout_seconds: int = 120,
         trace_path: Path | None = None,
@@ -1307,6 +1330,8 @@ class DailyTaskMainLauncher:
                 runtime_config_path=Path(effective_config_path),
                 runtime_config=effective_config,
                 plan_adapter=plan_adapter,
+                coordinator_id=coordinator_id,
+                coordinator_store_path=coordinator_store_path,
                 startup_prompt=startup_prompt,
                 timeout_seconds=float(timeout_seconds),
                 completion_timeout_seconds=completion_timeout_seconds,
@@ -1377,13 +1402,13 @@ class DailyTaskMainLauncher:
         self._require_task_main_tool_surface(ctx=ctx_pending, session_id=session_id, phase="phase1", env=env)
 
         # ---- PHASE 2: bind real origin + continue the exact same session ----
-        coordinator_id: str | None = None
+        phase2_coordinator_id = coordinator_id
         if (
             ctx_pending.runtime_path != TASK_MAIN_RUNTIME_PATH_THIN
             and ctx_pending.live_plan_view is not None
         ):
             milestone_id = ctx_pending.live_plan_view.milestone_id
-            coordinator_id = f"{project_id}:{milestone_id}" if milestone_id else None
+            phase2_coordinator_id = f"{project_id}:{milestone_id}" if milestone_id else None
         ctx = self.prepare(
             worktree_root=Path(worktree_root).resolve(),
             project_id=project_id,
@@ -1391,7 +1416,8 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
-            coordinator_id=coordinator_id,
+            coordinator_id=phase2_coordinator_id,
+            coordinator_store_path=coordinator_store_path,
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
@@ -1608,6 +1634,8 @@ class DailyTaskMainLauncher:
         runtime_config_path: Path,
         runtime_config: RuntimeConfig,
         plan_adapter: PlanAuthorityReadAdapter | None,
+        coordinator_id: str | None,
+        coordinator_store_path: Path | str | None,
         startup_prompt: str,
         timeout_seconds: float,
         completion_timeout_seconds: float | None,
@@ -1705,6 +1733,8 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
+            coordinator_id=coordinator_id,
+            coordinator_store_path=coordinator_store_path,
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
@@ -2088,6 +2118,8 @@ class DailyTaskMainLauncher:
         worktree_id: str = "aota_forge-main",
         runtime_config_path: Path | str | None = None,
         plan_adapter: PlanAuthorityReadAdapter | None = None,
+        coordinator_id: str | None = None,
+        coordinator_store_path: Path | str | None = None,
         timeout_seconds: int = 120,
         trace_path: Path | None = None,
         git_integration_branch: str | None = None,
@@ -2123,6 +2155,8 @@ class DailyTaskMainLauncher:
             runtime_config_path=runtime_config_path,
             plan_adapter=plan_adapter,
             origin_task_main_session_ref=session_id,
+            coordinator_id=coordinator_id,
+            coordinator_store_path=coordinator_store_path,
             git_integration_branch=git_integration_branch,
             git_remote=git_remote,
             plan_ref=plan_ref,
@@ -2161,6 +2195,8 @@ def launch_daily_task_main(
     worktree_id: str = "aota_forge-main",
     runtime_config_path: str | os.PathLike[str] | None = None,
     plan_adapter: PlanAuthorityReadAdapter | None = None,
+    coordinator_id: str | None = None,
+    coordinator_store_path: str | os.PathLike[str] | None = None,
     hermes_bin: str | None = None,
     initial_prompt: str | None = None,
     git_integration_branch: str | None = None,
@@ -2192,6 +2228,8 @@ def launch_daily_task_main(
         worktree_id=worktree_id,
         runtime_config_path=Path(runtime_config_path) if runtime_config_path else None,
         plan_adapter=plan_adapter,
+        coordinator_id=coordinator_id,
+        coordinator_store_path=coordinator_store_path,
         initial_prompt=initial_prompt,
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,

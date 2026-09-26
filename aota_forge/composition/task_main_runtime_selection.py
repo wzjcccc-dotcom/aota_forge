@@ -41,9 +41,10 @@ What this module is and is not:
   framework.
 
 The thin bootstrap materialized here is operator-owned (0600, atomic write)
-and deliberately carries NO MilestonePlanView, coordinator store,
-TaskMainControlService, review state, READY calculation or
-task_main.advance_once reference. The thin production binding is rebuilt
+and deliberately carries NO MilestonePlanView, TaskMainControlService, review
+state, READY calculation or task_main.advance_once reference. It may carry
+only the trusted path/id reference to the existing durable coordinator needed
+by W4; the child rereads coordinator truth. The thin production binding is rebuilt
 from this bootstrap through the accepted M2 thin composition
 (``compose_thin_task_main_host``), so the thin executed path loads no legacy
 workflow-brain module.
@@ -277,6 +278,33 @@ def _validate_governance_store_path(value: Any) -> Path:
     return path
 
 
+def _validate_coordinator_store_path(value: Any) -> Path:
+    if not isinstance(value, (str, PathLike)) or not str(value).strip():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap coordinator_store_path must be a filesystem path"
+        )
+    raw_path = Path(value)
+    if not raw_path.is_absolute():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap coordinator_store_path must be an absolute trusted path"
+        )
+    if raw_path.is_symlink():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap coordinator_store_path must not be a symlink"
+        )
+    try:
+        path = raw_path.resolve(strict=True)
+    except OSError as exc:
+        raise TaskMainRuntimeSelectionError(
+            f"thin bootstrap coordinator_store_path inaccessible: {exc}"
+        ) from exc
+    if not path.is_file():
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap coordinator_store_path must be an existing file"
+        )
+    return path
+
+
 def materialize_thin_task_main_bootstrap(
     *,
     worktree_root: str | PathLike[str],
@@ -285,6 +313,8 @@ def materialize_thin_task_main_bootstrap(
     runtime_config_path: str | PathLike[str],
     origin_task_main_session_ref: str,
     execution_store_path: str | PathLike[str] | None = None,
+    coordinator_store_path: str | PathLike[str] | None = None,
+    coordinator_id: str | None = None,
     executor_id: str = "hermes",
     observation_evidence_path: str | None = None,
     observation_run_ref: str | None = None,
@@ -303,8 +333,10 @@ def materialize_thin_task_main_bootstrap(
 
     Contains only trusted runtime identity: project/worktree, worktree root,
     operator RuntimeConfig locator, exact origin session, execution store and
-    the explicit ``runtime_path=thin`` marker. It never contains
-    MilestonePlanView, coordinator store, TaskMainControlService, review
+    the explicit ``runtime_path=thin`` marker. A valid W4 composition may also
+    carry the trusted path and exact id of the existing durable coordinator;
+    the child rereads that store and never treats the bootstrap as coordinator
+    truth. It never contains MilestonePlanView, TaskMainControlService, review
     state or task_main.advance_once. An optional bounded prebuilt Governance
     context projection may ride alongside that identity; no raw Plan body is
     materialized here.
@@ -345,6 +377,25 @@ def materialize_thin_task_main_bootstrap(
             "thin bootstrap execution store must be inside worktree_root"
         ) from exc
 
+    raw_coordinator_path = (
+        str(coordinator_store_path).strip() if coordinator_store_path is not None else ""
+    )
+    raw_coordinator_id = str(coordinator_id).strip() if coordinator_id is not None else ""
+    if bool(raw_coordinator_path) != bool(raw_coordinator_id):
+        raise TaskMainRuntimeSelectionError(
+            "thin bootstrap coordinator_store_path and coordinator_id must be supplied together"
+        )
+    normalized_coordinator_path = (
+        _validate_coordinator_store_path(raw_coordinator_path)
+        if raw_coordinator_path
+        else None
+    )
+    normalized_coordinator_id = (
+        _validate_identifier(raw_coordinator_id, "coordinator_id")
+        if raw_coordinator_id
+        else None
+    )
+
     if not isinstance(executor_id, str) or not executor_id.strip():
         raise TaskMainRuntimeSelectionError("thin bootstrap executor_id invalid")
 
@@ -367,6 +418,9 @@ def materialize_thin_task_main_bootstrap(
         "origin_task_main_session_ref": origin,
         "executor_id": executor_id.strip(),
     }
+    if normalized_coordinator_path is not None:
+        payload["coordinator_store_path"] = str(normalized_coordinator_path)
+        payload["coordinator_id"] = normalized_coordinator_id
     # AF #54 M3/W2 optional bounded passive-observation configuration carried
     # through the trusted operator bootstrap (mechanical, non-authoritative;
     # absent unless the operator explicitly configured a per-run evidence
@@ -588,8 +642,11 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
     so the production MCP child gets the same trusted thin binding that M2/W2
     proved: canonical project binding + worktree sandbox, canonical
     RuntimeConfig, trusted production ExecutionDispatcher, canonical single
-    entry ``aota.invoke`` and ``trusted_task_main_context=None``. This is the
-    ONLY thin production binding construction path.
+    entry ``aota.invoke`` and ``trusted_task_main_context=None``. When the
+    bootstrap carries the bounded W4 coordinator reference, this function
+    opens the existing durable stores, composes one ``ContextSwitchRuntime``
+    and passes it through that host composition. This is the ONLY thin
+    production binding construction path.
     """
     if not isinstance(content, Mapping):
         raise TrustedBindingError("thin task-main bootstrap content must be a mapping")
@@ -631,6 +688,72 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
                 "thin bootstrap execution store is outside worktree_root"
             ) from exc
         execution_store = FileBackedExecutionStateStore(exec_path)
+
+    raw_coordinator_path = str(content.get("coordinator_store_path") or "").strip()
+    raw_coordinator_id = str(content.get("coordinator_id") or "").strip()
+    if bool(raw_coordinator_path) != bool(raw_coordinator_id):
+        raise TrustedBindingError(
+            "thin task-main bootstrap coordinator_store_path and coordinator_id must be supplied together"
+        )
+    coordinator_store = None
+    context_switch_runtime = None
+    coordinator_id = None
+    if raw_coordinator_path:
+        if execution_store is None:
+            raise TrustedBindingError(
+                "W4 context switch composition requires the canonical execution store"
+            )
+        try:
+            coordinator_path = _validate_coordinator_store_path(
+                raw_coordinator_path
+            )
+            coordinator_id = _validate_identifier(raw_coordinator_id, "coordinator_id")
+            from aota_forge.runtime.task_main.context_switch_runtime import (
+                ContextSwitchRuntime,
+            )
+            from aota_forge.runtime.task_main.coordinator_store import (
+                FileBackedTaskMainCoordinatorStore,
+            )
+
+            coordinator_store = FileBackedTaskMainCoordinatorStore(coordinator_path)
+            state = coordinator_store.get(coordinator_id)
+            if state is None:
+                raise TrustedBindingError(
+                    f"durable coordinator state is missing for {coordinator_id!r}"
+                )
+            if state.project_id != str(content["project_id"]):
+                raise TrustedBindingError(
+                    "durable coordinator project does not match the trusted bootstrap"
+                )
+            if state.origin_task_main_session_ref != str(
+                content["origin_task_main_session_ref"]
+            ):
+                raise TrustedBindingError(
+                    "durable coordinator session does not match the trusted bootstrap"
+                )
+            if getattr(getattr(state, "status", None), "value", state.status) != "ACTIVE":
+                raise TrustedBindingError(
+                    "durable coordinator is not active for context switching"
+                )
+            context_switch_runtime = ContextSwitchRuntime(
+                coordinator_store=coordinator_store,
+                execution_store=execution_store,
+                coordinator_id=coordinator_id,
+            )
+        except TrustedBindingError:
+            if coordinator_store is not None:
+                coordinator_store.close()
+            if execution_store is not None:
+                execution_store.close()
+            raise
+        except Exception as exc:
+            if coordinator_store is not None:
+                coordinator_store.close()
+            if execution_store is not None:
+                execution_store.close()
+            raise TrustedBindingError(
+                f"thin task-main coordinator reconstruction failed: {exc}"
+            ) from exc
 
     from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
 
@@ -691,43 +814,97 @@ def build_thin_task_main_binding_from_envelope_bootstrap(
             raise TrustedBindingError(
                 "thin bootstrap authorized_root_refs declaration drifts from the trusted root_ref contract"
             )
-    host = compose_thin_task_main_host(
-        worktree_root=root,
-        project_id=str(content["project_id"]),
-        worktree_id=str(content["worktree_id"]),
-        runtime_config_path=str(content["runtime_config_path"]),
-        origin_task_main_session_ref=str(content["origin_task_main_session_ref"]),
-        execution_store=execution_store,
-        git_integration_branch=str(content.get("git_integration_branch") or "").strip() or None,
-        git_remote=str(content.get("git_remote") or "").strip() or None,
-        plan_ref=str(content.get("plan_ref") or "").strip() or None,
-        source_repository=source_repository,
-        registry_path=registry_path,
-        governance_base=governance_base,
-        evidence_base=evidence_base,
-        governance_store_path=governance_store_path,
-        plan_id=plan_id,
-        governance_context=governance_context,
-    )
-    if plan_authority_binding is not None:
-        actual_binding = host.trusted_binding.plan_authority_binding
-        if (
-            actual_binding is None
-            or actual_binding.plan_id != plan_authority_binding.plan_id
-            or actual_binding.source_kind != plan_authority_binding.source_kind
-            or actual_binding.authority_ref != plan_authority_binding.authority_ref
-            or (
-                plan_authority_binding.source_revision is not None
-                and actual_binding.source_revision != plan_authority_binding.source_revision
-            )
-            or (
-                plan_authority_binding.source_digest is not None
-                and actual_binding.source_digest != plan_authority_binding.source_digest
-            )
-        ):
-            raise TrustedBindingError(
-                "thin task-main host Plan authority binding disagrees with bootstrap"
-            )
+    try:
+        host = compose_thin_task_main_host(
+            worktree_root=root,
+            project_id=str(content["project_id"]),
+            worktree_id=str(content["worktree_id"]),
+            runtime_config_path=str(content["runtime_config_path"]),
+            origin_task_main_session_ref=str(content["origin_task_main_session_ref"]),
+            execution_store=execution_store,
+            git_integration_branch=str(content.get("git_integration_branch") or "").strip() or None,
+            git_remote=str(content.get("git_remote") or "").strip() or None,
+            plan_ref=str(content.get("plan_ref") or "").strip() or None,
+            source_repository=source_repository,
+            registry_path=registry_path,
+            governance_base=governance_base,
+            evidence_base=evidence_base,
+            governance_store_path=governance_store_path,
+            plan_id=plan_id,
+            governance_context=governance_context,
+            context_switch_runtime=context_switch_runtime,
+        )
+        if context_switch_runtime is not None:
+            actual_binding = host.plan_authority_binding
+            if (
+                actual_binding is None
+                or actual_binding.source_kind != "local_governance"
+                or host.local_governance_binding is None
+                or host.governance_store is None
+            ):
+                raise TrustedBindingError(
+                    "W4 context switch composition requires the trusted local Governance store"
+                )
+            state = coordinator_store.get(coordinator_id)
+            if state is None:
+                raise TrustedBindingError(
+                    f"durable coordinator state is missing for {coordinator_id!r}"
+                )
+            if (
+                state.plan_authority != actual_binding.authority_ref
+                or state.plan_digest != actual_binding.source_digest
+                or state.plan_source_revision
+                != (
+                    str(actual_binding.source_revision)
+                    if actual_binding.source_revision is not None
+                    else None
+                )
+            ):
+                raise TrustedBindingError(
+                    "durable coordinator Plan binding is stale or inconsistent"
+                )
+            if host.execution_store is not context_switch_runtime.execution_store:
+                raise TrustedBindingError(
+                    "context switch runtime did not receive the host execution store"
+                )
+            if not context_switch_runtime.target_resolver_configured:
+                raise TrustedBindingError(
+                    "context switch target resolver was not derived from local Governance"
+                )
+            try:
+                context_switch_runtime.current_context()
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"durable coordinator context is not live: {exc}"
+                ) from exc
+        if plan_authority_binding is not None:
+            actual_binding = host.trusted_binding.plan_authority_binding
+            if (
+                actual_binding is None
+                or actual_binding.plan_id != plan_authority_binding.plan_id
+                or actual_binding.source_kind != plan_authority_binding.source_kind
+                or actual_binding.authority_ref != plan_authority_binding.authority_ref
+                or (
+                    plan_authority_binding.source_revision is not None
+                    and actual_binding.source_revision != plan_authority_binding.source_revision
+                )
+                or (
+                    plan_authority_binding.source_digest is not None
+                    and actual_binding.source_digest != plan_authority_binding.source_digest
+                )
+            ):
+                raise TrustedBindingError(
+                    "thin task-main host Plan authority binding disagrees with bootstrap"
+                )
+    except Exception:
+        if coordinator_store is not None:
+            coordinator_store.close()
+        if execution_store is not None:
+            execution_store.close()
+        governance_store = getattr(locals().get("host"), "governance_store", None)
+        if governance_store is not None:
+            governance_store.close()
+        raise
     # AF #54 M3/W2: install the operator-opt-in passive observation sink from
     # the verified bootstrap (bounded, non-authoritative). Fail-isolated:
     # telemetry configuration never breaks binding construction.

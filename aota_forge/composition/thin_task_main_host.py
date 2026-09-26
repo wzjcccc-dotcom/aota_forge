@@ -20,9 +20,11 @@ without the legacy workflow coordinator as the normal-path brain:
 What this module deliberately does NOT do:
 
 * it does not construct, require, import-through-execution or pass into the
-  task-main binding: ``TaskMainControlService``, ``MilestonePlanView``,
-  coordinator state, ``task_main.advance_once``, READY work calculation or
-  review-transition state (``THIN_HOST_REQUIRES_*=no``);
+  task-main binding: ``TaskMainControlService``, ``MilestonePlanView``, the
+  legacy workflow coordinator brain, ``task_main.advance_once``, READY work
+  calculation or review-transition state (``THIN_HOST_REQUIRES_*=no``). An
+  optional W4 runtime may read the existing durable coordinator safety state;
+  that is not a second coordinator or workflow brain;
 * it does not read a Plan, decide the next Work Item, select a reviewer,
   decide repair or advance a Milestone — those are task-main LLM semantics;
 * M3/W3 cutover: this thin host composition is now the production default
@@ -550,8 +552,9 @@ def compose_thin_task_main_host(
 
     All identity inputs are trusted runtime/operator construction inputs; the
     model never supplies or overrides them. The composition never consults a
-    Plan, never constructs the legacy workflow coordinator, and leaves the
-    production default path untouched.
+    Plan and never constructs the legacy workflow coordinator brain. When a
+    W4 runtime is supplied, it reads the existing durable coordinator safety
+    state without creating a second store or workflow brain.
 
     AF #55 M1/W4: ``source_repository`` and ``registry_path`` are trusted
     operator/runtime inputs (Plan project identity + authorized workspace

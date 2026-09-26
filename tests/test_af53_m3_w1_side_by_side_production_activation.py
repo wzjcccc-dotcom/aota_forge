@@ -537,12 +537,17 @@ class TestBExplicitTrustedThinSelection:
             & {
                 "MilestonePlanView",
                 "TaskMainControlService",
-                "FileBackedTaskMainCoordinatorStore",
                 "advance_once",
             }
         )
+        allowed_w4_modules = {
+            "aota_forge.runtime.task_main.context_switch_runtime",
+            "aota_forge.runtime.task_main.coordinator_store",
+        }
         assert not any(
-            module.startswith("aota_forge.runtime.task_main") for module in imported_modules
+            module.startswith("aota_forge.runtime.task_main")
+            and module not in allowed_w4_modules
+            for module in imported_modules
         )
 
     def test_thin_binding_is_classified_thin_without_legacy_context(

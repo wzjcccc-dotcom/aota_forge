@@ -10,6 +10,10 @@ from types import SimpleNamespace
 import pytest
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.composition.task_main_runtime_selection import (
+    build_thin_task_main_binding_from_envelope_bootstrap,
+    materialize_thin_task_main_bootstrap,
+)
 from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
 from aota_forge.core.execution.durable_state import (
     DurableExecutionRecord,
@@ -27,7 +31,11 @@ from aota_forge.governance.intake import (
     GovernanceIntakeContext,
     GovernanceIntakeService,
 )
-from aota_forge.mcp_transport import MCP_PUBLIC_TOOL_COUNT, MCP_PUBLIC_TOOLS
+from aota_forge.mcp_transport import (
+    MCP_PUBLIC_TOOL_COUNT,
+    MCP_PUBLIC_TOOLS,
+    create_aota_invoke_dispatch,
+)
 from aota_forge.runtime.task_main.context_switch_eligibility import (
     derive_switch_eligibility,
 )
@@ -655,42 +663,48 @@ constraints: []
             context_binding=source_target.to_context_binding(),
         )
     )
-    execution_store = InMemoryExecutionStateStore()
-    runtime = ContextSwitchRuntime(
-        coordinator_store=coordinator_store,
-        execution_store=execution_store,
-        coordinator_id="aota_forge:M2",
-        target_resolver=None,
-    )
     seed.governance_store.close()
-    host = compose_thin_task_main_host(
+    execution_path = worktree / ".aota" / "execution.json"
+    execution_path.parent.mkdir(parents=True, exist_ok=True)
+    execution_path.write_text("{}", encoding="utf-8")
+    bootstrap_path = materialize_thin_task_main_bootstrap(
         worktree_root=worktree,
         project_id="aota_forge",
         worktree_id="w4-component",
         runtime_config_path=runtime_config,
         origin_task_main_session_ref=SESSION,
-        execution_store=execution_store,
-        host_client=FakeHost(),
+        execution_store_path=execution_path,
+        coordinator_store_path=tmp_path / "component-coordinator.json",
+        coordinator_id="aota_forge:M2",
         registry_path=registry,
-        governance_base=governance_base,
         plan_id=PLAN_A,
+        governance_base=governance_base,
         governance_store_path=governance_store_path,
-        context_switch_runtime=runtime,
     )
+    bootstrap = json.loads(bootstrap_path.read_text(encoding="utf-8"))
+    binding = build_thin_task_main_binding_from_envelope_bootstrap(
+        bootstrap,
+        envelope_worktree_root=worktree,
+    )
+    assert binding.context_switch_runtime is not None
+    assert binding.trusted_task_main_context is None
+    invoke = create_aota_invoke_dispatch(binding)
     try:
-        before = host.invoke("task_main.context", {"mode": "inspect"})
+        before = invoke("task_main.context", {"mode": "inspect"})
         assert before["ok"] is True
         assert before["payload"]["context"]["plan_id"] == PLAN_A
-        switched = host.invoke("task_main.context", {"mode": "switch", "plan_ref": PLAN_B})
+        switched = invoke("task_main.context", {"mode": "switch", "plan_ref": PLAN_B})
         assert switched["ok"] is True, switched
         assert switched["payload"]["context"]["plan_id"] == PLAN_B
-        after = host.invoke("task_main.context", {"mode": "inspect"})
+        after = invoke("task_main.context", {"mode": "inspect"})
         assert after["ok"] is True
         assert after["payload"]["context"]["plan_id"] == PLAN_B
-        assert host.invoke("task_main.context", {"mode": "bind", "plan_ref": PLAN_B})["ok"]
+        assert invoke("task_main.context", {"mode": "bind", "plan_ref": PLAN_B})["ok"]
         assert MCP_PUBLIC_TOOLS == ("aota.invoke",)
         assert MCP_PUBLIC_TOOL_COUNT == 1
     finally:
-        if host.governance_store is not None:
-            host.governance_store.close()
+        runtime = binding.context_switch_runtime
+        if runtime is not None:
+            runtime._coordinator_store.close()
+            runtime._execution_store.close()
         coordinator_store.close()

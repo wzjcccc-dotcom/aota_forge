@@ -220,6 +220,18 @@ class ContextSwitchRuntime:
             if self._target_resolver is None:
                 self._target_resolver = target_resolver
 
+    @property
+    def execution_store(self) -> ExecutionStateStore:
+        """Expose the existing execution store for composition identity checks."""
+
+        return self._execution_store
+
+    @property
+    def target_resolver_configured(self) -> bool:
+        """Whether trusted target resolution has been composed."""
+
+        return self._target_resolver is not None
+
     def configure_local_governance_target_resolver(
         self,
         *,
