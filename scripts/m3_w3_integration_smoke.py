@@ -18,8 +18,8 @@ Proves the autonomous Milestone runner end-to-end over the accepted W1/W2/M2 sea
 
 Uses real Hermes Workers (profile=aota-worker, toolsets=aota) for at least
 two workers plus a reviewer, each exercising workspace.search/read/write.
-Provider/model binding follows the accepted operator config: provider=opencode-go
-model=deepseek-v4-flash (operator RuntimeConfig, not TaskHandoff).
+Provider/model/reasoning binding is resolved by the selected operator profile,
+not by this runner or by TaskHandoff.
 
 Run:
 
@@ -63,8 +63,6 @@ from aota_forge.work_plane.progression import FocusedValidationEvidence, Focused
 from aota_forge.work_plane.result_card import WorkerResultCard  # noqa: E402
 from aota_forge.work_plane.risk_review import MilestoneRiskEnvelope, ProcessDepth  # noqa: E402
 
-PROVIDER = "opencode-go"
-MODEL = "deepseek-v4-flash"
 TASK_MAIN_PROFILE = "aota-task-main"
 WORKER_PROFILE = "aota-worker"
 REAL_TIMEOUT = 240
@@ -190,13 +188,13 @@ def main() -> int:
         origin = create_task_main_session(hermes_bin, tmp)
         note("REAL_TASK_MAIN_SESSION", origin)
         note("REAL_TASK_MAIN_PROFILE", TASK_MAIN_PROFILE)
-        note("REAL_TASK_MAIN_PROVIDER", PROVIDER)
-        note("REAL_TASK_MAIN_MODEL", MODEL)
 
         # Operator config for hermes dispatch
         cfg_path = tmp / "operator_runtime.json"
         cfg_path.write_text(json.dumps({
-            "executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": PROVIDER, "model": MODEL, "toolsets": [SHARED_MCP_TOOLSET],
+            # Null pins defer provider/model/reasoning to the selected Hermes
+            # profiles; this runner owns only the profile and tool surface.
+            "executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": None, "model": None, "toolsets": [SHARED_MCP_TOOLSET],
             "bindings": {
                 "analyst": {"profile": WORKER_PROFILE}, "coder": {"profile": WORKER_PROFILE},
                 "reviewer": {"profile": WORKER_PROFILE}, "project-steward": {"profile": WORKER_PROFILE},

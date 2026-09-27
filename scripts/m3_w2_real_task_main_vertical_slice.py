@@ -48,8 +48,6 @@ from aota_forge.runtime.config import RUNTIME_CONFIG_ENV  # noqa: E402
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph  # noqa: E402
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView  # noqa: E402
 
-PROVIDER = "opencode-go"
-MODEL = "deepseek-v4-flash"
 TASK_MAIN_PROFILE = "aota-task-main"
 WORKER_PROFILE = "aota-worker"
 REAL_TIMEOUT = 240
@@ -71,9 +69,9 @@ def discover_hermes() -> str:
 
 def create_task_main_session(hermes_bin: str, tmp: Path, prompt: str, env: dict[str, str]) -> str:
     usage = tmp / "tm_usage.json"
-    # Use -t to ensure aota toolset is considered? But we now know task-main needs mcp, not toolset
-    # We pass provider/model explicitly to pin operator binding
-    cmd = [hermes_bin, "-p", TASK_MAIN_PROFILE, "--provider", PROVIDER, "-m", MODEL, "--usage-file", str(usage), "-z", prompt]
+    # The selected profile owns provider/model/reasoning; this runner owns only
+    # the task-main profile and prompt.
+    cmd = [hermes_bin, "-p", TASK_MAIN_PROFILE, "--usage-file", str(usage), "-z", prompt]
     print(f"# launch task-main: {' '.join(cmd[:6])} ...", file=sys.stderr)
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=REAL_TIMEOUT, env=env)
     print(f"# task-main stdout: {proc.stdout[:2000]}", file=sys.stderr)
@@ -239,8 +237,9 @@ def main() -> int:
         "executor": "hermes",
         "executable": hermes_bin,
         "concurrency": 2,
-        "provider": PROVIDER,
-        "model": MODEL,
+        # Null pins defer provider/model/reasoning to the selected profiles.
+        "provider": None,
+        "model": None,
         "bindings": {
             "task-main": {"profile": TASK_MAIN_PROFILE},
             "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]},
@@ -317,7 +316,7 @@ def main() -> int:
     tmp_launch = tmp / "launch1"
     tmp_launch.mkdir()
     usage1 = tmp_launch / "usage1.json"
-    cmd1 = [hermes_bin, "-p", TASK_MAIN_PROFILE, "--provider", PROVIDER, "-m", MODEL, "--usage-file", str(usage1), "-z", initial_prompt]
+    cmd1 = [hermes_bin, "-p", TASK_MAIN_PROFILE, "--usage-file", str(usage1), "-z", initial_prompt]
     print(f"# initial launch to get session id", file=sys.stderr)
     proc1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=REAL_TIMEOUT, env=env)
     print(f"# initial stdout: {proc1.stdout[:1000]}", file=sys.stderr)

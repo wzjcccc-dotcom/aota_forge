@@ -115,7 +115,7 @@ def _make_task_main_binding(tmp_path: Path, view: MilestonePlanView, next_view: 
     cfg_path = tmp_path / f"runtime_{uuid.uuid4().hex[:8]}.json"
     # minimal runtime config
     hermes_bin = shutil.which("hermes") or "/usr/local/bin/hermes"
-    cfg = {"executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": "opencode-go", "model": "deepseek-v4-flash", "bindings": {"task-main": {"profile": TASK_MAIN_PROFILE}, "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "analyst": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "reviewer": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "project-steward": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}}}
+    cfg = {"executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": None, "model": None, "bindings": {"task-main": {"profile": TASK_MAIN_PROFILE}, "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "analyst": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "reviewer": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "project-steward": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}}}
     cfg_path.write_text(_json.dumps(cfg), encoding="utf-8")
     coord_path.parent.mkdir(parents=True, exist_ok=True)
     if not coord_path.exists():
@@ -268,7 +268,7 @@ class TestBootstrapTrustBoundary:
         import shutil
         hermes_bin = shutil.which("hermes") or "/usr/local/bin/hermes"
         fake_cfg = tmp_path / "fake_runtime.json"
-        fake_cfg.write_text(json.dumps({"executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": "opencode-go", "model": "deepseek-v4-flash", "bindings": {"task-main": {"profile": TASK_MAIN_PROFILE}, "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "analyst": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "reviewer": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "project-steward": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}}}), encoding="utf-8")
+        fake_cfg.write_text(json.dumps({"executor": "hermes", "executable": hermes_bin, "concurrency": 2, "provider": None, "model": None, "bindings": {"task-main": {"profile": TASK_MAIN_PROFILE}, "coder": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "analyst": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "reviewer": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}, "project-steward": {"profile": WORKER_PROFILE, "toolsets": ["aota"]}}}), encoding="utf-8")
         from aota_forge.composition.task_main_host_bootstrap import write_bootstrap_file
         # Write foreign bootstrap
         foreign_bootstrap = write_bootstrap_file(worktree_root=foreign_root, project_id="evil_project", worktree_id="evil_wt", coordinator_store_path=foreign_root / ".aota" / "coord.json", execution_store_path=foreign_root / ".aota" / "exec.json", runtime_config_path=fake_cfg, origin_task_main_session_ref="evil-session", live_plan_view=view, next_milestone_view=None)
