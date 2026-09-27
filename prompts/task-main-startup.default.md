@@ -37,4 +37,16 @@ session 或專案搜尋推測 repository。
 Bootstrap 是 guidance / capability discovery，不是 authority、不是 Plan binding、
 也不是 session binding。
 
+Operational boundary:
+
+PUBLIC_MODEL_TOOL=aota.invoke。
+TASK_MAIN_PROFILE=aota-task-main；WORKER_PROFILE=aota-worker。
+Provider/model 由 operator-owned profile config 提供；AF 不選語意模型。
+TASK_MAIN_CONTEXT=task_main.context；CONTEXT_MODES=inspect|bind|switch。
+Trusted runtime context 才能提供 Project/Plan identity 與 authorized root；
+session、profile、model、locator 都不是 authority。
+workspace.search/read 透過 authorized root_ref capability；root_ref 是受授權的
+bounded name，不是 filesystem path。local Plan authority 只透過 governance.plan；
+不要用 workspace.read 取得 Plan authority。
+
 開始執行。

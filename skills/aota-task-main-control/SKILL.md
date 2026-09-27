@@ -28,10 +28,14 @@ GUIDANCE_ADVERTISES_UNAVAILABLE_OPERATION=no
 ordinary task-main session = unbound
 local Project/Plan identity = per-operation Governance 2.0 context
 legacy plan_ref = compatibility locator (owner/repo#number)
+task_main.context = inspect | bind | switch
+trusted runtime carrier = context identity + authorized roots
 plan_ref != authority
 session != authority
 directory != authority
 profile != authority
+model != authority
+locator != authority
 ```
 
 `role.bootstrap` is the normal startup guidance/capability discovery
@@ -144,14 +148,23 @@ Ensure Project / local Plan context
   -> governance.project / governance.plan                 (Governance 2.0 normal path)
   -> open aota-project-governance or aota-plan-governance as needed
 
+Inspect / bind / switch trusted context
+  -> task_main.context(mode=inspect|bind|switch)
+  -> trusted runtime carrier owns identity and authorized roots
+
 Read local Plan/status
   -> governance.plan(mode=inspect) and its authoritative local refs
+
+Plan authority
+  -> governance.plan; never workspace.read
 
 Legacy authority_kind=github_issue only
   -> github.issue.read / github.issue.comments.read      (arguments carry plan_ref)
 
 Inspect source
-  -> workspace.search / workspace.read                   (plan_ref; root_ref normally not required)
+  -> workspace.search / workspace.read                   (plan_ref locates the
+     server-side project; authorized root_ref selects a granted capability,
+     never a filesystem path)
   -> open aota-workspace-operations when detailed workspace rules are needed
 
 Prior result came back by_ref
@@ -197,10 +210,12 @@ UNKNOWN_INPUT / INPUT_TYPE_INVALID
 
 Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 
-1. Ensure the Project and local Plan context with `governance.project` /
-   `governance.plan` when needed. Read local evidence with `workspace.read` /
-   `workspace.search`; use the local Plan authority and generated cards/refs to
-   orient, never to invent authority. For an explicitly legacy
+  1. Ensure the Project and local Plan context with `governance.project` /
+    `governance.plan` when needed. Read local evidence with `workspace.read` /
+    `workspace.search` through the trusted authorized-root capability; use the
+    local Plan authority and generated cards/refs to orient, never to invent
+    authority. Plan authority is read through `governance.plan`, not
+    `workspace.read`. For an explicitly legacy
    `authority_kind=github_issue`, use `github.issue.read` /
    `github.issue.comments.read` through the bounded compatibility branch.
    Reason the current Milestone, Work Items and prior results from what you

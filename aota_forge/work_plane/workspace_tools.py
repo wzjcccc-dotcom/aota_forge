@@ -215,10 +215,12 @@ GENERIC_POLICY_ENGINE_CREATED: bool = False
 # bounded name selecting a granted root; a model-supplied path can never be a
 # root_ref. Default read root stays the active worktree (accepted behavior);
 # default search covers all granted search-capable roots. Capability checks are
-# mechanical and fail closed before any filesystem access.
+# mechanical and fail closed before any filesystem access. Every resource read
+# is therefore root-capability scoped even when the server supplies the default.
 AUTHORIZED_MULTI_ROOT_READ_MODEL_MATERIALIZED: bool = True
 ROOT_REF_CAPABILITY_MECHANICALLY_ENFORCED: bool = True
 ROOT_REF_AWARE_WORKSPACE_OPS: bool = True
+WORKSPACE_ACCESS_VIA_ROOT_REF: bool = True
 MODEL_NOMINATES_ROOT_PATH: bool = False
 MODEL_SUPPLIED_ROOT_REF_IS_PATH: bool = False
 WORKSPACE_ROOTS_ARE_AF_AUTHORIZED_SET: bool = True
@@ -227,8 +229,11 @@ ARBITRARY_HOST_PATH_REACHABLE: bool = False
 CROSS_ROOT_ACCESS_REQUIRES_EXPLICIT_GRANT: bool = True
 ROOT_REF_DEFAULT_READ: str = "active-worktree"
 ROOT_REF_SEARCH_DEFAULT_IS_GRANTED_SET: bool = True
-# Plan authority is read through the AF GitHub tool surface, never through
-# workspace.read (Governance 2.0 local Plan store is not implemented here).
+# Plan authority is not read through workspace.read. The current local Plan
+# authority operation is governance.plan; this resource provider owns only
+# authorized workspace reads and does not own the local Plan store.
+PLAN_AUTHORITY_ACCESS: str = "governance.plan"
+PLAN_ACCESS_VIA_WORKSPACE_READ: bool = False
 PLAN_READ_VIA_WORKSPACE_READ: bool = False
 GOVERNANCE_2_0_LOCAL_PLAN_STORE_IMPLEMENTED: bool = False
 WRITE_ROOT_REF_GRANTED: str = "active-worktree"
@@ -1315,4 +1320,7 @@ __all__ = [
     "NARROW_WRITE_REAFFIRMED",
     "POLICY_YAML_EXTERNALIZATION_PERFORMED",
     "GENERIC_POLICY_ENGINE_CREATED",
+    "WORKSPACE_ACCESS_VIA_ROOT_REF",
+    "PLAN_AUTHORITY_ACCESS",
+    "PLAN_ACCESS_VIA_WORKSPACE_READ",
 ]

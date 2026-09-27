@@ -13,7 +13,9 @@ from __future__ import annotations
 
 # Operations whose unbound authority is located by the canonical ``plan_ref``
 # input (the smallest existing-ref carrier; declared on these canonical
-# descriptors in .aota/contracts/operations.yaml).
+# descriptors in .aota/contracts/operations.yaml). Workspace reads/searches
+# additionally resolve through the trusted authorized-root capability selected
+# by ``root_ref``; neither locator is itself authority.
 PLAN_REF_SCOPED_OPERATIONS: frozenset[str] = frozenset(
     {
         "github.issue.read",
