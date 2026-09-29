@@ -1132,6 +1132,13 @@ SAME_SESSION_BIND_MATERIALIZATION = True
 MODEL_SUPPLIES_SESSION_ID = False
 SESSION_ID_IS_AUTHORITY = False
 AUTHORIZED_ROOTS_SERVER_DERIVED = True
+MCP_OWNS_DURABLE_BINDING_STORE = False
+PERSISTED_BINDING_IS_AUTHORITY = False
+AUTHORITY_RE_RESOLVED_ON_RESUME = True
+TRUSTED_RUNTIME_RECOMPOSED_ON_RESUME = True
+HISTORICAL_RUNTIME_OBJECT_REUSED = False
+MODEL_CAN_PERSIST_BINDING_AUTHORITY = False
+CROSS_SESSION_BOUNDING = False
 PARTIAL_BIND_VISIBLE = False
 BLIND_RETRY_ALLOWED = False
 NEW_CONTEXT_ENGINE = False
@@ -1570,6 +1577,90 @@ class _UnboundAotaAdapter:
         self._bound_delegate: _SharedAotaMcpAdapter | None = None
         self._bound_runtime: Any | None = None
         self._bound_binding: TrustedWorkerBinding | None = None
+        self._resume_error: UnboundBindError | None = None
+        self._resume_context_if_available()
+
+    def _resume_context_if_available(self) -> None:
+        """Rehydrate one exact-session evidence record, if one exists."""
+
+        from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
+
+        origin_session_ref = self.context.origin_session_ref.strip()
+        if not is_bound_origin_session_ref(origin_session_ref):
+            return
+
+        try:
+            from aota_forge.composition.unbound_resolution import (
+                recompose_trusted_context_from_evidence,
+            )
+            from aota_forge.core.ingress import bind_execution_dispatcher, get_execution_dispatcher
+            from aota_forge.runtime.task_main.context_binding import (
+                ContextBindingError,
+                FileBackedTaskMainContextBindingProjection,
+                locate_durable_context_binding,
+            )
+
+            located = locate_durable_context_binding(
+                origin_task_main_session_ref=origin_session_ref,
+                registry_path=self.context.registry_path.strip() or None,
+                worktree_root=self.context.worktree_root.strip() or None,
+            )
+            if located is None:
+                return
+            durable_binding, projection_path = located
+            previous_dispatcher = get_execution_dispatcher()
+            host: Any | None = None
+            try:
+                resolver = self._authority_resolver()
+                host, bound_binding, roots = recompose_trusted_context_from_evidence(
+                    durable_binding=durable_binding,
+                    origin_session_ref=origin_session_ref,
+                    registry_path=self.context.registry_path.strip(),
+                    workspace_id=self.context.workspace_id.strip() or None,
+                    runtime_config_path=self.context.runtime_config_path.strip(),
+                    worktree_root=self.context.worktree_root.strip() or None,
+                    worktree_id=self.context.worktree_id.strip() or None,
+                    governance_base=self.context.governance_base.strip() or None,
+                    governance_store_path=self.context.governance_store_path.strip() or None,
+                    git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
+                    git_remote=getattr(resolver, "_git_remote", "") or None,
+                )
+                delegate = _SharedAotaMcpAdapter(bound_binding)
+                readback = delegate.invoke("task_main.context", {"mode": "inspect"})
+                readback_payload = self._readback_payload(delegate, readback)
+                self._verify_bind_readback(
+                    readback,
+                    payload=readback_payload,
+                    project_id=durable_binding.project_id,
+                    plan_binding=durable_binding.plan_binding,
+                    origin_session_ref=origin_session_ref,
+                    authorized_roots=roots,
+                )
+                durable_readback = FileBackedTaskMainContextBindingProjection(
+                    projection_path
+                ).get_for_session(origin_session_ref)
+                if (
+                    durable_readback is None
+                    or durable_readback.binding_digest != durable_binding.binding_digest
+                ):
+                    raise ContextBindingError(
+                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                        "durable context evidence readback changed during resume",
+                    )
+                # Install only after live authority and inspect readback pass.
+                self._bound_delegate = delegate
+                self._bound_runtime = host
+                self._bound_binding = bound_binding
+            except Exception:
+                bind_execution_dispatcher(previous_dispatcher)
+                if host is not None:
+                    self._close_activation_runtime(host)
+                raise
+        except Exception as exc:  # noqa: BLE001 - resume remains fail-closed
+            code = getattr(exc, "code", None)
+            if not isinstance(code, str) or not code.strip():
+                code = "AUTHORITY_RESOLUTION_FAILED"
+            self._resume_error = UnboundBindError(code, _bounded_failure_message(str(exc)))
 
     def _authority_resolver(self) -> Any:
         if self._resolver is None:
@@ -1705,6 +1796,12 @@ class _UnboundAotaAdapter:
             # installed, every subsequent operation uses the canonical bound
             # delegate without creating a second transport or session.
             return self._bound_delegate.invoke(operation, arguments)
+        if operation == "task_main.context" and self._resume_error is not None:
+            return _unbound_governed_error(
+                operation,
+                self._resume_error.code,
+                str(self._resume_error),
+            )
         from aota_forge.composition.ref_scoped_authority import (
             PLAN_REF_SCOPED_OPERATIONS,
         )
@@ -1856,8 +1953,14 @@ class _UnboundAotaAdapter:
             resolve_trusted_unbound_resolution,
         )
         from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
+        from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
         from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
         from aota_forge.core.ingress import bind_execution_dispatcher, get_execution_dispatcher
+        from aota_forge.runtime.task_main.context_binding import (
+            DurableTaskMainContextBinding,
+            FileBackedTaskMainContextBindingProjection,
+            context_binding_projection_path,
+        )
         from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
 
         origin_session_ref = self.context.origin_session_ref.strip()
@@ -1982,6 +2085,20 @@ class _UnboundAotaAdapter:
 
             roots = host.trusted_binding.effective_authorized_roots
             validate_root_set_against_sandbox(roots, host.trusted_binding.sandbox)
+            durable_binding = None
+            if plan_bound:
+                if not isinstance(actual_plan_binding, PlanAuthorityBinding):
+                    raise UnboundBindError(
+                        "STALE_CONTEXT",
+                        "trusted Plan binding was not materialized by the fresh host",
+                    )
+                durable_binding = DurableTaskMainContextBinding(
+                    project_id=resolution.project_id,
+                    project_fingerprint=candidate.candidate_fingerprint,
+                    plan_binding=actual_plan_binding,
+                    origin_task_main_session_ref=origin_session_ref,
+                    authorized_roots_digest=roots.digest(),
+                )
             governance_context = materialize_trusted_governance_context(
                 resolution,
                 binding=host.trusted_binding,
@@ -2024,10 +2141,22 @@ class _UnboundAotaAdapter:
                     readback,
                     payload=readback_payload,
                     project_id=resolution.project_id,
-                    plan_binding=plan_binding,
+                    plan_binding=actual_plan_binding if plan_bound else None,
                     origin_session_ref=origin_session_ref,
                     authorized_roots=roots,
                 )
+                if durable_binding is not None:
+                    projection = FileBackedTaskMainContextBindingProjection(
+                        context_binding_projection_path(host.sandbox.project_root)
+                    )
+                    try:
+                        projection.persist(durable_binding)
+                    except Exception as exc:
+                        code = getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED")
+                        raise UnboundBindError(
+                            code,
+                            f"successful Plan bind could not be durably rehydrated: {exc}",
+                        ) from exc
             except Exception:
                 self._bound_delegate = previous_delegate
                 self._bound_runtime = previous_runtime
@@ -2452,6 +2581,13 @@ __all__ = [
     "MODEL_SUPPLIES_SESSION_ID",
     "SESSION_ID_IS_AUTHORITY",
     "AUTHORIZED_ROOTS_SERVER_DERIVED",
+    "MCP_OWNS_DURABLE_BINDING_STORE",
+    "PERSISTED_BINDING_IS_AUTHORITY",
+    "AUTHORITY_RE_RESOLVED_ON_RESUME",
+    "TRUSTED_RUNTIME_RECOMPOSED_ON_RESUME",
+    "HISTORICAL_RUNTIME_OBJECT_REUSED",
+    "MODEL_CAN_PERSIST_BINDING_AUTHORITY",
+    "CROSS_SESSION_BOUNDING",
     "PARTIAL_BIND_VISIBLE",
     "BLIND_RETRY_ALLOWED",
     "NEW_CONTEXT_ENGINE",

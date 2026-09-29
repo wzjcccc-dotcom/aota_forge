@@ -63,6 +63,9 @@ from aota_forge.runtime.task_main.context_binding import (
     DURABLE_CONTEXT_BINDING_IS_AUTHORITY,
     ContextBindingError,
     DurableTaskMainContextBinding,
+    FileBackedTaskMainContextBindingProjection,
+    context_binding_projection_path,
+    locate_durable_context_binding,
 )
 from aota_forge.runtime.task_main.reconciliation import (
     ACK_BEFORE_SEMANTIC_RECONCILIATION,
@@ -197,6 +200,7 @@ __all__ = [
     "DispatchReport",
     "DispatchedWork",
     "DurableTaskMainContextBinding",
+    "FileBackedTaskMainContextBindingProjection",
     "FileBackedTaskMainCoordinatorStore",
     "GovernedReviewEvidence",
     "GovernedWorkItemEvidence",
@@ -218,8 +222,10 @@ __all__ = [
     "advance_milestone_once",
     "build_ack_token",
     "build_work_item_handoff_ref",
+    "context_binding_projection_path",
     "dispatch_identity_for",
     "evaluate_ready_work_items",
+    "locate_durable_context_binding",
     "reconcile_review_completion",
     "reconcile_worker_completion",
     "recover_coordinator",

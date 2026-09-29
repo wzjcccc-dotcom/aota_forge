@@ -8,8 +8,9 @@ and PlanAuthorityBinding contracts for the later same-session bind seam.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
@@ -337,6 +338,154 @@ def resolve_trusted_unbound_resolution(
     )
 
 
+def recompose_trusted_context_from_evidence(
+    *,
+    durable_binding: Any,
+    origin_session_ref: str,
+    registry_path: Path | str,
+    workspace_id: str | None,
+    runtime_config_path: Path | str,
+    worktree_root: Path | str | None,
+    worktree_id: str | None,
+    governance_base: Path | str | None,
+    governance_store_path: Path | str | None,
+    git_integration_branch: str | None = None,
+    git_remote: str | None = None,
+) -> tuple[Any, Any, Any]:
+    """Re-resolve live authority and compose a fresh thin bound runtime.
+
+    ``durable_binding`` is only a locator/evidence record. The Project
+    registry, Project Governance Store, Plan source and AuthorizedRootSet are
+    read again from their current trusted owners before a runtime object is
+    returned. No historical ``TrustedWorkerBinding`` is deserialized.
+    """
+
+    from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+    from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
+    from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
+    from aota_forge.runtime.task_main.context_binding import (
+        ContextBindingError,
+        DurableTaskMainContextBinding,
+    )
+    from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
+
+    if not isinstance(durable_binding, DurableTaskMainContextBinding):
+        raise ContextBindingError(
+            "CONTEXT_BINDING_CORRUPT",
+            "resume requires a typed durable context binding",
+        )
+    if origin_session_ref != durable_binding.origin_task_main_session_ref:
+        raise ContextBindingError(
+            "SESSION_RECOVERY_REQUIRED",
+            "exact task-main session differs from durable context evidence",
+        )
+    if not is_bound_origin_session_ref(origin_session_ref):
+        raise ContextBindingError(
+            "SESSION_RECOVERY_REQUIRED",
+            "resume requires an exact non-placeholder session",
+        )
+
+    plan_id = durable_binding.plan_binding.plan_id
+    resolution = resolve_trusted_unbound_resolution(
+        durable_binding.project_id,
+        plan_id,
+        registry_path=registry_path,
+        workspace_id=workspace_id,
+        governance_base=governance_base,
+        governance_store_path=governance_store_path,
+    )
+    candidate = resolution.project.candidate
+    if candidate is None or candidate.candidate_fingerprint != durable_binding.project_fingerprint:
+        raise ContextBindingError(
+            "PROJECT_CONTEXT_MISMATCH",
+            "current trusted Project evidence differs from durable context evidence",
+        )
+    if not isinstance(resolution.plan_binding, PlanAuthorityBinding):
+        raise ContextBindingError(
+            "STALE_CONTEXT",
+            "current trusted Plan binding is unavailable",
+        )
+
+    trusted_worktree_root = (
+        str(worktree_root).strip()
+        if worktree_root is not None and str(worktree_root).strip()
+        else candidate.project_root
+    )
+    trusted_worktree_id = (
+        str(worktree_id).strip()
+        if worktree_id is not None and str(worktree_id).strip()
+        else f"{resolution.project_id}-unbound"
+    )
+    host = compose_thin_task_main_host(
+        worktree_root=trusted_worktree_root,
+        project_id=resolution.project_id,
+        worktree_id=trusted_worktree_id,
+        runtime_config_path=runtime_config_path,
+        origin_task_main_session_ref=origin_session_ref,
+        plan_ref=resolution.plan_binding.authority_ref,
+        source_repository=resolution.project.source_repository or None,
+        registry_path=registry_path,
+        workspace_id=workspace_id,
+        governance_base=governance_base,
+        governance_store_path=governance_store_path,
+        plan_id=resolution.plan_binding.plan_id,
+        git_integration_branch=git_integration_branch,
+        git_remote=git_remote,
+    )
+    try:
+        actual_evidence = getattr(host, "project_evidence", None)
+        actual_candidates = tuple(getattr(actual_evidence, "candidates", ()) or ())
+        if (
+            getattr(actual_evidence, "status", None) != "RESOLVED"
+            or len(actual_candidates) != 1
+            or actual_candidates[0].candidate_fingerprint != durable_binding.project_fingerprint
+        ):
+            raise ContextBindingError(
+                "PROJECT_CONTEXT_MISMATCH",
+                "trusted Project changed during resume composition",
+            )
+        actual_plan_binding = getattr(host.trusted_binding, "plan_authority_binding", None)
+        if not isinstance(actual_plan_binding, PlanAuthorityBinding):
+            raise ContextBindingError(
+                "STALE_CONTEXT",
+                "fresh trusted runtime did not carry a Plan authority binding",
+            )
+        roots = host.trusted_binding.effective_authorized_roots
+        validate_root_set_against_sandbox(roots, host.trusted_binding.sandbox)
+        current_binding = DurableTaskMainContextBinding(
+            project_id=resolution.project_id,
+            project_fingerprint=actual_candidates[0].candidate_fingerprint,
+            plan_binding=actual_plan_binding,
+            origin_task_main_session_ref=origin_session_ref,
+            authorized_roots_digest=roots.digest(),
+        )
+        durable_binding.assert_compatible(current_binding)
+        governance_context = materialize_trusted_governance_context(
+            resolution,
+            binding=host.trusted_binding,
+            authorized_roots=roots,
+            governance_store=getattr(host, "governance_store", None),
+            governance_root=getattr(host, "local_governance_binding", None),
+        )
+        bound_binding = replace(
+            host.trusted_binding,
+            governance_context=governance_context,
+        )
+        return host, bound_binding, roots
+    except Exception:
+        for resource in (
+            getattr(host, "governance_store", None),
+            getattr(host, "execution_store", None),
+        ):
+            close = getattr(resource, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+        raise
+
+
 def materialize_trusted_governance_context(
     resolution: TrustedUnboundResolution,
     *,
@@ -478,5 +627,6 @@ __all__ = [
     "UnboundResolutionError",
     "TrustedUnboundResolution",
     "materialize_trusted_governance_context",
+    "recompose_trusted_context_from_evidence",
     "resolve_trusted_unbound_resolution",
 ]

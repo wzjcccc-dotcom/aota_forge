@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
+import tempfile
+import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
@@ -15,6 +20,10 @@ from aota_forge.core.project.manifest import PROJECT_ID_RE
 CONTEXT_BINDING_SCHEMA_VERSION = 1
 DURABLE_CONTEXT_BINDING_IS_AUTHORITY = False
 CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY = False
+CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION = 1
+CONTEXT_BINDING_PROJECTION_FILENAME = "task-main-context-bindings.json"
+CONTEXT_BINDING_PROJECTION_IS_AUTHORITY = False
+MAX_CONTEXT_BINDING_PROJECTION_RECORDS = 64
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_TEXT_LENGTH = 512
@@ -249,10 +258,307 @@ class DurableTaskMainContextBinding:
             )
 
 
+class FileBackedTaskMainContextBindingProjection:
+    """Small runtime-owned carrier for interactive context evidence.
+
+    The existing coordinator store cannot represent a binding without also
+    fabricating a milestone coordinator. This projection therefore carries
+    only typed ``DurableTaskMainContextBinding`` evidence under the trusted
+    Project's ``.aota`` directory. It is not an authority store, workflow
+    state machine, or session database.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        candidate = Path(path)
+        if candidate.name != CONTEXT_BINDING_PROJECTION_FILENAME:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PROJECTION_INVALID",
+                "context binding projection has an unexpected filename",
+            )
+        if candidate.parent.name != ".aota":
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PROJECTION_INVALID",
+                "context binding projection must be directly under .aota",
+            )
+        try:
+            if candidate.parent.is_symlink():
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PROJECTION_INVALID",
+                    "context binding projection parent must not be a symlink",
+                )
+            self._path = candidate.resolve(strict=False)
+        except ContextBindingError:
+            raise
+        except OSError as exc:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PROJECTION_INVALID",
+                "context binding projection path is inaccessible",
+            ) from exc
+        self._lock = threading.RLock()
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def _read(self) -> list[DurableTaskMainContextBinding]:
+        if not self._path.exists():
+            return []
+        try:
+            if self._path.is_symlink() or not self._path.is_file():
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CORRUPT",
+                    "context binding projection is not a regular file",
+                )
+            if self._path.stat().st_size > 256 * 1024:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CORRUPT",
+                    "context binding projection exceeds its bounded size",
+                )
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except ContextBindingError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "context binding projection could not be read",
+            ) from exc
+        if not isinstance(raw, Mapping):
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "context binding projection root must be an object",
+            )
+        allowed = {"schema_version", "records", "IS_AUTHORITY"}
+        extra = set(raw) - allowed
+        if extra:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                f"unknown context binding projection field(s): {sorted(extra)}",
+            )
+        if raw.get("schema_version") != CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "unsupported context binding projection schema_version",
+            )
+        if raw.get("IS_AUTHORITY") is not False:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "context binding projection cannot claim authority",
+            )
+        records = raw.get("records")
+        if not isinstance(records, list) or len(records) > MAX_CONTEXT_BINDING_PROJECTION_RECORDS:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "context binding projection records are invalid or oversized",
+            )
+        parsed: list[DurableTaskMainContextBinding] = []
+        for record in records:
+            try:
+                parsed.append(DurableTaskMainContextBinding.from_dict(record))
+            except ContextBindingError:
+                raise
+            except Exception as exc:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CORRUPT",
+                    "context binding projection record is invalid",
+                ) from exc
+        return parsed
+
+    def _persist(self, records: list[DurableTaskMainContextBinding]) -> None:
+        if not self._path.parent.is_dir():
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                "trusted Project .aota directory is unavailable",
+            )
+        payload = {
+            "schema_version": CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION,
+            "records": [record.to_dict() for record in records],
+            "IS_AUTHORITY": False,
+        }
+        temporary: str | None = None
+        try:
+            fd, temporary = tempfile.mkstemp(
+                prefix=f".{self._path.name}.",
+                suffix=".tmp",
+                dir=str(self._path.parent),
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, sort_keys=True, indent=2, ensure_ascii=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._path)
+            temporary = None
+            os.chmod(self._path, 0o600)
+            try:
+                directory_fd = os.open(self._path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            except OSError:
+                directory_fd = None
+            if directory_fd is not None:
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        except ContextBindingError:
+            raise
+        except OSError as exc:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                "context binding projection atomic write failed",
+            ) from exc
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+    def get_for_session(self, origin_task_main_session_ref: str) -> DurableTaskMainContextBinding | None:
+        session = _text(origin_task_main_session_ref, "origin_task_main_session_ref")
+        if not is_bound_origin_session_ref(session):
+            raise ContextBindingError(
+                "SESSION_RECOVERY_REQUIRED",
+                "context binding lookup requires an exact non-placeholder session",
+            )
+        with self._lock:
+            matches = [
+                record
+                for record in self._read()
+                if record.origin_task_main_session_ref == session
+            ]
+            if len(matches) > 1:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "multiple durable context bindings match the exact session",
+                )
+            return matches[0] if matches else None
+
+    def persist(self, binding: DurableTaskMainContextBinding) -> DurableTaskMainContextBinding:
+        if not isinstance(binding, DurableTaskMainContextBinding):
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "only a typed DurableTaskMainContextBinding may be persisted",
+            )
+        with self._lock:
+            records = self._read()
+            same_session = [
+                record
+                for record in records
+                if record.origin_task_main_session_ref == binding.origin_task_main_session_ref
+            ]
+            if len(same_session) > 1:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "multiple durable context bindings already match the exact session",
+                )
+            if same_session:
+                if same_session[0].binding_digest != binding.binding_digest:
+                    raise ContextBindingError(
+                        "CONTEXT_BINDING_CONFLICT",
+                        "a different durable context binding already owns the exact session",
+                    )
+                return same_session[0]
+            if len(records) >= MAX_CONTEXT_BINDING_PROJECTION_RECORDS:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "context binding projection record limit reached",
+                )
+            self._persist([*records, binding])
+            readback = self.get_for_session(binding.origin_task_main_session_ref)
+            if readback is None or readback.binding_digest != binding.binding_digest:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "durable context binding readback did not match the committed evidence",
+                )
+            return readback
+
+
+def context_binding_projection_path(project_root: str | Path) -> Path:
+    """Return the fixed project-scoped projection path."""
+
+    root = Path(project_root)
+    try:
+        if root.is_symlink() or not root.is_dir():
+            raise ContextBindingError(
+                "CONTEXT_BINDING_PROJECTION_INVALID",
+                "trusted Project root is not a regular directory",
+            )
+        return root.resolve() / ".aota" / CONTEXT_BINDING_PROJECTION_FILENAME
+    except ContextBindingError:
+        raise
+    except OSError as exc:
+        raise ContextBindingError(
+            "CONTEXT_BINDING_PROJECTION_INVALID",
+            "trusted Project root is inaccessible",
+        ) from exc
+
+
+def locate_durable_context_binding(
+    *,
+    origin_task_main_session_ref: str,
+    registry_path: str | Path | None = None,
+    worktree_root: str | Path | None = None,
+) -> tuple[DurableTaskMainContextBinding, Path] | None:
+    """Locate one evidence record by exact session across trusted Projects."""
+
+    session = _text(origin_task_main_session_ref, "origin_task_main_session_ref")
+    if not is_bound_origin_session_ref(session):
+        raise ContextBindingError(
+            "SESSION_RECOVERY_REQUIRED",
+            "durable context lookup requires an exact non-placeholder session",
+        )
+    roots: set[Path] = set()
+    if worktree_root is not None and str(worktree_root).strip():
+        candidate = Path(str(worktree_root)).resolve()
+        if candidate.is_dir():
+            roots.add(candidate)
+    if registry_path is not None and str(registry_path).strip():
+        try:
+            from aota_forge.core.project.discovery import scan_projects
+            from aota_forge.core.project.resolver import load_workspace_registry, resolve_workspace
+
+            registry = Path(registry_path)
+            for workspace_id in sorted(load_workspace_registry(registry)):
+                workspace_root = resolve_workspace(workspace_id, registry)
+                for record in scan_projects(workspace_root, limit=None)["projects"]:
+                    project_root = workspace_root / record["root"] if record["root"] != "." else workspace_root
+                    roots.add(project_root.resolve())
+        except ContextBindingError:
+            raise
+        except Exception as exc:
+            raise ContextBindingError(
+                "CONTEXT_BINDING_LOOKUP_FAILED",
+                "trusted Project registry could not be scanned for durable context",
+            ) from exc
+
+    matches: list[tuple[DurableTaskMainContextBinding, Path]] = []
+    for root in sorted(roots, key=str):
+        projection_path = context_binding_projection_path(root)
+        if not projection_path.exists():
+            continue
+        projection = FileBackedTaskMainContextBindingProjection(projection_path)
+        binding = projection.get_for_session(session)
+        if binding is not None:
+            matches.append((binding, projection_path))
+    if len(matches) > 1:
+        raise ContextBindingError(
+            "CONTEXT_BINDING_CONFLICT",
+            "multiple Project-scoped durable bindings match the exact session",
+        )
+    return matches[0] if matches else None
+
+
 __all__ = [
     "CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY",
+    "CONTEXT_BINDING_PROJECTION_FILENAME",
+    "CONTEXT_BINDING_PROJECTION_IS_AUTHORITY",
+    "CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION",
     "CONTEXT_BINDING_SCHEMA_VERSION",
     "DURABLE_CONTEXT_BINDING_IS_AUTHORITY",
+    "MAX_CONTEXT_BINDING_PROJECTION_RECORDS",
     "ContextBindingError",
     "DurableTaskMainContextBinding",
+    "FileBackedTaskMainContextBindingProjection",
+    "context_binding_projection_path",
+    "locate_durable_context_binding",
 ]
