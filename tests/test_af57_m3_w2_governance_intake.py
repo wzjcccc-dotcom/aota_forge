@@ -7,6 +7,10 @@ from pathlib import Path
 from aota_forge.core.context import bind_trusted_context
 from aota_forge.core.ingress import execute
 from aota_forge.governance.intake import GovernanceIntakeContext, GovernanceIntakeService
+from aota_forge.governance.local_lifecycle import (
+    PlanCloseMaterializationEvidence,
+    project_terminal_plan_body,
+)
 from aota_forge.mcp_transport import GOVERNANCE_OPERATIONS, help_operation_projection
 from aota_forge.governance.project_store import PLAN_LIFECYCLE_RETIRED
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
@@ -53,9 +57,19 @@ PLAN_BODY = """# [PLAN] AF #57 M3/W2 fixture
 PLAN_TYPE=portable_plan
 PLAN_KIND=portable_plan
 PROJECT_ID=af57m3w2
+PLAN_ID=plan_af57_m3_w2
+PLAN_REVISION=R1
 PLAN_STATUS=active
+PLAN_ACCEPTED=yes
 CURRENT_MILESTONE=M3
+CURRENT_STATUS=m3_user_acceptance_ready
+CURRENT_BLOCKER=none
+M1_STATUS=completed
+M1_ACCEPTED=yes
+M2_STATUS=completed
+M2_ACCEPTED=yes
 M3_STATUS=in_progress
+M3_ACCEPTED=no
 M3_USER_APPROVAL_SATISFIED=yes
 M3_DAG=W1 -> W2
 M3_WORK_ITEMS=W1, W2
@@ -115,11 +129,35 @@ def test_intake_composes_project_plan_amend_and_close(tmp_path: Path) -> None:
     )
     assert amended["status"] == "VERIFIED"
 
+    evidence = PlanCloseMaterializationEvidence(
+        project_id=PROJECT_ID,
+        plan_id=PLAN_ID,
+        milestone_id="M3",
+        accepted_frontier="a" * 40,
+        final_known_good="a" * 40,
+        milestone_checkpoint_id="stewardship:" + "b" * 64,
+        milestone_checkpoint_digest="c" * 64,
+        milestone_receipt_id="mfr-" + "d" * 16,
+        milestone_receipt_digest="e" * 64,
+        milestone_steward_digest="f" * 64,
+        plan_close_checkpoint_id="stewardship:" + "1" * 64,
+        plan_close_checkpoint_digest="2" * 64,
+        plan_close_receipt_id="mfr-" + "3" * 16,
+        plan_close_receipt_digest="4" * 64,
+        plan_close_steward_digest="5" * 64,
+    )
+    terminal_body = project_terminal_plan_body(
+        PLAN_BODY.replace("Bounded intake proof.", "Amended bounded intake proof."),
+        evidence,
+    )
+
     closed = service.plan(
         "close",
         project_id=PROJECT_ID,
         plan_id=PLAN_ID,
         expected_plan_revision=2,
+        candidate_body=terminal_body,
+        closure_evidence=evidence.to_dict(),
     )
     assert closed["status"] == "VERIFIED"
 
@@ -128,7 +166,7 @@ def test_intake_composes_project_plan_amend_and_close(tmp_path: Path) -> None:
         record = store.get_plan(PROJECT_ID, PLAN_ID)
         assert record is not None
         assert record.lifecycle_state == PLAN_LIFECYCLE_RETIRED
-        assert record.revision == 3
+        assert record.revision == 4
     finally:
         store.close()
 

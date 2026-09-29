@@ -19,9 +19,7 @@ from aota_forge.composition.stewardship import (
 )
 from aota_forge.composition.task_main import create_task_main_runner
 from aota_forge.governance.project_store import (
-    PLAN_LIFECYCLE_ACTIVE,
     PLAN_LIFECYCLE_RETIRED,
-    ProjectPlanRecord,
     STEWARD_REPLAY_STATE_ACTIVE,
     STEWARD_REPLAY_STATE_COMPLETED,
     STEWARD_REPLAY_STATE_FAILED_CLOSED,
@@ -32,11 +30,20 @@ from aota_forge.adapters.plan_authority.binding import (
     PlanAuthorityBinding,
 )
 from aota_forge.adapters.plan_authority.local_governance import local_plan_authority_reference
+from aota_forge.adapters.plan_authority.local_governance import LocalPlanAuthorityDestination
+from aota_forge.core.identity.ids import make_id
+from aota_forge.core.identity.kinds import IdKind, SubjectKind
+from aota_forge.core.identity.refs import object_ref_subject
+from aota_forge.core.journal.store import FileBackedDurableJournalStore
 from aota_forge.governance.stewardship import (
     GovernanceCheckpointKind,
     MaterializationRequest,
     SemanticFactSet,
     StewardshipCheckpoint,
+)
+from aota_forge.governance.local_lifecycle import (
+    LocalPlanLifecycleCoordinator,
+    LocalPlanLifecycleRequest,
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_LEGACY, TASK_MAIN_RUNTIME_PATH_THIN
 import aota_forge.runtime.task_main.runner as runner_module
@@ -66,6 +73,7 @@ from aota_forge.work_plane.steward_finalizer import (
 )
 from aota_forge.work_plane.materialization_receipt import MaterializationReceipt
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
+from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 
 PROJECT_ID = "aota_forge"
 PLAN_ID = "plan_wzjcccc_dotcom_aota_hermes_tools_57"
@@ -74,6 +82,34 @@ GOVERNING_REPO = "wzjcccc-dotcom/aota-hermes-tools"
 MILESTONE = "M3"
 ENTRY_BASE = hashlib.sha1(b"w3-entry").hexdigest()
 REVIEWED = hashlib.sha1(b"w3-reviewed").hexdigest()
+
+LOCAL_PLAN_BODY = """# Local PLAN_CLOSE fixture
+
+## Plan Identity
+PROJECT_ID=aota_forge
+PLAN_ID=plan_wzjcccc_dotcom_aota_hermes_tools_57
+PLAN_REVISION=R1
+
+## Current State
+PROJECT_ID=aota_forge
+PLAN_ID=plan_wzjcccc_dotcom_aota_hermes_tools_57
+PLAN_REVISION=R1
+PLAN_STATUS=active
+PLAN_ACCEPTED=yes
+CURRENT_MILESTONE=M3
+CURRENT_STATUS=m3_user_acceptance_ready
+CURRENT_BLOCKER=none
+M1_STATUS=completed
+M1_ACCEPTED=yes
+M2_STATUS=completed
+M2_ACCEPTED=yes
+M3_STATUS=in_progress
+M3_ACCEPTED=no
+M3_USER_APPROVAL_SATISFIED=yes
+HANDOFF_STATE=m3_user_acceptance_ready
+CURRENT_NEXT_ACTION=Await closure
+NEXT_CHECKPOINT=M3/user_acceptance
+"""
 
 
 def _checkpoint(
@@ -254,14 +290,30 @@ def test_plan_close_retires_local_plan_only_after_trusted_finalization(
     coordinator_store = FileBackedTaskMainCoordinatorStore(tmp_path / "local-coordinator.json")
     coordinator_store.create(replace(state, plan_authority=local_ref))
     governance = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
-    governance.put_plan(
-        ProjectPlanRecord(
+    governance_base = tmp_path / "plans"
+    (governance_base / PROJECT_ID).mkdir(parents=True)
+    destination = LocalPlanAuthorityDestination(
+        LocalGovernanceRootBinding.from_trusted_base(governance_base, project_id=PROJECT_ID),
+        PLAN_ID,
+        object_ref_subject(make_id(IdKind.SUBJECT, PLAN_ID, sub_kind=SubjectKind.PLAN)),
+    )
+    initializer_journal = FileBackedDurableJournalStore(tmp_path / "governance-journal.json")
+    initialized = LocalPlanLifecycleCoordinator(governance, initializer_journal).initialize(
+        LocalPlanLifecycleRequest(
             project_id=PROJECT_ID,
             plan_id=PLAN_ID,
-            lifecycle_state=PLAN_LIFECYCLE_ACTIVE,
-            authority=local_binding,
-        )
+            destination=destination,
+            principal="plan-close-test",
+            authorization_reference="plan-close-init",
+            lease_reference="plan-close-init",
+            idempotency_key="plan-close-init",
+            correlation_id="plan-close-init",
+            intent_fingerprint=hashlib.sha256(b"plan-close-init").hexdigest(),
+        ),
+        LOCAL_PLAN_BODY,
     )
+    assert initialized.ok
+    initializer_journal.close()
     executor_probe, _, _, _ = _executor(
         tmp_path,
         lambda _handoff: None,
@@ -291,6 +343,18 @@ def test_plan_close_retires_local_plan_only_after_trusted_finalization(
         stewardship_sandbox=_sandbox(tmp_path),
         stewardship_finalizer=executor_probe.finalizer,
         governance_store=governance,
+        stewardship_local_plan_close_request_factory=lambda checkpoint, current: LocalPlanLifecycleRequest(
+            project_id=checkpoint.project_id,
+            plan_id=checkpoint.plan_id,
+            destination=destination,
+            principal="plan-close-test",
+            authorization_reference="plan-close-accepted",
+            lease_reference="plan-close-accepted",
+            idempotency_key="plan-close-accepted",
+            correlation_id="plan-close-accepted",
+            intent_fingerprint=hashlib.sha256(b"plan-close-accepted").hexdigest(),
+            expected_plan_revision=current.revision,
+        ),
     )
 
     outcome = composed.advance_once()
@@ -301,13 +365,13 @@ def test_plan_close_retires_local_plan_only_after_trusted_finalization(
     retired = governance.get_plan(PROJECT_ID, PLAN_ID)
     assert retired is not None
     assert retired.lifecycle_state == PLAN_LIFECYCLE_RETIRED
-    assert retired.revision == 2
+    assert retired.revision == 3
 
     replay = composed.advance_once()
     assert replay.milestone_closure_ready is True
     assert composed.stewardship_outcome is not None
     assert composed.stewardship_outcome.execution_state is StewardshipExecutionState.FINALIZED
-    assert governance.get_plan(PROJECT_ID, PLAN_ID).revision == 2
+    assert governance.get_plan(PROJECT_ID, PLAN_ID).revision == 3
     governance.close()
 
 

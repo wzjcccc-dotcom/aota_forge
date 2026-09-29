@@ -24,9 +24,16 @@ from aota_forge.governance.project_store import (
     STEWARD_REPLAY_STATE_FAILED_CLOSED,
     StewardLogicalReplayRecord,
 )
+from aota_forge.governance.local_lifecycle import (
+    LocalPlanLifecycleRequest,
+    PlanCloseMaterializationEvidence,
+    next_plan_revision,
+    project_terminal_plan_body,
+)
 from aota_forge.adapters.plan_authority.binding import (
     PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
 )
+from aota_forge.adapters.plan_authority.local_governance import LocalPlanAuthorityReadAdapter
 from aota_forge.governance.stewardship import (
     StewardshipCheckpoint,
     StewardshipDisposition,
@@ -87,6 +94,9 @@ RECOVERABLE_PARTIAL_FINALIZATION_REENTERS = True
 PLAN_CLOSE_LOCAL_RETIREMENT_WIRED = True
 LOCAL_RETIREMENT_AFTER_TRUSTED_FINALIZATION_ONLY = True
 LOCAL_RETIREMENT_USES_COORDINATOR_CAS = True
+LOCAL_PLAN_CLOSE_APPLIED_IMPLIES_TERMINAL_BODY_CONVERGED = True
+GENERIC_LOCAL_PLAN_CLOSE_FIX = True
+PLAN003_SPECIAL_CASE = False
 
 SECOND_STEWARD_RESULT_TRANSPORT_CREATED = False
 SECOND_FINALIZATION_PROTOCOL = False
@@ -381,6 +391,7 @@ class LegacyStewardshipExecutor:
     result_sandbox: WorktreeSandboxBoundary | None = None
     origin_session_ref: str | None = None
     local_plan_lifecycle_coordinator: Any | None = None
+    local_plan_close_request_factory: Callable[[StewardshipCheckpoint, Any], LocalPlanLifecycleRequest] | None = None
 
     def __post_init__(self) -> None:
         if self.runtime_path != TASK_MAIN_RUNTIME_PATH_LEGACY:
@@ -413,6 +424,10 @@ class LegacyStewardshipExecutor:
             raise TypeError(
                 "local_plan_lifecycle_coordinator must expose the existing retire seam"
             )
+        if self.local_plan_close_request_factory is not None and not callable(
+            self.local_plan_close_request_factory
+        ):
+            raise TypeError("local_plan_close_request_factory must be callable or None")
         for label, store, methods in (
             (
                 "governance_store",
@@ -480,7 +495,7 @@ class LegacyStewardshipExecutor:
                 receipt=receipt,
             ) from exc
         try:
-            self._retire_local_plan_after_finalization(checkpoint)
+            self._retire_local_plan_after_finalization(checkpoint, receipt=receipt)
         except StewardshipProductionError as exc:
             raise FinalizerError(
                 FinalizerFailure.MATERIALIZATION_PARTIAL_FAILURE,
@@ -613,7 +628,7 @@ class LegacyStewardshipExecutor:
                             "COMPLETED_RECEIPT_UNAVAILABLE",
                             "completed replay has no durable finalization receipt",
                         )
-                    self._retire_local_plan_after_finalization(checkpoint)
+                    self._retire_local_plan_after_finalization(checkpoint, receipt=receipt)
                 except StewardshipProductionError as exc:
                     failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
                     return LegacyStewardshipOutcome(
@@ -1102,7 +1117,7 @@ class LegacyStewardshipExecutor:
                 error_detail=exc.detail[:512],
             )
         try:
-            self._retire_local_plan_after_finalization(checkpoint)
+            self._retire_local_plan_after_finalization(checkpoint, receipt=receipt)
         except StewardshipProductionError as exc:
             failed = self._transition(record, STEWARD_REPLAY_STATE_FAILED_CLOSED)
             return LegacyStewardshipOutcome(
@@ -1132,8 +1147,10 @@ class LegacyStewardshipExecutor:
     def _retire_local_plan_after_finalization(
         self,
         checkpoint: StewardshipCheckpoint,
+        *,
+        receipt: MaterializationReceipt | None,
     ) -> None:
-        """Retire only a locally bound Plan after trusted finalization."""
+        """Materialize and verify the terminal local body before retirement."""
         if checkpoint.kind.value != "PLAN_CLOSE":
             return
         binding = checkpoint.trusted_plan.authority_binding
@@ -1149,6 +1166,26 @@ class LegacyStewardshipExecutor:
             raise StewardshipProductionError(
                 "LOCAL_PLAN_RETIREMENT_UNWIRED",
                 "local PLAN_CLOSE requires the existing LocalPlanLifecycleCoordinator",
+            )
+        if receipt is None or receipt.final_status != "APPLIED":
+            raise StewardshipProductionError(
+                "LOCAL_PLAN_CLOSE_RECEIPT_REQUIRED",
+                "local PLAN_CLOSE body cutover requires the already-applied trusted receipt",
+            )
+        if (
+            receipt.project_id != checkpoint.project_id
+            or receipt.plan_ref != checkpoint.trusted_plan.plan_ref
+            or receipt.closure_phase != checkpoint.closure_phase.value
+        ):
+            raise StewardshipProductionError(
+                "LOCAL_PLAN_CLOSE_RECEIPT_IDENTITY_MISMATCH",
+                "trusted PLAN_CLOSE receipt does not match the checkpoint identity",
+            )
+        close_request_factory = self.local_plan_close_request_factory
+        if close_request_factory is None:
+            raise StewardshipProductionError(
+                "LOCAL_PLAN_CLOSE_REQUEST_UNWIRED",
+                "local PLAN_CLOSE requires a trusted LocalPlanLifecycleRequest factory",
             )
         plan_id = checkpoint.plan_id
         if plan_id is None or plan_id != binding.plan_id:
@@ -1175,20 +1212,77 @@ class LegacyStewardshipExecutor:
                 "trusted local Plan record is missing after finalization",
             )
         try:
-            result = coordinator.retire(
+            request = close_request_factory(checkpoint, current)
+            if not isinstance(request, LocalPlanLifecycleRequest):
+                raise TypeError("local Plan close request factory returned an invalid request")
+            if (
+                request.project_id != checkpoint.project_id
+                or request.plan_id != plan_id
+                or request.expected_plan_revision != current.revision
+            ):
+                raise ValueError("local Plan close request is not bound to the observed Store revision")
+            reader = LocalPlanAuthorityReadAdapter(request.destination, binding=current.authority)
+            snapshot = reader.load()
+            if current.authority.source_digest != snapshot.digest or current.authority.source_revision != snapshot.revision:
+                raise ValueError("local Plan body is stale before PLAN_CLOSE materialization")
+            if (
+                current.lifecycle_state == "retired"
+                and "PLAN_STATUS=completed" in snapshot.body
+                and "CURRENT_STATUS=completed" in snapshot.body
+            ):
+                return
+            accepted_frontier = (
+                checkpoint.readiness.reviewed_frontier_ref.ref
+                if checkpoint.readiness is not None
+                else None
+            )
+            if not isinstance(accepted_frontier, str) or not accepted_frontier.strip():
+                raise ValueError("accepted PLAN_CLOSE checkpoint has no trusted frontier")
+            evidence = PlanCloseMaterializationEvidence(
                 project_id=checkpoint.project_id,
                 plan_id=plan_id,
-                expected_revision=current.revision,
+                milestone_id=checkpoint.milestone_ref or checkpoint.trusted_plan.milestone_ref,
+                accepted_frontier=accepted_frontier,
+                final_known_good=accepted_frontier,
+                milestone_checkpoint_id=None,
+                milestone_checkpoint_digest=None,
+                milestone_receipt_id=None,
+                milestone_receipt_digest=None,
+                milestone_steward_digest=None,
+                plan_close_checkpoint_id=checkpoint.checkpoint_id,
+                plan_close_checkpoint_digest=checkpoint.digest(),
+                plan_close_receipt_id=receipt.receipt_id,
+                plan_close_receipt_digest=receipt.receipt_digest,
+                plan_close_steward_digest=receipt.steward_digest,
             )
+            candidate_body = project_terminal_plan_body(
+                snapshot.body,
+                evidence,
+                final_revision=next_plan_revision(snapshot.body),
+            )
+            if current.lifecycle_state == "retired":
+                result = coordinator.recover_retired_final_body(
+                    request,
+                    candidate_body,
+                    expected_authority=current.authority,
+                    closure_evidence=evidence,
+                )
+            else:
+                result = coordinator.close_local_plan(
+                    request,
+                    candidate_body,
+                    expected_authority=current.authority,
+                    closure_evidence=evidence,
+                )
         except Exception as exc:  # noqa: BLE001 - lifecycle boundary fails closed
             raise StewardshipProductionError(
-                "LOCAL_PLAN_RETIREMENT_FAILED_CLOSED",
-                f"LocalPlanLifecycleCoordinator.retire raised {type(exc).__name__}",
+                "LOCAL_PLAN_CLOSE_FAILED_CLOSED",
+                f"local Plan body cutover raised {type(exc).__name__}",
             ) from exc
         if not getattr(result, "ok", False):
             raise StewardshipProductionError(
-                getattr(result, "error_code", None) or "LOCAL_PLAN_RETIREMENT_FAILED_CLOSED",
-                getattr(result, "error_message", None) or "local Plan retirement did not verify",
+                getattr(result, "error_code", None) or "LOCAL_PLAN_CLOSE_FAILED_CLOSED",
+                getattr(result, "error_message", None) or "local Plan close did not verify",
             )
 
     def _transition(self, record: StewardLogicalReplayRecord, state: str) -> StewardLogicalReplayRecord:
@@ -1227,6 +1321,7 @@ def create_legacy_stewardship_executor(
     result_task_id_resolver: Callable[[StewardLogicalReplayRecord], str] | None = None,
     origin_session_ref: str | None = None,
     local_plan_lifecycle_coordinator: Any | None = None,
+    local_plan_close_request_factory: Callable[[StewardshipCheckpoint, Any], LocalPlanLifecycleRequest] | None = None,
 ) -> LegacyStewardshipExecutor:
     """Build the explicit trusted legacy bridge; thin never falls back here."""
     if runtime_path != TASK_MAIN_RUNTIME_PATH_LEGACY:
@@ -1257,6 +1352,7 @@ def create_legacy_stewardship_executor(
         result_sandbox=result_sandbox,
         origin_session_ref=origin_session_ref,
         local_plan_lifecycle_coordinator=local_plan_lifecycle_coordinator,
+        local_plan_close_request_factory=local_plan_close_request_factory,
     )
 
 
@@ -1277,6 +1373,9 @@ __all__ = [
     "LEGACY_STEWARD_PRODUCTION_PATH_ONLY",
     "LOCAL_RETIREMENT_AFTER_TRUSTED_FINALIZATION_ONLY",
     "LOCAL_RETIREMENT_USES_COORDINATOR_CAS",
+    "LOCAL_PLAN_CLOSE_APPLIED_IMPLIES_TERMINAL_BODY_CONVERGED",
+    "GENERIC_LOCAL_PLAN_CLOSE_FIX",
+    "PLAN003_SPECIAL_CASE",
     "LegacyStewardshipExecutor",
     "LegacyStewardshipOutcome",
     "DurableStewardResultOwner",

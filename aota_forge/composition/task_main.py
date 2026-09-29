@@ -433,6 +433,7 @@ def create_task_main_runner(
     stewardship_origin_session_ref: str | None = None,
     governance_store: ProjectGovernanceStore | str | Path | None = None,
     stewardship_local_plan_lifecycle_coordinator: Any | None = None,
+    stewardship_local_plan_close_request_factory: Callable[[StewardshipCheckpoint, Any], Any] | None = None,
 ) -> TaskMainMilestoneRunner | StewardshipTaskMainComposition:
     """Bounded autonomous runner over already-wired M2/W1/W2 stores (ONE iteration)."""
     store = (
@@ -557,6 +558,7 @@ def create_task_main_runner(
             result_task_id_resolver=result_task_id_resolver,
             origin_session_ref=origin_session_ref,
             local_plan_lifecycle_coordinator=local_lifecycle_coordinator,
+            local_plan_close_request_factory=stewardship_local_plan_close_request_factory,
         )
 
     try:
@@ -596,6 +598,7 @@ def create_task_main_control_service(
     stewardship_origin_session_ref: str | None = None,
     governance_store: ProjectGovernanceStore | str | Path | None = None,
     stewardship_local_plan_lifecycle_coordinator: Any | None = None,
+    stewardship_local_plan_close_request_factory: Callable[[StewardshipCheckpoint, Any], Any] | None = None,
     projection_refresh_hook: Callable[[], Any] | None = None,
     accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
     review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
@@ -624,6 +627,7 @@ def create_task_main_control_service(
             stewardship_origin_session_ref=stewardship_origin_session_ref,
             governance_store=governance_store,
             stewardship_local_plan_lifecycle_coordinator=stewardship_local_plan_lifecycle_coordinator,
+            stewardship_local_plan_close_request_factory=stewardship_local_plan_close_request_factory,
         )
 
     if projection_refresh_hook is None:

@@ -44,6 +44,7 @@ from aota_forge.governance.local_lifecycle import (
     LocalPlanLifecycleCoordinator,
     LocalPlanLifecycleError,
     LocalPlanLifecycleRequest,
+    PlanCloseMaterializationEvidence,
 )
 from aota_forge.governance.projection import (
     GovernanceProjectionInput,
@@ -371,6 +372,12 @@ class GovernanceIntakeService:
                     write_projection=True,
                 )
             if mode == "close":
+                body = arguments.get("candidate_body")
+                if not isinstance(body, str) or not body.strip():
+                    raise GovernanceIntakeError(
+                        "PLAN_BODY_REQUIRED",
+                        "Plan close requires a trusted terminal candidate_body",
+                    )
                 current = store.get_plan(project_id, plan_id)
                 expected_revision = arguments.get("expected_plan_revision")
                 if (
@@ -384,10 +391,34 @@ class GovernanceIntakeService:
                     )
                 if current is None:
                     raise GovernanceIntakeError("PLAN_RECORD_REQUIRED", "Plan close requires an existing Plan record")
-                result = LocalPlanLifecycleCoordinator(store, journal).retire(
+                raw_evidence = arguments.get("closure_evidence")
+                if isinstance(raw_evidence, PlanCloseMaterializationEvidence):
+                    closure_evidence = raw_evidence
+                elif isinstance(raw_evidence, Mapping):
+                    try:
+                        closure_evidence = PlanCloseMaterializationEvidence(**dict(raw_evidence))
+                    except (TypeError, ValueError, LocalPlanLifecycleError) as exc:
+                        raise GovernanceIntakeError(
+                            "CLOSURE_EVIDENCE_INVALID", str(exc)
+                        ) from exc
+                else:
+                    raise GovernanceIntakeError(
+                        "CLOSURE_EVIDENCE_REQUIRED",
+                        "Plan close requires trusted accepted closure evidence",
+                    )
+                request = self._lifecycle_request(
+                    mode=mode,
                     project_id=project_id,
                     plan_id=plan_id,
-                    expected_revision=expected_revision,
+                    current=current,
+                    candidate_body=body,
+                    arguments=arguments,
+                )
+                result = LocalPlanLifecycleCoordinator(store, journal).close_local_plan(
+                    request,
+                    body,
+                    expected_authority=current.authority,
+                    closure_evidence=closure_evidence,
                 )
                 if not result.ok:
                     raise GovernanceIntakeError(
