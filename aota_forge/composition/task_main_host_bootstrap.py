@@ -82,6 +82,8 @@ from aota_forge.runtime.task_main.coordinator_store import (
 )
 from aota_forge.runtime.task_main.reconciliation import (
     COMPLETION_KIND_REVIEW,
+    COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION,
+    CompletedReviewAdoptionReceipt,
     DISPOSITION_REVIEW_READY_FOR_STEWARD,
     CompletionReconciliationReceipt,
     GovernedReviewEvidence,
@@ -445,7 +447,62 @@ def _readiness_from_durable_state(
     if state.coordinator_id != coordinator_id:
         raise TrustedBindingError("coordinator state identity does not match the trusted runner")
     review_receipts: list[CompletionReconciliationReceipt] = []
+    adopted_review_receipts: list[CompletedReviewAdoptionReceipt] = []
     for key, raw in sorted(state.reconciled_completions.items()):
+        if isinstance(raw, Mapping) and raw.get("completion_kind") == COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION:
+            try:
+                adopted = CompletedReviewAdoptionReceipt.from_dict(raw)
+            except Exception as exc:
+                raise TrustedBindingError(
+                    f"durable completed-review adoption receipt {key!r} is invalid: {exc}"
+                ) from exc
+            if adopted.coordinator_id != state.coordinator_id:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a foreign coordinator"
+                )
+            if adopted.project_id != state.project_id:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a foreign project"
+                )
+            if adopted.plan_authority != live_view.plan_authority:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a foreign Plan authority"
+                )
+            if adopted.plan_digest != live_view.plan_digest:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a stale Plan digest"
+                )
+            if adopted.plan_source_revision != (live_view.plan_source_revision or ""):
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a stale Plan source revision"
+                )
+            if adopted.milestone_id != live_view.milestone_id:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has a foreign Milestone"
+                )
+            if adopted.review_status not in {"PASS", "PASS_WITH_FINDINGS"}:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt is not technically accepted"
+                )
+            if adopted.blocking_findings:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt has blocking findings"
+                )
+            if adopted.production_validation_sufficient is not True:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt lacks sufficient production validation"
+                )
+            if adopted.closure_ready is not True:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt does not prove closure readiness"
+                )
+            frontier_marker = getattr(state, "frontier_ref", None)
+            if not isinstance(frontier_marker, Mapping) or frontier_marker.get("ref") != adopted.closure_frontier_ref:
+                raise TrustedBindingError(
+                    "durable completed-review adoption receipt frontier disagrees with coordinator"
+                )
+            adopted_review_receipts.append(adopted)
+            continue
         try:
             receipt = CompletionReconciliationReceipt.from_dict(raw)
         except Exception as exc:
@@ -460,9 +517,36 @@ def _readiness_from_durable_state(
             raise TrustedBindingError("durable reconciliation receipt has a foreign Milestone")
         if receipt.completion_kind == COMPLETION_KIND_REVIEW:
             review_receipts.append(receipt)
-    if not review_receipts:
+    if not review_receipts and not adopted_review_receipts:
         raise TrustedBindingError(
             "closure-ready runner outcome has no durable milestone review receipt"
+        )
+    if adopted_review_receipts:
+        if review_receipts:
+            raise TrustedBindingError(
+                "durable coordinator contains conflicting canonical and adopted review receipts"
+            )
+        receipt = max(
+            adopted_review_receipts,
+            key=lambda item: (item.next_coordinator_revision, item.artifact_digest),
+        )
+        if not isinstance(receipt, CompletedReviewAdoptionReceipt):
+            raise TrustedBindingError("completed-review adoption receipt type mismatch")
+        return MilestoneClosureReadiness(
+            milestone_ref=SemanticReference(ref=receipt.milestone_id),
+            ready_for_project_steward=True,
+            final_review_cycle=receipt.review_cycle,
+            # The old product frontier remains explicit in the receipt.  The
+            # closure infrastructure frontier is the only target the Steward
+            # may accept after the trusted ancestor proof.
+            reviewed_frontier_ref=SemanticReference(ref=receipt.closure_frontier_ref),
+            supporting_evidence_refs=(
+                receipt.receipt_digest,
+                receipt.artifact_ref,
+                receipt.artifact_digest,
+                receipt.reviewed_frontier_ref,
+            ),
+            blocking_reasons=(),
         )
     receipt = max(
         review_receipts,

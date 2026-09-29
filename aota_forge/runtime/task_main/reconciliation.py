@@ -70,9 +70,11 @@ existing deterministic evaluators or by this module.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from aota_forge.core.contracts.canonical import canonical_json, canonicalize
@@ -98,6 +100,7 @@ from aota_forge.runtime.task_main.coordinator_store import (
     TaskMainCoordinatorStore,
 )
 from aota_forge.runtime.task_main.review_adoption import (
+    CompletedTrustedReviewEvidence,
     ReviewAdoptionError,
     TrustedPlanAuthority,
     review_only_adoption_from_state,
@@ -112,6 +115,7 @@ from aota_forge.work_plane.milestone_review import (
     MilestoneReviewEvidence,
     ReviewCycle,
     ReviewFindingEvidence,
+    parse_review_cycle,
 )
 from aota_forge.work_plane.milestone_review_workflow import (
     FailureFingerprint,
@@ -167,6 +171,11 @@ assert WORKER_RESULT_NEXT_HINT_IS_PROGRESSION_AUTHORITY is False
 
 COMPLETION_KIND_WORK_ITEM = "WORK_ITEM"
 COMPLETION_KIND_REVIEW = "MILESTONE_REVIEW"
+COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION = "COMPLETED_REVIEW_ADOPTION"
+
+COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_PLAN_AUTHORITY = False
+COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_ACCEPTANCE_AUTHORITY = False
+COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_RESULT_AUTHORITY = False
 
 # Bounded receipt disposition vocabulary (evidence labels only — the
 # evaluators below own the actual semantics).
@@ -224,6 +233,16 @@ def _now_iso() -> str:
 
 def _digest_of(payload: Mapping[str, Any], *, path: str) -> str:
     return hashlib.sha256(canonical_json(canonicalize(dict(payload), path=path)).encode("utf-8")).hexdigest()
+
+
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _require_commit_ref(value: Any, label: str) -> str:
+    normalized = _require_non_empty_str(value, label, max_length=40).lower()
+    if _COMMIT_RE.fullmatch(normalized) is None:
+        raise ValueError(f"{label} must be a full lowercase Git commit SHA")
+    return normalized
 
 
 def _frontier_text(value: Any, label: str) -> str:
@@ -448,6 +467,228 @@ class CompletionReconciliationReceipt:
         )
         if receipt.receipt_digest != receipt.compute_digest():
             raise ValueError("CompletionReconciliationReceipt digest mismatch: stored evidence fails closed")
+        return receipt
+
+
+_ADOPTION_RECEIPT_FIELDS: frozenset[str] = frozenset(
+    {
+        "coordinator_id",
+        "project_id",
+        "plan_id",
+        "plan_authority",
+        "plan_digest",
+        "plan_source_revision",
+        "milestone_id",
+        "review_cycle",
+        "reviewed_frontier_ref",
+        "closure_frontier_ref",
+        "frontier_relation",
+        "artifact_ref",
+        "artifact_digest",
+        "review_status",
+        "blocking_findings",
+        "non_blocking_findings",
+        "production_validation_sufficient",
+        "closure_ready",
+        "frontier_proof_digest",
+        "prev_coordinator_revision",
+        "next_coordinator_revision",
+        "adopted_at",
+        "receipt_digest",
+    }
+)
+
+_ADOPTION_FRONTIER_RELATIONS = frozenset(
+    {"EXACT_REVIEWED_FRONTIER", "GOVERNANCE_ONLY_DESCENDANT"}
+)
+
+
+@dataclass(frozen=True)
+class CompletedReviewAdoptionReceipt:
+    """Durable evidence for adopting a trusted completed review artifact.
+
+    Unlike ``CompletionReconciliationReceipt``, this receipt intentionally has
+    no canonical task, CARD, result handoff, or ACK identity.  It records only
+    the trusted external review artifact and the exact frontier used by the
+    closure infrastructure.  It is evidence, never Plan, acceptance, result,
+    or Git authority.
+    """
+
+    coordinator_id: str
+    project_id: str
+    plan_id: str
+    plan_authority: str
+    plan_digest: str
+    plan_source_revision: str
+    milestone_id: str
+    review_cycle: ReviewCycle
+    reviewed_frontier_ref: str
+    closure_frontier_ref: str
+    frontier_relation: str
+    artifact_ref: str
+    artifact_digest: str
+    review_status: str
+    blocking_findings: tuple[str, ...]
+    non_blocking_findings: tuple[str, ...]
+    production_validation_sufficient: bool
+    closure_ready: bool
+    frontier_proof_digest: str
+    prev_coordinator_revision: int
+    next_coordinator_revision: int
+    adopted_at: str
+    receipt_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for label in (
+            "coordinator_id",
+            "project_id",
+            "plan_id",
+            "plan_authority",
+            "plan_source_revision",
+            "milestone_id",
+            "artifact_ref",
+            "review_status",
+            "adopted_at",
+        ):
+            object.__setattr__(self, label, _require_non_empty_str(getattr(self, label), label))
+        object.__setattr__(self, "plan_digest", _require_non_empty_str(self.plan_digest, "plan_digest", max_length=128))
+        object.__setattr__(self, "review_cycle", parse_review_cycle(self.review_cycle))
+        object.__setattr__(
+            self,
+            "reviewed_frontier_ref",
+            _require_commit_ref(self.reviewed_frontier_ref, "reviewed_frontier_ref"),
+        )
+        object.__setattr__(
+            self,
+            "closure_frontier_ref",
+            _require_commit_ref(self.closure_frontier_ref, "closure_frontier_ref"),
+        )
+        if self.frontier_relation not in _ADOPTION_FRONTIER_RELATIONS:
+            raise ValueError(
+                "frontier_relation must be one of "
+                f"{sorted(_ADOPTION_FRONTIER_RELATIONS)}"
+            )
+        if self.frontier_relation == "EXACT_REVIEWED_FRONTIER" and (
+            self.reviewed_frontier_ref != self.closure_frontier_ref
+        ):
+            raise ValueError("exact frontier adoption requires equal reviewed and closure frontiers")
+        if self.frontier_relation == "GOVERNANCE_ONLY_DESCENDANT" and (
+            self.reviewed_frontier_ref == self.closure_frontier_ref
+        ):
+            raise ValueError("governance-only descendant adoption requires a changed closure frontier")
+        object.__setattr__(self, "artifact_digest", _require_non_empty_str(self.artifact_digest, "artifact_digest", max_length=128))
+        object.__setattr__(self, "frontier_proof_digest", _require_non_empty_str(self.frontier_proof_digest, "frontier_proof_digest", max_length=128))
+        for label in ("blocking_findings", "non_blocking_findings"):
+            raw = getattr(self, label)
+            if not isinstance(raw, (tuple, list)):
+                raise TypeError(f"{label} must be tuple/list")
+            normalized = tuple(
+                sorted(
+                    {
+                        _require_non_empty_str(item, f"{label}[]", max_length=1024)
+                        for item in raw
+                    }
+                )
+            )
+            object.__setattr__(self, label, normalized)
+        for label in ("production_validation_sufficient", "closure_ready"):
+            if type(getattr(self, label)) is not bool:
+                raise TypeError(f"{label} must be bool")
+        for label in ("prev_coordinator_revision", "next_coordinator_revision"):
+            value = getattr(self, label)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{label} must be an int >= 0")
+        if self.next_coordinator_revision != self.prev_coordinator_revision + 1:
+            raise ValueError("next_coordinator_revision must equal prev_coordinator_revision + 1")
+        if not isinstance(self.receipt_digest, str) or type(self.receipt_digest) is not str:
+            raise TypeError("receipt_digest must be a string")
+
+    def canonical_dict(self) -> dict[str, Any]:
+        return {
+            "adopted_at": self.adopted_at,
+            "artifact_digest": self.artifact_digest,
+            "artifact_ref": self.artifact_ref,
+            "blocking_findings": list(self.blocking_findings),
+            "closure_frontier_ref": self.closure_frontier_ref,
+            "closure_ready": self.closure_ready,
+            "coordinator_id": self.coordinator_id,
+            "frontier_proof_digest": self.frontier_proof_digest,
+            "frontier_relation": self.frontier_relation,
+            "milestone_id": self.milestone_id,
+            "next_coordinator_revision": self.next_coordinator_revision,
+            "non_blocking_findings": list(self.non_blocking_findings),
+            "plan_authority": self.plan_authority,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "plan_source_revision": self.plan_source_revision,
+            "prev_coordinator_revision": self.prev_coordinator_revision,
+            "production_validation_sufficient": self.production_validation_sufficient,
+            "project_id": self.project_id,
+            "review_cycle": self.review_cycle.value,
+            "review_status": self.review_status,
+            "reviewed_frontier_ref": self.reviewed_frontier_ref,
+        }
+
+    def compute_digest(self) -> str:
+        return _digest_of(self.canonical_dict(), path="CompletedReviewAdoptionReceipt")
+
+    def with_digest(self) -> "CompletedReviewAdoptionReceipt":
+        return replace(self, receipt_digest=self.compute_digest())
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = self.canonical_dict()
+        payload["receipt_digest"] = self.receipt_digest
+        payload["completion_kind"] = COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION
+        return payload
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CompletedReviewAdoptionReceipt":
+        if not isinstance(data, Mapping):
+            raise TypeError(f"data must be a mapping, got {type(data).__name__}")
+        if data.get("completion_kind") != COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION:
+            raise ValueError("mapping is not a completed-review adoption receipt")
+        extra = set(data) - (_ADOPTION_RECEIPT_FIELDS | {"completion_kind"})
+        if extra:
+            raise ValueError(
+                "Unknown field(s) in CompletedReviewAdoptionReceipt: "
+                f"{sorted(extra)}"
+            )
+        required = _ADOPTION_RECEIPT_FIELDS
+        missing = sorted(required - set(data))
+        if missing:
+            raise ValueError(
+                "Missing required field(s) in CompletedReviewAdoptionReceipt: "
+                f"{missing}"
+            )
+        receipt = cls(
+            coordinator_id=data["coordinator_id"],
+            project_id=data["project_id"],
+            plan_id=data["plan_id"],
+            plan_authority=data["plan_authority"],
+            plan_digest=data["plan_digest"],
+            plan_source_revision=data["plan_source_revision"],
+            milestone_id=data["milestone_id"],
+            review_cycle=data["review_cycle"],
+            reviewed_frontier_ref=data["reviewed_frontier_ref"],
+            closure_frontier_ref=data["closure_frontier_ref"],
+            frontier_relation=data["frontier_relation"],
+            artifact_ref=data["artifact_ref"],
+            artifact_digest=data["artifact_digest"],
+            review_status=data["review_status"],
+            blocking_findings=tuple(data["blocking_findings"]),
+            non_blocking_findings=tuple(data["non_blocking_findings"]),
+            production_validation_sufficient=data["production_validation_sufficient"],
+            closure_ready=data["closure_ready"],
+            frontier_proof_digest=data["frontier_proof_digest"],
+            prev_coordinator_revision=data["prev_coordinator_revision"],
+            next_coordinator_revision=data["next_coordinator_revision"],
+            adopted_at=data["adopted_at"],
+            receipt_digest=data["receipt_digest"],
+        )
+        if receipt.receipt_digest != receipt.compute_digest():
+            raise ValueError(
+                "CompletedReviewAdoptionReceipt digest mismatch: stored evidence fails closed"
+            )
         return receipt
 
 
@@ -676,6 +917,35 @@ class ReconciliationOutcome:
             raise ValueError("ack_eligible requires a bound ack_token")
         if not self.ack_eligible and self.ack_token is not None:
             raise ValueError("no ack_token without ack_eligible")
+
+
+@dataclass(frozen=True)
+class CompletedReviewAdoptionOutcome:
+    """Result of the trusted completed-review adoption seam.
+
+    This is intentionally not an ACK outcome and never claims reviewer
+    execution.  ``milestone_closure_ready`` is an evidence projection only;
+    the existing Steward/user closure lifecycle remains the authority boundary.
+    """
+
+    receipt: CompletedReviewAdoptionReceipt
+    replayed: bool
+    milestone_closure_ready: bool
+    physical_dispatch_attempts: int = 0
+    reasons: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.receipt, CompletedReviewAdoptionReceipt):
+            raise TypeError("receipt must be CompletedReviewAdoptionReceipt")
+        if type(self.replayed) is not bool:
+            raise TypeError("replayed must be bool")
+        if type(self.milestone_closure_ready) is not bool:
+            raise TypeError("milestone_closure_ready must be bool")
+        if type(self.physical_dispatch_attempts) is not int or self.physical_dispatch_attempts != 0:
+            raise ValueError("completed review adoption never dispatches")
+        if not isinstance(self.reasons, (tuple, list)):
+            raise TypeError("reasons must be tuple/list")
+        object.__setattr__(self, "reasons", tuple(self.reasons))
 
 
 # ---------------------------------------------------------------------------
@@ -1225,6 +1495,269 @@ def _persist_reconciliation(
     if stored.receipt_digest != receipt.receipt_digest:
         raise ReconciliationError("reconciliation receipt digest mismatch after persist; ACK refused")
     return persisted, receipt, False
+
+
+def reconcile_adopted_completed_review(
+    *,
+    store: TaskMainCoordinatorStore,
+    coordinator_id: str,
+    live_plan_view: MilestonePlanView,
+    completed_review: CompletedTrustedReviewEvidence,
+    trusted_plan_authority: TrustedPlanAuthority,
+    review_adoption_worktree_root: WorktreeSandboxBoundary,
+    review_adoption_git: Any | None = None,
+) -> CompletedReviewAdoptionOutcome:
+    """Persist one already-completed trusted review without reviewer execution.
+
+    This sibling to ``reconcile_review_completion`` is deliberately not CARD
+    reconciliation.  It accepts only the typed, independently validated
+    completed-review carrier, records no Work Item progression, and uses the
+    same coordinator CAS/readback boundary for exactly-once adoption.
+    """
+
+    if not isinstance(store, TaskMainCoordinatorStore):
+        raise TypeError(f"store must be TaskMainCoordinatorStore, got {type(store).__name__}")
+    if not isinstance(completed_review, CompletedTrustedReviewEvidence):
+        raise TypeError(
+            "completed_review must be CompletedTrustedReviewEvidence, "
+            f"got {type(completed_review).__name__}"
+        )
+    if not isinstance(trusted_plan_authority, TrustedPlanAuthority):
+        raise TypeError("trusted_plan_authority must be TrustedPlanAuthority")
+    if not isinstance(review_adoption_worktree_root, WorktreeSandboxBoundary):
+        raise TypeError("review_adoption_worktree_root must be WorktreeSandboxBoundary")
+
+    state = _require_active_for_reconciliation(store, coordinator_id, live_plan_view)
+    if completed_review.project_id != state.project_id:
+        raise ReconciliationError("completed review project contradicts coordinator")
+    if completed_review.project_id != trusted_plan_authority.project_id:
+        raise ReconciliationError("completed review project contradicts trusted Plan authority")
+    if completed_review.plan_id != trusted_plan_authority.plan_id:
+        raise ReconciliationError("completed review Plan identity contradicts trusted Plan authority")
+    if completed_review.plan_authority != state.plan_authority:
+        raise ReconciliationError("completed review Plan authority contradicts coordinator")
+    if completed_review.plan_authority != trusted_plan_authority.authority_ref:
+        raise ReconciliationError("completed review Plan authority contradicts trusted authority")
+    if completed_review.plan_digest != state.plan_digest:
+        raise PlanDriftError("completed review Plan digest contradicts the live coordinator binding")
+    if completed_review.plan_digest != trusted_plan_authority.source_digest:
+        raise ReconciliationError("completed review Plan digest contradicts trusted authority")
+    if completed_review.plan_source_revision != state.plan_source_revision:
+        raise PlanDriftError("completed review Plan source revision contradicts the live binding")
+    if completed_review.plan_source_revision != trusted_plan_authority.source_revision:
+        raise ReconciliationError("completed review Plan source revision contradicts trusted authority")
+    if completed_review.milestone_id != state.milestone_id or completed_review.milestone_id != live_plan_view.milestone_id:
+        raise ReconciliationError("completed review Milestone contradicts coordinator")
+    if completed_review.review_status not in {"PASS", "PASS_WITH_FINDINGS"}:
+        raise ReconciliationError("completed review status is not an accepted review status")
+    if completed_review.blocking_findings:
+        raise ReconciliationError("completed review contains blocking findings")
+    if not completed_review.production_validation_sufficient:
+        raise ReconciliationError("completed review lacks sufficient production validation")
+    if not completed_review.source_runtime_aligned or not completed_review.source_chain_contiguous:
+        raise ReconciliationError("completed review lacks source/runtime alignment proof")
+
+    adoption = review_only_adoption_from_state(
+        state, trusted_authority=trusted_plan_authority
+    )
+    if adoption is None:
+        raise ReconciliationError("completed review adoption requires durable frontier adoption")
+    current_frontier = revalidate_adopted_frontier(
+        state=state,
+        live_plan_view=live_plan_view,
+        worktree_root=review_adoption_worktree_root,
+        git=review_adoption_git,
+        trusted_authority=trusted_plan_authority,
+    )
+    closure_frontier = current_frontier.frontier_ref
+    if completed_review.reviewed_frontier_ref == closure_frontier:
+        frontier_relation = "EXACT_REVIEWED_FRONTIER"
+    else:
+        if review_adoption_git is None or not callable(
+            getattr(review_adoption_git, "is_ancestor", None)
+        ):
+            raise ReconciliationError(
+                "a post-review closure frontier requires a trusted Git ancestor proof"
+            )
+        try:
+            is_ancestor = review_adoption_git.is_ancestor(
+                Path(review_adoption_worktree_root.worktree_root),
+                completed_review.reviewed_frontier_ref,
+                closure_frontier,
+            )
+        except Exception as exc:
+            raise ReconciliationError(
+                f"trusted Git ancestor proof failed: {exc}"
+            ) from exc
+        if is_ancestor is not True:
+            raise ReconciliationError(
+                "completed review frontier is not an ancestor of the adopted closure frontier"
+            )
+        frontier_relation = "GOVERNANCE_ONLY_DESCENDANT"
+
+    adoption_key = f"completed-review-adoption:{completed_review.artifact_digest}"
+    existing_payload = state.reconciled_completions.get(adoption_key)
+    if existing_payload is not None:
+        try:
+            stored = CompletedReviewAdoptionReceipt.from_dict(existing_payload)
+        except (TypeError, ValueError) as exc:
+            raise ReconciliationError(
+                f"durable completed-review adoption receipt is invalid: {exc}"
+            ) from exc
+        expected_frontier_proof = _digest_of(
+            {
+                "artifact_digest": completed_review.artifact_digest,
+                "closure_frontier_ref": closure_frontier,
+                "plan_authority": state.plan_authority,
+                "plan_digest": state.plan_digest,
+                "reviewed_frontier_ref": completed_review.reviewed_frontier_ref,
+            },
+            path="CompletedReviewAdoptionFrontierProof",
+        )
+        if (
+            stored.artifact_digest != completed_review.artifact_digest
+            or stored.closure_frontier_ref != closure_frontier
+            or stored.reviewed_frontier_ref != completed_review.reviewed_frontier_ref
+            or stored.frontier_proof_digest != expected_frontier_proof
+        ):
+            raise ContradictoryCompletionError(
+                "completed review artifact/frontier contradicts the durable adoption receipt"
+            )
+        return CompletedReviewAdoptionOutcome(
+            receipt=stored,
+            replayed=True,
+            milestone_closure_ready=stored.closure_ready,
+            reasons=("identical completed-review adoption replayed from durable evidence",),
+        )
+
+    for key, payload in state.reconciled_completions.items():
+        if not isinstance(payload, Mapping):
+            raise ReconciliationError(f"durable reconciliation entry {key!r} is malformed")
+        if payload.get("completion_kind") == COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION:
+            raise ReconciliationError(
+                "a different completed-review adoption already owns this coordinator"
+            )
+        raise ReconciliationError(
+            "existing reviewer or Work Item reconciliation truth blocks completed-review adoption"
+        )
+
+    frontier_proof_digest = _digest_of(
+        {
+            "artifact_digest": completed_review.artifact_digest,
+            "closure_frontier_ref": closure_frontier,
+            "plan_authority": state.plan_authority,
+            "plan_digest": state.plan_digest,
+            "reviewed_frontier_ref": completed_review.reviewed_frontier_ref,
+        },
+        path="CompletedReviewAdoptionFrontierProof",
+    )
+    receipt = CompletedReviewAdoptionReceipt(
+        coordinator_id=state.coordinator_id,
+        project_id=state.project_id,
+        plan_id=completed_review.plan_id,
+        plan_authority=state.plan_authority,
+        plan_digest=state.plan_digest,
+        plan_source_revision=state.plan_source_revision or "",
+        milestone_id=state.milestone_id,
+        review_cycle=completed_review.review_cycle,
+        reviewed_frontier_ref=completed_review.reviewed_frontier_ref,
+        closure_frontier_ref=closure_frontier,
+        frontier_relation=frontier_relation,
+        artifact_ref=completed_review.artifact_ref,
+        artifact_digest=completed_review.artifact_digest,
+        review_status=completed_review.review_status,
+        blocking_findings=completed_review.blocking_findings,
+        non_blocking_findings=completed_review.non_blocking_findings,
+        production_validation_sufficient=completed_review.production_validation_sufficient,
+        closure_ready=True,
+        frontier_proof_digest=frontier_proof_digest,
+        prev_coordinator_revision=state.coordinator_revision,
+        next_coordinator_revision=state.coordinator_revision + 1,
+        adopted_at=_now_iso(),
+    ).with_digest()
+    projection = WorkingTruthProjection(
+        project_ref=SemanticReference(ref=state.project_id),
+        plan_ref=SemanticReference(ref=state.plan_authority),
+        milestone_ref=SemanticReference(ref=state.milestone_id),
+        reviewed_frontier_ref=SemanticReference(ref=closure_frontier),
+        result_refs=(),
+        evidence_refs=(
+            SemanticReference(ref=completed_review.artifact_digest),
+            SemanticReference(ref=receipt.receipt_digest),
+        ),
+    )
+    projection_payload = projection.canonical_dict()
+    working_truth_digest = hashlib.sha256(
+        canonical_json(
+            canonicalize(projection_payload, path="WorkingTruthProjection")
+        ).encode("utf-8")
+    ).hexdigest()
+    updates = {
+        "reconciled_completions": {
+            adoption_key: receipt.to_dict(),
+        },
+        "working_truth": {
+            "projection": projection_payload,
+            "digest": working_truth_digest,
+        },
+        "progression_revision": state.progression_revision + 1,
+    }
+    try:
+        persisted = store.compare_and_swap(
+            state.coordinator_id,
+            state.coordinator_revision,
+            updates,
+            state.revision_token,
+        )
+    except StaleCoordinatorRevisionError:
+        refreshed = store.get(state.coordinator_id)
+        if refreshed is None:
+            raise CoordinatorNotFoundError(state.coordinator_id)
+        winner = refreshed.reconciled_completions.get(adoption_key)
+        if winner is not None:
+            stored = CompletedReviewAdoptionReceipt.from_dict(winner)
+            if stored.receipt_digest != receipt.receipt_digest:
+                raise ContradictoryCompletionError(
+                    "completed-review adoption CAS race produced contradictory evidence"
+                )
+            return CompletedReviewAdoptionOutcome(
+                receipt=stored,
+                replayed=True,
+                milestone_closure_ready=stored.closure_ready,
+                reasons=("completed-review adoption CAS race replayed the durable winner",),
+            )
+        raise ReconciliationError(
+            "completed-review adoption CAS raced without a durable winner"
+        )
+    except Exception as exc:
+        raise ReconciliationError(f"completed-review adoption CAS failed: {exc}") from exc
+
+    verified = store.get(state.coordinator_id)
+    if verified is None:
+        raise CoordinatorNotFoundError(state.coordinator_id)
+    stored_payload = verified.reconciled_completions.get(adoption_key)
+    if stored_payload is None:
+        raise ReconciliationError(
+            "completed-review adoption receipt missing after persist"
+        )
+    stored = CompletedReviewAdoptionReceipt.from_dict(stored_payload)
+    if stored.receipt_digest != receipt.receipt_digest:
+        raise ReconciliationError(
+            "completed-review adoption receipt digest mismatch after persist"
+        )
+    if persisted.coordinator_revision != verified.coordinator_revision:
+        raise ReconciliationError(
+            "completed-review adoption coordinator readback revision mismatch"
+        )
+    return CompletedReviewAdoptionOutcome(
+        receipt=stored,
+        replayed=False,
+        milestone_closure_ready=stored.closure_ready,
+        reasons=(
+            "trusted completed review adopted without reviewer execution",
+            "no Work Item progression or result authority was synthesized",
+        ),
+    )
 
 
 def _replay_outcome(
@@ -1966,7 +2499,11 @@ __all__ = [
     "ACK_REQUIRES_DURABLE_RECONCILIATION",
     "CARD_FIRST",
     "COMPLETION_KIND_REVIEW",
+    "COMPLETION_KIND_COMPLETED_REVIEW_ADOPTION",
     "COMPLETION_KIND_WORK_ITEM",
+    "COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_ACCEPTANCE_AUTHORITY",
+    "COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_PLAN_AUTHORITY",
+    "COMPLETED_REVIEW_ADOPTION_RECEIPT_IS_RESULT_AUTHORITY",
     "DISPOSITION_PROGRESSION_BLOCKED",
     "DISPOSITION_PROGRESSION_COMPLETE",
     "DISPOSITION_REVIEW_BLOCKED",
@@ -1992,6 +2529,8 @@ __all__ = [
     "TASK_MAIN_UNRESTRICTED_FILESYSTEM_REQUIRED",
     "WORKER_CAN_CALL_TASK_MAIN_CONTROL",
     "CompletionReconciliationReceipt",
+    "CompletedReviewAdoptionReceipt",
+    "CompletedReviewAdoptionOutcome",
     "ContradictoryCompletionError",
     "GovernedReviewEvidence",
     "GovernedWorkItemEvidence",
@@ -1999,6 +2538,7 @@ __all__ = [
     "ReconciliationOutcome",
     "ack_eligible_for",
     "build_ack_token",
+    "reconcile_adopted_completed_review",
     "reconcile_review_completion",
     "reconcile_worker_completion",
 ]

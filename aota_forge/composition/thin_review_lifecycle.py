@@ -10,8 +10,11 @@ new operation, receipt, store, or workflow engine.
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from aota_forge.composition.completion_evidence import derive_governed_review_evidence
@@ -19,13 +22,16 @@ from aota_forge.core.contracts.canonical import canonical_json, canonicalize
 from aota_forge.runtime.task_main.coordinator import MilestonePlanView
 from aota_forge.runtime.task_main.coordinator_store import TaskMainCoordinatorStore
 from aota_forge.runtime.task_main.reconciliation import (
+    CompletedReviewAdoptionOutcome,
     GovernedReviewEvidence,
     ReconciliationError,
     ReconciliationOutcome,
     reconcile_review_completion,
+    reconcile_adopted_completed_review,
 )
 from aota_forge.runtime.task_main.review_adoption import (
     AcceptedFrontierAuthorization,
+    CompletedTrustedReviewEvidence,
     ReviewOnlyAdoption,
     TrustedPlanAuthority,
     adopt_accepted_frontier_for_review,
@@ -56,6 +62,148 @@ THIN_REVIEW_LIFECYCLE_CREATES_NEW_STORE = False
 
 class ThinReviewLifecycleError(RuntimeError):
     """Fail-closed error from the trusted operator-side RV1 composition."""
+
+
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _artifact_list(raw: Any, label: str) -> tuple[str, ...]:
+    if not isinstance(raw, (tuple, list)):
+        raise ThinReviewLifecycleError(f"{label} must be a list")
+    values: list[str] = []
+    for index, value in enumerate(raw):
+        if not isinstance(value, str) or not value.strip():
+            raise ThinReviewLifecycleError(f"{label}[{index}] must be non-empty text")
+        values.append(value.strip())
+    return tuple(sorted(set(values)))
+
+
+def validate_completed_trusted_review_artifact(
+    *,
+    artifact_ref: str | Path,
+    live_plan_view: MilestonePlanView,
+    trusted_plan_authority: TrustedPlanAuthority,
+    review_cycle: ReviewCycle,
+    reviewed_frontier_ref: str,
+) -> CompletedTrustedReviewEvidence:
+    """Validate the trusted completed-review JSON before adoption.
+
+    The path is consumed only by trusted composition.  The lifecycle seam
+    itself accepts the resulting typed carrier, never a model-supplied path or
+    raw mapping.
+    """
+
+    if not isinstance(live_plan_view, MilestonePlanView):
+        raise TypeError("live_plan_view must be MilestonePlanView")
+    if not isinstance(trusted_plan_authority, TrustedPlanAuthority):
+        raise TypeError("trusted_plan_authority must be TrustedPlanAuthority")
+    try:
+        cycle = ReviewCycle(review_cycle)
+    except (TypeError, ValueError) as exc:
+        raise ThinReviewLifecycleError(f"review_cycle is invalid: {exc}") from exc
+    if not isinstance(artifact_ref, (str, Path)):
+        raise TypeError("artifact_ref must be a trusted string or Path")
+    path = Path(artifact_ref).expanduser().resolve()
+    try:
+        body = path.read_bytes()
+        raw = json.loads(body.decode("utf-8"))
+    except Exception as exc:
+        raise ThinReviewLifecycleError(
+            f"completed review artifact could not be read: {exc}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise ThinReviewLifecycleError("completed review artifact root must be a mapping")
+    artifact_digest = hashlib.sha256(body).hexdigest()
+    expected_frontier = reviewed_frontier_ref.strip().lower()
+    if _COMMIT_RE.fullmatch(expected_frontier) is None:
+        raise ThinReviewLifecycleError("reviewed_frontier_ref must be a full Git commit SHA")
+
+    required_identity = {
+        "project_id": trusted_plan_authority.project_id,
+        "plan_id": trusted_plan_authority.plan_id,
+        "milestone_id": live_plan_view.milestone_id,
+        "review_id": cycle.value,
+    }
+    for field, expected in required_identity.items():
+        if raw.get(field) != expected:
+            raise ThinReviewLifecycleError(
+                f"completed review artifact {field} contradicts trusted identity"
+            )
+    status = raw.get("status")
+    if status not in {"PASS", "PASS_WITH_FINDINGS"}:
+        raise ThinReviewLifecycleError("completed review artifact status is not accepted")
+    if raw.get("production_validation_sufficient") is not True:
+        raise ThinReviewLifecycleError(
+            "completed review artifact lacks sufficient production validation"
+        )
+
+    source = raw.get("source_frontier")
+    if not isinstance(source, Mapping):
+        raise ThinReviewLifecycleError("completed review artifact lacks source frontier proof")
+    for field in ("candidate", "main_head", "runtime_source_commit"):
+        if source.get(field) != expected_frontier:
+            raise ThinReviewLifecycleError(
+                f"completed review source frontier {field} contradicts reviewed frontier"
+            )
+    if source.get("production_runtime_source_aligned") is not True:
+        raise ThinReviewLifecycleError("completed review lacks runtime source alignment proof")
+    if source.get("source_chain_contiguous") is not True:
+        raise ThinReviewLifecycleError("completed review lacks contiguous source-chain proof")
+    if source.get("source_code_changed_during_review") is not False:
+        raise ThinReviewLifecycleError(
+            "completed review does not prove source stability during review"
+        )
+    chain = source.get("source_chain")
+    if not isinstance(chain, list) or not chain or chain[-1] != expected_frontier:
+        raise ThinReviewLifecycleError("completed review source chain is missing or stale")
+    if any(
+        not isinstance(commit, str) or _COMMIT_RE.fullmatch(commit) is None
+        for commit in chain
+    ):
+        raise ThinReviewLifecycleError("completed review source chain contains an invalid commit")
+
+    final_digest = raw.get("plan_file_digest_final")
+    if final_digest != live_plan_view.plan_digest or raw.get("store_digest_final") != final_digest:
+        raise ThinReviewLifecycleError(
+            "completed review Plan authority digest does not match the current trusted Plan"
+        )
+    if raw.get("plan_file_store_digest_match_after") is not True:
+        raise ThinReviewLifecycleError("completed review lacks Plan/store digest convergence proof")
+    if raw.get("journal_terminal_verified_after") is not True:
+        raise ThinReviewLifecycleError("completed review lacks terminal journal proof")
+
+    blocking = _artifact_list(raw.get("blocking_findings", ()), "blocking_findings")
+    non_blocking = _artifact_list(
+        raw.get("non_blocking_findings", ()), "non_blocking_findings"
+    )
+    if blocking:
+        raise ThinReviewLifecycleError("completed review artifact contains blocking findings")
+    return CompletedTrustedReviewEvidence._mint(
+        project_id=trusted_plan_authority.project_id,
+        plan_id=trusted_plan_authority.plan_id,
+        plan_authority=trusted_plan_authority.authority_ref,
+        plan_digest=trusted_plan_authority.source_digest,
+        plan_source_revision=trusted_plan_authority.source_revision,
+        milestone_id=live_plan_view.milestone_id,
+        review_cycle=cycle,
+        reviewed_frontier_ref=expected_frontier,
+        artifact_ref=str(path),
+        artifact_digest=artifact_digest,
+        review_status=status,
+        blocking_findings=blocking,
+        non_blocking_findings=non_blocking,
+        production_validation_sufficient=True,
+        source_runtime_aligned=True,
+        source_chain_contiguous=True,
+        plan_revision=(
+            str(raw["plan_revision_final"])
+            if raw.get("plan_revision_final") is not None
+            else None
+        ),
+        evidence_timestamp=(
+            str(raw["reviewed_at"]) if raw.get("reviewed_at") is not None else None
+        ),
+    )
 
 
 def _ref_values(values: Any) -> list[str]:
@@ -329,6 +477,43 @@ class ThinReviewLifecycle:
             trusted_authority=self.trusted_plan_authority,
         )
 
+    def adopt_completed_review(
+        self, completed_review: CompletedTrustedReviewEvidence
+    ) -> CompletedReviewAdoptionOutcome:
+        """Adopt one independently validated completed review artifact.
+
+        This is an internal trusted composition seam.  It never creates a
+        reviewer execution, CARD, result handoff, or public operation.
+        """
+
+        if not isinstance(completed_review, CompletedTrustedReviewEvidence):
+            raise TypeError(
+                "completed_review must be CompletedTrustedReviewEvidence"
+            )
+        # Re-open and validate the trusted artifact before any coordinator CAS;
+        # a dataclass carrier alone is not sufficient evidence.
+        validated = validate_completed_trusted_review_artifact(
+            artifact_ref=completed_review.artifact_ref,
+            live_plan_view=self.live_plan_view,
+            trusted_plan_authority=self.trusted_plan_authority,
+            review_cycle=self.review_cycle,
+            reviewed_frontier_ref=completed_review.reviewed_frontier_ref,
+        )
+        if validated != completed_review:
+            raise ThinReviewLifecycleError(
+                "completed review carrier contradicts the validated artifact"
+            )
+        self.adopt_frontier()
+        return reconcile_adopted_completed_review(
+            store=self.coordinator_store,
+            coordinator_id=self.coordinator_id,
+            live_plan_view=self.live_plan_view,
+            completed_review=validated,
+            trusted_plan_authority=self.trusted_plan_authority,
+            review_adoption_worktree_root=self.sandbox,
+            review_adoption_git=self.review_adoption_git,
+        )
+
     def dispatch_reviewer(self) -> dict[str, Any]:
         """Adopt, durably bind, then dispatch through canonical thin task.start."""
         self.adopt_frontier()
@@ -458,7 +643,9 @@ __all__ = [
     "THIN_REVIEW_LIFECYCLE_USES_LEGACY_WORKFLOW_BRAIN",
     "THIN_REVIEW_LIFECYCLE_CREATES_NEW_OPERATION",
     "THIN_REVIEW_LIFECYCLE_CREATES_NEW_STORE",
+    "CompletedTrustedReviewEvidence",
     "ThinReviewLifecycle",
     "ThinReviewLifecycleError",
     "create_thin_review_lifecycle",
+    "validate_completed_trusted_review_artifact",
 ]

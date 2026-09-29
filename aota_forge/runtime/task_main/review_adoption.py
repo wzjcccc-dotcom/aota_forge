@@ -118,6 +118,12 @@ _OPENCODE_INSTANCE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]{1,96}$")
 _OPENCODE_ENVELOPE_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\.json$")
 _PYTHON_BYTECODE_FILE_RE = re.compile(r"^[A-Za-z0-9._-]+\.pyc$")
 _TRUSTED_AUTHORITY_CAPABILITY = object()
+_COMPLETED_REVIEW_EVIDENCE_CAPABILITY = object()
+
+COMPLETED_REVIEW_EVIDENCE_IS_PLAN_AUTHORITY = False
+COMPLETED_REVIEW_EVIDENCE_IS_ACCEPTANCE_AUTHORITY = False
+COMPLETED_REVIEW_EVIDENCE_IS_RESULT_AUTHORITY = False
+COMPLETED_REVIEW_EVIDENCE_STATUSES = frozenset({"PASS", "PASS_WITH_FINDINGS"})
 
 
 class ReviewAdoptionError(TaskMainCoordinatorError):
@@ -163,6 +169,115 @@ class TrustedPlanAuthority:
             "source_digest": self.source_digest,
             "source_revision": self.source_revision,
         }
+
+
+@dataclass(frozen=True)
+class CompletedTrustedReviewEvidence:
+    """Typed, authority-negative evidence for a review completed elsewhere.
+
+    This carrier deliberately has no worker task, CARD, result handoff, task
+    return, acceptance, or closure authority.  It is minted only by trusted
+    composition after the complete artifact has been read and validated.
+    """
+
+    project_id: str
+    plan_id: str
+    plan_authority: str
+    plan_digest: str
+    plan_source_revision: str
+    milestone_id: str
+    review_cycle: ReviewCycle
+    reviewed_frontier_ref: str
+    artifact_ref: str
+    artifact_digest: str
+    review_status: str
+    blocking_findings: tuple[str, ...] = ()
+    non_blocking_findings: tuple[str, ...] = ()
+    production_validation_sufficient: bool = False
+    source_runtime_aligned: bool = False
+    source_chain_contiguous: bool = False
+    plan_revision: str | None = None
+    evidence_timestamp: str | None = None
+    _capability: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._capability is not _COMPLETED_REVIEW_EVIDENCE_CAPABILITY:
+            raise TypeError(
+                "CompletedTrustedReviewEvidence must be minted by trusted composition"
+            )
+        for label in (
+            "project_id",
+            "plan_id",
+            "plan_authority",
+            "plan_source_revision",
+            "milestone_id",
+            "artifact_ref",
+        ):
+            object.__setattr__(self, label, _require_non_empty_str(getattr(self, label), label))
+        object.__setattr__(self, "plan_digest", _require_sha256(self.plan_digest, "plan_digest"))
+        object.__setattr__(self, "review_cycle", normalize_review_cycle(self.review_cycle))
+        object.__setattr__(
+            self,
+            "reviewed_frontier_ref",
+            _require_commit(self.reviewed_frontier_ref, "reviewed_frontier_ref"),
+        )
+        object.__setattr__(self, "artifact_digest", _require_sha256(self.artifact_digest, "artifact_digest"))
+        if self.review_status not in COMPLETED_REVIEW_EVIDENCE_STATUSES:
+            raise ValueError(
+                "review_status must be one of "
+                f"{sorted(COMPLETED_REVIEW_EVIDENCE_STATUSES)}"
+            )
+        for label in ("blocking_findings", "non_blocking_findings"):
+            raw = getattr(self, label)
+            if not isinstance(raw, (tuple, list)):
+                raise TypeError(f"{label} must be tuple/list")
+            if len(raw) > 64:
+                raise ValueError(f"{label} exceeds the bounded finding limit")
+            normalized: list[str] = []
+            for index, finding in enumerate(raw):
+                normalized.append(
+                    _require_non_empty_str(
+                        finding, f"{label}[{index}]", max_length=1024
+                    )
+                )
+            object.__setattr__(self, label, tuple(sorted(set(normalized))))
+        for label in (
+            "production_validation_sufficient",
+            "source_runtime_aligned",
+            "source_chain_contiguous",
+        ):
+            if type(getattr(self, label)) is not bool:
+                raise TypeError(f"{label} must be bool")
+        for label in ("plan_revision", "evidence_timestamp"):
+            value = getattr(self, label)
+            if value is not None:
+                object.__setattr__(self, label, _require_non_empty_str(value, label))
+
+    def canonical_dict(self) -> dict[str, Any]:
+        return {
+            "artifact_digest": self.artifact_digest,
+            "artifact_ref": self.artifact_ref,
+            "blocking_findings": list(self.blocking_findings),
+            "evidence_timestamp": self.evidence_timestamp,
+            "milestone_id": self.milestone_id,
+            "non_blocking_findings": list(self.non_blocking_findings),
+            "plan_authority": self.plan_authority,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "plan_revision": self.plan_revision,
+            "plan_source_revision": self.plan_source_revision,
+            "production_validation_sufficient": self.production_validation_sufficient,
+            "project_id": self.project_id,
+            "review_cycle": self.review_cycle.value,
+            "review_status": self.review_status,
+            "reviewed_frontier_ref": self.reviewed_frontier_ref,
+            "source_chain_contiguous": self.source_chain_contiguous,
+            "source_runtime_aligned": self.source_runtime_aligned,
+        }
+
+    @classmethod
+    def _mint(cls, **kwargs: Any) -> "CompletedTrustedReviewEvidence":
+        return cls(**kwargs, _capability=_COMPLETED_REVIEW_EVIDENCE_CAPABILITY)
 
 
 def trusted_plan_authority_from_binding(
@@ -1393,6 +1508,30 @@ def adopt_accepted_frontier_for_review(
                             "review-only adoption contains an invalid reviewer completion identity"
                         ) from None
             for payload in state.reconciled_completions.values():
+                if isinstance(payload, Mapping) and payload.get(
+                    "completion_kind"
+                ) == "COMPLETED_REVIEW_ADOPTION":
+                    from aota_forge.runtime.task_main.reconciliation import (
+                        CompletedReviewAdoptionReceipt,
+                    )
+
+                    try:
+                        adopted_receipt = CompletedReviewAdoptionReceipt.from_dict(payload)
+                    except (TypeError, ValueError) as exc:
+                        raise ReviewAdoptionError(
+                            f"completed-review adoption receipt is invalid: {exc}"
+                        ) from exc
+                    if (
+                        adopted_receipt.plan_authority != state.plan_authority
+                        or adopted_receipt.plan_digest != state.plan_digest
+                        or adopted_receipt.plan_source_revision != state.plan_source_revision
+                        or adopted_receipt.milestone_id != state.milestone_id
+                        or adopted_receipt.closure_frontier_ref != authorization.candidate_frontier_ref
+                    ):
+                        raise ReviewAdoptionError(
+                            "completed-review adoption receipt contradicts the trusted frontier"
+                        )
+                    continue
                 if (
                     not isinstance(payload, Mapping)
                     or payload.get("completion_kind") != "MILESTONE_REVIEW"
@@ -1804,6 +1943,10 @@ def review_only_progression_for(
 
 
 __all__ = [
+    "COMPLETED_REVIEW_EVIDENCE_IS_ACCEPTANCE_AUTHORITY",
+    "COMPLETED_REVIEW_EVIDENCE_IS_PLAN_AUTHORITY",
+    "COMPLETED_REVIEW_EVIDENCE_IS_RESULT_AUTHORITY",
+    "COMPLETED_REVIEW_EVIDENCE_STATUSES",
     "NO_FAKE_WORK_COMPLETION_RECEIPTS",
     "NO_FAKE_WORK_COORDINATOR_STATE",
     "NO_NEW_REVIEW_ADOPTION_PROTOCOL",
@@ -1814,6 +1957,7 @@ __all__ = [
     "REVIEW_ONLY_ADOPTION_STATUS",
     "REVIEW_ONLY_FRONTIER_STATUS",
     "AcceptedFrontierAuthorization",
+    "CompletedTrustedReviewEvidence",
     "DEFAULT_REVIEWER_ATTEMPT",
     "ReviewAdoptionError",
     "ReviewOnlyAdoption",
