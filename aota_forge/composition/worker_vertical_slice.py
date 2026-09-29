@@ -325,8 +325,9 @@ def build_worker_binding(
     except Exception:
         _digest_prefix = "nodigest"
     handoff_scope = f"work/{_digest_prefix}"
-    # Derive policy_id deterministically from handoff digest + work item
-    # (digest prefix prevents lossy-label collisions between distinct scopes).
+    # Keep the policy identity opaque: the handoff digest already covers the
+    # complete semantic handoff, while milestone/work-item refs remain
+    # provenance rather than policy identity.
     try:
         wi_ref = str(handoff.work_item_ref.ref) if hasattr(handoff, "work_item_ref") and getattr(handoff.work_item_ref, "ref", None) else "work-item"
     except Exception:
@@ -336,7 +337,7 @@ def build_worker_binding(
     except Exception:
         milestone_ref = "milestone"
     policy = AgentsPolicyCandidate(
-        policy_id=f"policy-{milestone_ref.lower()}-{wi_ref.lower()}-{_digest_prefix}",
+        policy_id=f"policy-work-{_digest_prefix}",
         project_id=project_id,
         scope=handoff_scope,
         content=f"Bounded scope derived from TaskHandoff: {raw_scope}",
