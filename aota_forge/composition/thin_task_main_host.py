@@ -263,6 +263,7 @@ def _resolve_sandbox(
     worktree_id: str,
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
+    workspace_id: str | None = None,
 ) -> tuple[Any, WorktreeSandboxBoundary, dict[str, Any]]:
     """Canonical project binding + trusted worktree sandbox (hard boundary).
 
@@ -285,6 +286,7 @@ def _resolve_sandbox(
             project_id=project_id,
             source_repository=source_repository,
             registry_path=registry_path,
+            workspace_id=workspace_id,
         )
         evidence = binding.resolution
         trusted_context = {
@@ -540,6 +542,7 @@ def compose_thin_task_main_host(
     plan_ref: str | None = None,
     source_repository: str | None = None,
     registry_path: str | PathLike[str] | None = None,
+    workspace_id: str | None = None,
     governance_base: str | PathLike[str] | None = None,
     evidence_base: str | PathLike[str] | None = None,
     plan_id: str | None = None,
@@ -619,6 +622,7 @@ def compose_thin_task_main_host(
         worktree_id=wid,
         source_repository=source_repository,
         registry_path=registry_path,
+        workspace_id=workspace_id,
     )
 
     # AF #55 M2: the task-main authorized root set is derived exclusively from

@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
 from aota_forge.core.contracts.canonical import canonical_json
+from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.core.providers.tool import ToolResponse
 from aota_forge.core.project.manifest import PROJECT_ID_RE
 
@@ -22,6 +23,7 @@ CONTEXT_OPERATION = "task_main.context"
 CONTEXT_MODE_INSPECT = "inspect"
 CONTEXT_MODE_BIND = "bind"
 CONTEXT_MODE_SWITCH = "switch"
+CONTEXT_STATE_PROJECT_BOUND = "project_bound"
 CONTEXT_MODES: tuple[str, ...] = (
     CONTEXT_MODE_INSPECT,
     CONTEXT_MODE_BIND,
@@ -103,15 +105,17 @@ class TrustedProjectPlanIdentity:
     """
 
     project_id: str
-    plan_binding: PlanAuthorityBinding
+    plan_binding: PlanAuthorityBinding | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.project_id, str) or not PROJECT_ID_RE.fullmatch(self.project_id):
             raise TaskMainContextError("PROJECT_CONTEXT_MISMATCH", "trusted project identity is invalid")
-        if not isinstance(self.plan_binding, PlanAuthorityBinding):
+        if self.plan_binding is not None and not isinstance(self.plan_binding, PlanAuthorityBinding):
             raise TaskMainContextError("AUTHORITY_DENIED", "trusted Plan authority binding is required")
 
     def authority_locator_values(self, legacy_plan_binding: object | None = None) -> frozenset[str]:
+        if self.plan_binding is None:
+            return frozenset()
         values = {
             self.plan_binding.plan_id,
             self.plan_binding.authority_ref,
@@ -123,18 +127,23 @@ class TrustedProjectPlanIdentity:
 
     def to_dict(self) -> dict[str, Any]:
         binding = self.plan_binding
-        return {
+        payload: dict[str, Any] = {
             "project_id": self.project_id,
-            "plan_id": binding.plan_id,
-            "authority_binding": {
-                "source_kind": binding.source_kind,
-                "authority_ref": binding.authority_ref,
-                "source_revision": binding.source_revision,
-                "source_digest": binding.source_digest,
-            },
+            "plan_id": binding.plan_id if binding is not None else None,
+            "authority_binding": (
+                {
+                    "source_kind": binding.source_kind,
+                    "authority_ref": binding.authority_ref,
+                    "source_revision": binding.source_revision,
+                    "source_digest": binding.source_digest,
+                }
+                if binding is not None
+                else None
+            ),
             "identity_is_authority": False,
             "locator_is_authority": False,
         }
+        return payload
 
 
 def trusted_identity_from_binding(binding: object) -> TrustedProjectPlanIdentity | None:
@@ -146,12 +155,43 @@ def trusted_identity_from_binding(binding: object) -> TrustedProjectPlanIdentity
 
     project_id = getattr(binding, "project_id", None)
     plan_binding = getattr(binding, "plan_authority_binding", None)
-    if not isinstance(project_id, str) or not isinstance(plan_binding, PlanAuthorityBinding):
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+        return None
+    if plan_binding is not None and not isinstance(plan_binding, PlanAuthorityBinding):
         return None
     try:
         return TrustedProjectPlanIdentity(project_id=project_id, plan_binding=plan_binding)
     except TaskMainContextError:
         return None
+
+
+def normalize_context_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize canonical selectors and legacy aliases at one boundary."""
+    if not isinstance(arguments, Mapping):
+        raise TaskMainContextError("INPUT_TYPE_INVALID", "arguments must be an object")
+    normalized = dict(arguments)
+    for canonical, legacy in (
+        ("project_selector", "project_ref"),
+        ("plan_selector", "plan_ref"),
+    ):
+        has_canonical = canonical in normalized
+        has_legacy = legacy in normalized
+        if has_canonical and has_legacy:
+            canonical_value = normalized[canonical]
+            legacy_value = normalized[legacy]
+            if (
+                canonical_value is not None
+                and legacy_value is not None
+                and canonical_value != legacy_value
+            ):
+                raise TaskMainContextError(
+                    "INVALID_INPUT",
+                    f"{canonical} conflicts with legacy {legacy}",
+                )
+        if has_canonical:
+            normalized[legacy] = normalized[canonical]
+            normalized.pop(canonical, None)
+    return normalized
 
 
 def _locator_from_arguments(arguments: Mapping[str, Any]) -> ContextLocator:
@@ -186,6 +226,7 @@ def _snapshot(
     binding_status: str,
     authorized_roots: Any | None = None,
     governance_context: Mapping[str, Any] | None = None,
+    origin_session_ref: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "mode": mode,
@@ -196,6 +237,8 @@ def _snapshot(
     }
     if identity is not None:
         payload["context"] = identity.to_dict()
+        if origin_session_ref is not None:
+            payload["origin_session_ref"] = origin_session_ref
         if authorized_roots is not None:
             payload["context"]["authorized_roots"] = authorized_roots.public_roots()
         if governance_context is not None:
@@ -285,7 +328,70 @@ def _trusted_governance_context(
             "PROJECT_CONTEXT_MISMATCH",
             "governance context route does not match the trusted project identity",
         )
+    entries = route.get("entries")
+    if not isinstance(entries, list):
+        raise TaskMainContextError(
+            "AUTHORITY_DENIED",
+            "governance context route entries must be a list",
+        )
     plan_binding = identity.plan_binding
+    if plan_binding is None:
+        if any(
+            route.get(field) is not None
+            for field in (
+                "plan_id",
+                "authority_source_kind",
+                "authority_ref",
+                "authority_revision",
+                "authority_digest",
+            )
+        ):
+            raise TaskMainContextError(
+                "PLAN_CONTEXT_MISMATCH",
+                "project-only governance context must not carry Plan authority",
+            )
+        if any(
+            isinstance(route_entry, Mapping) and route_entry.get("kind") == "plan_authority"
+            for route_entry in entries
+        ):
+            raise TaskMainContextError(
+                "PLAN_CONTEXT_MISMATCH",
+                "project-only context route must not carry Plan authority",
+            )
+        cards = carrier.get("CARDS")
+        if cards is not None:
+            if not isinstance(cards, Mapping):
+                raise TaskMainContextError(
+                    "AUTHORITY_DENIED",
+                    "governance context CARDS must be a mapping or None",
+                )
+            if cards.get("plans") not in ([], None) or cards.get("milestones") not in ([], None):
+                raise TaskMainContextError(
+                    "PLAN_CONTEXT_MISMATCH",
+                    "project-only governance context must not carry Plan or Milestone cards",
+                )
+            project_card = cards.get("project")
+            if isinstance(project_card, Mapping) and project_card.get("project_id") != identity.project_id:
+                raise TaskMainContextError(
+                    "PROJECT_CONTEXT_MISMATCH",
+                    "governance project card does not match the trusted project identity",
+                )
+        try:
+            normalized = json.loads(canonical_json(dict(carrier)))
+        except (TypeError, ValueError) as exc:
+            raise TaskMainContextError(
+                "AUTHORITY_DENIED",
+                "governance context must be bounded plain data",
+            ) from exc
+        from aota_forge.work_plane.role_bootstrap import MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES
+
+        if len(canonical_json(normalized).encode("utf-8")) > MAX_GOVERNANCE_CONTEXT_CARRIER_BYTES:
+            raise TaskMainContextError(
+                "AUTHORITY_DENIED",
+                "governance context exceeds its bounded carrier size",
+            )
+        return normalized
+
     if route.get("plan_id") != plan_binding.plan_id:
         raise TaskMainContextError(
             "PLAN_CONTEXT_MISMATCH",
@@ -297,12 +403,6 @@ def _trusted_governance_context(
             "governance context route source does not match the trusted Plan binding",
         )
 
-    entries = route.get("entries")
-    if not isinstance(entries, list):
-        raise TaskMainContextError(
-            "AUTHORITY_DENIED",
-            "governance context route entries must be a list",
-        )
     authority_entries = [
         entry
         for entry in entries
@@ -394,8 +494,9 @@ def dispatch_task_main_context(
 ) -> ToolResponse:
     """Execute the bounded M1/W1 context contract.
 
-    ``inspect`` is read-only. ``bind`` validates a model locator against the
-    trusted runtime binding but does not resolve or persist anything. ``switch``
+    ``inspect`` is read-only. ``bind`` validates the already materialized
+    trusted Project/optional Plan identity; unbound selector resolution and
+    delegate installation remain composition/transport concerns. ``switch``
     delegates to the composed W4 runtime; bindings without that trusted carrier
     remain unavailable.
     """
@@ -403,6 +504,7 @@ def dispatch_task_main_context(
     if not isinstance(arguments, Mapping):
         return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "arguments must be an object"})
     try:
+        arguments = normalize_context_arguments(arguments)
         mode = arguments.get("mode")
         if not isinstance(mode, str) or mode not in CONTEXT_MODES:
             raise TaskMainContextError("INVALID_MODE", "mode must be inspect, bind, or switch")
@@ -439,7 +541,13 @@ def dispatch_task_main_context(
                 identity,
                 carrier_override=runtime_governance_context,
             )
-            status = "bound" if identity.plan_binding.source_digest is not None else "bound_unverified"
+            if identity.plan_binding is None:
+                status = CONTEXT_STATE_PROJECT_BOUND
+            else:
+                status = "bound" if identity.plan_binding.source_digest is not None else "bound_unverified"
+            session_ref = getattr(binding, "session_ref", None)
+            if not is_bound_origin_session_ref(session_ref):
+                session_ref = None
             return ToolResponse.success(
                 _snapshot(
                     mode,
@@ -447,6 +555,7 @@ def dispatch_task_main_context(
                     binding_status=status,
                     authorized_roots=authorized_roots,
                     governance_context=governance_context,
+                    origin_session_ref=session_ref,
                 )
             )
 
@@ -479,18 +588,27 @@ def dispatch_task_main_context(
         )
 
         if mode == CONTEXT_MODE_BIND:
-            if identity.plan_binding.source_digest is None:
+            if identity.plan_binding is not None and identity.plan_binding.source_digest is None:
                 raise TaskMainContextError(
                     "STALE_CONTEXT",
                     "trusted Plan binding has no observed source digest",
                 )
+            status = (
+                CONTEXT_STATE_PROJECT_BOUND
+                if identity.plan_binding is None
+                else "bound"
+            )
+            session_ref = getattr(binding, "session_ref", None)
+            if not is_bound_origin_session_ref(session_ref):
+                session_ref = None
             return ToolResponse.success(
                 _snapshot(
                     mode,
                     identity,
-                    binding_status="bound",
+                    binding_status=status,
                     authorized_roots=authorized_roots,
                     governance_context=governance_context,
+                    origin_session_ref=session_ref,
                 )
             )
 
@@ -520,6 +638,7 @@ __all__ = [
     "CONTEXT_MODE_SWITCH",
     "CONTEXT_MODES",
     "CONTEXT_OPERATION",
+    "CONTEXT_STATE_PROJECT_BOUND",
     "ContextLocator",
     "LIVE_CONTEXT_SWITCH_IMPLEMENTED",
     "LOCATOR_IS_AUTHORITY",
@@ -533,5 +652,6 @@ __all__ = [
     "TaskMainContextError",
     "TrustedProjectPlanIdentity",
     "dispatch_task_main_context",
+    "normalize_context_arguments",
     "trusted_identity_from_binding",
 ]

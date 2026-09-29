@@ -163,8 +163,31 @@ def derive_switch_eligibility(
                 else:
                     _append_reason(reasons, REASON_UNKNOWN_OR_CORRUPT_STATE)
 
-        if plan_binding.source_digest is None:
+        if plan_binding is None:
+            # Project-only sessions are valid live context states, but the
+            # existing coordinator switch contract remains Plan-required.
             _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
+        else:
+            if plan_binding.source_digest is None:
+                _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
+            if (
+                plan_binding.plan_id != context_binding.plan_binding.plan_id
+                if context_binding is not None
+                else False
+            ):
+                _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
+            if coordinator_state.plan_authority != plan_binding.authority_ref:
+                _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
+            if coordinator_state.plan_digest != plan_binding.source_digest:
+                _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
+            if (coordinator_state.plan_source_revision is None) != (
+                plan_binding.source_revision is None
+            ) or (
+                coordinator_state.plan_source_revision is not None
+                and str(coordinator_state.plan_source_revision)
+                != str(plan_binding.source_revision)
+            ):
+                _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
         if coordinator_state.project_id != identity.project_id:
             _append_reason(reasons, REASON_CROSS_PROJECT_CONTRADICTION)
         if (
@@ -172,25 +195,6 @@ def derive_switch_eligibility(
             and context_binding.project_id != identity.project_id
         ):
             _append_reason(reasons, REASON_CROSS_PROJECT_CONTRADICTION)
-        if (
-            plan_binding.plan_id != context_binding.plan_binding.plan_id
-            if context_binding is not None
-            else False
-        ):
-            _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
-        if coordinator_state.plan_authority != plan_binding.authority_ref:
-            _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
-        if coordinator_state.plan_digest != plan_binding.source_digest:
-            _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
-        if (coordinator_state.plan_source_revision is None) != (
-            plan_binding.source_revision is None
-        ) or (
-            coordinator_state.plan_source_revision is not None
-            and str(coordinator_state.plan_source_revision)
-            != str(plan_binding.source_revision)
-        ):
-            _append_reason(reasons, REASON_STALE_PLAN_AUTHORITY)
-
         root_digest = authorized_roots.digest()
         facts["authorized_root_digest_bound"] = bool(
             context_binding is not None

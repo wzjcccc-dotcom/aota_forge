@@ -1468,6 +1468,18 @@ def _dispatch_tool_operation_inner(
         return ToolResponse.failure(
             {"code": "INPUT_TYPE_INVALID", "message": f"arguments must be object, got {type(arguments).__name__}"}
         )
+    if operation == "task_main.context":
+        try:
+            from aota_forge.core.task_main_context import normalize_context_arguments
+
+            arguments = normalize_context_arguments(arguments)
+        except Exception as exc:
+            return ToolResponse.failure(
+                {
+                    "code": getattr(exc, "code", "INPUT_TYPE_INVALID"),
+                    "message": str(exc)[:512],
+                }
+            )
     try:
         validated = validate_operation_input(descriptor, arguments)
     except ForgeError as exc:
@@ -1601,7 +1613,9 @@ def _dispatch_tool_operation_inner(
         if operation == "task_main.context":
             from aota_forge.core.task_main_context import dispatch_task_main_context
 
-            return dispatch_task_main_context(validated, binding)
+            response = dispatch_task_main_context(validated, binding)
+            _persist_governed_if_needed(binding, response, operation)
+            return response
 
         if operation == "handoff.write":
             sandbox = _require_sandbox(binding)

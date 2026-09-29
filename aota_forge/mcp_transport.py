@@ -49,7 +49,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, TypedDict
 
 from aota_forge.core.context import TrustedContext
@@ -70,6 +70,7 @@ from aota_forge.work_plane.workspace_tools import (
     WorkspaceAuthorityEvidence,
 )
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
+from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.work_plane.tool_result_governance import (
     TOOL_INLINE_OUTPUT_MAX_BYTES,
     project_tool_result,
@@ -1097,6 +1098,11 @@ class _SharedAotaMcpAdapter:
 
 GLOBAL_MCP_ENV = "AOTA_GLOBAL_MCP"
 UNBOUND_HOST_TARGET_DEFAULT = "opencode-unbound-chat"
+UNBOUND_WORKSPACE_ID_ENV = "AOTA_FORGE_WORKSPACE_ID"
+UNBOUND_WORKTREE_ID_ENV = "AOTA_FORGE_WORKTREE_ID"
+UNBOUND_WORKTREE_ROOT_ENV = "AOTA_FORGE_WORKTREE_ROOT"
+UNBOUND_GOVERNANCE_BASE_ENV = "AOTA_FORGE_GOVERNANCE_BASE"
+UNBOUND_GOVERNANCE_STORE_ENV = "AOTA_FORGE_GOVERNANCE_STORE"
 MCP_AVAILABILITY_IS_NOT_AUTHORITY = True
 SESSION_BINDING_REQUIRED_FOR_MCP = False
 UNBOUND_OPERATIONS_REQUIRE_CANONICAL_REFS = True
@@ -1108,6 +1114,27 @@ UNBOUND_OPERATIONS_REQUIRE_CANONICAL_REFS = True
 # AF #59 M2/W2-F: one definition — the same introspection set is part of the
 # canonical Agent-visible operation catalog (INTROSPECTION_OPERATIONS).
 UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = INTROSPECTION_OPERATIONS
+TRUE_UNBOUND_BIND_IMPLEMENTED = True
+PROJECT_ONLY_BIND_IMPLEMENTED = True
+PROJECT_PLAN_BIND_IMPLEMENTED = True
+SAME_SESSION_BIND_MATERIALIZATION = True
+MODEL_SUPPLIES_SESSION_ID = False
+SESSION_ID_IS_AUTHORITY = False
+AUTHORIZED_ROOTS_SERVER_DERIVED = True
+PARTIAL_BIND_VISIBLE = False
+BLIND_RETRY_ALLOWED = False
+NEW_CONTEXT_ENGINE = False
+NEW_SESSION_DB = False
+NEW_AUTHORITY_ENGINE = False
+NEW_MCP_TOOL = False
+
+
+class UnboundBindError(ValueError):
+    """Typed fail-closed same-session activation error."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -1124,12 +1151,30 @@ class UnboundHostContext:
     registry_path: str = ""
     runtime_config_path: str = ""
     origin_session_ref: str = ""
+    workspace_id: str = ""
+    worktree_id: str = ""
+    worktree_root: str = ""
+    governance_base: str = ""
+    governance_store_path: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.repo_root, str) or not self.repo_root.strip():
             raise TrustedBindingError("unbound host context requires a repo_root")
         if len(self.repo_root) > 4096:
             raise TrustedBindingError("unbound host context repo_root exceeds bound")
+        for label in (
+            "registry_path",
+            "runtime_config_path",
+            "origin_session_ref",
+            "workspace_id",
+            "worktree_id",
+            "worktree_root",
+            "governance_base",
+            "governance_store_path",
+        ):
+            value = getattr(self, label)
+            if not isinstance(value, str) or len(value) > 4096 or "\x00" in value:
+                raise TrustedBindingError(f"unbound host context {label} is invalid")
 
 
 class RefScopedHydrateError(ValueError):
@@ -1510,6 +1555,9 @@ class _UnboundAotaAdapter:
     def __init__(self, context: UnboundHostContext) -> None:
         self.context = context
         self._resolver: Any | None = None
+        self._bound_delegate: _SharedAotaMcpAdapter | None = None
+        self._bound_runtime: Any | None = None
+        self._bound_binding: TrustedWorkerBinding | None = None
 
     def _authority_resolver(self) -> Any:
         if self._resolver is None:
@@ -1640,6 +1688,11 @@ class _UnboundAotaAdapter:
         return _project_tool_response(SimpleNamespace(sandbox=sandbox), "result.hydrate", response)
 
     def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
+        if self._bound_delegate is not None:
+            # The MCP server closure retains this exact adapter object.  Once
+            # installed, every subsequent operation uses the canonical bound
+            # delegate without creating a second transport or session.
+            return self._bound_delegate.invoke(operation, arguments)
         from aota_forge.composition.ref_scoped_authority import (
             PLAN_REF_SCOPED_OPERATIONS,
         )
@@ -1729,22 +1782,319 @@ class _UnboundAotaAdapter:
         return _unbound_inline_success("skill.open", dict(payload))
 
     def _invoke_unbound_context(self, arguments: dict[str, Any]) -> McpToolResult:
-        """Expose read-only context inspection without inventing authority."""
-        from aota_forge.core_ingress import CanonicalDispatchBinding, dispatch_tool_operation
+        """Inspect unbound state or atomically materialize one bound delegate."""
+        from aota_forge.core_ingress import (
+            CanonicalDispatchBinding,
+            dispatch_tool_operation,
+            resolve_descriptor,
+            validate_operation_input,
+        )
+        from aota_forge.core.task_main_context import normalize_context_arguments
 
-        response = dispatch_tool_operation(
-            "task_main.context",
-            arguments,
-            CanonicalDispatchBinding(unbound_host_session=True),
+        try:
+            normalized = normalize_context_arguments(arguments)
+            validated = validate_operation_input(
+                resolve_descriptor("task_main.context"), normalized
+            )
+        except ForgeError as exc:
+            return _unbound_governed_error(
+                "task_main.context", getattr(exc, "code", "INPUT_INVALID"), str(exc)
+            )
+        except Exception as exc:
+            return _unbound_governed_error(
+                "task_main.context",
+                getattr(exc, "code", "INPUT_INVALID"),
+                str(exc),
+            )
+
+        if validated.get("mode") != "bind":
+            response = dispatch_tool_operation(
+                "task_main.context",
+                validated,
+                CanonicalDispatchBinding(unbound_host_session=True),
+            )
+            if response.ok:
+                return _unbound_inline_success("task_main.context", dict(response.payload or {}))
+            error = dict(response.error or {})
+            return _unbound_governed_error(
+                "task_main.context",
+                str(error.get("code") or "GOVERNED_OPERATION_FAILURE"),
+                str(error.get("message") or "task-main context failed"),
+            )
+
+        try:
+            return self._bind_unbound_context(validated)
+        except UnboundBindError as exc:
+            return _unbound_governed_error("task_main.context", exc.code, str(exc))
+        except ForgeError as exc:
+            return _unbound_governed_error(
+                "task_main.context", getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"), str(exc)
+            )
+        except Exception as exc:  # noqa: BLE001 - activation fails closed
+            return _unbound_governed_error(
+                "task_main.context",
+                getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"),
+                _bounded_failure_message(str(exc)),
+            )
+
+    def _bind_unbound_context(self, arguments: dict[str, Any]) -> McpToolResult:
+        """Prepare, verify, install and read back one trusted bound delegate."""
+        from aota_forge.composition.unbound_resolution import (
+            materialize_trusted_governance_context,
+            resolve_trusted_unbound_resolution,
         )
-        if response.ok:
-            return _unbound_inline_success("task_main.context", dict(response.payload or {}))
-        error = dict(response.error or {})
-        return _unbound_governed_error(
-            "task_main.context",
-            str(error.get("code") or "GOVERNED_OPERATION_FAILURE"),
-            str(error.get("message") or "task-main context failed"),
+        from aota_forge.composition.thin_task_main_host import compose_thin_task_main_host
+        from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
+        from aota_forge.core.ingress import bind_execution_dispatcher, get_execution_dispatcher
+        from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
+
+        origin_session_ref = self.context.origin_session_ref.strip()
+        if not is_bound_origin_session_ref(origin_session_ref):
+            raise UnboundBindError(
+                "SESSION_RECOVERY_REQUIRED",
+                "same-session bind requires the operator/runtime exact origin_session_ref; "
+                "the unbound placeholder or missing carrier cannot be promoted",
+            )
+        project_selector = arguments.get("project_ref")
+        if not isinstance(project_selector, str) or not project_selector.strip():
+            raise UnboundBindError(
+                "CONTEXT_LOCATOR_REQUIRED",
+                "bind requires project_selector (or legacy project_ref)",
+            )
+
+        registry_path = self.context.registry_path.strip()
+        if not registry_path:
+            raise UnboundBindError(
+                "PROJECT_REGISTRY_REQUIRED",
+                "same-session bind requires the operator registry_path carrier",
+            )
+        plan_selector = arguments.get("plan_ref")
+        if plan_selector is not None and not isinstance(plan_selector, str):
+            raise UnboundBindError("INPUT_TYPE_INVALID", "plan_selector must be a string")
+        if isinstance(plan_selector, str):
+            plan_selector = plan_selector.strip() or None
+
+        resolution = resolve_trusted_unbound_resolution(
+            project_selector,
+            plan_selector,
+            registry_path=registry_path,
+            workspace_id=self.context.workspace_id.strip() or None,
+            governance_base=self.context.governance_base.strip() or None,
+            governance_store_path=self.context.governance_store_path.strip() or None,
         )
+        candidate = resolution.project.candidate
+        if candidate is None:
+            raise UnboundBindError("PROJECT_NOT_FOUND", "trusted Project evidence is not singular")
+
+        previous_dispatcher = get_execution_dispatcher()
+        host: Any | None = None
+        try:
+            worktree_root = self.context.worktree_root.strip() or candidate.project_root
+            worktree_id = self.context.worktree_id.strip() or f"{resolution.project_id}-unbound"
+            plan_binding = resolution.plan_binding
+            plan_bound = plan_binding is not None
+            if plan_bound and (
+                not self.context.governance_base.strip()
+                or not self.context.governance_store_path.strip()
+            ):
+                raise UnboundBindError(
+                    "PLAN_AUTHORITY_SOURCE_UNAVAILABLE",
+                    "Plan-bound bind requires trusted local governance inputs",
+                )
+
+            resolver = self._authority_resolver()
+            host = compose_thin_task_main_host(
+                worktree_root=worktree_root,
+                project_id=resolution.project_id,
+                worktree_id=worktree_id,
+                runtime_config_path=self.context.runtime_config_path.strip(),
+                origin_task_main_session_ref=origin_session_ref,
+                plan_ref=plan_binding.authority_ref if plan_bound else None,
+                source_repository=resolution.project.source_repository or None,
+                registry_path=registry_path,
+                workspace_id=self.context.workspace_id.strip() or None,
+                governance_base=self.context.governance_base.strip() if plan_bound else None,
+                governance_store_path=(
+                    self.context.governance_store_path.strip() if plan_bound else None
+                ),
+                plan_id=plan_binding.plan_id if plan_bound else None,
+                git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
+                git_remote=getattr(resolver, "_git_remote", "") or None,
+            )
+
+            actual_evidence = getattr(host, "project_evidence", None)
+            actual_candidate = getattr(actual_evidence, "candidates", ())
+            if (
+                getattr(actual_evidence, "status", None) != "RESOLVED"
+                or len(actual_candidate) != 1
+                or actual_candidate[0].candidate_fingerprint != candidate.candidate_fingerprint
+                or actual_candidate[0].registry_fingerprint != candidate.registry_fingerprint
+            ):
+                raise UnboundBindError(
+                    "STALE_CONTEXT",
+                    "trusted Project evidence changed before activation",
+                )
+
+            actual_plan_binding = getattr(host.trusted_binding, "plan_authority_binding", None)
+            if plan_bound and actual_plan_binding != plan_binding:
+                raise UnboundBindError(
+                    "STALE_CONTEXT",
+                    "trusted Plan source evidence changed before activation",
+                )
+            if not plan_bound and actual_plan_binding is not None:
+                raise UnboundBindError(
+                    "PLAN_CONTEXT_MISMATCH",
+                    "project-only bind unexpectedly materialized Plan authority",
+                )
+
+            roots = host.trusted_binding.effective_authorized_roots
+            validate_root_set_against_sandbox(roots, host.trusted_binding.sandbox)
+            governance_context = materialize_trusted_governance_context(
+                resolution,
+                binding=host.trusted_binding,
+                authorized_roots=roots,
+                governance_store=getattr(host, "governance_store", None),
+                governance_root=getattr(host, "local_governance_binding", None),
+            )
+            bound_binding = replace(
+                host.trusted_binding,
+                governance_context=governance_context,
+            )
+            delegate = _SharedAotaMcpAdapter(bound_binding)
+            bind_arguments = {"mode": "bind", "project_ref": resolution.project_id}
+            if plan_bound:
+                bind_arguments["plan_ref"] = plan_binding.plan_id
+            bind_result = delegate.invoke("task_main.context", bind_arguments)
+            if not bind_result.get("ok"):
+                error = dict(bind_result.get("error") or {})
+                raise UnboundBindError(
+                    str(error.get("code") or "AUTHORITY_RESOLUTION_FAILED"),
+                    str(error.get("message") or "trusted context bind failed"),
+                )
+
+            # The commit point is the delegate replacement.  The immediately
+            # following inspect is deliberately sent through that installed
+            # canonical delegate, not through a second adapter or direct Core
+            # call.
+            previous_delegate = self._bound_delegate
+            previous_runtime = self._bound_runtime
+            previous_binding = self._bound_binding
+            self._bound_delegate = delegate
+            self._bound_runtime = host
+            self._bound_binding = bound_binding
+            try:
+                readback = self._bound_delegate.invoke(
+                    "task_main.context", {"mode": "inspect"}
+                )
+                readback_payload = self._readback_payload(self._bound_delegate, readback)
+                self._verify_bind_readback(
+                    readback,
+                    payload=readback_payload,
+                    project_id=resolution.project_id,
+                    plan_binding=plan_binding,
+                    origin_session_ref=origin_session_ref,
+                    authorized_roots=roots,
+                )
+            except Exception:
+                self._bound_delegate = previous_delegate
+                self._bound_runtime = previous_runtime
+                self._bound_binding = previous_binding
+                raise
+            return bind_result
+        except Exception:
+            # compose_thin_task_main_host binds the existing Core dispatcher as
+            # part of preparation.  Restore that mechanical carrier whenever
+            # preparation or readback does not reach a verified commit point.
+            bind_execution_dispatcher(previous_dispatcher)
+            if host is not None:
+                self._close_activation_runtime(host)
+            raise
+
+    @staticmethod
+    def _readback_payload(
+        delegate: _SharedAotaMcpAdapter,
+        result: McpToolResult,
+    ) -> dict[str, Any]:
+        payload = result.get("payload")
+        if isinstance(payload, dict):
+            return payload
+        hydration = result.get("hydration")
+        arguments = hydration.get("arguments") if isinstance(hydration, dict) else None
+        if not isinstance(arguments, dict):
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind context readback is malformed")
+        hydrated = delegate.invoke("result.hydrate", arguments)
+        hydrated_payload = hydrated.get("payload")
+        if not hydrated.get("ok") or not isinstance(hydrated_payload, dict):
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind context hydration failed")
+        content = hydrated_payload.get("content")
+        if isinstance(content, str):
+            try:
+                decoded = json.loads(content)
+            except (TypeError, ValueError) as exc:
+                raise UnboundBindError(
+                    "READBACK_MISMATCH", "post-bind context hydration is not canonical JSON"
+                ) from exc
+            if isinstance(decoded, dict):
+                return decoded
+        return hydrated_payload
+
+    @staticmethod
+    def _verify_bind_readback(
+        result: McpToolResult,
+        *,
+        payload: dict[str, Any],
+        project_id: str,
+        plan_binding: Any | None,
+        origin_session_ref: str,
+        authorized_roots: Any,
+    ) -> None:
+        if not result.get("ok"):
+            error = dict(result.get("error") or {})
+            raise UnboundBindError(
+                "READBACK_MISMATCH",
+                str(error.get("message") or "post-bind context inspect failed"),
+            )
+        context = payload.get("context")
+        if not isinstance(context, dict):
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind context readback is malformed")
+        expected_state = "bound" if plan_binding is not None else "project_bound"
+        if payload.get("state") != expected_state:
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind context state differs")
+        if context.get("project_id") != project_id:
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind Project differs")
+        if payload.get("origin_session_ref") != origin_session_ref:
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind origin session differs")
+        if plan_binding is None:
+            if context.get("plan_id") is not None or context.get("authority_binding") is not None:
+                raise UnboundBindError(
+                    "READBACK_MISMATCH",
+                    "project-only readback carries unexpected Plan authority",
+                )
+        else:
+            authority = context.get("authority_binding")
+            if (
+                context.get("plan_id") != plan_binding.plan_id
+                or not isinstance(authority, dict)
+                or authority.get("authority_ref") != plan_binding.authority_ref
+                or authority.get("source_revision") != plan_binding.source_revision
+                or authority.get("source_digest") != plan_binding.source_digest
+            ):
+                raise UnboundBindError("READBACK_MISMATCH", "post-bind Plan evidence differs")
+        if context.get("authorized_roots") != authorized_roots.public_roots():
+            raise UnboundBindError("READBACK_MISMATCH", "post-bind authorized roots differ")
+
+    @staticmethod
+    def _close_activation_runtime(host: Any) -> None:
+        for resource in (
+            getattr(host, "governance_store", None),
+            getattr(host, "execution_store", None),
+        ):
+            close = getattr(resource, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
 
     def _invoke_unbound_help(self, arguments: dict[str, Any]) -> McpToolResult:
         """Read-only exact operation contract reader (AF #59 M2/W2-E).
@@ -2057,6 +2407,24 @@ __all__ = [
     "create_unbound_mcp_server",
     "UnboundHostContext",
     "GLOBAL_MCP_ENV",
+    "UNBOUND_WORKSPACE_ID_ENV",
+    "UNBOUND_WORKTREE_ID_ENV",
+    "UNBOUND_WORKTREE_ROOT_ENV",
+    "UNBOUND_GOVERNANCE_BASE_ENV",
+    "UNBOUND_GOVERNANCE_STORE_ENV",
+    "TRUE_UNBOUND_BIND_IMPLEMENTED",
+    "PROJECT_ONLY_BIND_IMPLEMENTED",
+    "PROJECT_PLAN_BIND_IMPLEMENTED",
+    "SAME_SESSION_BIND_MATERIALIZATION",
+    "MODEL_SUPPLIES_SESSION_ID",
+    "SESSION_ID_IS_AUTHORITY",
+    "AUTHORIZED_ROOTS_SERVER_DERIVED",
+    "PARTIAL_BIND_VISIBLE",
+    "BLIND_RETRY_ALLOWED",
+    "NEW_CONTEXT_ENGINE",
+    "NEW_SESSION_DB",
+    "NEW_AUTHORITY_ENGINE",
+    "NEW_MCP_TOOL",
     "MCP_AVAILABILITY_IS_NOT_AUTHORITY",
     "SESSION_BINDING_REQUIRED_FOR_MCP",
     "UNBOUND_READ_INTROSPECTION_OPERATIONS",

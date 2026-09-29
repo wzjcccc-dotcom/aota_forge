@@ -1314,6 +1314,13 @@ async def _serve_mcp_child() -> None:
             registry_path=os.environ.get("AOTA_FORGE_REGISTRY", "").strip(),
             runtime_config_path=os.environ.get("AOTA_FORGE_RUNTIME_CONFIG", "").strip(),
             origin_session_ref=os.environ.get("AOTA_MCP_ORIGIN_SESSION_REF", "").strip(),
+            workspace_id=os.environ.get(mcp_transport.UNBOUND_WORKSPACE_ID_ENV, "").strip(),
+            worktree_id=os.environ.get(mcp_transport.UNBOUND_WORKTREE_ID_ENV, "").strip(),
+            worktree_root=os.environ.get(mcp_transport.UNBOUND_WORKTREE_ROOT_ENV, "").strip(),
+            governance_base=os.environ.get(mcp_transport.UNBOUND_GOVERNANCE_BASE_ENV, "").strip(),
+            governance_store_path=os.environ.get(
+                mcp_transport.UNBOUND_GOVERNANCE_STORE_ENV, ""
+            ).strip(),
         )
         server = mcp_transport.create_unbound_mcp_server(context)
         await server.run_stdio_async()

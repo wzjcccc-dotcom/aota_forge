@@ -337,6 +337,125 @@ def resolve_trusted_unbound_resolution(
     )
 
 
+def materialize_trusted_governance_context(
+    resolution: TrustedUnboundResolution,
+    *,
+    binding: object,
+    authorized_roots: object,
+    governance_store: object | None = None,
+    governance_root: LocalGovernanceRootBinding | None = None,
+) -> dict[str, object]:
+    """Build the existing Cards/ContextRoute projection from trusted facts.
+
+    This is a projection-only step.  Project/Plan authority remains owned by
+    the resolver and runtime binding; the returned mapping is explicitly
+    non-authoritative and is consumed by the existing role/bootstrap path.
+    """
+    from aota_forge.governance.context_route import build_bootstrap_governance_context
+    from aota_forge.governance.projection import (
+        GovernanceProjectionEngine,
+        GovernanceProjectionInput,
+        plan_document_input,
+    )
+    from aota_forge.work_plane.authorized_roots import AuthorizedRootSet
+
+    if not isinstance(resolution, TrustedUnboundResolution):
+        raise PlanAuthorityCompositionError("trusted unbound resolution is required")
+    if not isinstance(authorized_roots, AuthorizedRootSet):
+        raise PlanAuthorityCompositionError("trusted AuthorizedRootSet is required")
+
+    plan_record = resolution.plan_record
+    plan_binding = getattr(binding, "plan_authority_binding", None)
+    plan_documents: tuple[object, ...] = ()
+    governance_root_refs: tuple[str, ...] = ()
+    if plan_record is not None:
+        if governance_store is None or not isinstance(governance_root, LocalGovernanceRootBinding):
+            raise PlanAuthorityCompositionError(
+                "Plan-bound projection requires the trusted local governance store and root"
+            )
+        if not isinstance(plan_binding, PlanAuthorityBinding):
+            raise PlanAuthorityCompositionError("Plan-bound runtime binding is missing")
+        current_record = governance_store.get_plan(resolution.project_id, plan_record.plan_id)  # type: ignore[attr-defined]
+        if current_record is None or current_record != plan_record:
+            raise PlanAuthorityCompositionError(
+                "Project Governance record changed during context materialization",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
+        if current_record.authority != plan_binding:
+            raise PlanAuthorityCompositionError(
+                "runtime Plan authority differs from the trusted Project record",
+                code=PLAN_AUTHORITY_COMPOSITION_INVALID,
+            )
+        destination = LocalPlanAuthorityDestination(
+            governance_root,
+            plan_record.plan_id,
+            object_ref_subject(
+                make_id(IdKind.SUBJECT, plan_record.plan_id, sub_kind=SubjectKind.PLAN)
+            ),
+        )
+        reader = LocalPlanAuthorityReadAdapter(destination, binding=current_record.authority)
+        snapshot = reader.load()
+        if (
+            snapshot.revision != plan_binding.source_revision
+            or snapshot.digest != plan_binding.source_digest
+        ):
+            raise PlanAuthorityCompositionError(
+                "Plan source changed during context materialization",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
+        document = load_local_portable_plan(reader)
+        plan_documents = (
+            plan_document_input(
+                plan_id=plan_record.plan_id,
+                document=document,
+                title=getattr(document, "title", None),
+                current_milestone=getattr(document, "current_milestone", None),
+                authority=current_record.authority,
+            ),
+        )
+        governance_root_refs = ("local-governance",)
+
+    candidate = resolution.project.candidate
+    if candidate is None:
+        raise PlanAuthorityCompositionError("trusted Project candidate is missing")
+    source = GovernanceProjectionInput(
+        project_id=resolution.project_id,
+        project_ref=f"project:{resolution.project_id}",
+        project_status=candidate.status,
+        governance_root_refs=governance_root_refs,
+        # None explicitly means the Project plan inventory was not read for a
+        # project-only bind; it is not an assertion that no Plans exist.
+        plan_records=(plan_record,) if plan_record is not None else None,
+        plan_documents=plan_documents,
+    )
+    bundle = GovernanceProjectionEngine().rebuild(source)
+    root_refs = tuple(
+        (root.root_ref, tuple(sorted(root.capabilities)))
+        for root in authorized_roots.roots
+    )
+    return build_bootstrap_governance_context(
+        project_id=resolution.project_id,
+        plan_id=plan_binding.plan_id if isinstance(plan_binding, PlanAuthorityBinding) else None,
+        authority_source_kind=(
+            plan_binding.source_kind if isinstance(plan_binding, PlanAuthorityBinding) else None
+        ),
+        authority_ref=(
+            plan_binding.authority_ref if isinstance(plan_binding, PlanAuthorityBinding) else None
+        ),
+        authority_revision=(
+            str(plan_binding.source_revision)
+            if isinstance(plan_binding, PlanAuthorityBinding)
+            and plan_binding.source_revision is not None
+            else None
+        ),
+        authority_digest=(
+            plan_binding.source_digest if isinstance(plan_binding, PlanAuthorityBinding) else None
+        ),
+        bundle=bundle,
+        authorized_root_refs=root_refs,
+    )
+
+
 __all__ = [
     "TRUSTED_PROJECT_SELECTOR_RESOLUTION_IMPLEMENTED",
     "TRUSTED_OPTIONAL_PLAN_SELECTOR_RESOLUTION_IMPLEMENTED",
@@ -358,5 +477,6 @@ __all__ = [
     "PLAN_AMBIGUOUS",
     "UnboundResolutionError",
     "TrustedUnboundResolution",
+    "materialize_trusted_governance_context",
     "resolve_trusted_unbound_resolution",
 ]
