@@ -1612,7 +1612,7 @@ class _UnboundAotaAdapter:
             host: Any | None = None
             try:
                 resolver = self._authority_resolver()
-                host, bound_binding, roots = recompose_trusted_context_from_evidence(
+                host, bound_binding, roots, current_binding = recompose_trusted_context_from_evidence(
                     durable_binding=durable_binding,
                     origin_session_ref=origin_session_ref,
                     registry_path=self.context.registry_path.strip(),
@@ -1631,21 +1631,24 @@ class _UnboundAotaAdapter:
                 self._verify_bind_readback(
                     readback,
                     payload=readback_payload,
-                    project_id=durable_binding.project_id,
-                    plan_binding=durable_binding.plan_binding,
+                    project_id=current_binding.project_id,
+                    plan_binding=current_binding.plan_binding,
                     origin_session_ref=origin_session_ref,
                     authorized_roots=roots,
                 )
                 durable_readback = FileBackedTaskMainContextBindingProjection(
                     projection_path
-                ).get_for_session(origin_session_ref)
+                ).refresh_for_session(
+                    expected_binding_digest=durable_binding.binding_digest,
+                    replacement=current_binding,
+                )
                 if (
                     durable_readback is None
-                    or durable_readback.binding_digest != durable_binding.binding_digest
+                    or durable_readback.binding_digest != current_binding.binding_digest
                 ):
                     raise ContextBindingError(
                         "CONTEXT_BINDING_PERSISTENCE_FAILED",
-                        "durable context evidence readback changed during resume",
+                        "durable context evidence refresh readback did not match current authority",
                     )
                 # Install only after live authority and inspect readback pass.
                 self._bound_delegate = delegate

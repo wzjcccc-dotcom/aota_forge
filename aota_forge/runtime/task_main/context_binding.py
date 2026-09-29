@@ -23,6 +23,9 @@ CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY = False
 CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION = 1
 CONTEXT_BINDING_PROJECTION_FILENAME = "task-main-context-bindings.json"
 CONTEXT_BINDING_PROJECTION_IS_AUTHORITY = False
+DURABLE_SOURCE_DIGEST_IS_AUTHORITY = False
+DURABLE_SOURCE_REVISION_IS_AUTHORITY = False
+ROOT_AUTHORITY_AUTO_EXPANSION = False
 MAX_CONTEXT_BINDING_PROJECTION_RECORDS = 64
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -217,6 +220,37 @@ class DurableTaskMainContextBinding:
             raise ContextBindingError(
                 "AUTHORITY_DENIED",
                 "durable authorized-root evidence differs from the current trusted binding",
+            )
+
+    def assert_resume_identity_compatible(
+        self, current: "DurableTaskMainContextBinding"
+    ) -> None:
+        """Compare only immutable identity for a trusted resume refresh.
+
+        Source revision/digest are observations from an earlier authority read,
+        not leases that prevent a later canonical Plan lifecycle advancement.
+        Authorized roots remain a separate exact compatibility check.
+        """
+        if not isinstance(current, DurableTaskMainContextBinding):
+            raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "current context binding is invalid")
+        if self.project_id != current.project_id or self.project_fingerprint != current.project_fingerprint:
+            raise ContextBindingError(
+                "PROJECT_CONTEXT_MISMATCH",
+                "durable context binding project identity differs from the current trusted identity",
+            )
+        if self.origin_task_main_session_ref != current.origin_task_main_session_ref:
+            raise ContextBindingError(
+                "SESSION_RECOVERY_REQUIRED",
+                "exact task-main session differs from durable context binding",
+            )
+        if (
+            self.plan_binding.plan_id != current.plan_binding.plan_id
+            or self.plan_binding.source_kind != current.plan_binding.source_kind
+            or self.plan_binding.authority_ref != current.plan_binding.authority_ref
+        ):
+            raise ContextBindingError(
+                "PLAN_CONTEXT_MISMATCH",
+                "durable Plan identity differs from the current trusted binding",
             )
 
     def assert_live_plan(
@@ -472,6 +506,63 @@ class FileBackedTaskMainContextBindingProjection:
                 )
             return readback
 
+    def refresh_for_session(
+        self,
+        *,
+        expected_binding_digest: str,
+        replacement: DurableTaskMainContextBinding,
+    ) -> DurableTaskMainContextBinding:
+        """CAS-replace historical evidence for one exact session.
+
+        The current record must still be the record observed by the caller.
+        Only source observations may advance; immutable identity and authorized
+        roots must remain unchanged. The replacement is committed atomically
+        and verified by a fresh readback.
+        """
+        expected_digest = _digest(expected_binding_digest, "expected_binding_digest")
+        if not isinstance(replacement, DurableTaskMainContextBinding):
+            raise ContextBindingError(
+                "CONTEXT_BINDING_CORRUPT",
+                "only a typed DurableTaskMainContextBinding may replace durable evidence",
+            )
+        with self._lock:
+            records = self._read()
+            matches = [
+                record
+                for record in records
+                if record.origin_task_main_session_ref
+                == replacement.origin_task_main_session_ref
+            ]
+            if len(matches) != 1:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "exact task-main session must have exactly one durable context binding",
+                )
+            current = matches[0]
+            if current.binding_digest != expected_digest:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "durable context binding changed before the CAS refresh",
+                )
+            current.assert_resume_identity_compatible(replacement)
+            if current.authorized_roots_digest != replacement.authorized_roots_digest:
+                raise ContextBindingError(
+                    "AUTHORITY_DENIED",
+                    "authorized-root evidence cannot change during a resume refresh",
+                )
+            replaced = [
+                replacement if record is current else record
+                for record in records
+            ]
+            self._persist(replaced)
+            readback = self.get_for_session(replacement.origin_task_main_session_ref)
+            if readback is None or readback.binding_digest != replacement.binding_digest:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "durable context binding refresh readback did not match the replacement",
+                )
+            return readback
+
 
 def context_binding_projection_path(project_root: str | Path) -> Path:
     """Return the fixed project-scoped projection path."""
@@ -555,7 +646,10 @@ __all__ = [
     "CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION",
     "CONTEXT_BINDING_SCHEMA_VERSION",
     "DURABLE_CONTEXT_BINDING_IS_AUTHORITY",
+    "DURABLE_SOURCE_DIGEST_IS_AUTHORITY",
+    "DURABLE_SOURCE_REVISION_IS_AUTHORITY",
     "MAX_CONTEXT_BINDING_PROJECTION_RECORDS",
+    "ROOT_AUTHORITY_AUTO_EXPANSION",
     "ContextBindingError",
     "DurableTaskMainContextBinding",
     "FileBackedTaskMainContextBindingProjection",

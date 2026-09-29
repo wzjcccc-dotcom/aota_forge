@@ -299,6 +299,16 @@ def _resolve_plan_selector(
                 "selected local Plan source changed during trusted read",
                 code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
             )
+        current_record = store.get_plan(project.project_id, record.plan_id)
+        if (
+            current_record is None
+            or current_record != record
+            or current_record.lifecycle_state != PLAN_LIFECYCLE_ACTIVE
+        ):
+            raise PlanAuthorityCompositionError(
+                "selected local Plan governance record changed during trusted read",
+                code=PLAN_AUTHORITY_SOURCE_UNAVAILABLE,
+            )
         return record, binding
     finally:
         store.close()
@@ -351,7 +361,7 @@ def recompose_trusted_context_from_evidence(
     governance_store_path: Path | str | None,
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
-) -> tuple[Any, Any, Any]:
+) -> tuple[Any, Any, Any, DurableTaskMainContextBinding]:
     """Re-resolve live authority and compose a fresh thin bound runtime.
 
     ``durable_binding`` is only a locator/evidence record. The Project
@@ -459,7 +469,12 @@ def recompose_trusted_context_from_evidence(
             origin_task_main_session_ref=origin_session_ref,
             authorized_roots_digest=roots.digest(),
         )
-        durable_binding.assert_compatible(current_binding)
+        durable_binding.assert_resume_identity_compatible(current_binding)
+        if durable_binding.authorized_roots_digest != current_binding.authorized_roots_digest:
+            raise ContextBindingError(
+                "AUTHORITY_DENIED",
+                "trusted AuthorizedRootSet differs from durable context evidence",
+            )
         governance_context = materialize_trusted_governance_context(
             resolution,
             binding=host.trusted_binding,
@@ -471,7 +486,7 @@ def recompose_trusted_context_from_evidence(
             host.trusted_binding,
             governance_context=governance_context,
         )
-        return host, bound_binding, roots
+        return host, bound_binding, roots, current_binding
     except Exception:
         for resource in (
             getattr(host, "governance_store", None),
