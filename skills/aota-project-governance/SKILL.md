@@ -24,6 +24,12 @@ PROJECT_STEWARD_IS_NORMAL_WORKER=no
 
 ## Authority and modes
 
+Project governance may be reached from the ordinary unbound task-main session;
+pre-bound launch is not required. Use the canonical `task_main.context` bind path when the
+user chooses governed execution, then use this Skill for the Project intake
+procedure. The semantic selector is not Project authority, and this Skill never
+grants it. This Skill is guidance, not authority.
+
 - The manifest and trusted Project Registry establish Project identity and physical registration.
 - `root_ref` is a trusted capability reference, not a filesystem path or a user-granted authority token.
 - `governance.project` is the single Agent-facing intake family. Its modes are `init`, `inspect`, and `reconcile`.

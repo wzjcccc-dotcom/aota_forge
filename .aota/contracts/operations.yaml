@@ -737,10 +737,14 @@ contracts:
   - INPUT_SIZE_EXCEEDED
   protocol_version: '1.0'
 - name: task_main.context
-  description: Canonical task-main Project/Plan context contract; inspect and bind validate trusted runtime identity, while switch composes the guarded durable W4 transition when the trusted runtime carrier is present
+  description: Canonical task-main Project/Plan context contract; inspect reports unbound, project-bound, or Plan-bound state; bind from an ordinary unbound session resolves project_selector and optional plan_selector through trusted AF resolution and continues the same session, while bind on an existing trusted session validates the current binding; switch composes the guarded durable transition when the trusted runtime carrier is present; selectors and legacy refs are locators, never authority
   inputs:
   - name: mode
     type: str
+  - name: project_selector
+    type: str?
+  - name: plan_selector
+    type: str?
   - name: project_ref
     type: str?
   - name: plan_ref

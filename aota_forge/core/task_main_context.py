@@ -189,7 +189,10 @@ def normalize_context_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
                     f"{canonical} conflicts with legacy {legacy}",
                 )
         if has_canonical:
-            normalized[legacy] = normalized[canonical]
+            # A null canonical selector means "not supplied"; do not erase a
+            # simultaneously supplied compatibility alias.
+            if normalized[canonical] is not None:
+                normalized[legacy] = normalized[canonical]
             normalized.pop(canonical, None)
     return normalized
 
@@ -494,11 +497,11 @@ def dispatch_task_main_context(
 ) -> ToolResponse:
     """Execute the bounded M1/W1 context contract.
 
-    ``inspect`` is read-only. ``bind`` validates the already materialized
-    trusted Project/optional Plan identity; unbound selector resolution and
-    delegate installation remain composition/transport concerns. ``switch``
-    delegates to the composed W4 runtime; bindings without that trusted carrier
-    remain unavailable.
+    ``inspect`` is read-only. The unbound transport composes trusted selector
+    resolution and delegate installation; once that trusted binding reaches
+    this Core boundary, ``bind`` validates its Project/optional Plan identity.
+    ``switch`` delegates to the composed W4 runtime; bindings without that
+    trusted carrier remain unavailable.
     """
 
     if not isinstance(arguments, Mapping):
@@ -567,7 +570,7 @@ def dispatch_task_main_context(
         if not locator.has_target:
             raise TaskMainContextError(
                 "CONTEXT_LOCATOR_REQUIRED",
-                f"{mode} requires project_ref or plan_ref",
+                f"{mode} requires project_selector/project_ref or plan_selector/plan_ref",
             )
 
         if mode == CONTEXT_MODE_SWITCH and switch_runtime is not None:

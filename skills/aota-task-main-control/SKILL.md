@@ -25,18 +25,30 @@ GUIDANCE_ADVERTISES_UNAVAILABLE_OPERATION=no
 ## Session model (current truth)
 
 ```text
-ordinary task-main session = unbound
-local Project/Plan identity = per-operation Governance 2.0 context
+new ordinary task-main session = unbound
+role.bootstrap -> task_main.context(inspect) -> unbound
+discussion / analysis / planning may continue while unbound
+user chooses governed execution -> task_main.context(bind, project_selector, plan_selector?)
+trusted AF resolution activates the same session
+bound task-main session = current trusted Project/optional Plan context
 legacy plan_ref = compatibility locator (owner/repo#number)
 task_main.context = inspect | bind | switch
 trusted runtime carrier = context identity + authorized roots
 plan_ref != authority
+project_selector != authority
+plan_selector != authority
 session != authority
 directory != authority
 profile != authority
 model != authority
 locator != authority
 ```
+
+An ordinary unbound session may establish trusted context through the existing
+`task_main.context` bind path; it does not need a pre-bound launcher. The model
+supplies semantic selectors only. AF resolves them, derives the trusted binding,
+and keeps the same session/adapter alive. A selector or legacy ref never mints
+Project, Plan, root, approval, or session authority.
 
 `role.bootstrap` is the normal startup guidance/capability discovery
 (`ROLE_BOOTSTRAP_NORMAL_STARTUP=yes`); it is **not** a mechanical gate, not a
@@ -144,6 +156,14 @@ Never delegate governance to a project-steward child in the normal path.
 ## Routing table (base Skill owns this)
 
 ```text
+New task-main session
+  -> role.bootstrap
+  -> task_main.context(mode=inspect)
+  -> discuss / analyze / plan while unbound
+  -> when governed execution is chosen:
+     task_main.context(mode=bind, project_selector, optional plan_selector)
+  -> continue in the same session
+
 Ensure Project / local Plan context
   -> governance.project / governance.plan                 (Governance 2.0 normal path)
   -> open aota-project-governance or aota-plan-governance as needed
@@ -210,8 +230,12 @@ UNKNOWN_INPUT / INPUT_TYPE_INVALID
 
 Repeat the loop until the Milestone is genuinely done or a real gate stops you:
 
-  1. Ensure the Project and local Plan context with `governance.project` /
-    `governance.plan` when needed. Read local evidence with `workspace.read` /
+   1. Start with `role.bootstrap` and `task_main.context(mode=inspect)`. Discuss,
+     analyze, and plan while the session is unbound. When the user chooses
+     governed execution, bind with semantic `project_selector` and optional
+     `plan_selector`; trusted AF resolution activates the same session. Then
+     ensure the Project and local Plan context with `governance.project` /
+     `governance.plan` when needed. Read local evidence with `workspace.read` /
     `workspace.search` through the trusted authorized-root capability; use the
     local Plan authority and generated cards/refs to orient, never to invent
     authority. Plan authority is read through `governance.plan`, not

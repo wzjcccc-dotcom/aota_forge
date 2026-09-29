@@ -27,6 +27,14 @@ DETERMINISTIC_FIRST_STEWARDSHIP=yes
 
 ## Normal Governance 2.0 path
 
+An ordinary task-main session does not need to be pre-bound. Start with
+`role.bootstrap` and `task_main.context(mode=inspect)`; discussion and planning
+may remain unbound. When the user chooses governed execution, the existing
+`task_main.context(mode=bind)` path accepts semantic Project/optional Plan
+selectors, and trusted AF resolution activates the same session. Selectors and
+refs locate trusted records; they never mint authority. This Skill remains
+guidance, not authority.
+
 For `authority_kind=local_governance`, use this semantic loop:
 
 ```text

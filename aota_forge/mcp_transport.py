@@ -50,6 +50,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Callable, TypedDict
 
 from aota_forge.core.context import TrustedContext
@@ -1028,6 +1029,16 @@ class _SharedAotaMcpAdapter:
         if operation in INTROSPECTION_OPERATIONS:
             return self._invoke_bound_introspection(operation, arguments)
         if operation in GOVERNANCE_OPERATIONS:
+            if (
+                operation == "governance.plan"
+                and getattr(self.binding, "plan_authority_binding", None) is None
+            ):
+                return _governed_error(
+                    self.binding,
+                    operation,
+                    "AUTHORITY_DENIED",
+                    "governance.plan requires a trusted Plan context; project-only context cannot infer a Plan",
+                )
             return _invoke_core_ingress(self.binding, operation, arguments)
         # Canonical dispatch via Core (owns validation + provider selection).
         try:
@@ -1407,6 +1418,7 @@ _HELP_RELEVANT_SKILLS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("result.hydrate",), "aota-result-hydration@1.0.0"),
     (("handoff.",), "aota-task-main-control@1.0.0"),
     (("task.start", "task.return"), "aota-task-main-control@1.0.0"),
+    (("task_main.context",), "aota-task-main-control@1.0.0"),
     (("role.bootstrap", "skill.open", HELP_OPERATION), "aota-task-main-control@1.0.0"),
     (("operations.list", "host.status", "runtime.status"), "aota-task-main-control@1.0.0"),
     (("governance.project",), "aota-project-governance@1.0.0"),
@@ -1902,6 +1914,26 @@ class _UnboundAotaAdapter:
                     "Plan-bound bind requires trusted local governance inputs",
                 )
 
+            project_governance_context = None
+            if (
+                not plan_bound
+                and self.context.governance_base.strip()
+                and registry_path
+            ):
+                from aota_forge.governance.intake import GovernanceIntakeContext
+
+                project_candidate = candidate
+                project_governance_context = GovernanceIntakeContext(
+                    workspace_id=str(getattr(project_candidate, "workspace_id", "") or resolution.project_id),
+                    governance_base=self.context.governance_base.strip(),
+                    registry_path=registry_path,
+                    workspace_root=str(getattr(project_candidate, "workspace_root", "") or "") or None,
+                    project_root=str(getattr(project_candidate, "project_root", "") or worktree_root),
+                    governance_store_path=self.context.governance_store_path.strip() or None,
+                    journal_path=str(Path(getattr(project_candidate, "project_root", worktree_root)) / ".aota" / "governance-journal.json"),
+                    source_repository=resolution.project.source_repository or "",
+                )
+
             resolver = self._authority_resolver()
             host = compose_thin_task_main_host(
                 worktree_root=worktree_root,
@@ -1918,6 +1950,7 @@ class _UnboundAotaAdapter:
                     self.context.governance_store_path.strip() if plan_bound else None
                 ),
                 plan_id=plan_binding.plan_id if plan_bound else None,
+                governance_intake_context=project_governance_context,
                 git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
                 git_remote=getattr(resolver, "_git_remote", "") or None,
             )

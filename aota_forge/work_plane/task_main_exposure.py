@@ -35,10 +35,14 @@ PLAN_REF_SCOPED_OPERATIONS: frozenset[str] = frozenset(
     }
 )
 
-# Operations that are reachable in an ordinary host session without any
-# Plan/task binding (guidance, hydration, introspection, the contract reader).
+# Operations that are visible in an ordinary host session without any
+# Plan/task binding. Visibility is not authority: governance operations are
+# intentionally listed here so the model can discover their canonical
+# contracts, while the unbound transport still denies their execution.
 TASK_MAIN_UNBOUND_EXTRAS: frozenset[str] = frozenset(
     {
+        "governance.plan",
+        "governance.project",
         "help",
         "host.status",
         "operations.list",

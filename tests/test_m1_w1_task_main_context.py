@@ -48,7 +48,13 @@ def test_context_descriptor_and_exposure_use_the_canonical_contract() -> None:
     descriptor = resolve_descriptor("task_main.context")
 
     assert descriptor.name == "task_main.context"
-    assert {item.name for item in descriptor.inputs} == {"mode", "project_ref", "plan_ref"}
+    assert {item.name for item in descriptor.inputs} == {
+        "mode",
+        "project_selector",
+        "plan_selector",
+        "project_ref",
+        "plan_ref",
+    }
     assert descriptor.read_write == "read"
     assert descriptor.required_authority == "trusted_project_plan_binding"
     assert CONTEXT_OPERATIONS == ("task_main.context",)

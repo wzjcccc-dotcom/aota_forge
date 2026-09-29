@@ -547,6 +547,7 @@ def compose_thin_task_main_host(
     evidence_base: str | PathLike[str] | None = None,
     plan_id: str | None = None,
     governance_context: Mapping[str, Any] | None = None,
+    governance_intake_context: Any | None = None,
     governance_store_path: str | PathLike[str] | None = None,
     plan_authority_reader: Any | None = None,
     context_switch_runtime: Any | None = None,
@@ -683,8 +684,11 @@ def compose_thin_task_main_host(
                 f"thin host governed-read activation failed: {exc}"
             ) from exc
 
-    governance_intake_context: Any | None = None
-    if local_governance_binding is not None and registry_path is not None:
+    if (
+        governance_intake_context is None
+        and local_governance_binding is not None
+        and registry_path is not None
+    ):
         try:
             from importlib import import_module
 

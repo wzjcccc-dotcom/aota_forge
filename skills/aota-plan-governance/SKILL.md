@@ -25,6 +25,12 @@ PLAN_AMEND_SECOND_MUTATION_PATH=no
 
 ## Authority distinction
 
+Plan governance may follow an ordinary unbound task-main discussion; a
+pre-bound session is not required. When the user chooses governed execution,
+use the existing `task_main.context` bind path with semantic Project/optional
+Plan selectors. Trusted AF resolution establishes the binding; this Skill and
+its selectors remain guidance/locators, never authority.
+
 - `project_id` identifies the trusted Project; `plan_id` identifies the canonical local Plan.
 - A human Plan number and a legacy GitHub Issue number are not the canonical local `plan_id`.
 - `plan.md` plus the durable journal/CAS is local Plan authority. Cards, ContextRoute, MAP and STATUS are derived navigation/projections.
