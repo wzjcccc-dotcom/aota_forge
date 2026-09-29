@@ -250,6 +250,95 @@ def resolve_project_across_workspaces(
     )
 
 
+def resolve_project_selector_across_workspaces(
+    registry_path: Path,
+    selector: str,
+    *,
+    workspace_id: str | None = None,
+) -> ProjectResolutionEvidence:
+    """Resolve one exact Project selector against trusted registry evidence.
+
+    Canonical ``project_id`` matches take precedence over the already
+    registered manifest ``name`` field. Both comparisons are exact; names
+    never introduce fuzzy matching, ranking, or path inference.
+    """
+    if not isinstance(selector, str) or not selector.strip():
+        raise ProjectNotFoundError("project selector is required")
+    selector = selector.strip()
+    if len(selector) > 256 or "\x00" in selector:
+        raise ProjectNotFoundError("project selector is not bounded")
+
+    registry = load_workspace_registry(registry_path)
+    workspace_ids = [workspace_id] if workspace_id is not None else sorted(registry)
+    if workspace_id is not None and workspace_id not in registry:
+        raise ProjectNotFoundError(f"unknown workspace_id: {workspace_id}")
+
+    per_workspace: list[tuple[str, str]] = []
+    listing_per_workspace: list[tuple[str, str]] = []
+    scanned_records: list[tuple[str, Path, dict[str, Any]]] = []
+    for current_workspace_id in workspace_ids:
+        root = resolve_workspace(current_workspace_id, registry_path)
+        complete = scan_projects(root, limit=None)
+        per_workspace.append(
+            (
+                current_workspace_id,
+                fingerprint_registry(
+                    current_workspace_id,
+                    complete["projects"],
+                    complete["invalid"],
+                ),
+            )
+        )
+        listing_per_workspace.append(
+            (
+                current_workspace_id,
+                fingerprint_registry(
+                    current_workspace_id,
+                    complete["projects"][:MAX_RESULTS],
+                    complete["invalid"][:MAX_RESULTS],
+                ),
+            )
+        )
+        scanned_records.extend(
+            (current_workspace_id, root, record) for record in complete["projects"]
+        )
+
+    id_matches = [item for item in scanned_records if item[2]["project_id"] == selector]
+    matches = id_matches or [item for item in scanned_records if item[2]["name"] == selector]
+    matches.sort(key=lambda item: (item[0], str(item[1] / item[2]["root"])))
+    candidates = tuple(
+        ProjectCandidateEvidence(
+            workspace_id=current_workspace_id,
+            workspace_root=str(root),
+            project_id=record["project_id"],
+            project_root=str(root / record["root"]) if record["root"] != "." else str(root),
+            manifest_path=record["manifest_path"],
+            name=record["name"],
+            kind=record["kind"],
+            status=record["status"],
+            registry_fingerprint=dict(per_workspace).get(current_workspace_id, ""),
+            candidate_fingerprint=_candidate_fingerprint(record),
+        )
+        for current_workspace_id, root, record in matches
+    )
+    status = (
+        "PROJECT_NOT_FOUND"
+        if not candidates
+        else "RESOLVED"
+        if len(candidates) == 1
+        else "NEEDS_SEMANTIC_CHOICE"
+    )
+    resolved = candidates[0] if status == "RESOLVED" else None
+    return ProjectResolutionEvidence(
+        status=status,
+        workspace_id=resolved.workspace_id if resolved is not None else "",
+        workspace_root=resolved.workspace_root if resolved is not None else "",
+        registry_fingerprint=_combined_registry_fingerprint(per_workspace),
+        listing_fingerprint=_combined_registry_fingerprint(listing_per_workspace),
+        candidates=candidates,
+    )
+
+
 def load_workspace_registry(registry_path: Path) -> dict[str, Any]:
     """Load the workspace registry with bounded parsing.
 
