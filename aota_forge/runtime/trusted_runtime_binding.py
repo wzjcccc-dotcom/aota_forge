@@ -85,6 +85,9 @@ class TrustedBindingError(ValueError):
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+# Canonical task identities may carry structured Work identity separators. They
+# remain bounded mechanical identity, not filesystem paths or authority.
+_SAFE_CANONICAL_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\\-]{0,255}$")
 _MAX_ID_LEN = 512
 
 
@@ -259,7 +262,7 @@ class TrustedWorkerBinding:
                 "github.issue.comment.update",
             )  # type: ignore
 
-        if not isinstance(self.canonical_task_id, str) or not _SAFE_ID.fullmatch(self.canonical_task_id):
+        if not isinstance(self.canonical_task_id, str) or not _SAFE_CANONICAL_TASK_ID.fullmatch(self.canonical_task_id):
             raise TrustedBindingError("canonical_task_id must be a bounded trusted identifier")
         if not isinstance(self.project_id, str) or not _SAFE_ID.fullmatch(self.project_id):
             raise TrustedBindingError("project_id must be a bounded trusted identifier")

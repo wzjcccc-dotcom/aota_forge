@@ -26,7 +26,10 @@ def test_analyst_binding_bootstrap_search_read_and_write_denial(tmp_path: Path) 
         root=tmp_path,
         project_id="aota_forge",
         worktree_id="wt-r2-integration",
-        canonical_task_id="task-r2-integration",
+        canonical_task_id=(
+            "aota_forge:plan_003_interactive_session_first_context_repair:"
+            "M3:M3/W3:attempt-r2"
+        ),
         handoff=handoff,
     )
     adapter = _SharedAotaMcpAdapter(binding)
