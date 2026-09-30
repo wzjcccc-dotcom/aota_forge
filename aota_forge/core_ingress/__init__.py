@@ -215,6 +215,10 @@ class CanonicalDispatchBinding:
     # M2/W4: mechanical carrier for the existing-store switch composition;
     # never an authority source and never a second context store.
     context_switch_runtime: Any | None = None
+    # Session-local mechanical dispatcher. Headed bridge routing must carry
+    # this explicitly; the process-global ingress binding is headless-only
+    # compatibility.
+    execution_dispatcher: Any | None = None
     allowed_operations: frozenset[str] = frozenset()
     # AF #56 M3/W3: mechanical carriers for the #55/M2 trusted project context
     # projection (task-main authorized root set + grounded SOURCE_REPOSITORY).
@@ -318,7 +322,9 @@ def is_thin_task_lifecycle_binding(binding: CanonicalDispatchBinding) -> bool:
     return getattr(binding, "trusted_task_main_context", None) is None
 
 
-def _trusted_production_execution_dispatcher() -> Any | None:
+def _trusted_production_execution_dispatcher(
+    binding: CanonicalDispatchBinding | None = None,
+) -> Any | None:
     """Resolve the trusted production ExecutionDispatcher, if one is bound.
 
     AF #49 M1/W1: bounded reuse of the existing ``core.ingress`` mechanical
@@ -333,6 +339,9 @@ def _trusted_production_execution_dispatcher() -> Any | None:
         from aota_forge.core.ingress import get_execution_dispatcher
     except Exception:
         return None
+    explicit = getattr(binding, "execution_dispatcher", None) if binding is not None else None
+    if isinstance(explicit, ExecutionDispatcher):
+        return explicit
     bound = get_execution_dispatcher()
     if isinstance(bound, ExecutionDispatcher):
         return bound
@@ -1809,7 +1818,7 @@ def _dispatch_tool_operation_inner(
                 return ToolResponse.failure({"code": "INPUT_TYPE_INVALID", "message": "handoff_ref must be non-empty string"})
             # AF #49 M1/W1: supply the trusted production dispatcher from the
             # existing Core binding seam; fail closed when none is bound.
-            trusted_dispatcher = _trusted_production_execution_dispatcher()
+            trusted_dispatcher = _trusted_production_execution_dispatcher(binding)
             if trusted_dispatcher is None:
                 return ToolResponse.failure(
                     {
@@ -2027,7 +2036,7 @@ def _dispatch_tool_operation_inner(
             # terminal SEMANTIC return without mutating parent durability, and
             # the parent-side ExecutionDispatcher reconciliation of the durable
             # Hermes supervisor mechanical evidence owns terminal truth.
-            trusted_dispatcher = _trusted_production_execution_dispatcher()
+            trusted_dispatcher = _trusted_production_execution_dispatcher(binding)
             try:
                 from aota_forge.work_plane.task_facade import task_return
 

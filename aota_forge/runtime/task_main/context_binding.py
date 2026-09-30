@@ -8,9 +8,15 @@ import os
 import re
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the supported runtime is POSIX
+    fcntl = None  # type: ignore[assignment]
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
 from aota_forge.core.contracts.canonical import canonical_json
@@ -334,6 +340,45 @@ class FileBackedTaskMainContextBindingProjection:
     def path(self) -> Path:
         return self._path
 
+    @contextmanager
+    def _path_lock(self):
+        """Serialize projection read-modify-write across adapter instances."""
+        lock_path = self._path.with_name(f".{self._path.name}.lock")
+        with self._lock:
+            if fcntl is None:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "inter-process context binding locking is unavailable",
+                )
+            descriptor: int | None = None
+            try:
+                descriptor = os.open(
+                    lock_path,
+                    os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                )
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
+                except OSError as exc:
+                    raise ContextBindingError(
+                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                        "inter-process context binding lock could not be acquired",
+                    ) from exc
+                yield
+            except OSError as exc:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "inter-process context binding lock could not be opened",
+                ) from exc
+            finally:
+                if descriptor is not None:
+                    if fcntl is not None:
+                        try:
+                            fcntl.flock(descriptor, fcntl.LOCK_UN)
+                        except OSError:
+                            pass
+                    os.close(descriptor)
+
     def _read(self) -> list[DurableTaskMainContextBinding]:
         if not self._path.exists():
             return []
@@ -454,7 +499,7 @@ class FileBackedTaskMainContextBindingProjection:
                 "SESSION_RECOVERY_REQUIRED",
                 "context binding lookup requires an exact non-placeholder session",
             )
-        with self._lock:
+        with self._path_lock():
             matches = [
                 record
                 for record in self._read()
@@ -473,7 +518,7 @@ class FileBackedTaskMainContextBindingProjection:
                 "CONTEXT_BINDING_CORRUPT",
                 "only a typed DurableTaskMainContextBinding may be persisted",
             )
-        with self._lock:
+        with self._path_lock():
             records = self._read()
             same_session = [
                 record
@@ -498,7 +543,14 @@ class FileBackedTaskMainContextBindingProjection:
                     "context binding projection record limit reached",
                 )
             self._persist([*records, binding])
-            readback = self.get_for_session(binding.origin_task_main_session_ref)
+            readback = next(
+                (
+                    record
+                    for record in self._read()
+                    if record.origin_task_main_session_ref == binding.origin_task_main_session_ref
+                ),
+                None,
+            )
             if readback is None or readback.binding_digest != binding.binding_digest:
                 raise ContextBindingError(
                     "CONTEXT_BINDING_PERSISTENCE_FAILED",
@@ -525,7 +577,7 @@ class FileBackedTaskMainContextBindingProjection:
                 "CONTEXT_BINDING_CORRUPT",
                 "only a typed DurableTaskMainContextBinding may replace durable evidence",
             )
-        with self._lock:
+        with self._path_lock():
             records = self._read()
             matches = [
                 record
@@ -555,7 +607,14 @@ class FileBackedTaskMainContextBindingProjection:
                 for record in records
             ]
             self._persist(replaced)
-            readback = self.get_for_session(replacement.origin_task_main_session_ref)
+            readback = next(
+                (
+                    record
+                    for record in self._read()
+                    if record.origin_task_main_session_ref == replacement.origin_task_main_session_ref
+                ),
+                None,
+            )
             if readback is None or readback.binding_digest != replacement.binding_digest:
                 raise ContextBindingError(
                     "CONTEXT_BINDING_PERSISTENCE_FAILED",

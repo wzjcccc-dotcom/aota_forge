@@ -1322,6 +1322,10 @@ async def _serve_mcp_child() -> None:
             governance_store_path=os.environ.get(
                 mcp_transport.UNBOUND_GOVERNANCE_STORE_ENV, ""
             ).strip(),
+            bridge_socket_path=os.environ.get(mcp_transport.BRIDGE_SOCKET_ENV, "").strip(),
+            bind_global_dispatcher=not bool(
+                os.environ.get(mcp_transport.BRIDGE_SOCKET_ENV, "").strip()
+            ),
         )
         server = mcp_transport.create_unbound_mcp_server(context)
         await server.run_stdio_async()

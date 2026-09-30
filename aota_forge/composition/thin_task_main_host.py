@@ -52,6 +52,7 @@ model-facing ``aota.invoke`` argument can provide or override them
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import re
 from collections.abc import Callable, Mapping
@@ -409,8 +410,12 @@ def _build_git_authorities(
     return tuple(authorities)
 
 
-def _default_execution_store(worktree_root: Path) -> FileBackedExecutionStateStore:
-    store_path = worktree_root / ".aota" / "execution.json"
+def _default_execution_store(
+    worktree_root: Path,
+    *,
+    store_path: Path | None = None,
+) -> FileBackedExecutionStateStore:
+    store_path = store_path or worktree_root / ".aota" / "execution.json"
     store_path.parent.mkdir(parents=True, exist_ok=True)
     if not store_path.exists():
         store_path.write_text("{}", encoding="utf-8")
@@ -551,6 +556,8 @@ def compose_thin_task_main_host(
     governance_store_path: str | PathLike[str] | None = None,
     plan_authority_reader: Any | None = None,
     context_switch_runtime: Any | None = None,
+    bind_global_dispatcher: bool = True,
+    session_execution_store_path: str | PathLike[str] | None = None,
 ) -> ThinTaskMainHost:
     """Compose the trusted thin task-main host (side-by-side, non-live ready).
 
@@ -711,8 +718,16 @@ def compose_thin_task_main_host(
                 resolved_governance_store.close()
             raise TrustedBindingError(f"thin host governance intake context failed: {exc}") from exc
 
+    headed_store_path = None
+    if not bind_global_dispatcher and session_execution_store_path is None:
+        session_digest = hashlib.sha256(origin.encode("utf-8")).hexdigest()[:32]
+        headed_store_path = root / ".aota" / "execution-sessions" / f"{session_digest}.json"
+    elif session_execution_store_path is not None:
+        headed_store_path = Path(session_execution_store_path)
     store: ExecutionStateStore = (
-        execution_store if execution_store is not None else _default_execution_store(root)
+        execution_store
+        if execution_store is not None
+        else _default_execution_store(root, store_path=headed_store_path)
     )
 
     # AF #53 M3/W2-R1 (I53-B001): the thin production dispatcher is composed
@@ -957,6 +972,7 @@ def compose_thin_task_main_host(
         source_repository=str(trusted_project_context.get("source_repository", "") or ""),
         authorized_roots=authorized_roots,
         governance_context=governance_context,
+        execution_dispatcher=dispatcher,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 
@@ -976,7 +992,8 @@ def compose_thin_task_main_host(
 
     # Bind the existing canonical Core ingress dispatcher seam only after every
     # trusted authority lookup and host construction check has succeeded.
-    bind_execution_dispatcher(dispatcher)
+    if bind_global_dispatcher:
+        bind_execution_dispatcher(dispatcher)
 
     return ThinTaskMainHost(
         project_id=pid,

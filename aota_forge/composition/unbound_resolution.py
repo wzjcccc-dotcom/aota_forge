@@ -361,6 +361,7 @@ def recompose_trusted_context_from_evidence(
     governance_store_path: Path | str | None,
     git_integration_branch: str | None = None,
     git_remote: str | None = None,
+    bind_global_dispatcher: bool = True,
 ) -> tuple[Any, Any, Any, DurableTaskMainContextBinding]:
     """Re-resolve live authority and compose a fresh thin bound runtime.
 
@@ -441,6 +442,7 @@ def recompose_trusted_context_from_evidence(
         plan_id=resolution.plan_binding.plan_id,
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
+        bind_global_dispatcher=bind_global_dispatcher,
     )
     try:
         actual_evidence = getattr(host, "project_evidence", None)
