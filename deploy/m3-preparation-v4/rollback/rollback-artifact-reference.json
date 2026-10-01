@@ -1,0 +1,13 @@
+{
+  "reference_version": 1,
+  "candidate_version": "m3-preparation-v4",
+  "prior_candidate_version": "m3-preparation-v3",
+  "prior_candidate_manifest": "../m3-preparation-v3/artifact-manifest.json",
+  "prior_candidate_manifest_sha256": "0863a8c12ba359bc8f469780d606cf883395ba337c9e42973fef625c1ae349f5",
+  "prior_rollback_reference": "../m3-preparation-v3/rollback/rollback-artifact-reference.json",
+  "source_repair_frontier": "aa40c5f37ec549276dd302f1a882e404a7ce993a",
+  "preserve_existing_prior_backup": true,
+  "production_rollback_executed": false,
+  "secret_in_reference": false,
+  "token_in_reference": false
+}

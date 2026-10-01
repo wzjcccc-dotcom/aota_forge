@@ -1,0 +1,70 @@
+{
+  "manifest_version": 4,
+  "preparation_version": "m3-preparation-v4",
+  "candidate_kind": "bounded_overlay",
+  "base_candidate": {
+    "version": "m3-preparation-v3",
+    "path": "../m3-preparation-v3",
+    "manifest_sha256": "0863a8c12ba359bc8f469780d606cf883395ba337c9e42973fef625c1ae349f5"
+  },
+  "project_id": "aota_forge",
+  "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+  "milestone": "M3",
+  "base_commit": "aa40c5f37ec549276dd302f1a882e404a7ce993a",
+  "base_tree": "77accb8992918cf666de9d8508858a5a958d9d89",
+  "m2_accepted_frontier": "052fefb297b412052d7c94ffb8f4ab6062259c33",
+  "candidate_files_hash_scope": "all files below excluding artifact-manifest.json",
+  "candidate_files": {
+    "README.md": "6051bfba10e8d0f93153f40b2b536ea8dd0a461ec19f2b8f449b82b90fb7073c",
+    "plugin/plan004-trusted-session-bridge.mjs": "bcdf279ccbb250404a0aa598ff7aeaa450503f23185752a671a2e7a16f45ec9a",
+    "runtime/opencode-af-reference.m3-candidate.json": "f8b19b42c4e7f83e34975b03b2b214de299292757fa56e188446a0da6f2fec69",
+    "systemd/af-plan004-bridge-m3-candidate.service": "c3ab649a5fd91d723789ca6f2c6fe0285e1f4a1933f161db291093f813ccbc86",
+    "systemd/opencode-af-reference.service.d/plan004-bridge.conf": "7d3b7123afa0f79bdeefe9dc4a8b89d1492e7ff82a6b5aea51ba7677d85b5f87",
+    "rollback/rollback-artifact-reference.json": "9a10b0f40fb81b9e7d687b4a1fc4e71223182c75b20d5b774ded36743ce3b6b3",
+    "evidence/plan004-m3-bridge-216-group-repair.json": "3cbf1e8b81c300263a0e38da617bcebaacf5295a134bf4a7985968cc5421a1f2",
+    "evidence/plan004-m3-headed-bridge-socket-wiring-repair.json": "6c79045f4aa4790d2f3a82897e25d9adc21e56eda1ae8392e6372b9ae292b67d",
+    "evidence/plan004-m3-project-plan-promotion-repair.json": "8f2ef9869efba891416886222c1c1d0a2c8b685e97e3b640491d737ac28d3213"
+  },
+  "preserved_repairs": {
+    "v2_216_group_repair": true,
+    "v3_socket_propagation": true,
+    "v4_project_bound_plan_promotion": true,
+    "prior_candidates_overwritten": false
+  },
+  "source_repair": {
+    "frontier": "aa40c5f37ec549276dd302f1a882e404a7ce993a",
+    "changed_files": [
+      "aota_forge/mcp_transport.py",
+      "aota_forge/runtime/task_main/context_binding.py",
+      "tests/test_plan004_m3_project_plan_promotion.py"
+    ],
+    "opencode_upstream_changed": false
+  },
+  "deployment_wiring_delta": {
+    "plugin_host_unit": "opencode-af-reference.service",
+    "plugin_host_drop_in": "systemd/opencode-af-reference.service.d/plan004-bridge.conf",
+    "plugin_host_socket_environment": "AOTA_BRIDGE_SOCKET=%t/af-plan004-bridge/bridge.sock",
+    "mcp_child_socket_environment": "runtime/opencode-af-reference.m3-candidate.json:mcp.aota.environment.AOTA_BRIDGE_SOCKET",
+    "same_user_runtime_socket": true,
+    "m2_source_changed": false,
+    "v3_socket_propagation_preserved": true
+  },
+  "candidate_scope": {
+    "production_installation": false,
+    "production_configuration_changed": false,
+    "production_service_restarted": false,
+    "production_reactivation_performed": false,
+    "remote_push": false
+  },
+  "readiness": {
+    "state": "READY_FOR_CONTROLLED_REACTIVATION",
+    "requires_explicit_approval": true,
+    "production_reactivation_performed": false
+  },
+  "secret_handling": {
+    "secret_in_manifest": false,
+    "secret_in_candidate_files": false,
+    "token_in_candidate_files": false,
+    "mode": "ephemeral_bridge_daemon_memory"
+  }
+}
