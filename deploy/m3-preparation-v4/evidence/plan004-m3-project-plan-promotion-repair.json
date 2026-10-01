@@ -14,6 +14,15 @@
     "current_blocker": "project_bound_plan_bind_unsupported",
     "durable_finding": "PROJECT_BOUND_PLAN_BIND_UNSUPPORTED"
   },
+  "governance_after": {
+    "plan_revision": "R17",
+    "plan_cas_revision": 19,
+    "source_revision": "94f9cf7e18d8977ede7db07777932b8e26fefb1fde092c762de2d4cb01019713",
+    "source_digest": "94f9cf7e18d8977ede7db07777932b8e26fefb1fde092c762de2d4cb01019713",
+    "current_status": "ready_for_controlled_reactivation",
+    "current_blocker": "none",
+    "v4_controlled_reactivation_approved": false
+  },
   "root_cause": {
     "confirmed": true,
     "finding": "BOUND_DELEGATE_CAPTURE",

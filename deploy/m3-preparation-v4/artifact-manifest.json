@@ -23,7 +23,7 @@
     "rollback/rollback-artifact-reference.json": "9a10b0f40fb81b9e7d687b4a1fc4e71223182c75b20d5b774ded36743ce3b6b3",
     "evidence/plan004-m3-bridge-216-group-repair.json": "3cbf1e8b81c300263a0e38da617bcebaacf5295a134bf4a7985968cc5421a1f2",
     "evidence/plan004-m3-headed-bridge-socket-wiring-repair.json": "6c79045f4aa4790d2f3a82897e25d9adc21e56eda1ae8392e6372b9ae292b67d",
-    "evidence/plan004-m3-project-plan-promotion-repair.json": "8f2ef9869efba891416886222c1c1d0a2c8b685e97e3b640491d737ac28d3213"
+    "evidence/plan004-m3-project-plan-promotion-repair.json": "e95a7d6f6a1a5683fe24939e69d5f81276a13f274182bb1a07823f5ab4a03879"
   },
   "preserved_repairs": {
     "v2_216_group_repair": true,
