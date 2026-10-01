@@ -197,7 +197,11 @@ def test_promotion_persistence_failure_rolls_back_to_project_only(
     assert denied["error"]["code"] == "CONTEXT_BINDING_PERSISTENCE_FAILED"
     assert adapter._bound_delegate is not None
     assert _inspect(adapter)["payload"]["state"] == "project_bound"
-    assert not context_binding_projection_path(Path(world["project_root"])).exists()
+    durable = FileBackedTaskMainContextBindingProjection(
+        context_binding_projection_path(Path(world["project_root"]))
+    ).get_for_session("ses_plan004_promotion_persist_failure")
+    assert durable.binding_kind == "PROJECT_BOUND"
+    assert durable.plan_binding is None
 
 
 def test_promotion_post_write_failure_removes_durable_candidate(
@@ -235,7 +239,9 @@ def test_promotion_post_write_failure_removes_durable_candidate(
     projection = FileBackedTaskMainContextBindingProjection(
         context_binding_projection_path(Path(world["project_root"]))
     )
-    assert projection.get_for_session("ses_plan004_promotion_post_write_failure") is None
+    durable = projection.get_for_session("ses_plan004_promotion_post_write_failure")
+    assert durable.binding_kind == "PROJECT_BOUND"
+    assert durable.plan_binding is None
 
 
 def test_promotion_restarts_as_plan_bound_context(tmp_path: Path) -> None:

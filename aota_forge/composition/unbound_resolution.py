@@ -377,6 +377,7 @@ def recompose_trusted_context_from_evidence(
     from aota_forge.runtime.task_main.context_binding import (
         ContextBindingError,
         DurableTaskMainContextBinding,
+        PROJECT_BOUND,
     )
     from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
 
@@ -396,7 +397,8 @@ def recompose_trusted_context_from_evidence(
             "resume requires an exact non-placeholder session",
         )
 
-    plan_id = durable_binding.plan_binding.plan_id
+    project_only = durable_binding.binding_kind == PROJECT_BOUND
+    plan_id = None if project_only else durable_binding.plan_binding.plan_id
     resolution = resolve_trusted_unbound_resolution(
         durable_binding.project_id,
         plan_id,
@@ -411,7 +413,7 @@ def recompose_trusted_context_from_evidence(
             "PROJECT_CONTEXT_MISMATCH",
             "current trusted Project evidence differs from durable context evidence",
         )
-    if not isinstance(resolution.plan_binding, PlanAuthorityBinding):
+    if not project_only and not isinstance(resolution.plan_binding, PlanAuthorityBinding):
         raise ContextBindingError(
             "STALE_CONTEXT",
             "current trusted Plan binding is unavailable",
@@ -427,19 +429,34 @@ def recompose_trusted_context_from_evidence(
         if worktree_id is not None and str(worktree_id).strip()
         else f"{resolution.project_id}-unbound"
     )
+    project_governance_context = None
+    if project_only and governance_base is not None:
+        from aota_forge.governance.intake import GovernanceIntakeContext
+
+        project_governance_context = GovernanceIntakeContext(
+            workspace_id=candidate.workspace_id,
+            governance_base=governance_base,
+            registry_path=registry_path,
+            workspace_root=candidate.workspace_root,
+            project_root=candidate.project_root,
+            governance_store_path=governance_store_path,
+            journal_path=Path(candidate.project_root) / ".aota" / "governance-journal.json",
+            source_repository=resolution.project.source_repository or "",
+        )
     host = compose_thin_task_main_host(
         worktree_root=trusted_worktree_root,
         project_id=resolution.project_id,
         worktree_id=trusted_worktree_id,
         runtime_config_path=runtime_config_path,
         origin_task_main_session_ref=origin_session_ref,
-        plan_ref=resolution.plan_binding.authority_ref,
+        plan_ref=resolution.plan_binding.authority_ref if not project_only else None,
         source_repository=resolution.project.source_repository or None,
         registry_path=registry_path,
         workspace_id=workspace_id,
-        governance_base=governance_base,
-        governance_store_path=governance_store_path,
-        plan_id=resolution.plan_binding.plan_id,
+        governance_base=governance_base if not project_only else None,
+        governance_store_path=governance_store_path if not project_only else None,
+        plan_id=plan_id,
+        governance_intake_context=project_governance_context,
         git_integration_branch=git_integration_branch,
         git_remote=git_remote,
         bind_global_dispatcher=bind_global_dispatcher,
@@ -457,7 +474,9 @@ def recompose_trusted_context_from_evidence(
                 "trusted Project changed during resume composition",
             )
         actual_plan_binding = getattr(host.trusted_binding, "plan_authority_binding", None)
-        if not isinstance(actual_plan_binding, PlanAuthorityBinding):
+        if project_only and actual_plan_binding is not None:
+            raise ContextBindingError("PLAN_CONTEXT_MISMATCH", "Project recovery materialized unexpected Plan authority")
+        if not project_only and not isinstance(actual_plan_binding, PlanAuthorityBinding):
             raise ContextBindingError(
                 "STALE_CONTEXT",
                 "fresh trusted runtime did not carry a Plan authority binding",
@@ -470,6 +489,8 @@ def recompose_trusted_context_from_evidence(
             plan_binding=actual_plan_binding,
             origin_task_main_session_ref=origin_session_ref,
             authorized_roots_digest=roots.digest(),
+            schema_version=durable_binding.schema_version,
+            binding_kind=durable_binding.binding_kind,
         )
         durable_binding.assert_resume_identity_compatible(current_binding)
         if durable_binding.authorized_roots_digest != current_binding.authorized_roots_digest:

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "project_id": "aota_forge",
+  "project_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "plan_binding": {
+    "plan_id": "plan_alpha",
+    "source_kind": "local_governance",
+    "authority_ref": "local-governance:aota_forge/plan_alpha",
+    "source_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "origin_task_main_session_ref": "ses_golden_v1_exact",
+  "authorized_roots_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "binding_digest": "30743942ab52840f17a2230968b991838a9579eb23e8bdd73255ea44af4cce9a",
+  "IS_AUTHORITY": false
+}

@@ -2231,6 +2231,10 @@ class _UnboundAotaAdapter:
         from aota_forge.runtime.task_main.context_binding import (
             DurableTaskMainContextBinding,
             FileBackedTaskMainContextBindingProjection,
+            CONTEXT_BINDING_SCHEMA_VERSION,
+            CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION,
+            PLAN_BOUND,
+            PROJECT_BOUND,
             context_binding_projection_path,
         )
         from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
@@ -2436,20 +2440,17 @@ class _UnboundAotaAdapter:
 
             roots = host.trusted_binding.effective_authorized_roots
             validate_root_set_against_sandbox(roots, host.trusted_binding.sandbox)
-            durable_binding = None
-            if plan_bound:
-                if not isinstance(actual_plan_binding, PlanAuthorityBinding):
-                    raise UnboundBindError(
-                        "STALE_CONTEXT",
-                        "trusted Plan binding was not materialized by the fresh host",
-                    )
-                durable_binding = DurableTaskMainContextBinding(
-                    project_id=resolution.project_id,
-                    project_fingerprint=candidate.candidate_fingerprint,
-                    plan_binding=actual_plan_binding,
-                    origin_task_main_session_ref=origin_session_ref,
-                    authorized_roots_digest=roots.digest(),
-                )
+            if plan_bound and not isinstance(actual_plan_binding, PlanAuthorityBinding):
+                raise UnboundBindError("STALE_CONTEXT", "fresh host has no trusted Plan binding")
+            durable_binding = DurableTaskMainContextBinding(
+                project_id=resolution.project_id,
+                project_fingerprint=candidate.candidate_fingerprint,
+                plan_binding=actual_plan_binding,
+                origin_task_main_session_ref=origin_session_ref,
+                authorized_roots_digest=roots.digest(),
+                schema_version=CONTEXT_BINDING_SCHEMA_VERSION if plan_bound else CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION,
+                binding_kind=PLAN_BOUND if plan_bound else PROJECT_BOUND,
+            )
             governance_context = materialize_trusted_governance_context(
                 resolution,
                 binding=host.trusted_binding,
@@ -2473,108 +2474,43 @@ class _UnboundAotaAdapter:
                     str(error.get("message") or "trusted context bind failed"),
                 )
 
-            if promotion:
-                # Validate the candidate through its own delegate before any
-                # durable write or active delegate replacement.
-                candidate_readback = delegate.invoke(
-                    "task_main.context", {"mode": "inspect"}
+            # Prepare/read back the candidate before exposing it to this Session.
+            readback = delegate.invoke("task_main.context", {"mode": "inspect"})
+            self._verify_bind_readback(
+                readback,
+                payload=self._readback_payload(delegate, readback),
+                project_id=resolution.project_id,
+                plan_binding=actual_plan_binding,
+                origin_session_ref=origin_session_ref,
+                authorized_roots=roots,
+            )
+            projection = FileBackedTaskMainContextBindingProjection(
+                context_binding_projection_path(host.sandbox.project_root)
+            )
+            try:
+                existing = projection.get_for_session(origin_session_ref) if promotion else None
+                if existing is not None and existing.authorized_roots_digest != current_roots.digest():
+                    raise UnboundBindError("AUTHORITY_DENIED", "Project evidence roots differ before promotion")
+                # Legacy live v4 Project delegates have no record yet. New v5
+                # Project delegates promote via exact-session Project evidence CAS.
+                projection.persist(
+                    durable_binding,
+                    expected_project_binding_digest=existing.binding_digest if existing else None,
                 )
-                candidate_payload = self._readback_payload(delegate, candidate_readback)
-                self._verify_bind_readback(
-                    candidate_readback,
-                    payload=candidate_payload,
-                    project_id=resolution.project_id,
-                    plan_binding=actual_plan_binding,
-                    origin_session_ref=origin_session_ref,
-                    authorized_roots=roots,
-                )
-                if durable_binding is None:
-                    raise UnboundBindError(
-                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
-                        "Plan promotion did not produce durable binding evidence",
-                    )
-                projection = FileBackedTaskMainContextBindingProjection(
-                    context_binding_projection_path(host.sandbox.project_root)
-                )
-                created_durable_record = False
-                try:
-                    existing_durable = projection.get_for_session(origin_session_ref)
-                    created_durable_record = existing_durable is None
-                    persisted = projection.persist(durable_binding)
-                    durable_readback = projection.get_for_session(origin_session_ref)
-                except Exception as exc:
-                    if created_durable_record:
-                        try:
-                            projection.remove_for_session(
-                                origin_task_main_session_ref=origin_session_ref,
-                                expected_binding_digest=durable_binding.binding_digest,
-                            )
-                        except Exception:
-                            pass
-                    code = getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED")
-                    raise UnboundBindError(
-                        code,
-                        f"successful Plan promotion could not be durably rehydrated: {exc}",
-                    ) from exc
-                if (
-                    persisted.binding_digest != durable_binding.binding_digest
-                    or durable_readback is None
-                    or durable_readback.binding_digest != durable_binding.binding_digest
-                ):
-                    raise UnboundBindError(
-                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
-                        "Plan promotion durable readback did not match the candidate",
-                    )
-
-                # Commit point: persistence and readback succeeded, so replace
-                # only this Session's delegate. The old Project-only runtime
-                # remains untouched on every earlier failure path.
-                self._bound_delegate = delegate
-                self._bound_runtime = host
-                self._bound_binding = bound_binding
-                if self.context.bind_global_dispatcher:
-                    bind_execution_dispatcher(host.execution_dispatcher)
-                if previous_runtime is not None and previous_runtime is not host:
-                    self._close_activation_runtime(previous_runtime)
-                return bind_result
-
-            # The commit point is the delegate replacement.  The immediately
-            # following inspect is deliberately sent through that installed
-            # canonical delegate, not through a second adapter or direct Core
-            # call.
+            except Exception as exc:
+                raise UnboundBindError(
+                    getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED"),
+                    f"context bind durable persistence/readback failed: {exc}",
+                ) from exc
+            # Commit only after the projection verifies the exact Session,
+            # digest and semantic state under its existing transaction lock.
             self._bound_delegate = delegate
             self._bound_runtime = host
             self._bound_binding = bound_binding
-            try:
-                readback = self._bound_delegate.invoke(
-                    "task_main.context", {"mode": "inspect"}
-                )
-                readback_payload = self._readback_payload(self._bound_delegate, readback)
-                self._verify_bind_readback(
-                    readback,
-                    payload=readback_payload,
-                    project_id=resolution.project_id,
-                    plan_binding=actual_plan_binding if plan_bound else None,
-                    origin_session_ref=origin_session_ref,
-                    authorized_roots=roots,
-                )
-                if durable_binding is not None:
-                    projection = FileBackedTaskMainContextBindingProjection(
-                        context_binding_projection_path(host.sandbox.project_root)
-                    )
-                    try:
-                        projection.persist(durable_binding)
-                    except Exception as exc:
-                        code = getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED")
-                        raise UnboundBindError(
-                            code,
-                            f"successful Plan bind could not be durably rehydrated: {exc}",
-                        ) from exc
-            except Exception:
-                self._bound_delegate = previous_delegate
-                self._bound_runtime = previous_runtime
-                self._bound_binding = previous_binding
-                raise
+            if promotion and self.context.bind_global_dispatcher:
+                bind_execution_dispatcher(host.execution_dispatcher)
+            if previous_runtime is not None and previous_runtime is not host:
+                self._close_activation_runtime(previous_runtime)
             return bind_result
         except Exception:
             # compose_thin_task_main_host binds the existing Core dispatcher as
