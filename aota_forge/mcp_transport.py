@@ -1137,6 +1137,8 @@ UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = INTROSPECTION_OPERATION
 TRUE_UNBOUND_BIND_IMPLEMENTED = True
 PROJECT_ONLY_BIND_IMPLEMENTED = True
 PROJECT_PLAN_BIND_IMPLEMENTED = True
+PROJECT_BOUND_PLAN_PROMOTION_IMPLEMENTED = True
+PROMOTION_IS_CONTEXT_SWITCH = False
 SAME_SESSION_BIND_MATERIALIZATION = True
 MODEL_SUPPLIES_SESSION_ID = False
 SESSION_ID_IS_AUTHORITY = False
@@ -1976,8 +1978,87 @@ class _UnboundAotaAdapter:
             return _unbound_governed_error("result.hydrate", "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
         return _project_tool_response(SimpleNamespace(sandbox=sandbox), "result.hydrate", response)
 
+    def _project_bound_plan_promotion_arguments(
+        self, arguments: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Recognize only the narrow same-Project Plan promotion seam.
+
+        Existing bound sessions still delegate every other context request to
+        the canonical context contract. In particular, a different Project,
+        a missing Plan locator, and ``switch`` never enter this path.
+        """
+        binding = self._bound_binding
+        if binding is None or getattr(binding, "plan_authority_binding", None) is not None:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        try:
+            from aota_forge.core.task_main_context import normalize_context_arguments
+            from aota_forge.core_ingress import (
+                resolve_descriptor,
+                validate_operation_input,
+            )
+
+            normalized = normalize_context_arguments(arguments)
+            validated = validate_operation_input(
+                resolve_descriptor("task_main.context"), normalized
+            )
+        except Exception:
+            # Let the existing bound delegate preserve the canonical input
+            # error contract when the request is not a valid promotion shape.
+            return None
+        if validated.get("mode") != "bind":
+            return None
+        plan_selector = validated.get("plan_ref")
+        if not isinstance(plan_selector, str) or not plan_selector.strip():
+            return None
+        project_selector = validated.get("project_ref")
+        if project_selector is not None and project_selector != binding.project_id:
+            return None
+        return validated
+
+    def _promote_project_bound_context(
+        self, arguments: dict[str, Any]
+    ) -> McpToolResult:
+        """Promote this Session from Project-only to one trusted Plan."""
+        binding = self._bound_binding
+        if binding is None:
+            return _unbound_governed_error(
+                "task_main.context",
+                "CONTEXT_BINDING_REQUIRED",
+                "Plan promotion requires a trusted Project-bound Session",
+            )
+        try:
+            return self._bind_unbound_context(arguments, promotion=True)
+        except UnboundBindError as exc:
+            return _governed_error(
+                binding,
+                "task_main.context",
+                exc.code,
+                str(exc),
+            )
+        except ForgeError as exc:
+            return _governed_error(
+                binding,
+                "task_main.context",
+                getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"),
+                str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001 - promotion fails closed
+            return _governed_error(
+                binding,
+                "task_main.context",
+                getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"),
+                _bounded_failure_message(str(exc)),
+            )
+
     def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
         if self._bound_delegate is not None:
+            promotion_arguments = None
+            if operation == "task_main.context":
+                promotion_arguments = self._project_bound_plan_promotion_arguments(arguments)
+            if promotion_arguments is not None:
+                return self._promote_project_bound_context(promotion_arguments)
             # The MCP server closure retains this exact adapter object.  Once
             # installed, every subsequent operation uses the canonical bound
             # delegate without creating a second transport or session.
@@ -2132,7 +2213,12 @@ class _UnboundAotaAdapter:
                 _bounded_failure_message(str(exc)),
             )
 
-    def _bind_unbound_context(self, arguments: dict[str, Any]) -> McpToolResult:
+    def _bind_unbound_context(
+        self,
+        arguments: dict[str, Any],
+        *,
+        promotion: bool = False,
+    ) -> McpToolResult:
         """Prepare, verify, install and read back one trusted bound delegate."""
         from aota_forge.composition.unbound_resolution import (
             materialize_trusted_governance_context,
@@ -2149,6 +2235,12 @@ class _UnboundAotaAdapter:
         )
         from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
 
+        previous_dispatcher = (
+            get_execution_dispatcher() if self.context.bind_global_dispatcher else None
+        )
+        previous_delegate = self._bound_delegate
+        previous_runtime = self._bound_runtime
+        previous_binding = self._bound_binding
         origin_session_ref = self.context.origin_session_ref.strip()
         if not is_bound_origin_session_ref(origin_session_ref):
             raise UnboundBindError(
@@ -2156,12 +2248,68 @@ class _UnboundAotaAdapter:
                 "same-session bind requires the operator/runtime exact origin_session_ref; "
                 "the unbound placeholder or missing carrier cannot be promoted",
             )
-        project_selector = arguments.get("project_ref")
-        if not isinstance(project_selector, str) or not project_selector.strip():
-            raise UnboundBindError(
-                "CONTEXT_LOCATOR_REQUIRED",
-                "bind requires project_selector (or legacy project_ref)",
-            )
+        current_project_fingerprint: str | None = None
+        if promotion:
+            if previous_delegate is None or previous_binding is None:
+                raise UnboundBindError(
+                    "CONTEXT_BINDING_REQUIRED",
+                    "Plan promotion requires the current trusted Project-bound delegate",
+                )
+            if getattr(previous_binding, "plan_authority_binding", None) is not None:
+                raise UnboundBindError(
+                    "PLAN_CONTEXT_MISMATCH",
+                    "generic Plan rebind is not a project-to-Plan promotion",
+                )
+            if getattr(previous_binding, "session_ref", "") != origin_session_ref:
+                raise UnboundBindError(
+                    "SESSION_RECOVERY_REQUIRED",
+                    "current trusted Project binding does not belong to this Session",
+                )
+            if previous_runtime is None:
+                raise UnboundBindError(
+                    "AUTHORITY_DENIED",
+                    "current trusted Project runtime is unavailable",
+                )
+            current_evidence = getattr(previous_runtime, "project_evidence", None)
+            current_candidates = tuple(getattr(current_evidence, "candidates", ()) or ())
+            if (
+                getattr(current_evidence, "status", None) != "RESOLVED"
+                or len(current_candidates) != 1
+                or current_candidates[0].project_id != previous_binding.project_id
+            ):
+                raise UnboundBindError(
+                    "STALE_CONTEXT",
+                    "current trusted Project evidence is no longer singular",
+                )
+            current_project_fingerprint = current_candidates[0].candidate_fingerprint
+            try:
+                current_roots = previous_binding.effective_authorized_roots
+                validate_root_set_against_sandbox(current_roots, previous_binding.sandbox)
+            except Exception as exc:
+                raise UnboundBindError(
+                    "AUTHORITY_DENIED",
+                    "current trusted Project AuthorizedRootSet is invalid",
+                ) from exc
+            project_selector = arguments.get("project_ref")
+            if project_selector is None:
+                project_selector = previous_binding.project_id
+            if not isinstance(project_selector, str) or not project_selector.strip():
+                raise UnboundBindError(
+                    "CONTEXT_LOCATOR_REQUIRED",
+                    "Plan promotion requires the current Project selector",
+                )
+            if project_selector.strip() != previous_binding.project_id:
+                raise UnboundBindError(
+                    "PROJECT_CONTEXT_MISMATCH",
+                    "Plan promotion cannot change the trusted Project",
+                )
+        else:
+            project_selector = arguments.get("project_ref")
+            if not isinstance(project_selector, str) or not project_selector.strip():
+                raise UnboundBindError(
+                    "CONTEXT_LOCATOR_REQUIRED",
+                    "bind requires project_selector (or legacy project_ref)",
+                )
 
         registry_path = self.context.registry_path.strip()
         if not registry_path:
@@ -2186,10 +2334,16 @@ class _UnboundAotaAdapter:
         candidate = resolution.project.candidate
         if candidate is None:
             raise UnboundBindError("PROJECT_NOT_FOUND", "trusted Project evidence is not singular")
+        if (
+            promotion
+            and current_project_fingerprint is not None
+            and candidate.candidate_fingerprint != current_project_fingerprint
+        ):
+            raise UnboundBindError(
+                "STALE_CONTEXT",
+                "trusted Project evidence changed before Plan promotion",
+            )
 
-        previous_dispatcher = (
-            get_execution_dispatcher() if self.context.bind_global_dispatcher else None
-        )
         host: Any | None = None
         try:
             worktree_root = self.context.worktree_root.strip() or candidate.project_root
@@ -2244,7 +2398,9 @@ class _UnboundAotaAdapter:
                 governance_intake_context=project_governance_context,
                 git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
                 git_remote=getattr(resolver, "_git_remote", "") or None,
-                bind_global_dispatcher=self.context.bind_global_dispatcher,
+                bind_global_dispatcher=(
+                    self.context.bind_global_dispatcher and not promotion
+                ),
             )
 
             actual_evidence = getattr(host, "project_evidence", None)
@@ -2254,6 +2410,12 @@ class _UnboundAotaAdapter:
                 or len(actual_candidate) != 1
                 or actual_candidate[0].candidate_fingerprint != candidate.candidate_fingerprint
                 or actual_candidate[0].registry_fingerprint != candidate.registry_fingerprint
+                or (
+                    promotion
+                    and current_project_fingerprint is not None
+                    and actual_candidate[0].candidate_fingerprint
+                    != current_project_fingerprint
+                )
             ):
                 raise UnboundBindError(
                     "STALE_CONTEXT",
@@ -2311,13 +2473,75 @@ class _UnboundAotaAdapter:
                     str(error.get("message") or "trusted context bind failed"),
                 )
 
+            if promotion:
+                # Validate the candidate through its own delegate before any
+                # durable write or active delegate replacement.
+                candidate_readback = delegate.invoke(
+                    "task_main.context", {"mode": "inspect"}
+                )
+                candidate_payload = self._readback_payload(delegate, candidate_readback)
+                self._verify_bind_readback(
+                    candidate_readback,
+                    payload=candidate_payload,
+                    project_id=resolution.project_id,
+                    plan_binding=actual_plan_binding,
+                    origin_session_ref=origin_session_ref,
+                    authorized_roots=roots,
+                )
+                if durable_binding is None:
+                    raise UnboundBindError(
+                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                        "Plan promotion did not produce durable binding evidence",
+                    )
+                projection = FileBackedTaskMainContextBindingProjection(
+                    context_binding_projection_path(host.sandbox.project_root)
+                )
+                created_durable_record = False
+                try:
+                    existing_durable = projection.get_for_session(origin_session_ref)
+                    created_durable_record = existing_durable is None
+                    persisted = projection.persist(durable_binding)
+                    durable_readback = projection.get_for_session(origin_session_ref)
+                except Exception as exc:
+                    if created_durable_record:
+                        try:
+                            projection.remove_for_session(
+                                origin_task_main_session_ref=origin_session_ref,
+                                expected_binding_digest=durable_binding.binding_digest,
+                            )
+                        except Exception:
+                            pass
+                    code = getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED")
+                    raise UnboundBindError(
+                        code,
+                        f"successful Plan promotion could not be durably rehydrated: {exc}",
+                    ) from exc
+                if (
+                    persisted.binding_digest != durable_binding.binding_digest
+                    or durable_readback is None
+                    or durable_readback.binding_digest != durable_binding.binding_digest
+                ):
+                    raise UnboundBindError(
+                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                        "Plan promotion durable readback did not match the candidate",
+                    )
+
+                # Commit point: persistence and readback succeeded, so replace
+                # only this Session's delegate. The old Project-only runtime
+                # remains untouched on every earlier failure path.
+                self._bound_delegate = delegate
+                self._bound_runtime = host
+                self._bound_binding = bound_binding
+                if self.context.bind_global_dispatcher:
+                    bind_execution_dispatcher(host.execution_dispatcher)
+                if previous_runtime is not None and previous_runtime is not host:
+                    self._close_activation_runtime(previous_runtime)
+                return bind_result
+
             # The commit point is the delegate replacement.  The immediately
             # following inspect is deliberately sent through that installed
             # canonical delegate, not through a second adapter or direct Core
             # call.
-            previous_delegate = self._bound_delegate
-            previous_runtime = self._bound_runtime
-            previous_binding = self._bound_binding
             self._bound_delegate = delegate
             self._bound_runtime = host
             self._bound_binding = bound_binding

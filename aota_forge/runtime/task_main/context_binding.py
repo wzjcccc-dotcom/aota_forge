@@ -558,6 +558,50 @@ class FileBackedTaskMainContextBindingProjection:
                 )
             return readback
 
+    def remove_for_session(
+        self,
+        *,
+        origin_task_main_session_ref: str,
+        expected_binding_digest: str,
+    ) -> None:
+        """Rollback one newly-created session record under the same projection lock."""
+        session = _text(origin_task_main_session_ref, "origin_task_main_session_ref")
+        if not is_bound_origin_session_ref(session):
+            raise ContextBindingError(
+                "SESSION_RECOVERY_REQUIRED",
+                "context binding rollback requires an exact non-placeholder session",
+            )
+        expected_digest = _digest(expected_binding_digest, "expected_binding_digest")
+        with self._path_lock():
+            records = self._read()
+            matches = [
+                record
+                for record in records
+                if record.origin_task_main_session_ref == session
+            ]
+            if not matches:
+                return
+            if len(matches) != 1 or matches[0].binding_digest != expected_digest:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "durable context binding changed before rollback",
+                )
+            self._persist(
+                [
+                    record
+                    for record in records
+                    if record.origin_task_main_session_ref != session
+                ]
+            )
+            if any(
+                record.origin_task_main_session_ref == session
+                for record in self._read()
+            ):
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "durable context binding rollback readback still contains the record",
+                )
+
     def refresh_for_session(
         self,
         *,
