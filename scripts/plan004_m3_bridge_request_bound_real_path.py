@@ -47,7 +47,12 @@ REFERENCE_BINARY = Path(
         "/home/latios/.local/share/aota-forge/opencode-reference/v1.18.30/bin/opencode",
     )
 )
-PLUGIN = REPO_ROOT / "deploy" / "m3-preparation-v6" / "plugin" / "plan004-trusted-session-bridge.mjs"
+PLUGIN = Path(
+    os.environ.get(
+        "AF_OPENCODE_PLUGIN",
+        str(REPO_ROOT / "deploy" / "m3-preparation-v6" / "plugin" / "plan004-trusted-session-bridge.mjs"),
+    )
+)
 MCP_WRAPPER = REPO_ROOT / "scripts" / "opencode_aota_mcp_server.py"
 STUB_SERVER = REPO_ROOT / "scripts" / "m1_w2_openai_stub_server.py"
 RUNTIME_CONFIG = Path(
@@ -58,7 +63,12 @@ RUNTIME_CONFIG = Path(
 )
 PROJECT_ID = "aota_forge"
 PLAN_ID = "plan_004_trusted_opencode_session_bridge_context_isolation"
-PLAN_PATH = WORKSPACE_ROOT / "plans" / PROJECT_ID / PLAN_ID / "plan.md"
+PLAN_PATH = Path(
+    os.environ.get(
+        "AF_PLAN_SOURCE_PATH",
+        str(WORKSPACE_ROOT / "plans" / PROJECT_ID / PLAN_ID / "plan.md"),
+    )
+)
 RUNTIME_PYTHON = os.environ.get("AF_RUNTIME_PYTHON", "/usr/bin/python3")
 
 
