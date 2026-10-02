@@ -15,8 +15,24 @@ from pathlib import Path
 
 import pytest
 
+from aota_forge.core.contracts.canonical import canonical_json
+from aota_forge.core.contracts.errors import InputSizeError
+from aota_forge.core.contracts.loader import discover_canonical_project_root, load_operation_descriptor_map
+from aota_forge.core.contracts.validation import (
+    LARGE_TEXT_INPUT_BOUNDS,
+    MAX_TOTAL_INPUT_BYTES,
+    validate_inputs,
+)
+from aota_forge.core.plan.read_model import MAX_PLAN_BYTES
 from aota_forge.session_bridge import (
+    BRIDGE_CANONICAL_INPUT_MAX_BYTES,
     BRIDGE_CARRIER_KEY,
+    BRIDGE_ENVELOPE_FIXED_MAX_BYTES,
+    BRIDGE_IDENTITY_MAX_CHARS,
+    BRIDGE_JSON_STRING_MAX_BYTES_PER_CHAR,
+    BRIDGE_OPERATION_NAME_MAX_BYTES,
+    BRIDGE_SOCKET_MAX_BYTES,
+    BRIDGE_TOKEN_MAX_BYTES,
     BridgeSocketClient,
     BridgeVerificationError,
     InvocationBridge,
@@ -350,3 +366,320 @@ def test_projection_lock_unavailability_fails_closed(tmp_path: Path, monkeypatch
     with pytest.raises(context_binding.ContextBindingError, match="inter-process") as error:
         projection.get_for_session("ses_lock_probe")
     assert error.value.code == "CONTEXT_BINDING_PERSISTENCE_FAILED"
+
+
+def _governance_plan_arguments(candidate_body: str) -> dict[str, object]:
+    return {
+        "mode": "amend",
+        "project_id": "aota_forge",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "candidate_body": candidate_body,
+        "expected_plan_revision": 43,
+        "semantic_decision_ref": "bridge-request-size-test",
+        "idempotency_key": "bridge-request-size-test-idempotency",
+        "correlation_id": "bridge-request-size-test-correlation",
+    }
+
+
+def _wire(payload: dict[str, object]) -> bytes:
+    return (canonical_json(payload) + "\n").encode("utf-8")
+
+
+def _issue_payload(
+    arguments: dict[str, object],
+    *,
+    session_id: str = "ses-size-test",
+    call_id: str = "call-size-test",
+) -> dict[str, object]:
+    return {
+        "op": "issue",
+        "session_id": session_id,
+        "call_id": call_id,
+        "operation": "governance.plan",
+        "arguments": arguments,
+    }
+
+
+def _send_raw_frame(socket_path: str | Path, frame: bytes) -> bytes:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(2.0)
+        connection.connect(str(socket_path))
+        try:
+            connection.sendall(frame)
+        except OSError:
+            # The bounded daemon may close an oversized request while sendall
+            # is still draining the test's deliberately gross frame.
+            pass
+        response = bytearray()
+        while b"\n" not in response:
+            chunk = connection.recv(4096)
+            if not chunk:
+                break
+            response.extend(chunk)
+        return bytes(response)
+
+
+def _read_error_response(raw: bytes) -> dict[str, object]:
+    parsed = json.loads(raw.split(b"\n", 1)[0].decode("utf-8"))
+    assert parsed["ok"] is False
+    return parsed["error"]
+
+
+def test_bridge_request_bound_is_derived_from_canonical_input_and_protocol_envelopes() -> None:
+    descriptors = load_operation_descriptor_map(discover_canonical_project_root())
+    operation_names = tuple(descriptors)
+    assert len(operation_names) == 43
+    assert max(len(name.encode("utf-8")) for name in operation_names) == BRIDGE_OPERATION_NAME_MAX_BYTES
+
+    assert MAX_TOTAL_INPUT_BYTES == MAX_PLAN_BYTES == 256 * 1024
+    assert LARGE_TEXT_INPUT_BOUNDS[("governance.plan", "candidate_body")] == 256 * 1024
+    assert BRIDGE_CANONICAL_INPUT_MAX_BYTES == MAX_TOTAL_INPUT_BYTES
+    escaped_identity_bytes = len(canonical_json("\x01" * BRIDGE_IDENTITY_MAX_CHARS).encode("utf-8")) - len(b'""')
+    assert escaped_identity_bytes == BRIDGE_IDENTITY_MAX_CHARS * BRIDGE_JSON_STRING_MAX_BYTES_PER_CHAR
+
+    issue_skeleton = len(
+        _wire({"op": "issue", "session_id": "", "call_id": "", "operation": "", "arguments": {}})
+    )
+    verify_skeleton = len(_wire({"op": "verify", "token": "", "operation": "", "arguments": {}}))
+    issue_fixed = (
+        issue_skeleton
+        + 2 * BRIDGE_IDENTITY_MAX_CHARS * BRIDGE_JSON_STRING_MAX_BYTES_PER_CHAR
+        + BRIDGE_OPERATION_NAME_MAX_BYTES
+        - len(b"{}")
+    )
+    verify_fixed = (
+        verify_skeleton
+        + BRIDGE_TOKEN_MAX_BYTES
+        + BRIDGE_OPERATION_NAME_MAX_BYTES
+        - len(b"{}")
+    )
+
+    assert (issue_skeleton, verify_skeleton) == (74, 57)
+    assert BRIDGE_ENVELOPE_FIXED_MAX_BYTES == max(issue_fixed, verify_fixed) == 6_248
+    assert BRIDGE_SOCKET_MAX_BYTES == MAX_TOTAL_INPUT_BYTES + BRIDGE_ENVELOPE_FIXED_MAX_BYTES == 268_392
+
+
+@pytest.fixture(scope="module")
+def governance_plan_descriptor():
+    return load_operation_descriptor_map(discover_canonical_project_root())["governance.plan"]
+
+
+def _validate_governance_plan_args(descriptor, candidate_body: str) -> dict[str, object]:
+    return validate_inputs(descriptor, _governance_plan_arguments(candidate_body))
+
+
+def _governance_plan_args_for_frame_size(descriptor, target_size: int, label: str) -> dict[str, object]:
+    empty_args = _validate_governance_plan_args(descriptor, "")
+    session_id = f"ses-{label}"
+    call_id = f"call-{label}"
+    empty_frame_size = len(
+        _wire(_issue_payload(empty_args, session_id=session_id, call_id=call_id))
+    )
+    return _validate_governance_plan_args(descriptor, "x" * (target_size - empty_frame_size))
+
+
+def _roundtrip_large_bridge_request(client: BridgeSocketClient, arguments: dict[str, object], label: str) -> int:
+    session_id = f"ses-{label}"
+    call_id = f"call-{label}"
+    request_size = len(_wire(_issue_payload(arguments, session_id=session_id, call_id=call_id)))
+    token = client.issue(session_id, call_id, "governance.plan", arguments)
+    verified = client.verify(token, "governance.plan", arguments)
+    assert verified.session_id == session_id
+    assert verified.call_id == call_id
+    return request_size
+
+
+def test_bridge_carries_requests_below_and_above_old_16k_boundary_and_37124_body(
+    tmp_path: Path, governance_plan_descriptor
+) -> None:
+    old_bound = 16 * 1024
+    below_args = _governance_plan_args_for_frame_size(governance_plan_descriptor, old_bound - 1, "below-old-bound")
+    above_args = _governance_plan_args_for_frame_size(governance_plan_descriptor, old_bound + 1, "above-old-bound")
+    large_args = _validate_governance_plan_args(governance_plan_descriptor, "x" * 37_124)
+
+    below_size = len(
+        _wire(_issue_payload(below_args, session_id="ses-below-old-bound", call_id="call-below-old-bound"))
+    )
+    above_size = len(
+        _wire(_issue_payload(above_args, session_id="ses-above-old-bound", call_id="call-above-old-bound"))
+    )
+    large_size = len(_wire(_issue_payload(large_args, session_id="ses-37124-body", call_id="call-37124-body")))
+    assert below_size == old_bound - 1
+    assert above_size == old_bound + 1
+    assert old_bound < large_size < BRIDGE_SOCKET_MAX_BYTES
+    assert len(large_args["candidate_body"].encode("utf-8")) == 37_124
+
+    with _bridge_process(tmp_path) as client:
+        assert _roundtrip_large_bridge_request(client, below_args, "below-old-bound") == below_size
+        assert _roundtrip_large_bridge_request(client, above_args, "above-old-bound") == above_size
+        assert _roundtrip_large_bridge_request(client, large_args, "37124-body") == large_size
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "ASCII governance candidate " * 700,
+        "繁體中文候選本文🙂" * 300,
+        'quotes """ and backslashes \\\\ ' * 300,
+        "line one\nline two\r\nline three\t" * 300,
+        ("\x01\x02\x1f\\\"\n" * 700),
+    ),
+    ids=("ascii", "utf8-multibyte", "quotes-backslashes", "newlines", "json-escape-heavy"),
+)
+def test_bridge_encoding_adversarial_inputs_pass_real_aota_validation_and_roundtrip(
+    tmp_path: Path,
+    governance_plan_descriptor,
+    body: str,
+) -> None:
+    arguments = _validate_governance_plan_args(governance_plan_descriptor, body)
+    canonical_input_bytes = len(json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    bridge_request_bytes = len(_wire(_issue_payload(arguments)))
+    assert canonical_input_bytes <= MAX_TOTAL_INPUT_BYTES
+    assert bridge_request_bytes <= BRIDGE_SOCKET_MAX_BYTES
+
+    with _bridge_process(tmp_path) as client:
+        _roundtrip_large_bridge_request(client, arguments, "encoding")
+
+
+def test_near_canonical_maximum_request_is_valid_and_bridge_roundtrips(
+    tmp_path: Path, governance_plan_descriptor
+) -> None:
+    empty_args = _governance_plan_arguments("")
+    empty_size = len(json.dumps(empty_args, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    candidate_body = "x" * (MAX_TOTAL_INPUT_BYTES - empty_size)
+    arguments = _validate_governance_plan_args(governance_plan_descriptor, candidate_body)
+    assert len(json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode("utf-8")) == MAX_TOTAL_INPUT_BYTES
+    request_size = len(
+        _wire(
+            _issue_payload(
+                arguments,
+                session_id="ses-near-canonical-max",
+                call_id="call-near-canonical-max",
+            )
+        )
+    )
+    assert request_size <= BRIDGE_SOCKET_MAX_BYTES
+
+    with _bridge_process(tmp_path) as client:
+        assert _roundtrip_large_bridge_request(client, arguments, "near-canonical-max") == request_size
+
+    over_limit = _governance_plan_arguments(candidate_body + "x")
+    with pytest.raises(InputSizeError, match="total input exceeds"):
+        validate_inputs(governance_plan_descriptor, over_limit)
+
+
+def test_exact_bridge_hard_bound_passes_and_hard_bound_plus_one_is_denied(tmp_path: Path) -> None:
+    def payload_for_size(size: int) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "op": "issue",
+            "session_id": "ses-frame-boundary",
+            "call_id": "call-frame-boundary",
+            "operation": "workspace.search",
+            "arguments": {"padding": ""},
+        }
+        base_size = len(_wire(payload))
+        payload["arguments"]["padding"] = "x" * (size - base_size)  # type: ignore[index]
+        assert len(_wire(payload)) == size
+        return payload
+
+    exact_payload = payload_for_size(BRIDGE_SOCKET_MAX_BYTES)
+    over_payload = payload_for_size(BRIDGE_SOCKET_MAX_BYTES + 1)
+    with _bridge_process(tmp_path) as client:
+        exact_response = client._request(exact_payload)
+        assert exact_response["ok"] is True
+        over_error = _read_error_response(_send_raw_frame(client.socket_path, _wire(over_payload)))
+        assert over_error["code"] == "BRIDGE_REQUEST_TOO_LARGE"
+
+
+def test_grossly_oversized_malformed_and_truncated_frames_fail_closed(tmp_path: Path) -> None:
+    with _bridge_process(tmp_path) as client:
+        malformed = _read_error_response(_send_raw_frame(client.socket_path, b"{not-json}\n"))
+        assert malformed["code"] == "BRIDGE_REQUEST_INVALID"
+
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(2.0)
+            connection.connect(str(client.socket_path))
+            connection.sendall(b'{"op":"issue"')
+            connection.shutdown(socket.SHUT_WR)
+            truncated_raw = bytearray()
+            while b"\n" not in truncated_raw:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                truncated_raw.extend(chunk)
+        truncated = _read_error_response(bytes(truncated_raw))
+        assert truncated["code"] == "BRIDGE_REQUEST_INVALID"
+
+        gross_payload: dict[str, object] = {
+            "op": "issue",
+            "session_id": "ses-gross-size",
+            "call_id": "call-gross-size",
+            "operation": "workspace.search",
+            "arguments": {"padding": "x" * (BRIDGE_SOCKET_MAX_BYTES + 64 * 1024)},
+        }
+        gross_error = _read_error_response(_send_raw_frame(client.socket_path, _wire(gross_payload)))
+        assert gross_error["code"] == "BRIDGE_REQUEST_TOO_LARGE"
+
+
+def test_multiple_frames_on_one_connection_process_only_the_first_frame(tmp_path: Path) -> None:
+    arguments = {"query": "one-frame"}
+    first = {
+        "op": "issue",
+        "session_id": "ses-single-frame",
+        "call_id": "call-single-frame",
+        "operation": "workspace.search",
+        "arguments": arguments,
+    }
+    second = {"op": "rotate"}
+    with _bridge_process(tmp_path) as client:
+        response = _send_raw_frame(client.socket_path, _wire(first) + _wire(second))
+        assert response.count(b"\n") == 1
+        token = json.loads(response.split(b"\n", 1)[0].decode("utf-8"))["token"]
+        identity = client.verify(token, "workspace.search", arguments)
+        assert identity.session_id == "ses-single-frame"
+        with pytest.raises(BridgeVerificationError, match="already consumed"):
+            client.verify(token, "workspace.search", arguments)
+
+
+def test_bridge_concurrent_sessions_keep_frames_calls_tokens_and_bodies_isolated(tmp_path: Path) -> None:
+    barrier = threading.Barrier(2)
+    cases = (
+        ("ses-concurrent-a", "call-concurrent-a", {"query": "A" * 20_000}),
+        ("ses-concurrent-b", "call-concurrent-b", {"query": "B" * 20_000}),
+    )
+    with _bridge_process(tmp_path) as client:
+        def issue_and_verify(case):
+            session_id, call_id, arguments = case
+            barrier.wait()
+            token = client.issue(session_id, call_id, "workspace.search", arguments)
+            return client.verify(token, "workspace.search", arguments)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            identities = list(executor.map(issue_and_verify, cases))
+
+    assert [(item.session_id, item.call_id) for item in identities] == [
+        ("ses-concurrent-a", "call-concurrent-a"),
+        ("ses-concurrent-b", "call-concurrent-b"),
+    ]
+    assert len({item.nonce for item in identities}) == 2
+    assert len({item.args_sha256 for item in identities}) == 2
+
+
+def test_bridge_denies_unknown_tokens_hmac_tampering_substitution_and_replay(tmp_path: Path) -> None:
+    arguments = {"query": "bridge security"}
+    with _bridge_process(tmp_path) as client:
+        token = client.issue("ses-security-a", "call-security-a", "workspace.search", arguments)
+        prefix, payload, mac = token.split(".")
+        changed_mac = ("A" if mac[0] != "A" else "B") + mac[1:]
+        with pytest.raises(BridgeVerificationError, match="MAC is invalid"):
+            client.verify(".".join((prefix, payload, changed_mac)), "workspace.search", arguments)
+
+        with pytest.raises(BridgeVerificationError, match="MAC is invalid"):
+            client.verify("aota-bridge-v1.unknown.AA", "workspace.search", arguments)
+
+        with pytest.raises(BridgeVerificationError, match="arguments differ"):
+            client.verify(token, "workspace.search", {"query": "substituted"})
+        verified = client.verify(token, "workspace.search", arguments)
+        assert verified.session_id == "ses-security-a"
+        with pytest.raises(BridgeVerificationError, match="already consumed"):
+            client.verify(token, "workspace.search", arguments)

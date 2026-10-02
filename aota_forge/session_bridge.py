@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from aota_forge.core.contracts.canonical import canonical_json
+from aota_forge.core.contracts.validation import MAX_TOTAL_INPUT_BYTES
 
 BRIDGE_TOKEN_PREFIX = "aota-bridge-v1"
 BRIDGE_ISSUER = "aota.trusted-opencode-plugin"
@@ -31,11 +32,51 @@ BRIDGE_AUDIENCE = "aota.mcp.verify"
 BRIDGE_TOOL = "aota_aota_invoke"
 BRIDGE_CARRIER_KEY = "__aota_trusted_invocation"
 BRIDGE_CARRIER_SCHEMA = BRIDGE_TOKEN_PREFIX
+BRIDGE_IDENTITY_MAX_CHARS = 512
+BRIDGE_OPERATION_NAME_MAX_BYTES = 32
 BRIDGE_TOKEN_MAX_BYTES = 4096
 BRIDGE_TOKEN_TTL_SECONDS = 10
 BRIDGE_CLOCK_SKEW_SECONDS = 2
-BRIDGE_SOCKET_MAX_BYTES = 16 * 1024
 BRIDGE_SOCKET_ENV = "AOTA_BRIDGE_SOCKET"
+
+# MCP JSON-RPC terminates before this socket. The framed IPC is one Bridge
+# JSON object plus LF; canonical AOTA args use the same UTF-8 JSON string
+# escaping but less compact separators, so the nested args cannot expand.
+# An issue frame carries two 512-character identities (up to 6 escaped bytes
+# per character); a verify frame carries the bounded token containing the
+# HMAC, nonce, timestamps, version and identity. The 43 canonical operation
+# names currently top out at 32 ASCII bytes.
+BRIDGE_CANONICAL_INPUT_MAX_BYTES = MAX_TOTAL_INPUT_BYTES
+BRIDGE_JSON_STRING_MAX_BYTES_PER_CHAR = 6
+_BRIDGE_EMPTY_ARGUMENTS_BYTES = len(b"{}")
+_BRIDGE_ISSUE_FRAME_SKELETON_BYTES = len(
+    (
+        canonical_json(
+            {
+                "op": "issue",
+                "session_id": "",
+                "call_id": "",
+                "operation": "",
+                "arguments": {},
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+)
+_BRIDGE_VERIFY_FRAME_SKELETON_BYTES = len(
+    (canonical_json({"op": "verify", "token": "", "operation": "", "arguments": {}}) + "\n").encode("utf-8")
+)
+BRIDGE_ENVELOPE_FIXED_MAX_BYTES = max(
+    _BRIDGE_ISSUE_FRAME_SKELETON_BYTES
+    + (2 * BRIDGE_IDENTITY_MAX_CHARS * BRIDGE_JSON_STRING_MAX_BYTES_PER_CHAR)
+    + BRIDGE_OPERATION_NAME_MAX_BYTES
+    - _BRIDGE_EMPTY_ARGUMENTS_BYTES,
+    _BRIDGE_VERIFY_FRAME_SKELETON_BYTES
+    + BRIDGE_TOKEN_MAX_BYTES
+    + BRIDGE_OPERATION_NAME_MAX_BYTES
+    - _BRIDGE_EMPTY_ARGUMENTS_BYTES,
+)
+BRIDGE_SOCKET_MAX_BYTES = BRIDGE_CANONICAL_INPUT_MAX_BYTES + BRIDGE_ENVELOPE_FIXED_MAX_BYTES
 
 _PAYLOAD_FIELDS = frozenset(
     {
@@ -90,7 +131,7 @@ def _b64_decode(value: object, *, label: str) -> bytes:
 
 
 def _bounded_text(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value or len(value) > 512 or "\x00" in value:
+    if not isinstance(value, str) or not value or len(value) > BRIDGE_IDENTITY_MAX_CHARS or "\x00" in value:
         raise BridgeVerificationError("TOKEN_IDENTITY_INVALID", f"{label} is invalid")
     return value
 
@@ -459,8 +500,13 @@ __all__ = [
     "BRIDGE_AUDIENCE",
     "BRIDGE_CARRIER_KEY",
     "BRIDGE_CARRIER_SCHEMA",
+    "BRIDGE_CANONICAL_INPUT_MAX_BYTES",
+    "BRIDGE_ENVELOPE_FIXED_MAX_BYTES",
+    "BRIDGE_IDENTITY_MAX_CHARS",
     "BRIDGE_ISSUER",
+    "BRIDGE_OPERATION_NAME_MAX_BYTES",
     "BRIDGE_SOCKET_ENV",
+    "BRIDGE_SOCKET_MAX_BYTES",
     "BRIDGE_TOOL",
     "BRIDGE_TOKEN_MAX_BYTES",
     "BRIDGE_TOKEN_TTL_SECONDS",
