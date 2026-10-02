@@ -121,7 +121,9 @@ def test_contract_rejects_missing_forged_expired_and_mismatched_tokens() -> None
 
     with pytest.raises(ValueError, match="missing"):
         authority.consume(None, "ses-A", "call-A", logical)
-    forged = token[:-1] + ("A" if token[-1] != "A" else "B")
+    prefix, payload, mac = token.split(".")
+    forged_mac = ("B" if mac[0] != "B" else "C") + mac[1:]
+    forged = ".".join((prefix, payload, forged_mac))
     with pytest.raises(ValueError, match="invalid mac"):
         authority.consume(forged, "ses-A", "call-A", logical)
     with pytest.raises(ValueError, match="identity mismatch"):

@@ -196,9 +196,15 @@ def test_session_router_interleaves_two_bound_sessions_without_global_dispatcher
         )
         router = SessionScopedContextRouter(host_context)
 
-        def call(session: str, call_id: str, operation: str, arguments: dict):
+        def call(
+            session: str,
+            call_id: str,
+            operation: str,
+            arguments: dict,
+            target_router=None,
+        ):
             token = client.issue(session, call_id, operation, arguments)
-            return router.invoke(
+            return (target_router or router).invoke(
                 operation,
                 {**arguments, BRIDGE_CARRIER_KEY: {"schema": "aota-bridge-v1", "token": token}},
             )
@@ -218,11 +224,17 @@ def test_session_router_interleaves_two_bound_sessions_without_global_dispatcher
                 },
             )
 
-        def payload(result, session: str, call_id: str):
+        def payload(result, session: str, call_id: str, target_router=None):
             if isinstance(result.get("payload"), dict):
                 return result["payload"]
             hydration = result.get("hydration") or {}
-            hydrated = call(session, call_id, "result.hydrate", hydration.get("arguments") or {})
+            hydrated = call(
+                session,
+                call_id,
+                "result.hydrate",
+                hydration.get("arguments") or {},
+                target_router=target_router,
+            )
             content = (hydrated.get("payload") or {}).get("content")
             return json.loads(content) if isinstance(content, str) else hydrated.get("payload")
 
@@ -268,7 +280,12 @@ def test_session_router_interleaves_two_bound_sessions_without_global_dispatcher
             {"mode": "inspect", BRIDGE_CARRIER_KEY: {"schema": "aota-bridge-v1", "token": resumed_token}},
         )
         assert resumed["ok"] is True
-        assert payload(resumed, "ses-A", "restart-hydrate-A")["origin_session_ref"] == "ses-A"
+        assert payload(
+            resumed,
+            "ses-A",
+            "restart-hydrate-A",
+            target_router=resumed_router,
+        )["origin_session_ref"] == "ses-A"
         resumed_router.close()
     reset_execution_dispatcher()
 

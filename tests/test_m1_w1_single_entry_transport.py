@@ -138,7 +138,7 @@ def _binding(root: Path, *, with_write: bool = True) -> TrustedWorkerBinding:
 def _call(server, operation: str, arguments: dict):
     async def run():
         tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-        res = tool.fn(operation=operation, arguments=arguments)
+        res = await tool.fn(operation=operation, arguments=arguments)
         # c3fde75 repair wraps result in CallToolResult with structuredContent
         if hasattr(res, "structuredContent") and res.structuredContent is not None:
             return res.structuredContent

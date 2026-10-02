@@ -50,8 +50,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import fcntl
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+import stat
 from typing import Any
 
 from aota_forge.core.contracts.errors import (
@@ -195,6 +198,37 @@ def _atomic_write_workspace_registry(registry_path: Path, data: dict[str, Any]) 
         raise ProjectRegistryInvalidError("workspace registry read-back mismatch after write")
 
 
+@contextmanager
+def _workspace_registry_lock(registry_path: Path):
+    """Serialize registry read-modify-write transactions across processes."""
+    if registry_path.parent.is_symlink() or not registry_path.parent.is_dir():
+        raise ProjectRegistryInvalidError("workspace registry parent is unsafe")
+    lock_path = registry_path.with_name(f".{registry_path.name}.lock")
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError("workspace registry lock is not a regular file")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise ProjectRegistryInvalidError(
+            "workspace registry lock could not be acquired"
+        ) from exc
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
 def _ensure_workspace_authorized(
     registry_path: Path,
     registry: dict[str, Any],
@@ -209,6 +243,21 @@ def _ensure_workspace_authorized(
       closed; explicit retirement is required (no silent rebind)
     * existing entry has only dead/non-existing candidates → append the root
     """
+    with _workspace_registry_lock(registry_path):
+        # Reload only after acquiring the cross-instance lock; registration
+        # for another workspace must not be lost to a stale snapshot.
+        registry = load_workspace_registry(registry_path)
+        return _ensure_workspace_authorized_locked(
+            registry_path, registry, workspace_id, workspace_root
+        )
+
+
+def _ensure_workspace_authorized_locked(
+    registry_path: Path,
+    registry: dict[str, Any],
+    workspace_id: str,
+    workspace_root: Path,
+) -> bool:
     new_root = str(workspace_root)
     entry = registry.get(workspace_id)
     if entry is None:
@@ -511,6 +560,17 @@ def retire_workspace_authorization(
     """
     wid = _validate_workspace_id(workspace_id)
     registry_path = Path(registry_path)
+    with _workspace_registry_lock(registry_path):
+        return _retire_workspace_authorization_locked(
+            wid, registry_path, workspace_root
+        )
+
+
+def _retire_workspace_authorization_locked(
+    wid: str,
+    registry_path: Path,
+    workspace_root: Path | str,
+) -> dict[str, Any]:
     registry = load_workspace_registry(registry_path)
     entry = registry.get(wid)
     if entry is None:

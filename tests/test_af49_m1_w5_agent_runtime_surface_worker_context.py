@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import asyncio
 import json
 import os
 import uuid
@@ -250,11 +251,14 @@ def _reset_dispatcher():
 
 
 def _call(server, operation: str, arguments: dict):
-    tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-    res = tool.fn(operation=operation, arguments=arguments)
-    structured = res.structuredContent if hasattr(res, "structuredContent") else None
-    text = res.content[0].text if getattr(res, "content", None) else None
-    return structured, text
+    async def run():
+        tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
+        res = await tool.fn(operation=operation, arguments=arguments)
+        structured = res.structuredContent if hasattr(res, "structuredContent") else None
+        text = res.content[0].text if getattr(res, "content", None) else None
+        return structured, text
+
+    return asyncio.run(run())
 
 
 def _bootstrap_payload(server):

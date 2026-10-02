@@ -46,9 +46,11 @@ W5 agent runtime surface repair (AF #49 M1/W5):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import threading
+from contextlib import asynccontextmanager
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -255,6 +257,9 @@ MCP_PUBLIC_TOOLS: tuple[str, ...] = ("aota.invoke",)
 MCP_PUBLIC_TOOL_COUNT = len(MCP_PUBLIC_TOOLS)
 AGENT_FACING_AOTA_TOOL = "aota.invoke"
 HERMES_AGENT_FACING_AOTA_TOOL_COUNT = 1
+# The shared child can run two independent Sessions at once. Same-Session
+# serialization remains owned by _SessionSlot.lock.
+MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS = 2
 
 # M2/W1 runtime authority binding foundation (fail-closed).
 TRUSTED_BINDING_FAIL_CLOSED = True
@@ -1588,13 +1593,21 @@ def _unbound_operations_listing(operation: str, arguments: dict[str, Any]) -> di
 class _SessionSlot:
     """One headed Session's in-memory adapter and serialized call boundary."""
 
-    def __init__(self, session_id: str, adapter: "_UnboundAotaAdapter", bridge_id: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        context: UnboundHostContext,
+        bridge_id: str,
+    ) -> None:
         self.session_id = session_id
-        self.adapter = adapter
+        self.context = context
+        self.adapter: _UnboundAotaAdapter | None = None
         self.bridge_id = bridge_id
         self.execution_dispatcher: Any | None = None
         self.execution_store: Any | None = None
         self.lock = threading.RLock()
+        self.async_lock: asyncio.Lock | None = None
+        # ``in_flight`` is protected by SessionScopedContextRouter._lock.
         self.in_flight = 0
 
 
@@ -1619,33 +1632,41 @@ class SessionScopedContextRouter:
             raise TrustedBindingError(str(exc)) from exc
         self._slots: dict[str, _SessionSlot] = {}
         self._lock = threading.RLock()
+        self._idle = threading.Condition(self._lock)
+        self._closed = False
 
     def _slot(self, identity: VerifiedInvocationIdentity) -> _SessionSlot:
+        retired: list[_SessionSlot] = []
         with self._lock:
+            if self._closed:
+                raise BridgeVerificationError(
+                    "BRIDGE_UNAVAILABLE", "headed Session router is shutting down"
+                )
             existing = self._slots.get(identity.session_id)
             if existing is not None:
-                with existing.lock:
-                    if existing.bridge_id != identity.bridge_id:
-                        if existing.in_flight:
-                            raise BridgeVerificationError(
-                                "TOKEN_EPOCH_STALE",
-                                "Session slot is still serving the previous bridge epoch",
-                            )
-                        existing.adapter.close()
-                        self._slots.pop(identity.session_id, None)
-                    else:
-                        existing.in_flight += 1
-                        return existing
+                if existing.bridge_id != identity.bridge_id:
+                    if existing.in_flight:
+                        raise BridgeVerificationError(
+                            "TOKEN_EPOCH_STALE",
+                            "Session slot is still serving the previous bridge epoch",
+                        )
+                    self._slots.pop(identity.session_id, None)
+                    retired.append(existing)
+                    existing = None
+                else:
+                    # Admission bookkeeping stays under the router lock, but
+                    # never wait for this Session's execution gate here.
+                    existing.in_flight += 1
+                    return existing
             if len(self._slots) >= self.MAX_SLOTS:
                 evicted = False
                 for key, candidate in tuple(self._slots.items()):
-                    with candidate.lock:
-                        if candidate.in_flight:
-                            continue
-                        candidate.adapter.close()
-                        self._slots.pop(key, None)
-                        evicted = True
-                        break
+                    if candidate.in_flight:
+                        continue
+                    self._slots.pop(key, None)
+                    retired.append(candidate)
+                    evicted = True
+                    break
                 if not evicted:
                     raise BridgeVerificationError("SESSION_CAPACITY_EXCEEDED", "headed Session capacity is exhausted")
             session_context = replace(
@@ -1654,11 +1675,29 @@ class SessionScopedContextRouter:
                 bridge_socket_path="",
                 bind_global_dispatcher=False,
             )
-            adapter = _UnboundAotaAdapter(session_context)
-            slot = _SessionSlot(identity.session_id, adapter, identity.bridge_id)
+            # Mutable delegate recovery/installation is deferred until the
+            # selected slot's per-Session execution gate is owned.
+            slot = _SessionSlot(identity.session_id, session_context, identity.bridge_id)
             slot.in_flight = 1
             self._slots[identity.session_id] = slot
-            return slot
+        for old_slot in retired:
+            try:
+                self._close_slot(old_slot)
+            except Exception:
+                self._release_slot(slot)
+                raise
+        return slot
+
+    @staticmethod
+    def _close_slot(slot: _SessionSlot) -> None:
+        adapter = slot.adapter
+        if adapter is not None:
+            adapter.close()
+
+    def _release_slot(self, slot: _SessionSlot) -> None:
+        with self._idle:
+            slot.in_flight -= 1
+            self._idle.notify_all()
 
     def _has_durable_session(self, session_id: str) -> bool:
         try:
@@ -1676,65 +1715,149 @@ class SessionScopedContextRouter:
             return False
 
     def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
-        if not isinstance(arguments, dict):
-            return _unbound_governed_error(operation, "INPUT_TYPE_INVALID", "arguments must be an object")
         try:
-            logical_arguments, token = extract_carrier(arguments)
-            identity = self.bridge.verify(token, operation, logical_arguments)
-            if not is_bound_origin_session_ref(identity.session_id):
-                raise BridgeVerificationError(
-                    "UNTRUSTED_IDENTITY",
-                    "trusted bridge session identity is not an exact host Session reference",
-                )
-            with self._lock:
-                existing = self._slots.get(identity.session_id)
-            if existing is None and operation == "task_main.context":
-                mode = logical_arguments.get("mode")
-                if mode not in {"inspect", "bind"} and not self._has_durable_session(identity.session_id):
-                    raise BridgeVerificationError(
-                        "CONTEXT_BINDING_REQUIRED",
-                        "verified-unbound Session permits only context.inspect or context.bind",
-                    )
-            elif existing is None and not self._has_durable_session(identity.session_id):
-                raise BridgeVerificationError(
-                    "CONTEXT_BINDING_REQUIRED",
-                    "headed Session must complete trusted context.bind before this operation",
-                )
+            logical_arguments, identity = self._verify_invocation(operation, arguments)
             slot = self._slot(identity)
         except BridgeVerificationError as exc:
             return _unbound_governed_error(operation, exc.code, str(exc))
+
+        try:
+            return self._execute_in_slot(slot, identity, operation, logical_arguments)
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+        finally:
+            self._release_slot(slot)
+
+    def _verify_invocation(
+        self,
+        operation: str,
+        arguments: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], VerifiedInvocationIdentity]:
+        if not isinstance(arguments, dict):
+            raise BridgeVerificationError(
+                "INPUT_TYPE_INVALID", "arguments must be an object"
+            )
+        logical_arguments, token = extract_carrier(arguments)
+        identity = self.bridge.verify(token, operation, logical_arguments)
+        if not is_bound_origin_session_ref(identity.session_id):
+            raise BridgeVerificationError(
+                "UNTRUSTED_IDENTITY",
+                "trusted bridge session identity is not an exact host Session reference",
+            )
+        with self._lock:
+            existing = self._slots.get(identity.session_id)
+        if existing is None and operation == "task_main.context":
+            mode = logical_arguments.get("mode")
+            if mode not in {"inspect", "bind"} and not self._has_durable_session(identity.session_id):
+                raise BridgeVerificationError(
+                    "CONTEXT_BINDING_REQUIRED",
+                    "verified-unbound Session permits only context.inspect or context.bind",
+                )
+        elif existing is None and not self._has_durable_session(identity.session_id):
+            raise BridgeVerificationError(
+                "CONTEXT_BINDING_REQUIRED",
+                "headed Session must complete trusted context.bind before this operation",
+            )
+        return logical_arguments, identity
+
+    def _execute_in_slot(
+        self,
+        slot: _SessionSlot,
+        identity: VerifiedInvocationIdentity,
+        operation: str,
+        logical_arguments: dict[str, Any],
+    ) -> McpToolResult:
         with slot.lock:
-            try:
-                if (
-                    slot.adapter._bound_delegate is None
-                    and (
-                        operation not in self._INITIAL_OPERATIONS
-                        or (
-                            operation == "task_main.context"
-                            and logical_arguments.get("mode") not in {"inspect", "bind"}
-                        )
+            if (
+                identity.session_id != slot.session_id
+                or identity.bridge_id != slot.bridge_id
+            ):
+                raise BridgeVerificationError(
+                    "UNTRUSTED_IDENTITY",
+                    "verified Session identity does not match its selected route",
+                )
+            if slot.adapter is None:
+                slot.adapter = _UnboundAotaAdapter(slot.context)
+            adapter = slot.adapter
+            if (
+                adapter._bound_delegate is None
+                and (
+                    operation not in self._INITIAL_OPERATIONS
+                    or (
+                        operation == "task_main.context"
+                        and logical_arguments.get("mode") not in {"inspect", "bind"}
                     )
-                ):
-                    return _unbound_governed_error(
-                        operation,
-                        "CONTEXT_BINDING_REQUIRED",
-                        "headed Session must complete trusted context.bind before this operation",
-                    )
-                result = slot.adapter.invoke(operation, logical_arguments)
-                runtime = slot.adapter._bound_runtime
-                slot.execution_dispatcher = getattr(runtime, "execution_dispatcher", None)
-                slot.execution_store = getattr(runtime, "execution_store", None)
-                return result
-            finally:
-                slot.in_flight -= 1
+                )
+            ):
+                return _unbound_governed_error(
+                    operation,
+                    "CONTEXT_BINDING_REQUIRED",
+                    "headed Session must complete trusted context.bind before this operation",
+                )
+            result = adapter.invoke(operation, logical_arguments)
+            runtime = adapter._bound_runtime
+            slot.execution_dispatcher = getattr(runtime, "execution_dispatcher", None)
+            slot.execution_store = getattr(runtime, "execution_store", None)
+            return result
+
+    async def invoke_async(
+        self,
+        operation: str,
+        arguments: dict[str, Any] | None,
+        *,
+        worker_limiter: Any,
+    ) -> McpToolResult:
+        """Verify first, wait on the existing Session gate, then offload work.
+
+        Verification uses a bounded worker briefly. The asyncio gate is part
+        of the existing Session slot lifecycle, so same-Session waiters do not
+        occupy operation workers while unrelated Sessions remain admissible.
+        """
+        import anyio
+
+        try:
+            logical_arguments, identity = await anyio.to_thread.run_sync(
+                self._verify_invocation,
+                operation,
+                arguments,
+                abandon_on_cancel=False,
+                limiter=worker_limiter,
+            )
+            slot = self._slot(identity)
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+
+        try:
+            if slot.async_lock is None:
+                # There is no await between check and assignment. FastMCP owns
+                # one event loop for this server, and the lock lives on the
+                # already-selected Session slot rather than a second registry.
+                slot.async_lock = asyncio.Lock()
+            async with slot.async_lock:
+                return await anyio.to_thread.run_sync(
+                    self._execute_in_slot,
+                    slot,
+                    identity,
+                    operation,
+                    logical_arguments,
+                    abandon_on_cancel=False,
+                    limiter=worker_limiter,
+                )
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+        finally:
+            self._release_slot(slot)
 
     def close(self) -> None:
-        with self._lock:
+        with self._idle:
+            self._closed = True
             slots = tuple(self._slots.values())
             self._slots.clear()
+            while any(slot.in_flight for slot in slots):
+                self._idle.wait()
         for slot in slots:
             with slot.lock:
-                slot.adapter.close()
+                self._close_slot(slot)
 
 
 class _UnboundAotaAdapter:
@@ -2717,9 +2840,34 @@ def create_unbound_mcp_server(context: UnboundHostContext):
 
 
 def _build_shared_mcp_server(invoke_callable: Callable[[str, dict[str, Any] | None], McpToolResult]):
+    try:
+        import anyio
+    except ImportError as exc:  # pragma: no cover - MCP extra unavailable
+        raise McpTransportUnavailable(
+            "async shared MCP dispatch requires the installed anyio dependency"
+        ) from exc
+
+    worker_limiter: Any | None = None
+    router = getattr(invoke_callable, "__self__", None)
+    session_router = (
+        router if isinstance(router, SessionScopedContextRouter) else None
+    )
+    close_router = getattr(router, "close", None)
+
+    @asynccontextmanager
+    async def _server_lifespan(_server: Any):
+        try:
+            yield {}
+        finally:
+            # FastMCP joins/cancels in-flight request handlers before lifespan
+            # teardown. A router close therefore cannot detach a governed call.
+            if callable(close_router):
+                close_router()
+
     server = MCPServer(
         "aota",
         instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority. Single entry: aota.invoke(operation, arguments).",
+        lifespan=_server_lifespan,
     )
 
     def _to_call_tool_result(mcp_result: McpToolResult) -> Any:
@@ -2844,9 +2992,30 @@ def _build_shared_mcp_server(invoke_callable: Callable[[str, dict[str, Any] | No
         name="aota.invoke",
         description="Typed AOTA dispatch. operation is exact canonical name (e.g. workspace.search); arguments is the operation's typed input object.",
     )
-    def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
+    async def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
         """Single-entry AOTA dispatch: exact operation resolution → existing descriptor → validate_inputs → existing authority → existing provider."""
-        mcp_result = invoke_callable(operation, arguments if arguments is not None else {})
+        nonlocal worker_limiter
+        if worker_limiter is None:
+            # This executes on FastMCP's event loop without yielding, so every
+            # call shares the same explicit per-server worker bound.
+            worker_limiter = anyio.CapacityLimiter(
+                MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS
+            )
+        logical_arguments = arguments if arguments is not None else {}
+        if session_router is not None:
+            mcp_result = await session_router.invoke_async(
+                operation,
+                logical_arguments,
+                worker_limiter=worker_limiter,
+            )
+        else:
+            mcp_result = await anyio.to_thread.run_sync(
+                invoke_callable,
+                operation,
+                logical_arguments,
+                abandon_on_cancel=False,
+                limiter=worker_limiter,
+            )
         # FastMCP double-emission repair: return explicit CallToolResult so
         # lowlevel server does not re-emit the same dict as both TextContent
         # and structuredContent. This keeps one canonical copy in
@@ -2868,6 +3037,7 @@ __all__ = [
     "MCP_IS_AUTHORITY_ENGINE",
     "MCP_PUBLIC_TOOLS",
     "MCP_PUBLIC_TOOL_COUNT",
+    "MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS",
     "AGENT_FACING_AOTA_TOOL",
     "HERMES_AGENT_FACING_AOTA_TOOL_COUNT",
     "WORKSPACE_OPERATIONS",
