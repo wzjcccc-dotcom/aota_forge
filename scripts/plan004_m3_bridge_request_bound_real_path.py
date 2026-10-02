@@ -238,8 +238,8 @@ constraints: []
     plan_dir.mkdir(parents=True)
     body = PLAN_PATH.read_text(encoding="utf-8")
     body_digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    if f"PLAN_ID={PLAN_ID}" not in body or "PLAN_REVISION=R40" not in body:
-        raise RuntimeError("canonical Plan fixture identity/revision changed before Bridge proof")
+    if f"PLAN_ID={PLAN_ID}" not in body or "MILESTONE_COUNT=3" not in body:
+        raise RuntimeError("canonical Plan fixture identity/milestone count changed before Bridge proof")
     (plan_dir / "plan.md").write_text(body, encoding="utf-8")
 
     store_path = project_state / "governance.sqlite3"

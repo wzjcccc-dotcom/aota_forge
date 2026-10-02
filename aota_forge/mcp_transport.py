@@ -73,6 +73,7 @@ from aota_forge.work_plane.workspace_tools import (
     BoundedWorkspaceToolProvider,
     WorkspaceAuthorityEvidence,
 )
+from aota_forge.work_plane.task_main_exposure import TASK_MAIN_UNBOUND_OPERATIONS
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.work_plane.tool_result_governance import (
@@ -1615,11 +1616,9 @@ class SessionScopedContextRouter:
     """Route verified headed calls without a process-global bound delegate."""
 
     MAX_SLOTS = 64
-    _INITIAL_OPERATIONS = frozenset(
-        {
-            "task_main.context",
-        }
-    )
+    # Use the canonical unbound surface; the selected unbound adapter still
+    # resolves each operation's authority and keeps forbidden writes denied.
+    _INITIAL_OPERATIONS = frozenset(TASK_MAIN_UNBOUND_OPERATIONS)
 
     def __init__(self, context: UnboundHostContext) -> None:
         if not context.bridge_socket_path.strip():
@@ -1753,7 +1752,11 @@ class SessionScopedContextRouter:
                     "CONTEXT_BINDING_REQUIRED",
                     "verified-unbound Session permits only context.inspect or context.bind",
                 )
-        elif existing is None and not self._has_durable_session(identity.session_id):
+        elif (
+            existing is None
+            and operation not in self._INITIAL_OPERATIONS
+            and not self._has_durable_session(identity.session_id)
+        ):
             raise BridgeVerificationError(
                 "CONTEXT_BINDING_REQUIRED",
                 "headed Session must complete trusted context.bind before this operation",

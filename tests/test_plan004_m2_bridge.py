@@ -683,3 +683,91 @@ def test_bridge_denies_unknown_tokens_hmac_tampering_substitution_and_replay(tmp
         assert verified.session_id == "ses-security-a"
         with pytest.raises(BridgeVerificationError, match="already consumed"):
             client.verify(token, "workspace.search", arguments)
+
+
+def test_session_router_allows_unbound_role_bootstrap_without_granting_authority(tmp_path: Path) -> None:
+    from aota_forge.mcp_transport import SessionScopedContextRouter, UnboundHostContext
+
+    session_id = "ses-w4-unbound-bootstrap"
+    with _bridge_process(tmp_path) as client:
+        router = SessionScopedContextRouter(
+            UnboundHostContext(
+                repo_root=str(Path(__file__).resolve().parents[1]),
+                bridge_socket_path=client.socket_path,
+                bind_global_dispatcher=False,
+            )
+        )
+
+        def call(operation: str, arguments: dict, call_id: str) -> dict:
+            token = client.issue(session_id, call_id, operation, arguments)
+            return router.invoke(
+                operation,
+                {
+                    **arguments,
+                    BRIDGE_CARRIER_KEY: {"schema": "aota-bridge-v1", "token": token},
+                },
+            )
+
+        def payload(result: dict, call_id: str) -> dict:
+            if isinstance(result.get("payload"), dict):
+                return result["payload"]
+            hydration = result.get("hydration") or {}
+            hydrated = call("result.hydrate", hydration.get("arguments") or {}, call_id)
+            assert hydrated["ok"] is True, hydrated
+            content = (hydrated.get("payload") or {}).get("content")
+            return json.loads(content) if isinstance(content, str) else hydrated.get("payload")
+
+        bootstrap = call("role.bootstrap", {}, "call-w4-bootstrap")
+        assert bootstrap["ok"] is True, bootstrap
+        bootstrap_payload = payload(bootstrap, "call-w4-bootstrap-hydrate")
+        assert bootstrap_payload["ROLE"] == "task-main"
+        assert bootstrap_payload["HOST_SESSION"] == "unbound"
+        assert bootstrap_payload["ROLE_BOOTSTRAP_REQUIRED_FOR_CHAT"] is False
+        assert bootstrap_payload["ROLE_BOOTSTRAP_MECHANICAL_GATE"] is False
+        assert bootstrap_payload["IS_AUTHORITY"] is False
+        assert bootstrap_payload["SESSION_BINDING_PRESENT"] is False
+        assert bootstrap_payload["SESSION_BINDING_REQUIRED"] is False
+        assert bootstrap_payload["RUNTIME_CONTEXT"]["plan_binding"] == "none"
+        assert bootstrap_payload["RUNTIME_CONTEXT"]["session_binding"] == "none"
+
+        inspected = call("task_main.context", {"mode": "inspect"}, "call-w4-inspect")
+        assert inspected["ok"] is True, inspected
+        inspect_payload = payload(inspected, "call-w4-inspect-hydrate")
+        assert inspect_payload["state"] == "unbound"
+        assert inspect_payload["context"] is None
+        assert inspect_payload["session_binding_is_authority"] is False
+        assert inspect_payload["identity_is_authority"] is False
+        assert inspect_payload["locator_is_authority"] is False
+
+        help_result = call("help", {"operation": "role.bootstrap"}, "call-w4-help")
+        operations = call("operations.list", {}, "call-w4-operations-list")
+        skill = call("skill.open", {"ref": "aota-task-main-control@1.0.0"}, "call-w4-skill-open")
+        assert help_result["ok"] is True, help_result
+        assert operations["ok"] is True, operations
+        assert skill["ok"] is True, skill
+
+        unbound_project = call(
+            "governance.project",
+            {"mode": "inspect", "project_id": "project-a"},
+            "call-w4-project-denied",
+        )
+        assert unbound_project["ok"] is False
+        assert unbound_project["error"]["code"] == "AUTHORITY_DENIED"
+
+        unbound_governance = call(
+            "governance.plan",
+            {
+                "mode": "inspect",
+                "project_id": "project-a",
+                "plan_id": "plan_alpha",
+            },
+            "call-w4-governance-denied",
+        )
+        assert unbound_governance["ok"] is False
+        assert unbound_governance["error"]["code"] == "AUTHORITY_DENIED"
+
+        slot = router._slots[session_id]
+        assert slot.adapter is not None
+        assert slot.adapter._bound_delegate is None
+        assert slot.adapter._bound_runtime is None
+        router.close()
