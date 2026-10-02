@@ -1,0 +1,22 @@
+{
+  "all_archive_members_match_manifest": true,
+  "candidate_digest_added_after_this_validation": true,
+  "candidate_version": "m3-preparation-v6",
+  "extraction_location": "temporary directory under /tmp/opencode, removed after probe",
+  "mcp_initialize": "PASS",
+  "mcp_protocol_version": "2025-11-25",
+  "module_imports_from_independent_extraction": true,
+  "operation_descriptor_count": 43,
+  "operations_yaml_sha256": "cbf96d7a343b638582af449e5c565626717d78a2676127c507d16f9d666cc253",
+  "package_file_count_at_probe": 30,
+  "production_bridge_or_config_used": false,
+  "production_runtime_or_store_touched": false,
+  "runtime_archive_sha256": "a9ee1515b3481bc5cc2671b496db8076749cb5ed11f3f30fdbb9bd47675d3080",
+  "runtime_source_member_count": 451,
+  "source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "source_tree": "36ba26cb7482401f9bf298e76d84303a5c8538c6",
+  "status": "PASS",
+  "tools_list": [
+    "aota.invoke"
+  ]
+}

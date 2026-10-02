@@ -1,0 +1,20 @@
+{
+  "archive_selection": [
+    "aota_forge",
+    "scripts",
+    "skills",
+    "chat_governance",
+    ".aota/project.yaml",
+    ".aota/contracts/operations.yaml"
+  ],
+  "archive_sha256": "a9ee1515b3481bc5cc2671b496db8076749cb5ed11f3f30fdbb9bd47675d3080",
+  "package_metadata_commit_is_not_runtime_source_frontier": true,
+  "runtime_source_commit": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "runtime_source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "runtime_source_tree": "36ba26cb7482401f9bf298e76d84303a5c8538c6",
+  "source_operations_sha256": "cbf96d7a343b638582af449e5c565626717d78a2676127c507d16f9d666cc253",
+  "source_regression_evidence": "evidence/focused-regression.json",
+  "source_regression_passed": 387,
+  "source_regression_reused_from_v5": false,
+  "source_regression_source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730"
+}

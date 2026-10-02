@@ -1,0 +1,162 @@
+{
+  "call_chain": [
+    {
+      "file": "aota_forge/composition/worker_vertical_slice.py",
+      "lines": "1304-1332",
+      "seam": "MCP child startup",
+      "symbol": "_serve_mcp_child"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py",
+      "lines": "2825-2833",
+      "seam": "headed single-entry server construction",
+      "symbol": "create_unbound_mcp_server -> SessionScopedContextRouter.invoke"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py",
+      "lines": "2984-2992",
+      "seam": "registered MCP callback before repair",
+      "symbol": "_build_shared_mcp_server.<locals>.aota_invoke (sync def)"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py / aota_forge/session_bridge.py",
+      "lines": "mcp_transport.py:1725-1755; session_bridge.py:323-340; InvocationBridge.verify:187-261",
+      "seam": "trusted carrier and Session identity",
+      "symbol": "SessionScopedContextRouter._verify_invocation -> BridgeSocketClient.verify -> VerifiedInvocationIdentity"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py",
+      "lines": "1638-1685",
+      "seam": "Session routing slot selection",
+      "symbol": "SessionScopedContextRouter._slot"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py",
+      "lines": "mcp_transport.py:1763-1795; _UnboundAotaAdapter.__init__ / resume:1879-1953; bind/promotion install:2339-2630",
+      "seam": "Session delegate selection and first mutable state",
+      "symbol": "SessionScopedContextRouter._execute_in_slot -> _UnboundAotaAdapter.__init__ / _resume_context_if_available"
+    },
+    {
+      "file": "aota_forge/mcp_transport.py / aota_forge/core_ingress/__init__.py",
+      "lines": "mcp_transport.py:998-1064; core_ingress/__init__.py:1499-1567",
+      "seam": "provider and operation dispatch",
+      "symbol": "_SharedAotaMcpAdapter.invoke -> core_ingress.dispatch_tool_operation -> existing providers"
+    }
+  ],
+  "context_propagation": {
+    "AF_context_redaction_result_projection": "explicitly carried through Session delegate/TrustedWorkerBinding/McpToolResult; no AF ContextVar dependency found",
+    "carrier_and_call_identity": "passed in the invocation arguments and explicitly returned by Bridge verification; not process-global",
+    "contextvars": "AnyIO 4.14.2 copies the request Context into worker threads; focused assertion passed"
+  },
+  "fastmcp_sync_dispatch": {
+    "evidence": [
+      "mcp/server/fastmcp/tools/tool_manager.py:81-93 awaits Tool.run",
+      "mcp/server/fastmcp/tools/base.py:99-110 invokes FuncMetadata.call_fn_with_arg_validation",
+      "mcp/server/fastmcp/utilities/func_metadata.py:93-96 directly calls fn when is_async is false",
+      "mcp/server/lowlevel/server.py:679-696 creates request tasks but a synchronous callback blocks their shared event loop"
+    ],
+    "status": "CONFIRMED"
+  },
+  "installed_mcp_fastmcp_version": "1.29.0",
+  "opencode_version": "1.18.30",
+  "production_candidate_before_repair": "m3-preparation-v5r1",
+  "production_candidate_digest_before_repair": "sha256:d605e4a3968f3ec2591ba7baa6536703157476d2208a3af5e0f081ee944f2d4f",
+  "repair_seams": {
+    "async_handler": "mcp_transport.py:2995-3020",
+    "bounded_worker_offload": "anyio.to_thread.run_sync with explicit CapacityLimiter(2), abandon_on_cancel=False",
+    "mutable_session_state_first_touched_after_gate": "mcp_transport.py:1763-1795 (slot.adapter is lazily constructed only under the per-Session gate)",
+    "router_metadata_lock": "SessionScopedContextRouter._lock protects only slot table and in_flight accounting; it never waits for a slot execution lock",
+    "second_session_registry_created": false,
+    "verified_session_execution_gate": "SessionScopedContextRouter.invoke_async selects the existing _SessionSlot after verification, acquires its slot-owned asyncio.Lock, then offloads _execute_in_slot; _execute_in_slot also owns the existing per-slot threading.RLock"
+  },
+  "source_frontier_before_repair": "71e821777e477e50e982fad9b1b0487140542d22",
+  "thread_safety_audit": [
+    {
+      "basis": "BridgeSocketClient is per-request/stateless; each request uses its own Unix socket connection",
+      "classification": "THREAD_SAFE",
+      "item": "Trusted Bridge client and correlation"
+    },
+    {
+      "basis": "InvocationBridge._lock guards secret/epoch and atomic nonce check+consume; it is not held for operation lifetime",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Bridge token nonce consumption and epoch rotation"
+    },
+    {
+      "basis": "router RLock protects the existing slot map and in_flight; per-slot locks are acquired only after releasing router RLock",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Session routing table and slot admission"
+    },
+    {
+      "basis": "each verified Session owns one existing _SessionSlot; mutable initialization and replacement run under its execution gate",
+      "classification": "SESSION_LOCAL",
+      "item": "delegate install, restart recovery, and Project-to-Plan promotion"
+    },
+    {
+      "basis": "per-instance RLock plus sidecar flock path lock covers exact-session read/modify/write, atomic replace, and readback",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "FileBackedTaskMainContextBindingProjection"
+    },
+    {
+      "basis": "per-connection RLock and BEGIN IMMEDIATE/SQLite writer serialization; Plan record mutations use revision CAS",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Governance SQLite store and CAS"
+    },
+    {
+      "basis": "LocalPlanAuthorityReadAdapter/LocalPlanAuthorityAdapter share the trusted-root flock; authority replacement remains read-before-write/verify-after-write",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Local PlanAuthority adapters"
+    },
+    {
+      "basis": "frozen root-set/root evidence is composed per Session and passed explicitly; no global current Session or token",
+      "classification": "IMMUTABLE",
+      "item": "AuthorizedRootSet and per-Session provider authority"
+    },
+    {
+      "basis": "atomic JSON readback remains; registration/retirement now reload and write under a registry-path flock",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Workspace registry read and registration RMW"
+    },
+    {
+      "basis": "per-sandbox content-addressed payloads are immutable by digest, reference metadata is deterministic per operation, writes use unique temp files plus atomic replace, hydrate is read-only/digest verified",
+      "classification": "THREAD_SAFE",
+      "item": "Durable tool-result/hydration payloads"
+    },
+    {
+      "basis": "file-backed journal now wraps complete whole-file RMW/CAS operations with a path flock; GovernanceIntake serializes per-Project mutation through derived MAP/STATUS refresh",
+      "classification": "SERIALIZED_BY_EXISTING_LOCK",
+      "item": "Governance journal and project projection refresh"
+    },
+    {
+      "basis": "runtime task execution stores use execution-sessions/<session-hash>.json; in-memory TransactionStore is not the active headed production store",
+      "classification": "SESSION_LOCAL",
+      "item": "Core transaction/CAS stores"
+    },
+    {
+      "basis": "constructed per invocation from immutable Session evidence; read-only bounded revalidated file access",
+      "classification": "THREAD_SAFE",
+      "item": "workspace.read/workspace.search providers"
+    },
+    {
+      "basis": "the active thin task-main binding has mutation_authority=None and Core denies before constructing BoundedWorkspaceMutationProvider",
+      "classification": "NOT_THREAD_SAFE",
+      "cross_session_access": false,
+      "item": "workspace.write provider"
+    },
+    {
+      "basis": "providers are constructed per call from the selected Session binding; TaskMain shell catalog is inspection-only (including bounded sleep), task execution store path is Session-hash scoped, and the worker pool limits simultaneous calls to two",
+      "classification": "SESSION_LOCAL",
+      "item": "restricted_shell provider and task lifecycle dispatch"
+    },
+    {
+      "basis": "per-call provider performs read-only current-scope checks and digest verification over atomic content-addressed files",
+      "classification": "THREAD_SAFE",
+      "item": "result hydration provider"
+    },
+    {
+      "basis": "normal M3 headed unbound routing composes no coordinator/context-switch runtime; generic context switch remains outside the frozen task scope",
+      "classification": "UNKNOWN",
+      "cross_session_access": false,
+      "item": "optional FileBackedTaskMainCoordinatorStore/context-switch runtime"
+    }
+  ]
+}

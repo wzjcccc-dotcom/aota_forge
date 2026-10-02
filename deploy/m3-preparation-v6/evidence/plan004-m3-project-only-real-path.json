@@ -1,0 +1,455 @@
+{
+  "BRIDGE_EPOCH_ROTATION": "PASS",
+  "MCP_CHILD_START_COUNT": 3,
+  "MCP_PUBLIC_TOOL_COUNT": 1,
+  "P1_BOOTSTRAP": "BASELINE_DENIED_CONTEXT_BINDING_REQUIRED",
+  "P1_BOOTSTRAP_RESULT": {
+    "byte_length": 0,
+    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "error_code": "CONTEXT_BINDING_REQUIRED",
+    "error_message": "headed Session must complete trusted context.bind before this operation",
+    "ok": false,
+    "operation": "role.bootstrap",
+    "outcome": "failure",
+    "output_mode": "inline"
+  },
+  "P1_INSPECT": "PASS",
+  "PLAN_BOUND_RESTART_RECOVERY": "PASS",
+  "PLAN_PROMOTION_AFTER_PROJECT_RECOVERY": "PASS",
+  "PROJECT_ONLY_DURABLE_RECORD_CREATED": "PASS",
+  "PROJECT_ONLY_RESTART_RECOVERY": "PASS",
+  "SAME_SESSION": true,
+  "SESSION_B_ISOLATION": "PASS",
+  "SHARED_MCP_CHILD_PER_LIFECYCLE": "PASS",
+  "TOOLS_LIST": [
+    "aota.invoke"
+  ],
+  "bridge_epochs": [
+    "Q3VJ3QBc1CK16zwX-d51Og",
+    "EaH9cXAmrHw67nwUOnEoag",
+    "LPLUY1hPrp5GVsbCsxRGSA"
+  ],
+  "bridge_observations": [
+    {
+      "args_sha256": "5af44ee0f2855f8f31e81684193dbf890e5f989662833a53409bcf493906882d",
+      "bridge_id": "Q3VJ3QBc1CK16zwX-d51Og",
+      "call_id": "call_v5_1",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "Q3VJ3QBc1CK16zwX-d51Og",
+      "call_id": "call_v5_2",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "Q3VJ3QBc1CK16zwX-d51Og",
+      "call_id": "call_v5_3",
+      "session_id": "ses_f08d7d09dffe7q52WsRDp30vMZ",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "c2940abc43457497901b43fe52165520680e1e398e8d8ffac9ec6f6405e269a7",
+      "bridge_id": "Q3VJ3QBc1CK16zwX-d51Og",
+      "call_id": "call_v5_4",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "4ffaced811cf92bf3369d8298652304ffb8144cefe30b2aa6b41705e8128a7b6",
+      "bridge_id": "Q3VJ3QBc1CK16zwX-d51Og",
+      "call_id": "call_v5_5",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "EaH9cXAmrHw67nwUOnEoag",
+      "call_id": "call_v5_6",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "981b128e4ae71a8257a5eeb0cc1fcd8f90308663353aedba322b05966ecf7dda",
+      "bridge_id": "EaH9cXAmrHw67nwUOnEoag",
+      "call_id": "call_v5_7",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "EaH9cXAmrHw67nwUOnEoag",
+      "call_id": "call_v5_8",
+      "session_id": "ses_f08d7d09dffe7q52WsRDp30vMZ",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "09a91bbdd95e40b2975089a584aa039246d9959cb05c4b86198b16a98c03ab58",
+      "bridge_id": "EaH9cXAmrHw67nwUOnEoag",
+      "call_id": "call_v5_9",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "72997f98c21f70e850f7140f2367fb7624d871e33f2f06499639e89906293345",
+      "bridge_id": "EaH9cXAmrHw67nwUOnEoag",
+      "call_id": "call_v5_10",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "LPLUY1hPrp5GVsbCsxRGSA",
+      "call_id": "call_v5_11",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "fdc85773d8172067cba26918638e4e1e8a74d5d592680055e9739486025dbeb9",
+      "bridge_id": "LPLUY1hPrp5GVsbCsxRGSA",
+      "call_id": "call_v5_12",
+      "session_id": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "LPLUY1hPrp5GVsbCsxRGSA",
+      "call_id": "call_v5_13",
+      "session_id": "ses_f08d7d09dffe7q52WsRDp30vMZ",
+      "tool": "aota_aota_invoke"
+    }
+  ],
+  "bridge_startup_epochs": [
+    "UxNhupVdyTVWqkCtia6q-g",
+    "oKqoTqOjSRxu4jhZgGCwBg",
+    "-fXmynhuZm5X_qacJBfFVQ"
+  ],
+  "durable_plan_record": {
+    "IS_AUTHORITY": false,
+    "authorized_roots_digest": "9163a77db55b17a08a6fc3d8153f085b7c65c3bb6a215460ae8e82b1822a22f5",
+    "binding_digest": "284d839facfc2c46fcf0d961283c8748cf58c8a5eb416beabbb1e8da0a93fef1",
+    "origin_task_main_session_ref": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+    "plan_binding": {
+      "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+      "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+      "source_digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+      "source_kind": "local_governance",
+      "source_revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10"
+    },
+    "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+    "project_id": "aota_forge",
+    "schema_version": 1
+  },
+  "durable_project_record": {
+    "IS_AUTHORITY": false,
+    "authorized_roots_digest": "6ca4f37670850a37cdbbc280628f5b791654c6d6d2d833193796bedcc9eb4d74",
+    "binding_digest": "feba0c327d5443483777cf029fba9b346f658f1a309b481ad0358840f22a52ed",
+    "binding_kind": "PROJECT_BOUND",
+    "origin_task_main_session_ref": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+    "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+    "project_id": "aota_forge",
+    "schema_version": 2
+  },
+  "opencode_version": "1.18.30",
+  "production_reactivation_performed": false,
+  "proof_kind": "production-shaped isolated real OpenCode deterministic provider",
+  "session_A": "ses_f08d7d0aaffetQjJwR3iYQWsDC",
+  "session_B": "ses_f08d7d09dffe7q52WsRDp30vMZ",
+  "source_frontier": "71e821777e477e50e982fad9b1b0487140542d22",
+  "status": "PASS",
+  "tool_results": [
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_2",
+      "operation": "task_main.context",
+      "result": {
+        "context": null,
+        "identity_is_authority": false,
+        "locator_is_authority": false,
+        "mode": "inspect",
+        "session_binding_is_authority": false,
+        "state": "unbound"
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_3",
+      "operation": "task_main.context",
+      "result": {
+        "context": null,
+        "identity_is_authority": false,
+        "locator_is_authority": false,
+        "mode": "inspect",
+        "session_binding_is_authority": false,
+        "state": "unbound"
+      },
+      "session": "ses_f08d7d09dffe7q52WsRDp30vMZ"
+    },
+    {
+      "arguments": {
+        "mode": "bind",
+        "project_selector": "aota_forge"
+      },
+      "call_id": "call_v5_4",
+      "operation": "task_main.context",
+      "result": {
+        "byte_length": 4874,
+        "digest": "3a04820517c772905f35d479e710ef42d99f6ae515d8809e1eaa1600f05c0106",
+        "hydration": {
+          "arguments": {
+            "byte_length": 4874,
+            "digest": "3a04820517c772905f35d479e710ef42d99f6ae515d8809e1eaa1600f05c0106",
+            "project_id": "aota_forge",
+            "ref": "tool_output:task_main.context:3a04820517c77290",
+            "worktree_id": "aota_forge-unbound"
+          },
+          "instruction": "call aota.invoke(operation=\"result.hydrate\", arguments=<arguments>) with these exact trusted claims to obtain the bounded payload",
+          "operation": "result.hydrate",
+          "reason": "result exceeds the bounded inline projection and is stored by reference"
+        },
+        "ok": true,
+        "operation": "task_main.context",
+        "outcome": "success",
+        "output_mode": "by_ref",
+        "output_ref": {
+          "byte_length": 4874,
+          "digest": "3a04820517c772905f35d479e710ef42d99f6ae515d8809e1eaa1600f05c0106",
+          "project_id": "aota_forge",
+          "ref": "tool_output:task_main.context:3a04820517c77290",
+          "worktree_id": "aota_forge-unbound"
+        }
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "byte_length": 4874,
+        "digest": "3a04820517c772905f35d479e710ef42d99f6ae515d8809e1eaa1600f05c0106",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:3a04820517c77290",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "call_id": "call_v5_5",
+      "operation": "result.hydrate",
+      "result": {
+        "byte_length": 4874,
+        "content": "{\"context\":{\"authority_binding\":null,\"authorized_roots\":[{\"capabilities\":[\"read\",\"search\"],\"kind\":\"project-main\",\"root_ref\":\"project-main\"},{\"capabilities\":[\"read\",\"search\",\"write\"],\"kind\":\"active-worktree\",\"root_ref\":\"active-worktree\"}],\"identity_is_authority\":false,\"locator_is_authority\":false,\"plan_id\":null,\"project_id\":\"aota_forge\"},\"governance_context\":{\"CARDS\":{\"architecture\":{\"accepted_ref\":null,\"baseline_id\":null,\"baseline_status\":null,\"card_kind\":\"architecture_card\",\"complete\":false,\"current_digest\":null,\"current_version\":null,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"navigation_refs\":[],\"plan_delta_ref\":null,\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"promoted_by_plan_id\":null,\"promotion_receipt_ref\":null,\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"milestones\":[],\"plans\":[],\"progress\":{\"active_coordinator_count\":0,\"card_kind\":\"progress_card\",\"complete\":false,\"coordinator_facts\":[],\"execution_aggregate\":{\"by_canonical_task_state\":[],\"by_delivery_state\":[],\"requiring_recovery\":0,\"terminal_failed\":0,\"terminal_ok\":0,\"total\":0},\"human_brake_active\":false,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"plan_lifecycle_records\"],\"navigation_refs\":[{\"kind\":\"progress\",\"ref\":\"progress:aota_forge\"}],\"next_action\":null,\"open_blockers\":[],\"plan_id\":null,\"plan_lifecycle\":[],\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"source_digest\":\"a67398aadb723ea83849e298a409b17ef8962432e56c3060e2e10d78c990ca90\",\"source_refs\":[{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"task-main-coordinator:aota_forge\",\"revision\":\"0\",\"role\":\"task_main_coordinator_state\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"execution-state:aota_forge\",\"revision\":null,\"role\":\"execution_state_store\"}],\"warnings\":[]},\"project\":{\"card_kind\":\"project_card\",\"complete\":false,\"governance_root_refs\":[],\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"plan_records\"],\"navigation_refs\":[{\"kind\":\"project\",\"ref\":\"project:aota_forge\"}],\"plan_count\":0,\"plan_id\":null,\"plan_refs\":[],\"project_id\":\"aota_forge\",\"project_ref\":\"project:aota_forge\",\"project_status\":\"active\",\"projection_id\":\"gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"projection_digest\":\"c08a932a4823feba317cd6735189986a2200dace45fe4030a15386a5402f205b\"},\"CARDS_PRESENT\":true,\"CARD_FIRST\":true,\"CONTEXT_ROUTE\":{\"CONTEXT_ROUTE_IS_AUTHORITY\":false,\"CONTROL_PLANE_SELECTS_RETRIEVAL_INTENT\":false,\"authority_source_kind\":null,\"cards_present\":true,\"entries\":[{\"IS_AUTHORITY\":false,\"card_kind\":\"project_card\",\"complete\":false,\"kind\":\"project_card\",\"missing_facts\":[\"plan_records\"],\"projection_id\":\"gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"ref\":\"card:project_card:gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"use_when\":\"project identity, trusted Plan inventory and authorized governance roots\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"architecture_card\",\"complete\":false,\"kind\":\"architecture_card\",\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"ref\":\"card:architecture_card:gcard-d868dec35dfda8459c7774bd54290232\",\"use_when\":\"accepted Architecture baseline and Plan delta reference\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"progress_card\",\"complete\":false,\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"kind\":\"progress_card\",\"missing_facts\":[\"plan_lifecycle_records\"],\"projection_id\":\"gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"ref\":\"card:progress_card:gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"revision\":\"0\",\"use_when\":\"aggregate progress, blockers and Human Brake state\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:active-worktree\",\"use_when\":\"authorized read/search/write scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:project-main\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"}],\"is_authority\":false,\"missing_facts\":[\"current_milestone_card\",\"plan_authority_ref\",\"plan_card\"],\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"groute-80fbd24cec95ca5ad68faefa577374bb\",\"warnings\":[]},\"CONTEXT_ROUTE_DETERMINISTIC\":true,\"CONTEXT_WORKING_SET_IS_EPHEMERAL\":true,\"FULL_AGENTS_EAGER_LOAD\":false,\"FULL_PLAN_EAGER_HYDRATION\":false,\"GOVERNANCE_CONTEXT_IS_AUTHORITY\":false,\"IS_AUTHORITY\":false,\"LLM_OWNS_RETRIEVAL_INTENT\":true,\"WORKING_SET\":null},\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"bind\",\"origin_session_ref\":\"ses_f08d7d0aaffetQjJwR3iYQWsDC\",\"session_binding_is_authority\":false,\"state\":\"project_bound\"}",
+        "digest": "3a04820517c772905f35d479e710ef42d99f6ae515d8809e1eaa1600f05c0106",
+        "kind": "evidence",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:3a04820517c77290",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_6",
+      "operation": "task_main.context",
+      "result": {
+        "byte_length": 4877,
+        "digest": "1a48512ba34df900ffe67786805c23f371818e21fcf5d077752a535b448fb365",
+        "hydration": {
+          "arguments": {
+            "byte_length": 4877,
+            "digest": "1a48512ba34df900ffe67786805c23f371818e21fcf5d077752a535b448fb365",
+            "project_id": "aota_forge",
+            "ref": "tool_output:task_main.context:1a48512ba34df900",
+            "worktree_id": "aota_forge-unbound"
+          },
+          "instruction": "call aota.invoke(operation=\"result.hydrate\", arguments=<arguments>) with these exact trusted claims to obtain the bounded payload",
+          "operation": "result.hydrate",
+          "reason": "result exceeds the bounded inline projection and is stored by reference"
+        },
+        "ok": true,
+        "operation": "task_main.context",
+        "outcome": "success",
+        "output_mode": "by_ref",
+        "output_ref": {
+          "byte_length": 4877,
+          "digest": "1a48512ba34df900ffe67786805c23f371818e21fcf5d077752a535b448fb365",
+          "project_id": "aota_forge",
+          "ref": "tool_output:task_main.context:1a48512ba34df900",
+          "worktree_id": "aota_forge-unbound"
+        }
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "byte_length": 4877,
+        "digest": "1a48512ba34df900ffe67786805c23f371818e21fcf5d077752a535b448fb365",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:1a48512ba34df900",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "call_id": "call_v5_7",
+      "operation": "result.hydrate",
+      "result": {
+        "byte_length": 4877,
+        "content": "{\"context\":{\"authority_binding\":null,\"authorized_roots\":[{\"capabilities\":[\"read\",\"search\"],\"kind\":\"project-main\",\"root_ref\":\"project-main\"},{\"capabilities\":[\"read\",\"search\",\"write\"],\"kind\":\"active-worktree\",\"root_ref\":\"active-worktree\"}],\"identity_is_authority\":false,\"locator_is_authority\":false,\"plan_id\":null,\"project_id\":\"aota_forge\"},\"governance_context\":{\"CARDS\":{\"architecture\":{\"accepted_ref\":null,\"baseline_id\":null,\"baseline_status\":null,\"card_kind\":\"architecture_card\",\"complete\":false,\"current_digest\":null,\"current_version\":null,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"navigation_refs\":[],\"plan_delta_ref\":null,\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"promoted_by_plan_id\":null,\"promotion_receipt_ref\":null,\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"milestones\":[],\"plans\":[],\"progress\":{\"active_coordinator_count\":0,\"card_kind\":\"progress_card\",\"complete\":false,\"coordinator_facts\":[],\"execution_aggregate\":{\"by_canonical_task_state\":[],\"by_delivery_state\":[],\"requiring_recovery\":0,\"terminal_failed\":0,\"terminal_ok\":0,\"total\":0},\"human_brake_active\":false,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"plan_lifecycle_records\"],\"navigation_refs\":[{\"kind\":\"progress\",\"ref\":\"progress:aota_forge\"}],\"next_action\":null,\"open_blockers\":[],\"plan_id\":null,\"plan_lifecycle\":[],\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"source_digest\":\"a67398aadb723ea83849e298a409b17ef8962432e56c3060e2e10d78c990ca90\",\"source_refs\":[{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"task-main-coordinator:aota_forge\",\"revision\":\"0\",\"role\":\"task_main_coordinator_state\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"execution-state:aota_forge\",\"revision\":null,\"role\":\"execution_state_store\"}],\"warnings\":[]},\"project\":{\"card_kind\":\"project_card\",\"complete\":false,\"governance_root_refs\":[],\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"plan_records\"],\"navigation_refs\":[{\"kind\":\"project\",\"ref\":\"project:aota_forge\"}],\"plan_count\":0,\"plan_id\":null,\"plan_refs\":[],\"project_id\":\"aota_forge\",\"project_ref\":\"project:aota_forge\",\"project_status\":\"active\",\"projection_id\":\"gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"projection_digest\":\"c08a932a4823feba317cd6735189986a2200dace45fe4030a15386a5402f205b\"},\"CARDS_PRESENT\":true,\"CARD_FIRST\":true,\"CONTEXT_ROUTE\":{\"CONTEXT_ROUTE_IS_AUTHORITY\":false,\"CONTROL_PLANE_SELECTS_RETRIEVAL_INTENT\":false,\"authority_source_kind\":null,\"cards_present\":true,\"entries\":[{\"IS_AUTHORITY\":false,\"card_kind\":\"project_card\",\"complete\":false,\"kind\":\"project_card\",\"missing_facts\":[\"plan_records\"],\"projection_id\":\"gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"ref\":\"card:project_card:gcard-b9f9aba2b7a8092f8eadaaeda05824e1\",\"use_when\":\"project identity, trusted Plan inventory and authorized governance roots\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"architecture_card\",\"complete\":false,\"kind\":\"architecture_card\",\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"ref\":\"card:architecture_card:gcard-d868dec35dfda8459c7774bd54290232\",\"use_when\":\"accepted Architecture baseline and Plan delta reference\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"progress_card\",\"complete\":false,\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"kind\":\"progress_card\",\"missing_facts\":[\"plan_lifecycle_records\"],\"projection_id\":\"gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"ref\":\"card:progress_card:gcard-e3893e00b3c9400982f2b22fdc1d30ec\",\"revision\":\"0\",\"use_when\":\"aggregate progress, blockers and Human Brake state\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:active-worktree\",\"use_when\":\"authorized read/search/write scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:project-main\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"}],\"is_authority\":false,\"missing_facts\":[\"current_milestone_card\",\"plan_authority_ref\",\"plan_card\"],\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"groute-80fbd24cec95ca5ad68faefa577374bb\",\"warnings\":[]},\"CONTEXT_ROUTE_DETERMINISTIC\":true,\"CONTEXT_WORKING_SET_IS_EPHEMERAL\":true,\"FULL_AGENTS_EAGER_LOAD\":false,\"FULL_PLAN_EAGER_HYDRATION\":false,\"GOVERNANCE_CONTEXT_IS_AUTHORITY\":false,\"IS_AUTHORITY\":false,\"LLM_OWNS_RETRIEVAL_INTENT\":true,\"WORKING_SET\":null},\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"inspect\",\"origin_session_ref\":\"ses_f08d7d0aaffetQjJwR3iYQWsDC\",\"session_binding_is_authority\":false,\"state\":\"project_bound\"}",
+        "digest": "1a48512ba34df900ffe67786805c23f371818e21fcf5d077752a535b448fb365",
+        "kind": "evidence",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:1a48512ba34df900",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_8",
+      "operation": "task_main.context",
+      "result": {
+        "context": null,
+        "identity_is_authority": false,
+        "locator_is_authority": false,
+        "mode": "inspect",
+        "session_binding_is_authority": false,
+        "state": "unbound"
+      },
+      "session": "ses_f08d7d09dffe7q52WsRDp30vMZ"
+    },
+    {
+      "arguments": {
+        "mode": "bind",
+        "plan_selector": "plan_004_trusted_opencode_session_bridge_context_isolation"
+      },
+      "call_id": "call_v5_9",
+      "operation": "task_main.context",
+      "result": {
+        "byte_length": 12008,
+        "digest": "b587a493b067a7615683437ef31b8cb6720408b71a2e423ca1b4fbfaaff1f650",
+        "hydration": {
+          "arguments": {
+            "byte_length": 12008,
+            "digest": "b587a493b067a7615683437ef31b8cb6720408b71a2e423ca1b4fbfaaff1f650",
+            "project_id": "aota_forge",
+            "ref": "tool_output:task_main.context:b587a493b067a761",
+            "worktree_id": "aota_forge-unbound"
+          },
+          "instruction": "call aota.invoke(operation=\"result.hydrate\", arguments=<arguments>) with these exact trusted claims to obtain the bounded payload",
+          "operation": "result.hydrate",
+          "reason": "result exceeds the bounded inline projection and is stored by reference"
+        },
+        "ok": true,
+        "operation": "task_main.context",
+        "outcome": "success",
+        "output_mode": "by_ref",
+        "output_ref": {
+          "byte_length": 12008,
+          "digest": "b587a493b067a7615683437ef31b8cb6720408b71a2e423ca1b4fbfaaff1f650",
+          "project_id": "aota_forge",
+          "ref": "tool_output:task_main.context:b587a493b067a761",
+          "worktree_id": "aota_forge-unbound"
+        }
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "byte_length": 12008,
+        "digest": "b587a493b067a7615683437ef31b8cb6720408b71a2e423ca1b4fbfaaff1f650",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:b587a493b067a761",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "call_id": "call_v5_10",
+      "operation": "result.hydrate",
+      "result": {
+        "byte_length": 12008,
+        "content": "{\"context\":{\"authority_binding\":{\"authority_ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"source_digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"source_kind\":\"local_governance\",\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\"},\"authorized_roots\":[{\"capabilities\":[\"read\",\"search\"],\"kind\":\"project-main\",\"root_ref\":\"project-main\"},{\"capabilities\":[\"read\",\"search\",\"write\"],\"kind\":\"active-worktree\",\"root_ref\":\"active-worktree\"},{\"capabilities\":[\"read\",\"search\"],\"kind\":\"local-governance\",\"root_ref\":\"local-governance\"}],\"identity_is_authority\":false,\"locator_is_authority\":false,\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\"},\"governance_context\":{\"CARDS\":{\"architecture\":{\"accepted_ref\":null,\"baseline_id\":null,\"baseline_status\":null,\"card_kind\":\"architecture_card\",\"complete\":false,\"current_digest\":null,\"current_version\":null,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"navigation_refs\":[],\"plan_delta_ref\":null,\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"promoted_by_plan_id\":null,\"promotion_receipt_ref\":null,\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"milestones\":[{\"approval_satisfied\":true,\"card_kind\":\"milestone_card\",\"complete\":true,\"dependency_edges\":[[\"W1\",\"W2\"],[\"W2\",\"W3\"]],\"is_authority\":false,\"is_current\":true,\"milestone_id\":\"M3\",\"milestone_status\":\"in_progress\",\"milestone_title\":\"M3 - Real Production Acceptance\",\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"milestone\",\"ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\"},{\"kind\":\"plan\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"objective_ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\",\"objective_summary\":\"M3 - Real Production Acceptance\\nW1: DURABLE_RECOVERY_REPAIR_IN_PROGRESS\\nW1: DURABLE_PROJECT_CONTEXT_RECOVERY_FAILED\\nW1: Project-only bind installs an in-memory project_bound delegate but does not create/persist a durable binding record.\\nW1: R1_SESSION_IDENTITY=PASS; R2_PROJECTION_PATH=PASS; R3_DURABLE_LOOKUP=MISS; R4..R6=NOT_REACHED; R7=UNBOUND_SLOT_ONLY\\nW1: yes\\nW1: no\\nW1: NO_IMMEDIATE_ROLLBACK\\nObjective: Validate headed, headless and multi-Session isolation through the real OpenCode :4096 path.\\nUse a real normal aota-task-main Session created directly in OpenCode 4096. In short staged prompts validate `role.bootstrap`, `context.inspect` unbound, trusted Session verification, project-only bind and same-Session continuation. The LLM must not query, report or generate a Session ID.\\nUse one shared MCP child for Session A and B. Prove complete Context separation with interleaved and concurrent calls, cross-Session denial, child restart/resume, and record child PID/RSS and lifecycle. A resident process alone is no\",\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-92257a329d53e9c24b64897e23af5579\",\"source_digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"source_refs\":[{\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_document\"},{\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_authority\"}],\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"warnings\":[\"milestone_objective_truncated\"],\"work_item_refs\":[\"W1\",\"W2\",\"W3\"]}],\"plans\":[{\"authority_digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"authority_ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"authority_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"authority_source_kind\":\"local_governance\",\"card_kind\":\"plan_card\",\"complete\":true,\"current_milestone\":\"M3\",\"goal_summary\":\"[AF][REPAIR] Trusted OpenCode Session Bridge & Context Isolation\",\"is_authority\":false,\"lifecycle_state\":\"active\",\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"plan\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\"},{\"kind\":\"milestone\",\"ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\"}],\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"plan_status\":\"active\",\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"record_revision\":1,\"source_digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"source_refs\":[{\"digest\":\"0ab620df30c2e071f879c147021e82fc4704657255b0eb774aa6cee2fb994c3e\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"},{\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_authority\"},{\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_document\"}],\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"title\":null,\"warnings\":[]}],\"progress\":{\"active_coordinator_count\":0,\"card_kind\":\"progress_card\",\"complete\":true,\"coordinator_facts\":[],\"execution_aggregate\":{\"by_canonical_task_state\":[],\"by_delivery_state\":[],\"requiring_recovery\":0,\"terminal_failed\":0,\"terminal_ok\":0,\"total\":0},\"human_brake_active\":false,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"progress\",\"ref\":\"progress:aota_forge\"}],\"next_action\":null,\"open_blockers\":[],\"plan_id\":null,\"plan_lifecycle\":[{\"authority_source_kind\":\"local_governance\",\"lifecycle_state\":\"active\",\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-43fa0770780153b71de7057baf2ea894\",\"source_digest\":\"134357b38a61e617597fb59ab71f28e1c416eaeada9868b6149afbee890c77b2\",\"source_refs\":[{\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"task-main-coordinator:aota_forge\",\"revision\":\"0\",\"role\":\"task_main_coordinator_state\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"execution-state:aota_forge\",\"revision\":null,\"role\":\"execution_state_store\"}],\"warnings\":[]},\"project\":{\"card_kind\":\"project_card\",\"complete\":true,\"governance_root_refs\":[\"local-governance\"],\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"project\",\"ref\":\"project:aota_forge\"},{\"kind\":\"plan\",\"ref\":\"plan:plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"plan_count\":1,\"plan_id\":null,\"plan_refs\":[\"plan_004_trusted_opencode_session_bridge_context_isolation\"],\"project_id\":\"aota_forge\",\"project_ref\":\"project:aota_forge\",\"project_status\":\"active\",\"projection_id\":\"gcard-e41d74b48ab548a128a376fcd463fcf6\",\"source_digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"source_refs\":[{\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"}],\"source_revision\":null,\"warnings\":[]},\"projection_digest\":\"c95774830e51d3fa2fca649c79a9cbac89283e52f760b01bcde2d7f9253d0a5d\"},\"CARDS_PRESENT\":true,\"CARD_FIRST\":true,\"CONTEXT_ROUTE\":{\"CONTEXT_ROUTE_IS_AUTHORITY\":false,\"CONTROL_PLANE_SELECTS_RETRIEVAL_INTENT\":false,\"authority_source_kind\":\"local_governance\",\"cards_present\":true,\"entries\":[{\"IS_AUTHORITY\":false,\"card_kind\":\"project_card\",\"complete\":true,\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"kind\":\"project_card\",\"projection_id\":\"gcard-e41d74b48ab548a128a376fcd463fcf6\",\"ref\":\"card:project_card:gcard-e41d74b48ab548a128a376fcd463fcf6\",\"revision\":\"1\",\"use_when\":\"project identity, trusted Plan inventory and authorized governance roots\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"plan_card\",\"complete\":true,\"digest\":\"0ab620df30c2e071f879c147021e82fc4704657255b0eb774aa6cee2fb994c3e\",\"kind\":\"plan_card\",\"projection_id\":\"gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"ref\":\"card:plan_card:gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"revision\":\"1\",\"use_when\":\"current Plan authority, lifecycle and current Milestone\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"milestone_card\",\"complete\":true,\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"kind\":\"milestone_card\",\"projection_id\":\"gcard-92257a329d53e9c24b64897e23af5579\",\"ref\":\"card:milestone_card:gcard-92257a329d53e9c24b64897e23af5579\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"use_when\":\"current Milestone contract: objective, work items, dependencies\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"architecture_card\",\"complete\":false,\"kind\":\"architecture_card\",\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"ref\":\"card:architecture_card:gcard-d868dec35dfda8459c7774bd54290232\",\"use_when\":\"accepted Architecture baseline and Plan delta reference\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"progress_card\",\"complete\":true,\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"kind\":\"progress_card\",\"projection_id\":\"gcard-43fa0770780153b71de7057baf2ea894\",\"ref\":\"card:progress_card:gcard-43fa0770780153b71de7057baf2ea894\",\"revision\":\"1\",\"use_when\":\"aggregate progress, blockers and Human Brake state\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"kind\":\"plan_authority\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"source_kind\":\"local_governance\",\"supported_intents\":[\"full\",\"section\",\"query\"],\"use_when\":\"exact bounded read/hydrate of the authoritative Plan when deeper detail is needed\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:active-worktree\",\"use_when\":\"authorized read/search/write scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:local-governance\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:project-main\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"}],\"is_authority\":false,\"missing_facts\":[],\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\",\"projection_id\":\"groute-a2066ad816285f795be4b8fc5deed3f9\",\"warnings\":[]},\"CONTEXT_ROUTE_DETERMINISTIC\":true,\"CONTEXT_WORKING_SET_IS_EPHEMERAL\":true,\"FULL_AGENTS_EAGER_LOAD\":false,\"FULL_PLAN_EAGER_HYDRATION\":false,\"GOVERNANCE_CONTEXT_IS_AUTHORITY\":false,\"IS_AUTHORITY\":false,\"LLM_OWNS_RETRIEVAL_INTENT\":true,\"WORKING_SET\":null},\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"bind\",\"origin_session_ref\":\"ses_f08d7d0aaffetQjJwR3iYQWsDC\",\"session_binding_is_authority\":false,\"state\":\"bound\"}",
+        "digest": "b587a493b067a7615683437ef31b8cb6720408b71a2e423ca1b4fbfaaff1f650",
+        "kind": "evidence",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:b587a493b067a761",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_11",
+      "operation": "task_main.context",
+      "result": {
+        "byte_length": 12011,
+        "digest": "aa0ccd6c1b788deeaeb7e2db1e3611e21960083312389b7f7f17d95a8f8a1feb",
+        "hydration": {
+          "arguments": {
+            "byte_length": 12011,
+            "digest": "aa0ccd6c1b788deeaeb7e2db1e3611e21960083312389b7f7f17d95a8f8a1feb",
+            "project_id": "aota_forge",
+            "ref": "tool_output:task_main.context:aa0ccd6c1b788dee",
+            "worktree_id": "aota_forge-unbound"
+          },
+          "instruction": "call aota.invoke(operation=\"result.hydrate\", arguments=<arguments>) with these exact trusted claims to obtain the bounded payload",
+          "operation": "result.hydrate",
+          "reason": "result exceeds the bounded inline projection and is stored by reference"
+        },
+        "ok": true,
+        "operation": "task_main.context",
+        "outcome": "success",
+        "output_mode": "by_ref",
+        "output_ref": {
+          "byte_length": 12011,
+          "digest": "aa0ccd6c1b788deeaeb7e2db1e3611e21960083312389b7f7f17d95a8f8a1feb",
+          "project_id": "aota_forge",
+          "ref": "tool_output:task_main.context:aa0ccd6c1b788dee",
+          "worktree_id": "aota_forge-unbound"
+        }
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "byte_length": 12011,
+        "digest": "aa0ccd6c1b788deeaeb7e2db1e3611e21960083312389b7f7f17d95a8f8a1feb",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:aa0ccd6c1b788dee",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "call_id": "call_v5_12",
+      "operation": "result.hydrate",
+      "result": {
+        "byte_length": 12011,
+        "content": "{\"context\":{\"authority_binding\":{\"authority_ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"source_digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"source_kind\":\"local_governance\",\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\"},\"authorized_roots\":[{\"capabilities\":[\"read\",\"search\"],\"kind\":\"project-main\",\"root_ref\":\"project-main\"},{\"capabilities\":[\"read\",\"search\",\"write\"],\"kind\":\"active-worktree\",\"root_ref\":\"active-worktree\"},{\"capabilities\":[\"read\",\"search\"],\"kind\":\"local-governance\",\"root_ref\":\"local-governance\"}],\"identity_is_authority\":false,\"locator_is_authority\":false,\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\"},\"governance_context\":{\"CARDS\":{\"architecture\":{\"accepted_ref\":null,\"baseline_id\":null,\"baseline_status\":null,\"card_kind\":\"architecture_card\",\"complete\":false,\"current_digest\":null,\"current_version\":null,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"navigation_refs\":[],\"plan_delta_ref\":null,\"plan_id\":null,\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"promoted_by_plan_id\":null,\"promotion_receipt_ref\":null,\"source_digest\":null,\"source_refs\":[],\"source_revision\":null,\"warnings\":[]},\"milestones\":[{\"approval_satisfied\":true,\"card_kind\":\"milestone_card\",\"complete\":true,\"dependency_edges\":[[\"W1\",\"W2\"],[\"W2\",\"W3\"]],\"is_authority\":false,\"is_current\":true,\"milestone_id\":\"M3\",\"milestone_status\":\"in_progress\",\"milestone_title\":\"M3 - Real Production Acceptance\",\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"milestone\",\"ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\"},{\"kind\":\"plan\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"objective_ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\",\"objective_summary\":\"M3 - Real Production Acceptance\\nW1: DURABLE_RECOVERY_REPAIR_IN_PROGRESS\\nW1: DURABLE_PROJECT_CONTEXT_RECOVERY_FAILED\\nW1: Project-only bind installs an in-memory project_bound delegate but does not create/persist a durable binding record.\\nW1: R1_SESSION_IDENTITY=PASS; R2_PROJECTION_PATH=PASS; R3_DURABLE_LOOKUP=MISS; R4..R6=NOT_REACHED; R7=UNBOUND_SLOT_ONLY\\nW1: yes\\nW1: no\\nW1: NO_IMMEDIATE_ROLLBACK\\nObjective: Validate headed, headless and multi-Session isolation through the real OpenCode :4096 path.\\nUse a real normal aota-task-main Session created directly in OpenCode 4096. In short staged prompts validate `role.bootstrap`, `context.inspect` unbound, trusted Session verification, project-only bind and same-Session continuation. The LLM must not query, report or generate a Session ID.\\nUse one shared MCP child for Session A and B. Prove complete Context separation with interleaved and concurrent calls, cross-Session denial, child restart/resume, and record child PID/RSS and lifecycle. A resident process alone is no\",\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-92257a329d53e9c24b64897e23af5579\",\"source_digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"source_refs\":[{\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_document\"},{\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_authority\"}],\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"warnings\":[\"milestone_objective_truncated\"],\"work_item_refs\":[\"W1\",\"W2\",\"W3\"]}],\"plans\":[{\"authority_digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"authority_ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"authority_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"authority_source_kind\":\"local_governance\",\"card_kind\":\"plan_card\",\"complete\":true,\"current_milestone\":\"M3\",\"goal_summary\":\"[AF][REPAIR] Trusted OpenCode Session Bridge & Context Isolation\",\"is_authority\":false,\"lifecycle_state\":\"active\",\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"plan\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\"},{\"kind\":\"milestone\",\"ref\":\"milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3\"}],\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"plan_status\":\"active\",\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"record_revision\":1,\"source_digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"source_refs\":[{\"digest\":\"0ab620df30c2e071f879c147021e82fc4704657255b0eb774aa6cee2fb994c3e\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"},{\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_authority\"},{\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"role\":\"plan_document\"}],\"source_revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"title\":null,\"warnings\":[]}],\"progress\":{\"active_coordinator_count\":0,\"card_kind\":\"progress_card\",\"complete\":true,\"coordinator_facts\":[],\"execution_aggregate\":{\"by_canonical_task_state\":[],\"by_delivery_state\":[],\"requiring_recovery\":0,\"terminal_failed\":0,\"terminal_ok\":0,\"total\":0},\"human_brake_active\":false,\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"progress\",\"ref\":\"progress:aota_forge\"}],\"next_action\":null,\"open_blockers\":[],\"plan_id\":null,\"plan_lifecycle\":[{\"authority_source_kind\":\"local_governance\",\"lifecycle_state\":\"active\",\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"project_id\":\"aota_forge\",\"projection_id\":\"gcard-43fa0770780153b71de7057baf2ea894\",\"source_digest\":\"134357b38a61e617597fb59ab71f28e1c416eaeada9868b6149afbee890c77b2\",\"source_refs\":[{\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"task-main-coordinator:aota_forge\",\"revision\":\"0\",\"role\":\"task_main_coordinator_state\"},{\"digest\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"ref\":\"execution-state:aota_forge\",\"revision\":null,\"role\":\"execution_state_store\"}],\"warnings\":[]},\"project\":{\"card_kind\":\"project_card\",\"complete\":true,\"governance_root_refs\":[\"local-governance\"],\"is_authority\":false,\"milestone_id\":null,\"missing_facts\":[],\"navigation_refs\":[{\"kind\":\"project\",\"ref\":\"project:aota_forge\"},{\"kind\":\"plan\",\"ref\":\"plan:plan_004_trusted_opencode_session_bridge_context_isolation\"}],\"plan_count\":1,\"plan_id\":null,\"plan_refs\":[\"plan_004_trusted_opencode_session_bridge_context_isolation\"],\"project_id\":\"aota_forge\",\"project_ref\":\"project:aota_forge\",\"project_status\":\"active\",\"projection_id\":\"gcard-e41d74b48ab548a128a376fcd463fcf6\",\"source_digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"source_refs\":[{\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"ref\":\"project-governance:aota_forge\",\"revision\":\"1\",\"role\":\"project_governance_store\"}],\"source_revision\":null,\"warnings\":[]},\"projection_digest\":\"c95774830e51d3fa2fca649c79a9cbac89283e52f760b01bcde2d7f9253d0a5d\"},\"CARDS_PRESENT\":true,\"CARD_FIRST\":true,\"CONTEXT_ROUTE\":{\"CONTEXT_ROUTE_IS_AUTHORITY\":false,\"CONTROL_PLANE_SELECTS_RETRIEVAL_INTENT\":false,\"authority_source_kind\":\"local_governance\",\"cards_present\":true,\"entries\":[{\"IS_AUTHORITY\":false,\"card_kind\":\"project_card\",\"complete\":true,\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"kind\":\"project_card\",\"projection_id\":\"gcard-e41d74b48ab548a128a376fcd463fcf6\",\"ref\":\"card:project_card:gcard-e41d74b48ab548a128a376fcd463fcf6\",\"revision\":\"1\",\"use_when\":\"project identity, trusted Plan inventory and authorized governance roots\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"plan_card\",\"complete\":true,\"digest\":\"0ab620df30c2e071f879c147021e82fc4704657255b0eb774aa6cee2fb994c3e\",\"kind\":\"plan_card\",\"projection_id\":\"gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"ref\":\"card:plan_card:gcard-a81c6bf6dca176fa19158bc81f40f02c\",\"revision\":\"1\",\"use_when\":\"current Plan authority, lifecycle and current Milestone\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"milestone_card\",\"complete\":true,\"digest\":\"d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9\",\"kind\":\"milestone_card\",\"projection_id\":\"gcard-92257a329d53e9c24b64897e23af5579\",\"ref\":\"card:milestone_card:gcard-92257a329d53e9c24b64897e23af5579\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"use_when\":\"current Milestone contract: objective, work items, dependencies\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"architecture_card\",\"complete\":false,\"kind\":\"architecture_card\",\"missing_facts\":[\"accepted_architecture_ref\",\"architecture_baseline\"],\"projection_id\":\"gcard-d868dec35dfda8459c7774bd54290232\",\"ref\":\"card:architecture_card:gcard-d868dec35dfda8459c7774bd54290232\",\"use_when\":\"accepted Architecture baseline and Plan delta reference\"},{\"IS_AUTHORITY\":false,\"card_kind\":\"progress_card\",\"complete\":true,\"digest\":\"d92543a5da67525bd4a1810ced00430e7f22406dfe0ba9ddac4f70cf6f852f69\",\"kind\":\"progress_card\",\"projection_id\":\"gcard-43fa0770780153b71de7057baf2ea894\",\"ref\":\"card:progress_card:gcard-43fa0770780153b71de7057baf2ea894\",\"revision\":\"1\",\"use_when\":\"aggregate progress, blockers and Human Brake state\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"digest\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"kind\":\"plan_authority\",\"ref\":\"local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation\",\"revision\":\"cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10\",\"source_kind\":\"local_governance\",\"supported_intents\":[\"full\",\"section\",\"query\"],\"use_when\":\"exact bounded read/hydrate of the authoritative Plan when deeper detail is needed\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:active-worktree\",\"use_when\":\"authorized read/search/write scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:local-governance\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"},{\"IS_AUTHORITY\":false,\"complete\":true,\"kind\":\"authorized_root\",\"ref\":\"root:project-main\",\"use_when\":\"authorized read/search scope for this session (root_ref, not a path)\"}],\"is_authority\":false,\"missing_facts\":[],\"plan_id\":\"plan_004_trusted_opencode_session_bridge_context_isolation\",\"project_id\":\"aota_forge\",\"projection_id\":\"groute-a2066ad816285f795be4b8fc5deed3f9\",\"warnings\":[]},\"CONTEXT_ROUTE_DETERMINISTIC\":true,\"CONTEXT_WORKING_SET_IS_EPHEMERAL\":true,\"FULL_AGENTS_EAGER_LOAD\":false,\"FULL_PLAN_EAGER_HYDRATION\":false,\"GOVERNANCE_CONTEXT_IS_AUTHORITY\":false,\"IS_AUTHORITY\":false,\"LLM_OWNS_RETRIEVAL_INTENT\":true,\"WORKING_SET\":null},\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"inspect\",\"origin_session_ref\":\"ses_f08d7d0aaffetQjJwR3iYQWsDC\",\"session_binding_is_authority\":false,\"state\":\"bound\"}",
+        "digest": "aa0ccd6c1b788deeaeb7e2db1e3611e21960083312389b7f7f17d95a8f8a1feb",
+        "kind": "evidence",
+        "project_id": "aota_forge",
+        "ref": "tool_output:task_main.context:aa0ccd6c1b788dee",
+        "worktree_id": "aota_forge-unbound"
+      },
+      "session": "ses_f08d7d0aaffetQjJwR3iYQWsDC"
+    },
+    {
+      "arguments": {
+        "mode": "inspect"
+      },
+      "call_id": "call_v5_13",
+      "operation": "task_main.context",
+      "result": {
+        "context": null,
+        "identity_is_authority": false,
+        "locator_is_authority": false,
+        "mode": "inspect",
+        "session_binding_is_authority": false,
+        "state": "unbound"
+      },
+      "session": "ses_f08d7d09dffe7q52WsRDp30vMZ"
+    }
+  ]
+}

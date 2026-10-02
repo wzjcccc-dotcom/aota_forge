@@ -1,0 +1,1105 @@
+{
+  "cas_revision": 21,
+  "authority": {
+    "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+    "source_kind": "local_governance",
+    "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+    "source_revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+    "source_digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10"
+  },
+  "body": "# [AF][REPAIR] Trusted OpenCode Session Bridge & Context Isolation\n\n## Plan Identity\n```text\nPROJECT_ID=aota_forge\nPLAN_NUMBER=#004\nPLAN_ID=plan_004_trusted_opencode_session_bridge_context_isolation\nPLAN_TYPE=portable_plan\nPLAN_KIND=repair\nPLAN_REVISION=R18\nPLAN_STATUS=active\nPLAN_ACCEPTED=yes\nAUTHORITY_KIND=local_governance\nSOURCE_KIND=portable_plan_local\nMILESTONE_COUNT=3\n```\n\n## Current State\n```text\nPROJECT_ID=aota_forge\nPLAN_NUMBER=#004\nPLAN_ID=plan_004_trusted_opencode_session_bridge_context_isolation\nPLAN_TITLE=[AF][REPAIR] Trusted OpenCode Session Bridge & Context Isolation\nPLAN_REVISION=R18\nPLAN_STATUS=active\nPLAN_ACCEPTED=yes\nCURRENT_MILESTONE=M3\nCURRENT_STATUS=m3_project_only_durable_recovery_repair_in_progress\nCURRENT_BLOCKER=durable_project_context_recovery_failed\nHANDOFF_STATE=bounded_durability_repair\nM1_STATUS=completed\nM1_ACCEPTED=yes\nM1_USER_APPROVAL_SATISFIED=yes\nM1_CONSTRUCTION_APPROVED=yes\nM1_SOURCE_CONSTRUCTION_STARTED=yes\nM1_RV1_STATUS=PASS_WITH_FINDINGS\nM1_CLOSURE_STATUS=APPLIED\nM1_CLOSURE_PHASE=ACCEPTED_CLOSURE\nM1_CLOSURE_EVALUATION=DETERMINISTIC_FINALIZABLE\nM1_CLOSURE_CHECKPOINT_ID=source-frontier:7e49af68d469a7bd18544e4ebd982da48efeb0a4\nM1_ACCEPTED_FRONTIER=7e49af68d469a7bd18544e4ebd982da48efeb0a4\nM1_USER_ACCEPTANCE_PENDING=no\nM2_STATUS=completed\nM2_USER_APPROVAL_SATISFIED=yes\nM2_CONSTRUCTION_APPROVED=yes\nM2_SOURCE_CONSTRUCTION_STARTED=yes\nM2_RV1_STATUS=PASS\nM2_USER_ACCEPTANCE_PENDING=no\nM2_ACCEPTED=yes\nM2_ACCEPTANCE=PASS_WITH_CARRY_FORWARD\nM2_CARRY_FORWARD=M3 production child-restart/lifecycle proof\nM2_ACCEPTED_FRONTIER=052fefb297b412052d7c94ffb8f4ab6062259c33\nM2_ACCEPTED_TREE=caec6e4ea60fca95947c1771583b96c059fdbc99\nM2_KNOWN_GOOD_CHECKPOINT=052fefb297b412052d7c94ffb8f4ab6062259c33\nM2_CLOSURE_STATUS=APPLIED\nM2_CLOSURE_PHASE=ACCEPTED_CLOSURE\nM2_CLOSURE_EVALUATION=DETERMINISTIC_FINALIZABLE\nM2_CLOSURE_FRONTIER_RELATION=SAME_AS_ACCEPTED\nM2_CLOSURE_CHECKPOINT_ID=stewardship:2fdb8c16aea5b7f2105a86ce1b9b71495cd2a91af281d36219a2075df393a778\nM2_CLOSURE_CHECKPOINT_DIGEST=679bf4b67b9afa3a49c6f1aa7ccb6cc810b79aaaacc8bc0bf427aca8c35fd949\nM2_CLOSURE_RECEIPT_ID=mfr-3e54f61d89d8e4a4\nM2_CLOSURE_RECEIPT_DIGEST=974fcae72c5d2db8f2521fbac954de308557a1fb4c90649ab3c02d3555e7d801\nM2_CLOSURE_STEWARD_DIGEST=cc713c4bceacbebb995a214843e4819d9fa1d03ae874fcf7554cd03708a3298e\nM3_CONSTRUCTION_APPROVED=yes\nM3_PREPARATION_STATUS=READY\nM3_PREPARATION_SCOPE=PREFLIGHT_AND_ACTIVATION_PREPARATION_ONLY\nM3_SOURCE_CONSTRUCTION_STARTED=no\nM3_PRODUCTION_ACTIVATION_APPROVED=yes\nM3_PRODUCTION_VALIDATION_APPROVED=yes\nM3_STATUS=in_progress\nM3_USER_APPROVAL_SATISFIED=yes\nM3_REPAIR_STATUS=COMPLETED\nM3_CONTROLLED_REACTIVATION_APPROVED=yes\nM3_REACTIVATION_STATUS=COMPLETED\nM3_PRODUCTION_RUNTIME=m3-preparation-v4-family-live-runtime\nM3_W1_STATUS=DURABLE_RECOVERY_REPAIR_IN_PROGRESS\nM3_BLOCKING_REASON=none\nSOURCE_CONSTRUCTION_STARTED=yes\nWORKTREE_CREATED=yes\nENTRY_BASE=7e49af68d469a7bd18544e4ebd982da48efeb0a4\nCURRENT_NEXT_ACTION=Bounded Project-only durable persistence/recovery repair; await new explicit v5 controlled reactivation approval after isolated proof\nMANUAL_HEADED_UI_GATE_WAS_REACHED=yes\nM3_W1_BLOCKER=DURABLE_PROJECT_CONTEXT_RECOVERY_FAILED\nM3_V4_REPAIR_STATUS=COMPLETED\nM3_V4_REPAIR_FINDING=PROJECT_BOUND_PLAN_BIND_UNSUPPORTED\nM3_V4_REPAIR_ROOT_CAUSE=project_bound delegate captured subsequent bind requests; no narrow same-project Plan promotion seam\nM3_V4_REPAIR_SOURCE_FRONTIER=aa40c5f37ec549276dd302f1a882e404a7ce993a\nM3_V4_REPAIR_CANDIDATE=m3-preparation-v4\nM3_V4_REAL_PATH_V2=PASS\nM3_V4_W1_P1=PASS\nM3_V4_W1_P2=PASS\nM3_V4_W1_P3=PASS\nM3_V4_W1_PLAN_CONTEXT_MISMATCH=no\nM3_V4_CONTROLLED_REACTIVATION_APPROVED=yes\nM3_V4_REACTIVATION_STATUS=approved_for_controlled_reactivation\nM3_SOCKET_WIRING_REPAIR_STATUS=COMPLETED\nM3_V3_REPAIR_CANDIDATE=m3-preparation-v3\nM3_V3_REPAIR_ROOT_CAUSE=plugin_host_missing_AOTA_BRIDGE_SOCKET\nM3_V3_CONTROLLED_REACTIVATION_APPROVED=yes\nM3_V3_REACTIVATION_STATUS=COMPLETED\nM3_MILESTONE_CLOSE=no\nPLAN_CLOSE=no\nM3_W1_P4_DURABLE_RECOVERY_FINDING=DURABLE_PROJECT_CONTEXT_RECOVERY_FAILED\nM3_W1_P4_ROOT_CAUSE=Project-only bind installs an in-memory project_bound delegate but does not create/persist a durable binding record.\nM3_W1_P4_RECOVERY_TRACE=R1_SESSION_IDENTITY=PASS; R2_PROJECTION_PATH=PASS; R3_DURABLE_LOOKUP=MISS; R4..R6=NOT_REACHED; R7=UNBOUND_SLOT_ONLY\nM3_W1_P4_SESSION_IDENTITY_STABLE=yes\nM3_W1_P4_PROJECTION_PATH_STABLE=yes\nM3_W1_P4_EPHEMERAL_IDENTITY_USED_AS_DURABLE_KEY=no\nM3_W1_P4_ROLLBACK_RECOMMENDATION=NO_IMMEDIATE_ROLLBACK\nM3_V5_CONTROLLED_REACTIVATION_APPROVED=no\n```\n\n## Goal\nGOAL=Repair direct OpenCode 4096 normal task-main sessions so a real trusted Session ID reaches AF without modifying OpenCode upstream, while one shared AOTA MCP child safely serves multiple Sessions with one independent AF Context per Session.\n\nThe production failure is:\n\n```text\nOpenCode 4096 normal task-main Session has a real Session ID\n-> ordinary AOTA MCP transport has no trusted Session identity\n-> task_main.context(bind)\n-> SESSION_RECOVERY_REQUIRED\n```\n\nThe Plan creates a Trusted Session Bridge and preserves the existing headless path:\n\n```text\n4095 UI / Codex\n-> AF Launcher\n-> OpenCode :4096\n-> aota-task-main\n-> AOTA MCP\n```\n\n## Scope And Context\nThe bridge must support multiple Sessions through the same AOTA MCP child without sharing one global bound delegate. Session A, B and C each receive an independent logical AF Context, while the existing durable context projection and restart recovery remain the source of continuity. The model supplies no Session ID and has no authority to mint identity, tokens or bindings.\n\nThe approved semantics are an independent integration repair discovered by production dogfood after Plan #003 completion. This Plan does not reopen #003 and does not replace #002.\n\n## Confirmed PoC Evidence\n```text\nAF_OPENCODE_SESSION_IDENTITY_BRIDGE_POC_RESULT\nPINNED_VERSION=1.18.30\nPLUGIN_RECEIVES_EXACT_SESSION_ID=yes\nMCP_NATIVE_META_SESSION_ID=no\nTRUSTED_BRIDGE_FEASIBLE=yes\nSESSION_A_ROUTING=PASS\nSESSION_B_ROUTING=PASS\nINTERLEAVED_SESSION_ISOLATION=PASS\nCONCURRENT_SESSION_ISOLATION=PASS\nMODEL_CAN_FORGE_SESSION_ID=no\nOPENCODE_SOURCE_MODIFIED=no\nPRODUCTION_CONFIG_MODIFIED=no\nAF_SOURCE_MODIFIED=no\nVALIDATED_MCP_CALL_COUNT=6\n```\n\nThe PoC result is user-provided evidence, not by itself production security acceptance. If the original evidence is unavailable during construction, it must remain classified as user-provided rather than represented as an independently reproduced result.\n\nThe PoC direction is: an OpenCode Plugin obtains the real `sessionID` and `callID` from `tool.execute.before`, issues a one-time HMAC token, and uses a local Trusted Bridge for association and verification.\n\n## Governance And Frozen Architecture\n```text\nSHARED_MCP_CHILD_ALLOWED=yes\nONE_SESSION_ONE_LOGICAL_AF_CONTEXT=yes\nPHYSICAL_ONE_CHILD_PER_SESSION_REQUIRED=no\nSESSION_ID_VERIFIED_PER_INVOCATION=yes\nMODEL_SUPPLIES_SESSION_ID=no\nMODEL_MINTS_AUTHORITY=no\nTOKEN_IS_PROJECT_AUTHORITY=no\nSESSION_ID_IS_PROJECT_AUTHORITY=no\nEXISTING_DURABLE_BINDING_REUSED=yes\nSECOND_SESSION_DB=no\nMCP_PUBLIC_TOOL_COUNT=1\nMCP_PUBLIC_TOOL=aota.invoke\nSHARED_CHILD_SESSIONS_MUST_NOT_SHARE_GLOBAL_BOUND_DELEGATE=yes\n```\n\nThe Trusted Bridge verifies the carrier on every invocation, correlates the verified Session identity to the call, and routes to a Session-scoped logical Context. It does not become a Project authority, a Plan authority, a Session database, or a second context engine.\n\n## F-D Boundary\n```text\nFINDING_ID=F-D\nFINDING_TITLE=BY_REF_HYDRATION_SCOPE_MISMATCH\nCLASSIFICATION=OPEN_NON_BLOCKING_ADJACENT\nOWNED_BY_THIS_PLAN=no\nSOURCE_REPAIR_IN_THIS_PLAN=no\n```\n\nF-D remains a known baseline: the Session Bridge repairs caller/Session identity; F-D concerns ToolOutputRef and AuthorizedRoot hydration scope. Existing `result.hydrate` security and normal hydration must not be weakened or newly regressed. F-D is not allowed to block #004 acceptance by itself. A new hydration regression introduced by #004 must be repaired. Multi-Root By-Ref Hydration is a separate future repair Plan after #004.\n\n## Explicit Non-Goals\n```text\nOPENCODE_UPSTREAM_PATCH=no\nNEW_SESSION_DB=no\nNEW_CONTEXT_ENGINE=no\nNEW_PLAN_AUTHORITY=no\nNEW_WORKFLOW_ENGINE=no\nNEW_MCP_PUBLIC_TOOL=no\nREPLACE_DAILY_TASK_MAIN_LAUNCHER=no\nPHYSICAL_ONE_CHILD_PER_SESSION_REQUIRED=no\nGENERIC_AGENT_PLUGIN_FRAMEWORK=no\nGENERIC_AUTHENTICATION_PLATFORM=no\nF_D_SOURCE_REPAIR=no\nPLAN001_MUTATION=no\nPLAN002_MUTATION=no\nPLAN003_MUTATION=no\n```\n\n## Governance And Human Brake\n```text\nPLAN_MATERIALIZATION_APPROVED=yes\nM1_SOURCE_CONSTRUCTION_APPROVED=yes\nM2_CONSTRUCTION_APPROVED=yes\nM3_PRODUCTION_ACTIVATION_APPROVED=yes\nSTOP_AFTER_PLAN_MATERIALIZATION=no\nSTOP_BEFORE_M1_CONSTRUCTION=no\nSTOP_BEFORE_M2_CONSTRUCTION=no\nSTOP_BEFORE_SOURCE_MUTATION=no\nSTOP_BEFORE_WORKTREE_CREATION=no\nSTOP_BEFORE_WORKER_DISPATCH=yes\nGITHUB_MUTATION=no\nREMOTE_PUSH=no\n```\n\nThe reconciled M1 acceptance, explicit M2 construction approval, and explicit M3 production activation/validation approval authorize the P0 gate, controlled activation, and staged M3 production validation. GitHub mutation and remote push remain unauthorized.\n\n## M1 - Trusted Carrier & Context Isolation Contract\nObjective: Freeze trusted Session identity, Token, call correlation, Context isolation and the formal implementation boundary.\n```text\nM1_STATUS=in_progress\nM1_DAG=W1 -> W2 -> W3 -> RV1\nM1_WORK_ITEMS=W1, W2, W3\n```\n\n### M1/W1 - OpenCode Invocation Identity Reconnaissance\nConfirm the pinned v1.18.30 Plugin hook, real `sessionID` and `callID`, actual MCP request shape, and directory-instance MCP child lifecycle. Record the exact trusted source and distinguish user-provided PoC evidence from independently read evidence.\n\n### M1/W2 - Trusted Token & Call Correlation Contract\nDefine HMAC token format, one-time use, TTL, secret isolation, call correlation, replay prevention and fail-closed behavior. FIFO/latest-token association is prohibited because it cannot reliably correlate parallel requests.\n\n### M1/W3 - Session Routing & Durability Design\nInventory `_UnboundAotaAdapter`, `_bound_delegate`, existing durable context projection and restart recovery. Freeze the minimum Session-scoped routing seam without introducing a second authority or a second Session database.\n\n### M1/RV1 Acceptance\n```text\nTRUSTED_SESSION_SOURCE_CONFIRMED=yes\nPER_INVOCATION_CORRELATION_PROVEN=yes\nTOKEN_SECURITY_CONTRACT_FROZEN=yes\nSECRET_ISOLATION_DESIGNED=yes\nSESSION_ROUTING_OWNER_IDENTIFIED=yes\nDURABLE_CONTEXT_REUSE_CONFIRMED=yes\nNO_SECOND_AUTHORITY_DESIGNED=yes\nM2_IMPLEMENTATION_SEAMS_IDENTIFIED=yes\n```\n\nM1 is contract/static/V1 work plus only the necessary bounded V2 proof. It does not begin source construction without explicit user approval.\n\n## M2 - Minimal Bridge & Session-Scoped Context Implementation\nObjective: Implement the Trusted Bridge and Session-scoped Context routing while preserving the existing AF Control Plane.\n```text\nM2_STATUS=ready\nM2_DAG=W1 -> W2 -> W3 -> W4 -> RV1\nM2_WORK_ITEMS=W1, W2, W3, W4\n```\n\n### M2/W1 - Trusted OpenCode Plugin & Bridge\nImplement the trusted Plugin carrier, one-time token issuance and verification. Do not modify OpenCode upstream source.\n\n### M2/W2 - Session-Scoped AF Routing\nRoute one shared MCP child by verified Session identity to the correct Context. Do not add a second public MCP tool or Context authority.\n\n### M2/W3 - Durable Resume & Lifecycle\nReuse `DurableTaskMainContextBinding` and `FileBackedTaskMainContextBindingProjection`. Verify restart/resume, Session isolation, stale identity fail-closed behavior and safe in-memory Context release.\n\n### M2/W4 - Focused Security & Regression\n```text\nTOKEN_REPLAY_DENIAL=PASS\nTOKEN_EXPIRY_DENIAL=PASS\nTOKEN_FORGERY_DENIAL=PASS\nSESSION_A_B_INTERLEAVED=PASS\nSESSION_A_B_CONCURRENT=PASS\nCROSS_SESSION_CONTEXT_DENIAL=PASS\nCROSS_PROJECT_AUTHORITY_DENIAL=PASS\nHEADLESS_LAUNCHER_REGRESSION=no\nCONTEXT_SWITCH_REGRESSION=no\n```\n\n### M2/RV1\nPerform one integrated review of the minimal implementation, security contract, routing isolation, durability and relevant regression evidence.\n\n## M3 - Real Production Acceptance\nObjective: Validate headed, headless and multi-Session isolation through the real OpenCode :4096 path.\n```text\nM3_STATUS=pending\nM3_DAG=W1 -> W2 -> W3 -> RV1\nM3_WORK_ITEMS=W1, W2, W3\n```\n\n### M3/W1 - Headed 4096 Normal Session\nUse a real normal aota-task-main Session created directly in OpenCode 4096. In short staged prompts validate `role.bootstrap`, `context.inspect` unbound, trusted Session verification, project-only bind and same-Session continuation. The LLM must not query, report or generate a Session ID.\n\n### M3/W2 - Shared Child Multi-Session Isolation\nUse one shared MCP child for Session A and B. Prove complete Context separation with interleaved and concurrent calls, cross-Session denial, child restart/resume, and record child PID/RSS and lifecycle. A resident process alone is not evidence of a memory leak.\n\n### M3/W3 - Headless 4095 / Codex Regression\nDrive OpenCode 4096 through the existing AF launcher and verify the preserved headless path.\n```text\nEXACT_SESSION_REF=PASS\nROLE_BOOTSTRAP_FIRST=yes\nTRUSTED_BINDING=PASS\nAOTA_MCP_AVAILABLE=yes\nHEADLESS_REGRESSION=no\n```\n\n### M3/RV1 Acceptance\n```text\nHEADED_SESSION_FIRST=PASS\nHEADLESS_LAUNCHER=PASS\nSHARED_CHILD_SESSION_ISOLATION=PASS\nCONCURRENT_SESSION_ROUTING=PASS\nPROCESS_RESTART_CONTINUITY=PASS\nTOKEN_REPLAY_DENIAL=PASS\nMODEL_MINTED_SESSION_ID=no\nDURABLE_CONTEXT_REUSED=yes\nMCP_PUBLIC_TOOL_COUNT=1\n```\n\n## Validation And Stop Conditions\nValidation is minimum-sufficient, bounded and evidence-based. Normal `result.hydrate` security remains intact, F-D is recorded as the known adjacent baseline, and any new #004 hydration regression is in scope for repair. No lower proof is presented as production acceptance.\n\n```text\nM1_SOURCE_CONSTRUCTION_APPROVED=yes\nSOURCE_CONSTRUCTION_STARTED=yes\nWORKTREE_CREATED=yes\nGITHUB_CALLS=0\nREMOTE_PUSHED=no\nCURRENT_NEXT_ACTION=Complete M2 W1-W4 bounded construction and integrated RV1.\n```\n",
+  "inspect": {
+    "status": "INSPECTED",
+    "mode": "inspect",
+    "project_id": "aota_forge",
+    "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+    "source_repository": "",
+    "project": {
+      "status": "RECONCILED",
+      "workspace_id": "aota_forge",
+      "project_id": "aota_forge",
+      "registry_fingerprint": "6623cea8d37521d1de674329d84933d5c6dac65e20e144fdcf896fe664bcd81a",
+      "candidate_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "source_repository": "",
+      "repository_identity": null
+    },
+    "projection": {
+      "project": {
+        "card_kind": "project_card",
+        "project_id": "aota_forge",
+        "plan_id": null,
+        "milestone_id": null,
+        "source_refs": [
+          {
+            "role": "project_governance_store",
+            "ref": "project-governance:aota_forge",
+            "revision": "22",
+            "digest": "271f151f9dd51f6ae5dbe95a9fe16344b1a19865bb749f7869c4b15136164f58"
+          }
+        ],
+        "navigation_refs": [
+          {
+            "kind": "project",
+            "ref": "project:aota_forge"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_001_gov2_session_first_adoption"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_002_session_first_context_activation"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_003_interactive_session_first_context_repair"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_004_trusted_opencode_session_bridge_context_isolation"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_probe_m2_v3_context_switch"
+          },
+          {
+            "kind": "plan",
+            "ref": "plan:plan_probe_m2_v3_context_switch_r2"
+          }
+        ],
+        "complete": true,
+        "missing_facts": [],
+        "warnings": [],
+        "project_ref": "project:aota_forge",
+        "project_status": "active",
+        "plan_refs": [
+          "plan_001_gov2_session_first_adoption",
+          "plan_002_session_first_context_activation",
+          "plan_003_interactive_session_first_context_repair",
+          "plan_004_trusted_opencode_session_bridge_context_isolation",
+          "plan_probe_m2_v3_context_switch",
+          "plan_probe_m2_v3_context_switch_r2"
+        ],
+        "plan_count": 6,
+        "governance_root_refs": [
+          "local-governance"
+        ],
+        "source_revision": null,
+        "source_digest": "271f151f9dd51f6ae5dbe95a9fe16344b1a19865bb749f7869c4b15136164f58",
+        "projection_id": "gcard-01602f8a0cb1fc68c1e82eb5201b6992",
+        "is_authority": false
+      },
+      "plans": [
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_001_gov2_session_first_adoption",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "4",
+              "digest": "f16446a77c89b29092c266ed6c1b8c9dec97658d7c15bae7bf34b4635b506938"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+              "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+              "digest": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+              "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+              "digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_001_gov2_session_first_adoption:M1"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+          "authority_revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "authority_digest": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "lifecycle_state": "retired",
+          "record_revision": 4,
+          "plan_status": "active",
+          "current_milestone": "M1",
+          "title": null,
+          "goal_summary": null,
+          "source_revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "source_digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca",
+          "projection_id": "gcard-31215efe96baa437d61cb81bd34a69a8",
+          "is_authority": false
+        },
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_002_session_first_context_activation",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "19",
+              "digest": "feb514651b02887a162b37d7f842a72039a51ad978f3a7b5d7a2984304b18239"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+              "revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+              "digest": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+              "revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+              "digest": "9cd02f31beae2ed511ea551fc2b6a30f95d5c0e6e9d1292ad1475c38598a8ea1"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_002_session_first_context_activation:M4"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+          "authority_revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+          "authority_digest": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+          "lifecycle_state": "active",
+          "record_revision": 19,
+          "plan_status": "active",
+          "current_milestone": "M4",
+          "title": null,
+          "goal_summary": null,
+          "source_revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+          "source_digest": "9cd02f31beae2ed511ea551fc2b6a30f95d5c0e6e9d1292ad1475c38598a8ea1",
+          "projection_id": "gcard-fecff3d97292913a0399df915884a273",
+          "is_authority": false
+        },
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_003_interactive_session_first_context_repair",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "22",
+              "digest": "dda3dd960aef1aa2893da492eaafcdc893598ece1925964375b97b9eaa910031"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+              "revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+              "digest": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+              "revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+              "digest": "0d52d317b3acd36b3c126b6d5924c7c64a409971c1d111a0da4acc38992e0e77"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_003_interactive_session_first_context_repair:M3"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+          "authority_revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+          "authority_digest": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+          "lifecycle_state": "retired",
+          "record_revision": 22,
+          "plan_status": "completed",
+          "current_milestone": "M3",
+          "title": null,
+          "goal_summary": "[AF][REPAIR] Interactive Session-First Context Activation Convergence",
+          "source_revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+          "source_digest": "0d52d317b3acd36b3c126b6d5924c7c64a409971c1d111a0da4acc38992e0e77",
+          "projection_id": "gcard-7b29e5adbf62ca1c9ec4503100de1be7",
+          "is_authority": false
+        },
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "21",
+              "digest": "100cef96e37b045ecaab580a421d92d5cc95c55d8c4f09a6e8b1617ea2717761"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+              "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+              "digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+              "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+              "digest": "d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+          "authority_revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "authority_digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "lifecycle_state": "active",
+          "record_revision": 21,
+          "plan_status": "active",
+          "current_milestone": "M3",
+          "title": null,
+          "goal_summary": "[AF][REPAIR] Trusted OpenCode Session Bridge & Context Isolation",
+          "source_revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "source_digest": "d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9",
+          "projection_id": "gcard-cb13cb31038a3cb556dab5e7b871fdb4",
+          "is_authority": false
+        },
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_probe_m2_v3_context_switch",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "3",
+              "digest": "5e44ae7512d93e93a4ab3c0d38646069534e1cadea36fb5c3d038f23720f64f7"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch",
+              "revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+              "digest": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch",
+              "revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+              "digest": "b6c8d69837fa9e38b118b9d533226008b35aebf87cf4b5c2eba509d59437653e"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_probe_m2_v3_context_switch:M2"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch",
+          "authority_revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+          "authority_digest": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+          "lifecycle_state": "retired",
+          "record_revision": 3,
+          "plan_status": "active",
+          "current_milestone": "M2",
+          "title": null,
+          "goal_summary": null,
+          "source_revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+          "source_digest": "b6c8d69837fa9e38b118b9d533226008b35aebf87cf4b5c2eba509d59437653e",
+          "projection_id": "gcard-551e9bd34bf0e43813fbde539db17a79",
+          "is_authority": false
+        },
+        {
+          "card_kind": "plan_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_probe_m2_v3_context_switch_r2",
+          "milestone_id": null,
+          "source_refs": [
+            {
+              "role": "project_governance_store",
+              "ref": "project-governance:aota_forge",
+              "revision": "2",
+              "digest": "33e593f5101038ffc624fd63e072867d0ef1814d6c9186521a58c5c23dc48a7c"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2",
+              "revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+              "digest": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2"
+            },
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2",
+              "revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+              "digest": "66da4d2da4d9b5e290063fbd0cabcd0c1338c9e229222a6bdc50892978e2bbda"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2"
+            },
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_probe_m2_v3_context_switch_r2:M2"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "authority_source_kind": "local_governance",
+          "authority_ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2",
+          "authority_revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+          "authority_digest": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+          "lifecycle_state": "retired",
+          "record_revision": 2,
+          "plan_status": "active",
+          "current_milestone": "M2",
+          "title": null,
+          "goal_summary": null,
+          "source_revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+          "source_digest": "66da4d2da4d9b5e290063fbd0cabcd0c1338c9e229222a6bdc50892978e2bbda",
+          "projection_id": "gcard-81eeda88df21f58d6706812411064dfc",
+          "is_authority": false
+        }
+      ],
+      "milestones": [
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_001_gov2_session_first_adoption",
+          "milestone_id": "M1",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+              "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+              "digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+              "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+              "digest": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_001_gov2_session_first_adoption:M1"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [
+            "milestone_objective_truncated"
+          ],
+          "milestone_title": "M1 \u2014 Project/Plan Intake & Agent-Facing Governance Convergence",
+          "milestone_status": "ready",
+          "objective_summary": "M1 \u2014 Project/Plan Intake & Agent-Facing Governance Convergence\nObjective:\nEstablish the complete Project/Plan intake and projection lifecycle first, then converge ChatGPT planning and task-main guidance onto that real runtime path.\nDAG:\nW1 -> W2 -> (W3 || W4) -> RV1\n---\nScope:\nProject identity ownership\nsource project.yaml ownership\nProject Registry ownership\nroot_ref / AuthorizedRootSet ownership\nProject Intake semantics\nPlan Intake semantics\nProject/Plan artifact ownership\nProjection lifecycle\nProject Stewardship ownership\nprogressive disclosure after Intake\nsession-binding ownership boundary\nworktree lifecycle ownership boundary\noperation-family ownership\nSkill routing ownership\nAcceptance:\nW1 is primarily contract/convergence work. Do not duplicate already accepted #57 implementation.\nDepends on W1. Implement the smallest canonical operational path for `governance.project` and `governance.plan`:\ngovernance.project: init, inspect, reconcile\ngovernance.plan: init, inspect, amend, close\n`close` may remain ex",
+          "objective_ref": "milestone:plan_001_gov2_session_first_adoption:M1",
+          "work_item_refs": [
+            "W1",
+            "W2",
+            "W3",
+            "W4"
+          ],
+          "dependency_edges": [
+            [
+              "W1",
+              "W2"
+            ],
+            [
+              "W2",
+              "W3"
+            ],
+            [
+              "W2",
+              "W4"
+            ]
+          ],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "source_digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca",
+          "projection_id": "gcard-da4d7200847c09a71d628d2b0a4c5b12",
+          "is_authority": false
+        },
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_002_session_first_context_activation",
+          "milestone_id": "M4",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+              "revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+              "digest": "9cd02f31beae2ed511ea551fc2b6a30f95d5c0e6e9d1292ad1475c38598a8ea1"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+              "revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+              "digest": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_002_session_first_context_activation:M4"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_002_session_first_context_activation"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [
+            "milestone_objective_truncated"
+          ],
+          "milestone_title": "M4 \u2014 Gov1 Transition & Legacy #39 First Adoption",
+          "milestone_status": "ready",
+          "objective_summary": "M4 \u2014 Gov1 Transition & Legacy #39 First Adoption\nObjective:\nComplete the remaining legacy #64 governance-transition outcome by proving that an explicitly bound Governance 1.x GitHub Plan can be reconciled and transitioned into the accepted Governance 2.0 local-authority model using the current canonical compatibility boundaries, with `wzjcccc-dotcom/aota-hermes-tools#39` as the first real adoption target when its current authority/state still qualifies.\nThis is an outcome continuation. It is not permission to resurrect removed interfaces, and M4 requires its normal Milestone construction approval when reached.\nDAG:\nEstablish the current transition contract from explicit legacy `github_issue` authority to local Governance 2.0 without inventing a second authority model.\nThe inventory must inspect the current canonical surfaces and identify the legacy `PlanAuthorityBinding`, legacy Issue-body authority semantics, legacy five-comment compatibility representation, local Governance 2.0 Plan authority, `ProjectPlanR",
+          "objective_ref": "milestone:plan_002_session_first_context_activation:M4",
+          "work_item_refs": [
+            "W1",
+            "W2",
+            "W3",
+            "W4"
+          ],
+          "dependency_edges": [
+            [
+              "W1",
+              "W2"
+            ],
+            [
+              "W2",
+              "W3"
+            ],
+            [
+              "W3",
+              "W4"
+            ]
+          ],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+          "source_digest": "9cd02f31beae2ed511ea551fc2b6a30f95d5c0e6e9d1292ad1475c38598a8ea1",
+          "projection_id": "gcard-482d3aa003e9f5a4f31c0bd1aa75567e",
+          "is_authority": false
+        },
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_003_interactive_session_first_context_repair",
+          "milestone_id": "M3",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+              "revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+              "digest": "0d52d317b3acd36b3c126b6d5924c7c64a409971c1d111a0da4acc38992e0e77"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+              "revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+              "digest": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_003_interactive_session_first_context_repair:M3"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "milestone_title": "M3 - Real Interactive Production Acceptance",
+          "milestone_status": "completed",
+          "objective_summary": "M3 - Real Interactive Production Acceptance\nObjective: Prove the actual user workflow from a fresh manually opened task-main session.\nUse the real supported OpenCode/OpenChamber production path: fresh aota-task-main -> role.bootstrap -> task_main.context(inspect) -> state=unbound -> user or fixture supplies natural Project/Plan intent -> task_main.context(bind) -> the same exact session becomes bound. Do not pre-compose Project/Plan binding before the test starts.\nIn the same session, use governance.plan inspect, the Plan card and current milestone, and workspace.search/read with the authorized root_ref. Verify no authority inference.\nIn the same bound task-main session: handoff.write(mode=work_item, work_role=analyst) -> task.start(role=analyst) -> real aota-worker -> role.bootstrap -> handoff.open -> workspace.search/read -> handoff.write(mode=result) -> task.return -> task-main receives Result Card. Use read-only bounded analyst work; no source mutation is required for production acceptance.",
+          "objective_ref": "milestone:plan_003_interactive_session_first_context_repair:M3",
+          "work_item_refs": [
+            "W1",
+            "W2",
+            "W3"
+          ],
+          "dependency_edges": [
+            [
+              "W1",
+              "W2"
+            ],
+            [
+              "W2",
+              "W3"
+            ]
+          ],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+          "source_digest": "0d52d317b3acd36b3c126b6d5924c7c64a409971c1d111a0da4acc38992e0e77",
+          "projection_id": "gcard-9f1a0253208c051849e2394bb4221537",
+          "is_authority": false
+        },
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+          "milestone_id": "M3",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+              "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+              "digest": "d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+              "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+              "digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [
+            "milestone_objective_truncated"
+          ],
+          "milestone_title": "M3 - Real Production Acceptance",
+          "milestone_status": "in_progress",
+          "objective_summary": "M3 - Real Production Acceptance\nW1: DURABLE_RECOVERY_REPAIR_IN_PROGRESS\nW1: DURABLE_PROJECT_CONTEXT_RECOVERY_FAILED\nW1: Project-only bind installs an in-memory project_bound delegate but does not create/persist a durable binding record.\nW1: R1_SESSION_IDENTITY=PASS; R2_PROJECTION_PATH=PASS; R3_DURABLE_LOOKUP=MISS; R4..R6=NOT_REACHED; R7=UNBOUND_SLOT_ONLY\nW1: yes\nW1: no\nW1: NO_IMMEDIATE_ROLLBACK\nObjective: Validate headed, headless and multi-Session isolation through the real OpenCode :4096 path.\nUse a real normal aota-task-main Session created directly in OpenCode 4096. In short staged prompts validate `role.bootstrap`, `context.inspect` unbound, trusted Session verification, project-only bind and same-Session continuation. The LLM must not query, report or generate a Session ID.\nUse one shared MCP child for Session A and B. Prove complete Context separation with interleaved and concurrent calls, cross-Session denial, child restart/resume, and record child PID/RSS and lifecycle. A resident process alone is no",
+          "objective_ref": "milestone:plan_004_trusted_opencode_session_bridge_context_isolation:M3",
+          "work_item_refs": [
+            "W1",
+            "W2",
+            "W3"
+          ],
+          "dependency_edges": [
+            [
+              "W1",
+              "W2"
+            ],
+            [
+              "W2",
+              "W3"
+            ]
+          ],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "source_digest": "d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9",
+          "projection_id": "gcard-92257a329d53e9c24b64897e23af5579",
+          "is_authority": false
+        },
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_probe_m2_v3_context_switch",
+          "milestone_id": "M2",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch",
+              "revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+              "digest": "b6c8d69837fa9e38b118b9d533226008b35aebf87cf4b5c2eba509d59437653e"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch",
+              "revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+              "digest": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_probe_m2_v3_context_switch:M2"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "milestone_title": "M2",
+          "milestone_status": "in_progress",
+          "objective_summary": "M2\nBounded production-path context-switch probe.",
+          "objective_ref": "milestone:plan_probe_m2_v3_context_switch:M2",
+          "work_item_refs": [
+            "W1",
+            "W2"
+          ],
+          "dependency_edges": [
+            [
+              "W1",
+              "W2"
+            ]
+          ],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+          "source_digest": "b6c8d69837fa9e38b118b9d533226008b35aebf87cf4b5c2eba509d59437653e",
+          "projection_id": "gcard-807b57c00e4ff4cf4c0409e869ddc8f7",
+          "is_authority": false
+        },
+        {
+          "card_kind": "milestone_card",
+          "project_id": "aota_forge",
+          "plan_id": "plan_probe_m2_v3_context_switch_r2",
+          "milestone_id": "M2",
+          "source_refs": [
+            {
+              "role": "plan_document",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2",
+              "revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+              "digest": "66da4d2da4d9b5e290063fbd0cabcd0c1338c9e229222a6bdc50892978e2bbda"
+            },
+            {
+              "role": "plan_authority",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2",
+              "revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+              "digest": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2"
+            }
+          ],
+          "navigation_refs": [
+            {
+              "kind": "milestone",
+              "ref": "milestone:plan_probe_m2_v3_context_switch_r2:M2"
+            },
+            {
+              "kind": "plan",
+              "ref": "local-governance:aota_forge/plan_probe_m2_v3_context_switch_r2"
+            }
+          ],
+          "complete": true,
+          "missing_facts": [],
+          "warnings": [],
+          "milestone_title": "M2",
+          "milestone_status": "in_progress",
+          "objective_summary": "M2\nBounded real production-path context switch validation.",
+          "objective_ref": "milestone:plan_probe_m2_v3_context_switch_r2:M2",
+          "work_item_refs": [
+            "V3"
+          ],
+          "dependency_edges": [],
+          "approval_satisfied": true,
+          "is_current": true,
+          "source_revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+          "source_digest": "66da4d2da4d9b5e290063fbd0cabcd0c1338c9e229222a6bdc50892978e2bbda",
+          "projection_id": "gcard-66c82d2ebc3c75c22f856ac187dc4a8b",
+          "is_authority": false
+        }
+      ],
+      "architecture": {
+        "card_kind": "architecture_card",
+        "project_id": "aota_forge",
+        "plan_id": null,
+        "milestone_id": null,
+        "source_refs": [
+          {
+            "role": "architecture",
+            "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+            "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+            "digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca"
+          }
+        ],
+        "navigation_refs": [
+          {
+            "kind": "architecture",
+            "ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption"
+          }
+        ],
+        "complete": true,
+        "missing_facts": [],
+        "warnings": [],
+        "baseline_id": "AF-GOV2-SESSION-FIRST-OPERATIONAL-ADOPTION-R3",
+        "baseline_status": null,
+        "accepted_ref": "local-governance:aota_forge/plan_001_gov2_session_first_adoption",
+        "plan_delta_ref": null,
+        "source_revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+        "source_digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca",
+        "current_version": null,
+        "current_digest": null,
+        "promotion_receipt_ref": null,
+        "promoted_by_plan_id": null,
+        "projection_id": "gcard-8dae583cb128565239802bb992d4dbd1",
+        "is_authority": false
+      },
+      "progress": {
+        "card_kind": "progress_card",
+        "project_id": "aota_forge",
+        "plan_id": null,
+        "milestone_id": null,
+        "source_refs": [
+          {
+            "role": "project_governance_store",
+            "ref": "project-governance:aota_forge",
+            "revision": "22",
+            "digest": "271f151f9dd51f6ae5dbe95a9fe16344b1a19865bb749f7869c4b15136164f58"
+          },
+          {
+            "role": "task_main_coordinator_state",
+            "ref": "task-main-coordinator:aota_forge",
+            "revision": "0",
+            "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "role": "execution_state_store",
+            "ref": "execution-state:aota_forge",
+            "revision": null,
+            "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          }
+        ],
+        "navigation_refs": [
+          {
+            "kind": "progress",
+            "ref": "progress:aota_forge"
+          }
+        ],
+        "complete": true,
+        "missing_facts": [],
+        "warnings": [],
+        "plan_lifecycle": [
+          {
+            "plan_id": "plan_001_gov2_session_first_adoption",
+            "lifecycle_state": "retired",
+            "authority_source_kind": "local_governance"
+          },
+          {
+            "plan_id": "plan_002_session_first_context_activation",
+            "lifecycle_state": "active",
+            "authority_source_kind": "local_governance"
+          },
+          {
+            "plan_id": "plan_003_interactive_session_first_context_repair",
+            "lifecycle_state": "retired",
+            "authority_source_kind": "local_governance"
+          },
+          {
+            "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+            "lifecycle_state": "active",
+            "authority_source_kind": "local_governance"
+          },
+          {
+            "plan_id": "plan_probe_m2_v3_context_switch",
+            "lifecycle_state": "retired",
+            "authority_source_kind": "local_governance"
+          },
+          {
+            "plan_id": "plan_probe_m2_v3_context_switch_r2",
+            "lifecycle_state": "retired",
+            "authority_source_kind": "local_governance"
+          }
+        ],
+        "coordinator_facts": [],
+        "execution_aggregate": {
+          "total": 0,
+          "by_canonical_task_state": [],
+          "by_delivery_state": [],
+          "terminal_ok": 0,
+          "terminal_failed": 0,
+          "requiring_recovery": 0
+        },
+        "active_coordinator_count": 0,
+        "open_blockers": [],
+        "human_brake_active": false,
+        "next_action": null,
+        "source_digest": "6fa228ca218d2707355508a0fae17e0e5d40784136b94ed6e64211e9559d38fc",
+        "projection_id": "gcard-dc13d6a40ab7366d8e26ab2fbf952904",
+        "is_authority": false
+      },
+      "projection_digest": "c8811d30ddd839f7b5da763b02c7fd651f473636ee896c02d3c8f84066a78d19"
+    },
+    "context_route": {
+      "project_id": "aota_forge",
+      "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+      "authority_source_kind": "local_governance",
+      "cards_present": true,
+      "entries": [
+        {
+          "kind": "project_card",
+          "ref": "card:project_card:gcard-01602f8a0cb1fc68c1e82eb5201b6992",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "project_card",
+          "projection_id": "gcard-01602f8a0cb1fc68c1e82eb5201b6992",
+          "revision": "22",
+          "digest": "271f151f9dd51f6ae5dbe95a9fe16344b1a19865bb749f7869c4b15136164f58",
+          "use_when": "project identity, trusted Plan inventory and authorized governance roots"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-31215efe96baa437d61cb81bd34a69a8",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-31215efe96baa437d61cb81bd34a69a8",
+          "revision": "4",
+          "digest": "f16446a77c89b29092c266ed6c1b8c9dec97658d7c15bae7bf34b4635b506938",
+          "use_when": "other Plan in this project; navigate only when the task needs it"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-551e9bd34bf0e43813fbde539db17a79",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-551e9bd34bf0e43813fbde539db17a79",
+          "revision": "3",
+          "digest": "5e44ae7512d93e93a4ab3c0d38646069534e1cadea36fb5c3d038f23720f64f7",
+          "use_when": "other Plan in this project; navigate only when the task needs it"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-7b29e5adbf62ca1c9ec4503100de1be7",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-7b29e5adbf62ca1c9ec4503100de1be7",
+          "revision": "22",
+          "digest": "dda3dd960aef1aa2893da492eaafcdc893598ece1925964375b97b9eaa910031",
+          "use_when": "other Plan in this project; navigate only when the task needs it"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-81eeda88df21f58d6706812411064dfc",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-81eeda88df21f58d6706812411064dfc",
+          "revision": "2",
+          "digest": "33e593f5101038ffc624fd63e072867d0ef1814d6c9186521a58c5c23dc48a7c",
+          "use_when": "other Plan in this project; navigate only when the task needs it"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-cb13cb31038a3cb556dab5e7b871fdb4",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-cb13cb31038a3cb556dab5e7b871fdb4",
+          "revision": "21",
+          "digest": "100cef96e37b045ecaab580a421d92d5cc95c55d8c4f09a6e8b1617ea2717761",
+          "use_when": "current Plan authority, lifecycle and current Milestone"
+        },
+        {
+          "kind": "plan_card",
+          "ref": "card:plan_card:gcard-fecff3d97292913a0399df915884a273",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "plan_card",
+          "projection_id": "gcard-fecff3d97292913a0399df915884a273",
+          "revision": "19",
+          "digest": "feb514651b02887a162b37d7f842a72039a51ad978f3a7b5d7a2984304b18239",
+          "use_when": "other Plan in this project; navigate only when the task needs it"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-482d3aa003e9f5a4f31c0bd1aa75567e",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-482d3aa003e9f5a4f31c0bd1aa75567e",
+          "revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+          "digest": "9cd02f31beae2ed511ea551fc2b6a30f95d5c0e6e9d1292ad1475c38598a8ea1",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-66c82d2ebc3c75c22f856ac187dc4a8b",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-66c82d2ebc3c75c22f856ac187dc4a8b",
+          "revision": "afe4d8d9bb4244e6efb2564c4e64e1cfaa3c917914682f13c4b0d51a7fb90cf2",
+          "digest": "66da4d2da4d9b5e290063fbd0cabcd0c1338c9e229222a6bdc50892978e2bbda",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-807b57c00e4ff4cf4c0409e869ddc8f7",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-807b57c00e4ff4cf4c0409e869ddc8f7",
+          "revision": "c5f5403e3f17445758a7b0fb795620b2aba367d9f9dea3a7fad22d0c6939cef4",
+          "digest": "b6c8d69837fa9e38b118b9d533226008b35aebf87cf4b5c2eba509d59437653e",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-92257a329d53e9c24b64897e23af5579",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-92257a329d53e9c24b64897e23af5579",
+          "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "digest": "d5c6ced79d6df3fe3be6081e1df335f0451102e9c1bbb5d487cc2de49c932df9",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-9f1a0253208c051849e2394bb4221537",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-9f1a0253208c051849e2394bb4221537",
+          "revision": "12e16d435ef9c4b30283c0ccc6da30b7ad6329abc5e6775543426b2a309a39b6",
+          "digest": "0d52d317b3acd36b3c126b6d5924c7c64a409971c1d111a0da4acc38992e0e77",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "milestone_card",
+          "ref": "card:milestone_card:gcard-da4d7200847c09a71d628d2b0a4c5b12",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "milestone_card",
+          "projection_id": "gcard-da4d7200847c09a71d628d2b0a4c5b12",
+          "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca",
+          "use_when": "current Milestone contract: objective, work items, dependencies"
+        },
+        {
+          "kind": "architecture_card",
+          "ref": "card:architecture_card:gcard-8dae583cb128565239802bb992d4dbd1",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "architecture_card",
+          "projection_id": "gcard-8dae583cb128565239802bb992d4dbd1",
+          "revision": "cabf11045bee778aac5fa7ff71138f1d2496ec8bff9c94f3c93190ea8ec3795d",
+          "digest": "8dc0023ab7bdd3df660eea7ef4d2accbdda643a2d4c46e8faceb3d5b4e30ecca",
+          "use_when": "accepted Architecture baseline and Plan delta reference"
+        },
+        {
+          "kind": "progress_card",
+          "ref": "card:progress_card:gcard-dc13d6a40ab7366d8e26ab2fbf952904",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "card_kind": "progress_card",
+          "projection_id": "gcard-dc13d6a40ab7366d8e26ab2fbf952904",
+          "revision": "22",
+          "digest": "271f151f9dd51f6ae5dbe95a9fe16344b1a19865bb749f7869c4b15136164f58",
+          "use_when": "aggregate progress, blockers and Human Brake state"
+        },
+        {
+          "kind": "plan_authority",
+          "ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "source_kind": "local_governance",
+          "revision": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "digest": "cd9dcf3db11a1e974736c8ad4a0a497418e45fad80b1b22fcf67774fbde86d10",
+          "use_when": "exact bounded read/hydrate of the authoritative Plan when deeper detail is needed",
+          "supported_intents": [
+            "full",
+            "section",
+            "query"
+          ]
+        },
+        {
+          "kind": "authorized_root",
+          "ref": "root:local-governance",
+          "complete": true,
+          "IS_AUTHORITY": false,
+          "use_when": "authorized read/search scope for this session (root_ref, not a path)"
+        }
+      ],
+      "missing_facts": [],
+      "warnings": [],
+      "projection_id": "groute-e52ea0937b8f9bfbab0e94327c8b2829",
+      "is_authority": false,
+      "CONTEXT_ROUTE_IS_AUTHORITY": false,
+      "CONTROL_PLANE_SELECTS_RETRIEVAL_INTENT": false
+    },
+    "projection_receipt": null,
+    "proof": {
+      "project_card": true,
+      "plan_cards": {
+        "plan_001_gov2_session_first_adoption": true,
+        "plan_002_session_first_context_activation": true,
+        "plan_003_interactive_session_first_context_repair": true,
+        "plan_004_trusted_opencode_session_bridge_context_isolation": true,
+        "plan_probe_m2_v3_context_switch": true,
+        "plan_probe_m2_v3_context_switch_r2": true
+      },
+      "milestone_cards": {
+        "plan_001_gov2_session_first_adoption:M1": true,
+        "plan_002_session_first_context_activation:M4": true,
+        "plan_003_interactive_session_first_context_repair:M3": true,
+        "plan_004_trusted_opencode_session_bridge_context_isolation:M3": true,
+        "plan_probe_m2_v3_context_switch:M2": true,
+        "plan_probe_m2_v3_context_switch_r2:M2": true
+      },
+      "context_route": true
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "record": "AF_PLAN004_M3_HEADED_BRIDGE_SOCKET_WIRING_REPAIR",
+  "status": "CANDIDATE_REPAIRED_NOT_ACTIVATED",
+  "captured_at": "2026-10-01",
+  "project_id": "aota_forge",
+  "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+  "milestone": "M3",
+  "base_frontier": "052fefb297b412052d7c94ffb8f4ab6062259c33",
+  "base_candidate": "m3-preparation-v2",
+  "candidate_version": "m3-preparation-v3",
+  "root_cause": {
+    "confirmed": true,
+    "plugin_reads": "OpenCode host process.env.AOTA_BRIDGE_SOCKET",
+    "existing_socket_wiring_scope": "mcp.aota.environment only",
+    "missing_wiring": "headed OpenCode host environment",
+    "production_host_changed": false
+  },
+  "repair": {
+    "applied": true,
+    "changed_file": "systemd/opencode-af-reference.service.d/plan004-bridge.conf",
+    "host_socket_environment": "AOTA_BRIDGE_SOCKET=%t/af-plan004-bridge/bridge.sock",
+    "mcp_child_socket_wiring_preserved": true,
+    "m2_source_changed": false,
+    "opencode_upstream_changed": false,
+    "prior_candidate_overwritten": false
+  },
+  "validation": {
+    "candidate_static_wiring": "PASS",
+    "candidate_manifest_digest": "0863a8c12ba359bc8f469780d606cf883395ba337c9e42973fef625c1ae349f5",
+    "candidate_manifest_files": "PASS",
+    "host_drop_in_unit_verify": "PASS",
+    "production_reactivation_performed": false,
+    "headed_w1_started": false,
+    "w2_started": false,
+    "w3_started": false
+  },
+  "secret_handling": {
+    "secret_in_evidence": false,
+    "token_in_evidence": false
+  },
+  "next_gate": "EXPLICIT_CONTROLLED_REACTIVATION_APPROVAL"
+}

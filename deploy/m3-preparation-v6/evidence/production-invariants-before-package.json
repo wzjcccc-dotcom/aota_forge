@@ -1,0 +1,43 @@
+{
+  "active_services": {
+    "af-plan004-bridge-m3-candidate.service": {
+      "ActiveState": "active",
+      "MainPID": "508760",
+      "NRestarts": "0"
+    },
+    "opencode-af-reference.service": {
+      "ActiveState": "active",
+      "MainPID": "574428",
+      "NRestarts": "0"
+    },
+    "opencode-fixed-4095.service": {
+      "ActiveState": "active",
+      "MainPID": "368735",
+      "NRestarts": "0"
+    }
+  },
+  "bridge_ipc_connect": "PASS",
+  "health": {
+    "4095": {
+      "healthy": true,
+      "version": "1.18.30"
+    },
+    "4096": {
+      "healthy": true,
+      "version": "1.18.30"
+    }
+  },
+  "mcp_status": {
+    "aota": {
+      "status": "connected"
+    }
+  },
+  "observed_process_runtime_roots": [
+    "/home/latios/.local/share/aota-forge/plan004-m3-v5r1-runtime-71e821777e47-d605e4a3968f",
+    "/home/latios/workspace/aota_forge"
+  ],
+  "production_config_or_service_mutation": false,
+  "socket_dir_mode": "0700",
+  "socket_mode": "0600",
+  "status": "PASS"
+}

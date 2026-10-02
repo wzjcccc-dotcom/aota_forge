@@ -1,0 +1,46 @@
+{
+  "baseline_findings": [
+    {
+      "observation": "expects the task-main-control Skill to be inline, but the accepted source frontier returns it by_ref",
+      "reproduced_on_v5r1_source": true,
+      "test": "tests/test_w2_r1_skill_by_ref_consumption.py::test_production_large_skill_by_ref_and_task_main_hydrate"
+    },
+    {
+      "observation": "same pre-existing task-main-control Skill inline-size expectation",
+      "reproduced_on_v5r1_source": true,
+      "test": "tests/test_w2_r1_skill_by_ref_consumption.py::test_by_ref_semantics_retained"
+    },
+    {
+      "observation": "legacy test expects coder pytest command denial while the current command-family contract permits coder build/test",
+      "reproduced_on_v5r1_source": true,
+      "test": "tests/test_s2_m3_w4_restricted_shell_v0.py::TestFallbackScope::test_T40_test_runner_not_exposed"
+    }
+  ],
+  "existing_nonblocking_checks": {
+    "architecture_drift_guard": "two legacy-import findings are present on the v5r1 source frontier and outside this repair's call path",
+    "m1_incomplete_field_definition_warning": "REPRODUCED_FROM_PINNED_FASTMCP_DEPENDENCY"
+  },
+  "focused_suites": [
+    "Plan #004 M1 token contract",
+    "Plan #004 M2 Bridge replay/forgery/substitution/session routing",
+    "Plan #004 M3 project-only durability",
+    "Plan #004 M3 project-to-Plan promotion",
+    "Plan #004 M3 cross-session overlap and same-session serialization",
+    "Plan #003 same-session bind, durable resume, resume advancement",
+    "Context bind/switch guards",
+    "M1 durable context binding and single-entry MCP",
+    "Governed result projection/hydration",
+    "Restricted-shell timeout and safety contract",
+    "Project registry RMW concurrency",
+    "Governance lifecycle/journal cross-instance concurrency",
+    "M2 shared transport and task-main provider grounding"
+  ],
+  "ruff": "NOT_RUN_TOOL_UNAVAILABLE",
+  "selected_matrix": {
+    "deselected_baseline_expectations": 3,
+    "full_repository_suite": "NOT_RUN_BY_DEFAULT",
+    "passed": 387
+  },
+  "source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "status": "PASS_WITH_BASELINE_FINDINGS"
+}

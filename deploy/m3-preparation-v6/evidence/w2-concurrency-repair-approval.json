@@ -1,0 +1,37 @@
+{
+  "authority_before": {
+    "approval_field_absent": true,
+    "cas_revision": 41,
+    "durable_readback_ref": "/home/latios/workspace/.aota-evidence/plan004-m3-v5r1-production-acceptance-20261001/w2-deterministic-driver-gate-durable-readback.json",
+    "plan_revision": "R38",
+    "source_digest": "603c0701210a73d4871ae7a213aa7a832393df4a850c62cce056763a36f8c87a"
+  },
+  "canonical_write": {
+    "authorized_writes": 1,
+    "expected_cas_revision": 41,
+    "governance_sqlite_directly_edited": false,
+    "journal_directly_edited": false,
+    "lifecycle": "GovernanceIntakeService.plan(amend)",
+    "plan_body_directly_edited": false
+  },
+  "decision_ref": "user-plan004-m3-w2-concurrency-repair-approval-20261002",
+  "durable_readback": {
+    "approval": "M3_W2_CONCURRENCY_REPAIR_APPROVED=yes",
+    "cas_revision": 42,
+    "other_plan_records_unchanged": true,
+    "plan_revision": "R39",
+    "scope": "cross_session_parallel_execution;same_session_serialization;no_trust_authority_surface_semantic_change",
+    "source_digest": "f9bd5612452ced69dfa6133dc589955a269ec00339968bc06e02b509596c0851"
+  },
+  "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+  "production": {
+    "4095_health": "PASS",
+    "4096_health": "PASS",
+    "bridge_health": "PASS",
+    "config_changed": false,
+    "runtime": "m3-preparation-v5r1",
+    "service_restarts": 0
+  },
+  "project_id": "aota_forge",
+  "status": "PASS"
+}

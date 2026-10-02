@@ -1,0 +1,25 @@
+{
+  "added_members": [],
+  "all_members_equal_exact_frontier": true,
+  "archive_file_member_count": 451,
+  "archive_selection": [
+    "aota_forge",
+    "scripts",
+    "skills",
+    "chat_governance",
+    ".aota/project.yaml",
+    ".aota/contracts/operations.yaml"
+  ],
+  "archive_sha256": "a9ee1515b3481bc5cc2671b496db8076749cb5ed11f3f30fdbb9bd47675d3080",
+  "changed_source_members": [
+    "aota_forge/core/journal/store.py",
+    "aota_forge/core/project/lifecycle.py",
+    "aota_forge/governance/intake.py",
+    "aota_forge/mcp_transport.py"
+  ],
+  "old_archive_file_member_count": 451,
+  "operations_byte_for_byte_equal_to_predecessor": true,
+  "operations_sha256": "cbf96d7a343b638582af449e5c565626717d78a2676127c507d16f9d666cc253",
+  "removed_members": [],
+  "source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730"
+}

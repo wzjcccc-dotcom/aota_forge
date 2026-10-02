@@ -1,0 +1,26 @@
+[Unit]
+Description=AF Plan 004 Trusted OpenCode Bridge (M3 candidate only)
+After=network.target
+Before=opencode-af-reference.service
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=<M3_CANDIDATE_ROOT>
+Environment=PYTHONPATH=<M3_CANDIDATE_ROOT>
+Environment=AOTA_BRIDGE_SOCKET=%t/af-plan004-bridge/bridge.sock
+RuntimeDirectory=af-plan004-bridge
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/python3 -m aota_forge.session_bridge --socket %t/af-plan004-bridge/bridge.sock
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=<M3_CANDIDATE_ROOT>
+ReadWritePaths=%t/af-plan004-bridge
+
+[Install]
+WantedBy=default.target
