@@ -19,6 +19,7 @@ still converge on the same profile, Plan ref and authorized-root contract.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -42,6 +43,8 @@ SOURCE_REPOSITORY = "wzjcccc-dotcom/af58_m2_fixture"
 PROJECT_ID = "af58-m2-fixture"
 TASK_MAIN_PROFILE = "aota-task-main"
 MAX_CONTINUATIONS = 0
+TRANSPORT_SUCCESS_ALONE_SUFFICIENT = False
+AOTA_INVOKE_LOGICAL_OK_REQUIRED_FOR_SUCCESS = True
 
 MANIFEST = (
     "schema_version: 1\nproject:\n"
@@ -106,6 +109,142 @@ def install_scripts() -> None:
     ]
     status, body = jreq("POST", f"{STUB}/_admin/scripts", {"scripts": scripts})
     assert status == 200, (status, body)
+
+
+def _logical_aota_result(state: dict) -> dict | None:
+    """Resolve only the bounded canonical result representation from a tool part."""
+    for key in ("structuredContent", "structured_content"):
+        candidate = state.get(key)
+        if isinstance(candidate, dict):
+            return candidate
+    output = state.get("output")
+    if not isinstance(output, str) or len(output.encode("utf-8")) > 64 * 1024:
+        return None
+    try:
+        candidate = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return candidate if isinstance(candidate, dict) else None
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _aota_invoke_result_is_valid(operation: object, result: object) -> bool:
+    """Validate the bounded canonical result or its by_ref transport summary."""
+    if not isinstance(result, dict):
+        return False
+    if not isinstance(operation, str) or result.get("operation") != operation:
+        return False
+    logical_ok = result.get("ok")
+    if type(logical_ok) is not bool:
+        return False
+    expected_outcome = "success" if logical_ok else "failure"
+    if result.get("outcome") != expected_outcome:
+        return False
+    if "is_success" in result and result.get("is_success") is not logical_ok:
+        return False
+    output_mode = result.get("output_mode")
+    if not isinstance(output_mode, str) or output_mode not in {"inline", "by_ref"}:
+        return False
+    digest = result.get("output_digest", result.get("digest"))
+    byte_length = result.get("output_byte_length", result.get("byte_length"))
+    if not _is_lower_sha256(digest):
+        return False
+    if type(byte_length) is not int or byte_length < 0:
+        return False
+
+    if output_mode == "inline":
+        if logical_ok and not isinstance(result.get("payload"), dict):
+            return False
+        if not logical_ok:
+            error = result.get("error")
+            error_code = result.get("error_code")
+            if isinstance(error, dict):
+                error_code = error.get("code")
+            if not isinstance(error_code, str) or not error_code:
+                return False
+        if "is_truncated" in result and type(result.get("is_truncated")) is not bool:
+            return False
+        if "complete" in result and type(result.get("complete")) is not bool:
+            return False
+        return True
+
+    if not logical_ok:
+        return False
+
+    output_ref = result.get("output_ref")
+    hydration = result.get("hydration")
+    if not isinstance(output_ref, dict) or not isinstance(hydration, dict):
+        return False
+    required_ref = ("ref", "digest", "project_id", "worktree_id", "byte_length")
+    if not all(output_ref.get(key) is not None for key in required_ref):
+        return False
+    if not isinstance(output_ref.get("ref"), str) or not output_ref["ref"]:
+        return False
+    if not _is_lower_sha256(output_ref.get("digest")):
+        return False
+    if not isinstance(output_ref.get("project_id"), str) or not output_ref["project_id"]:
+        return False
+    if not isinstance(output_ref.get("worktree_id"), str) or not output_ref["worktree_id"]:
+        return False
+    ref_length = output_ref.get("byte_length")
+    if type(ref_length) is not int or ref_length < 0:
+        return False
+    claims = hydration.get("arguments")
+    if hydration.get("operation") != "result.hydrate" or not isinstance(claims, dict):
+        return False
+    if any(claims.get(key) != output_ref.get(key) for key in required_ref):
+        return False
+    return True
+
+
+def _aota_invoke_result_succeeded(
+    transport_status: object,
+    operation: object,
+    result: object,
+) -> bool:
+    """Accept transport completion only with a valid logical AOTA success."""
+    return (
+        transport_status == "completed"
+        and _aota_invoke_result_is_valid(operation, result)
+        and isinstance(result, dict)
+        and result.get("ok") is True
+    )
+
+
+def _safe_result_evidence(
+    transport_status: object,
+    operation: object,
+    result: dict | None,
+) -> dict:
+    valid = _aota_invoke_result_is_valid(operation, result)
+    digest = None
+    if isinstance(result, dict):
+        digest = hashlib.sha256(
+            json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    error = result.get("error") if isinstance(result, dict) else None
+    error_code = result.get("error_code") if isinstance(result, dict) else None
+    if isinstance(error, dict) and isinstance(error.get("code"), str):
+        error_code = error["code"]
+    return {
+        "structured_result_present": isinstance(result, dict),
+        "canonical_result_valid": valid,
+        "logical_ok": result.get("ok") if isinstance(result, dict) and type(result.get("ok")) is bool else None,
+        "accepted_success": _aota_invoke_result_succeeded(
+            transport_status, operation, result
+        ),
+        "outcome": result.get("outcome") if isinstance(result, dict) and isinstance(result.get("outcome"), str) else None,
+        "output_mode": result.get("output_mode") if isinstance(result, dict) and isinstance(result.get("output_mode"), str) else None,
+        "error_code": error_code if isinstance(error_code, str) else None,
+        "result_sha256": digest,
+    }
 
 
 def build_fixture(root: Path) -> tuple[Path, Path]:
@@ -207,7 +346,16 @@ def main() -> int:
                             operation = decoded.get("operation") if isinstance(decoded, dict) else None
                         except Exception:  # noqa: BLE001
                             operation = None
-                    first_tool = {"tool": part.get("tool"), "operation": operation, "status": state.get("status")}
+                    transport_status = state.get("status")
+                    logical_result = _logical_aota_result(state)
+                    first_tool = {
+                        "tool": part.get("tool"),
+                        "operation": operation,
+                        "status": transport_status,
+                        "logical_result": _safe_result_evidence(
+                            transport_status, operation, logical_result
+                        ),
+                    }
                     break
             if first_tool:
                 break
@@ -224,9 +372,9 @@ def main() -> int:
         report = {
             "record": "AF #58 M2 headless launcher regression (stub model, real host)",
             "elapsed_seconds": elapsed,
-            "session_id": session_id,
+            "session_id_sha256": hashlib.sha256(session_id.encode("utf-8")).hexdigest(),
             "session_row_agent": row.get("agent"),
-            "instance_directory": directory,
+            "headless_instance_namespace_verified": "/.aota/opencode/instances/task-main-" in directory,
             "first_tool_call": first_tool,
             "bootstrap_runtime_path": bootstrap.get("runtime_path"),
             "bootstrap_plan_ref": bootstrap.get("plan_ref"),
@@ -240,7 +388,11 @@ def main() -> int:
                 "HEADLESS_INSTANCE_NAMESPACE": "/.aota/opencode/instances/task-main-" in directory,
                 "HEADLESS_ROLE_BOOTSTRAP_FIRST": first_tool is not None
                 and first_tool.get("tool") == "aota_aota_invoke"
-                and first_tool.get("operation") == "role.bootstrap",
+                and first_tool.get("operation") == "role.bootstrap"
+                and first_tool.get("status") == "completed",
+                "AOTA_INVOKE_LOGICAL_OK_REQUIRED_FOR_SUCCESS": AOTA_INVOKE_LOGICAL_OK_REQUIRED_FOR_SUCCESS,
+                "HEADLESS_ROLE_BOOTSTRAP_LOGICAL_SUCCESS": first_tool is not None
+                and first_tool.get("logical_result", {}).get("canonical_result_valid") is True,
                 "HEADLESS_THIN_PATH": bootstrap.get("runtime_path") == "thin",
                 "HEADLESS_NO_INTERACTIVE_PROJECTION": "trusted_plan_state" not in bootstrap,
                 "HEADLESS_TASK_MAIN_BINDING": pointer.get("kind") == "task-main",

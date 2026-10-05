@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import threading
 from contextlib import asynccontextmanager
@@ -986,8 +987,18 @@ class _SharedAotaMcpAdapter:
     and restricted_shell.run (residual fallback) via the same single-entry transport.
     """
 
-    def __init__(self, binding: TrustedWorkerBinding) -> None:
+    def __init__(
+        self,
+        binding: TrustedWorkerBinding,
+        *,
+        bridge_socket_path: str = "",
+    ) -> None:
         self.binding = binding
+        self._bridge = (
+            BridgeSocketClient(bridge_socket_path)
+            if isinstance(bridge_socket_path, str) and bridge_socket_path.strip()
+            else None
+        )
         # W1: transport keeps no semantic provider cache. Provider selection
         # lives in core_ingress per-call. Attributes retained as None for
         # backward-compatible introspection only; they choose no behavior.
@@ -1011,6 +1022,18 @@ class _SharedAotaMcpAdapter:
                 "UNKNOWN_OPERATION",
                 f"operation must be string, got {type(operation).__name__}",
             )
+        try:
+            normalized_arguments, _verified_identity = _normalize_trusted_invocation(
+                self._bridge, operation, arguments
+            )
+        except BridgeVerificationError as exc:
+            return _governed_error(
+                self.binding, operation, exc.code, str(exc)
+            )
+        # Bridge identity is correlation only for this digest-bound binding;
+        # do not use it to select or alter Project/Plan/task authority.
+        if normalized_arguments is not None:
+            arguments = normalized_arguments
         # Canonical resolution via Core single authority (fails via Core path).
         try:
             from aota_forge.core_ingress import resolve_descriptor as _core_resolve
@@ -1220,6 +1243,28 @@ class UnboundHostContext:
                 raise TrustedBindingError(f"unbound host context {label} is invalid")
         if type(self.bind_global_dispatcher) is not bool:
             raise TrustedBindingError("unbound host context bind_global_dispatcher must be bool")
+
+
+def _normalize_trusted_invocation(
+    bridge: BridgeSocketClient | None,
+    operation: str,
+    arguments: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, VerifiedInvocationIdentity | None]:
+    """Verify and consume the transport-private Bridge carrier at shared ingress.
+
+    The returned identity is invocation correlation only. Context routing may
+    use it in the headed/unbound mode; a pre-resolved binding never derives or
+    changes authority from it.
+    """
+    if bridge is None:
+        return arguments, None
+    if not isinstance(arguments, dict):
+        raise BridgeVerificationError(
+            "INPUT_TYPE_INVALID", "arguments must be an object"
+        )
+    logical_arguments, token = extract_carrier(arguments)
+    identity = bridge.verify(token, operation, logical_arguments)
+    return logical_arguments, identity
 
 
 class RefScopedHydrateError(ValueError):
@@ -1732,12 +1777,13 @@ class SessionScopedContextRouter:
         operation: str,
         arguments: dict[str, Any] | None,
     ) -> tuple[dict[str, Any], VerifiedInvocationIdentity]:
-        if not isinstance(arguments, dict):
+        logical_arguments, identity = _normalize_trusted_invocation(
+            self.bridge, operation, arguments
+        )
+        if logical_arguments is None or identity is None:
             raise BridgeVerificationError(
-                "INPUT_TYPE_INVALID", "arguments must be an object"
+                "TOKEN_MISSING", "trusted invocation identity is required"
             )
-        logical_arguments, token = extract_carrier(arguments)
-        identity = self.bridge.verify(token, operation, logical_arguments)
         if not is_bound_origin_session_ref(identity.session_id):
             raise BridgeVerificationError(
                 "UNTRUSTED_IDENTITY",
@@ -2822,7 +2868,12 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
         raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
     if not isinstance(trusted_binding, TrustedWorkerBinding):
         raise TrustedBindingError("trusted server-side binding is required")
-    return _build_shared_mcp_server(_SharedAotaMcpAdapter(trusted_binding).invoke)
+    return _build_shared_mcp_server(
+        _SharedAotaMcpAdapter(
+            trusted_binding,
+            bridge_socket_path=os.environ.get(BRIDGE_SOCKET_ENV, "").strip(),
+        ).invoke
+    )
 
 
 def create_unbound_mcp_server(context: UnboundHostContext):
