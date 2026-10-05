@@ -9,11 +9,15 @@ from pathlib import Path
 import pytest
 
 from aota_forge.composition.task_main_runtime_selection import (
-    build_thin_task_main_binding_from_envelope_bootstrap,
     materialize_thin_task_main_bootstrap,
 )
 from aota_forge import core_ingress
 from aota_forge.mcp_transport import create_shared_mcp_server
+from aota_forge.runtime.trusted_runtime_binding import (
+    create_task_main_envelope,
+    load_binding_from_envelope,
+    verify_envelope,
+)
 from aota_forge.session_bridge import (
     BRIDGE_CARRIER_KEY,
     BRIDGE_CARRIER_SCHEMA,
@@ -43,11 +47,14 @@ def _prebound_task_main_binding(tmp_path: Path):
         registry_path=registry,
         plan_ref=f"{OWNER}/aota-hermes-tools#55",
     )
-    bootstrap = json.loads(bootstrap_path.read_text(encoding="utf-8"))
-    return build_thin_task_main_binding_from_envelope_bootstrap(
-        bootstrap,
-        envelope_worktree_root=worktree,
+    envelope_path = create_task_main_envelope(
+        worktree_root=worktree,
+        bootstrap_path=bootstrap_path,
     )
+    envelope_kind, payload = verify_envelope(envelope_path)
+    assert envelope_kind == "task-main"
+    assert payload["worktree_root"] == str(worktree.resolve())
+    return load_binding_from_envelope(envelope_path)
 
 
 def _call_raw(server, operation: str, arguments: dict):
