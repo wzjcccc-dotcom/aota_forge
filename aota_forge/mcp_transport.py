@@ -46,8 +46,12 @@ W5 agent runtime surface repair (AF #49 M1/W5):
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
+import threading
+from contextlib import asynccontextmanager
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -70,6 +74,7 @@ from aota_forge.work_plane.workspace_tools import (
     BoundedWorkspaceToolProvider,
     WorkspaceAuthorityEvidence,
 )
+from aota_forge.work_plane.task_main_exposure import TASK_MAIN_UNBOUND_OPERATIONS
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.work_plane.tool_result_governance import (
@@ -83,6 +88,13 @@ from aota_forge.runtime.trusted_runtime_binding import (  # type: ignore
     TrustedBindingError,
     TrustedTaskMainRuntimeContext,
     TrustedWorkerBinding,
+)
+from aota_forge.session_bridge import (
+    BRIDGE_SOCKET_ENV,
+    BridgeSocketClient,
+    BridgeVerificationError,
+    VerifiedInvocationIdentity,
+    extract_carrier,
 )
 
 # M2 activation: durable hydration bound reuse (constant only, no persistence).
@@ -247,6 +259,9 @@ MCP_PUBLIC_TOOLS: tuple[str, ...] = ("aota.invoke",)
 MCP_PUBLIC_TOOL_COUNT = len(MCP_PUBLIC_TOOLS)
 AGENT_FACING_AOTA_TOOL = "aota.invoke"
 HERMES_AGENT_FACING_AOTA_TOOL_COUNT = 1
+# The shared child can run two independent Sessions at once. Same-Session
+# serialization remains owned by _SessionSlot.lock.
+MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS = 2
 
 # M2/W1 runtime authority binding foundation (fail-closed).
 TRUSTED_BINDING_FAIL_CLOSED = True
@@ -876,6 +891,7 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # M2/W4: preserve the existing-store switch composition carrier across
         # the canonical aota.invoke boundary; it is not a second store.
         context_switch_runtime=getattr(binding, "context_switch_runtime", None),
+        execution_dispatcher=getattr(binding, "execution_dispatcher", None),
         allowed_operations=allowed,
         # AF #56 M3/W3: preserve the trusted project context carriers so the
         # MCP path exposes the same authorized root set / SOURCE_REPOSITORY as
@@ -971,8 +987,18 @@ class _SharedAotaMcpAdapter:
     and restricted_shell.run (residual fallback) via the same single-entry transport.
     """
 
-    def __init__(self, binding: TrustedWorkerBinding) -> None:
+    def __init__(
+        self,
+        binding: TrustedWorkerBinding,
+        *,
+        bridge_socket_path: str = "",
+    ) -> None:
         self.binding = binding
+        self._bridge = (
+            BridgeSocketClient(bridge_socket_path)
+            if isinstance(bridge_socket_path, str) and bridge_socket_path.strip()
+            else None
+        )
         # W1: transport keeps no semantic provider cache. Provider selection
         # lives in core_ingress per-call. Attributes retained as None for
         # backward-compatible introspection only; they choose no behavior.
@@ -996,6 +1022,18 @@ class _SharedAotaMcpAdapter:
                 "UNKNOWN_OPERATION",
                 f"operation must be string, got {type(operation).__name__}",
             )
+        try:
+            normalized_arguments, _verified_identity = _normalize_trusted_invocation(
+                self._bridge, operation, arguments
+            )
+        except BridgeVerificationError as exc:
+            return _governed_error(
+                self.binding, operation, exc.code, str(exc)
+            )
+        # Bridge identity is correlation only for this digest-bound binding;
+        # do not use it to select or alter Project/Plan/task authority.
+        if normalized_arguments is not None:
+            arguments = normalized_arguments
         # Canonical resolution via Core single authority (fails via Core path).
         try:
             from aota_forge.core_ingress import resolve_descriptor as _core_resolve
@@ -1128,6 +1166,8 @@ UNBOUND_READ_INTROSPECTION_OPERATIONS: tuple[str, ...] = INTROSPECTION_OPERATION
 TRUE_UNBOUND_BIND_IMPLEMENTED = True
 PROJECT_ONLY_BIND_IMPLEMENTED = True
 PROJECT_PLAN_BIND_IMPLEMENTED = True
+PROJECT_BOUND_PLAN_PROMOTION_IMPLEMENTED = True
+PROMOTION_IS_CONTEXT_SWITCH = False
 SAME_SESSION_BIND_MATERIALIZATION = True
 MODEL_SUPPLIES_SESSION_ID = False
 SESSION_ID_IS_AUTHORITY = False
@@ -1145,6 +1185,11 @@ NEW_CONTEXT_ENGINE = False
 NEW_SESSION_DB = False
 NEW_AUTHORITY_ENGINE = False
 NEW_MCP_TOOL = False
+SESSION_VERIFICATION_PER_INVOCATION = True
+ONE_SESSION_ONE_LOGICAL_AF_CONTEXT = True
+GLOBAL_BOUND_DELEGATE_SHARED_ACROSS_SESSIONS = False
+SECOND_SESSION_DATABASE = False
+SECOND_CONTEXT_ENGINE = False
 
 
 class UnboundBindError(ValueError):
@@ -1174,6 +1219,8 @@ class UnboundHostContext:
     worktree_root: str = ""
     governance_base: str = ""
     governance_store_path: str = ""
+    bridge_socket_path: str = ""
+    bind_global_dispatcher: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.repo_root, str) or not self.repo_root.strip():
@@ -1189,10 +1236,35 @@ class UnboundHostContext:
             "worktree_root",
             "governance_base",
             "governance_store_path",
+            "bridge_socket_path",
         ):
             value = getattr(self, label)
             if not isinstance(value, str) or len(value) > 4096 or "\x00" in value:
                 raise TrustedBindingError(f"unbound host context {label} is invalid")
+        if type(self.bind_global_dispatcher) is not bool:
+            raise TrustedBindingError("unbound host context bind_global_dispatcher must be bool")
+
+
+def _normalize_trusted_invocation(
+    bridge: BridgeSocketClient | None,
+    operation: str,
+    arguments: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, VerifiedInvocationIdentity | None]:
+    """Verify and consume the transport-private Bridge carrier at shared ingress.
+
+    The returned identity is invocation correlation only. Context routing may
+    use it in the headed/unbound mode; a pre-resolved binding never derives or
+    changes authority from it.
+    """
+    if bridge is None:
+        return arguments, None
+    if not isinstance(arguments, dict):
+        raise BridgeVerificationError(
+            "INPUT_TYPE_INVALID", "arguments must be an object"
+        )
+    logical_arguments, token = extract_carrier(arguments)
+    identity = bridge.verify(token, operation, logical_arguments)
+    return logical_arguments, identity
 
 
 class RefScopedHydrateError(ValueError):
@@ -1564,6 +1636,279 @@ def _unbound_operations_listing(operation: str, arguments: dict[str, Any]) -> di
     return {"data": {"operations": entries, "role": "task-main", "session": "unbound"}}
 
 
+class _SessionSlot:
+    """One headed Session's in-memory adapter and serialized call boundary."""
+
+    def __init__(
+        self,
+        session_id: str,
+        context: UnboundHostContext,
+        bridge_id: str,
+    ) -> None:
+        self.session_id = session_id
+        self.context = context
+        self.adapter: _UnboundAotaAdapter | None = None
+        self.bridge_id = bridge_id
+        self.execution_dispatcher: Any | None = None
+        self.execution_store: Any | None = None
+        self.lock = threading.RLock()
+        self.async_lock: asyncio.Lock | None = None
+        # ``in_flight`` is protected by SessionScopedContextRouter._lock.
+        self.in_flight = 0
+
+
+class SessionScopedContextRouter:
+    """Route verified headed calls without a process-global bound delegate."""
+
+    MAX_SLOTS = 64
+    # Use the canonical unbound surface; the selected unbound adapter still
+    # resolves each operation's authority and keeps forbidden writes denied.
+    _INITIAL_OPERATIONS = frozenset(TASK_MAIN_UNBOUND_OPERATIONS)
+
+    def __init__(self, context: UnboundHostContext) -> None:
+        if not context.bridge_socket_path.strip():
+            raise TrustedBindingError("headed Session router requires a trusted bridge socket")
+        self.context = context
+        self.bridge = BridgeSocketClient(context.bridge_socket_path)
+        try:
+            self._bridge_id = self.bridge.rotate()
+        except BridgeVerificationError as exc:
+            raise TrustedBindingError(str(exc)) from exc
+        self._slots: dict[str, _SessionSlot] = {}
+        self._lock = threading.RLock()
+        self._idle = threading.Condition(self._lock)
+        self._closed = False
+
+    def _slot(self, identity: VerifiedInvocationIdentity) -> _SessionSlot:
+        retired: list[_SessionSlot] = []
+        with self._lock:
+            if self._closed:
+                raise BridgeVerificationError(
+                    "BRIDGE_UNAVAILABLE", "headed Session router is shutting down"
+                )
+            existing = self._slots.get(identity.session_id)
+            if existing is not None:
+                if existing.bridge_id != identity.bridge_id:
+                    if existing.in_flight:
+                        raise BridgeVerificationError(
+                            "TOKEN_EPOCH_STALE",
+                            "Session slot is still serving the previous bridge epoch",
+                        )
+                    self._slots.pop(identity.session_id, None)
+                    retired.append(existing)
+                    existing = None
+                else:
+                    # Admission bookkeeping stays under the router lock, but
+                    # never wait for this Session's execution gate here.
+                    existing.in_flight += 1
+                    return existing
+            if len(self._slots) >= self.MAX_SLOTS:
+                evicted = False
+                for key, candidate in tuple(self._slots.items()):
+                    if candidate.in_flight:
+                        continue
+                    self._slots.pop(key, None)
+                    retired.append(candidate)
+                    evicted = True
+                    break
+                if not evicted:
+                    raise BridgeVerificationError("SESSION_CAPACITY_EXCEEDED", "headed Session capacity is exhausted")
+            session_context = replace(
+                self.context,
+                origin_session_ref=identity.session_id,
+                bridge_socket_path="",
+                bind_global_dispatcher=False,
+            )
+            # Mutable delegate recovery/installation is deferred until the
+            # selected slot's per-Session execution gate is owned.
+            slot = _SessionSlot(identity.session_id, session_context, identity.bridge_id)
+            slot.in_flight = 1
+            self._slots[identity.session_id] = slot
+        for old_slot in retired:
+            try:
+                self._close_slot(old_slot)
+            except Exception:
+                self._release_slot(slot)
+                raise
+        return slot
+
+    @staticmethod
+    def _close_slot(slot: _SessionSlot) -> None:
+        adapter = slot.adapter
+        if adapter is not None:
+            adapter.close()
+
+    def _release_slot(self, slot: _SessionSlot) -> None:
+        with self._idle:
+            slot.in_flight -= 1
+            self._idle.notify_all()
+
+    def _has_durable_session(self, session_id: str) -> bool:
+        try:
+            from aota_forge.runtime.task_main.context_binding import locate_durable_context_binding
+
+            return (
+                locate_durable_context_binding(
+                    origin_task_main_session_ref=session_id,
+                    registry_path=self.context.registry_path.strip() or None,
+                    worktree_root=self.context.worktree_root.strip() or None,
+                )
+                is not None
+            )
+        except Exception:
+            return False
+
+    def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
+        try:
+            logical_arguments, identity = self._verify_invocation(operation, arguments)
+            slot = self._slot(identity)
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+
+        try:
+            return self._execute_in_slot(slot, identity, operation, logical_arguments)
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+        finally:
+            self._release_slot(slot)
+
+    def _verify_invocation(
+        self,
+        operation: str,
+        arguments: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], VerifiedInvocationIdentity]:
+        logical_arguments, identity = _normalize_trusted_invocation(
+            self.bridge, operation, arguments
+        )
+        if logical_arguments is None or identity is None:
+            raise BridgeVerificationError(
+                "TOKEN_MISSING", "trusted invocation identity is required"
+            )
+        if not is_bound_origin_session_ref(identity.session_id):
+            raise BridgeVerificationError(
+                "UNTRUSTED_IDENTITY",
+                "trusted bridge session identity is not an exact host Session reference",
+            )
+        with self._lock:
+            existing = self._slots.get(identity.session_id)
+        if existing is None and operation == "task_main.context":
+            mode = logical_arguments.get("mode")
+            if mode not in {"inspect", "bind"} and not self._has_durable_session(identity.session_id):
+                raise BridgeVerificationError(
+                    "CONTEXT_BINDING_REQUIRED",
+                    "verified-unbound Session permits only context.inspect or context.bind",
+                )
+        elif (
+            existing is None
+            and operation not in self._INITIAL_OPERATIONS
+            and not self._has_durable_session(identity.session_id)
+        ):
+            raise BridgeVerificationError(
+                "CONTEXT_BINDING_REQUIRED",
+                "headed Session must complete trusted context.bind before this operation",
+            )
+        return logical_arguments, identity
+
+    def _execute_in_slot(
+        self,
+        slot: _SessionSlot,
+        identity: VerifiedInvocationIdentity,
+        operation: str,
+        logical_arguments: dict[str, Any],
+    ) -> McpToolResult:
+        with slot.lock:
+            if (
+                identity.session_id != slot.session_id
+                or identity.bridge_id != slot.bridge_id
+            ):
+                raise BridgeVerificationError(
+                    "UNTRUSTED_IDENTITY",
+                    "verified Session identity does not match its selected route",
+                )
+            if slot.adapter is None:
+                slot.adapter = _UnboundAotaAdapter(slot.context)
+            adapter = slot.adapter
+            if (
+                adapter._bound_delegate is None
+                and (
+                    operation not in self._INITIAL_OPERATIONS
+                    or (
+                        operation == "task_main.context"
+                        and logical_arguments.get("mode") not in {"inspect", "bind"}
+                    )
+                )
+            ):
+                return _unbound_governed_error(
+                    operation,
+                    "CONTEXT_BINDING_REQUIRED",
+                    "headed Session must complete trusted context.bind before this operation",
+                )
+            result = adapter.invoke(operation, logical_arguments)
+            runtime = adapter._bound_runtime
+            slot.execution_dispatcher = getattr(runtime, "execution_dispatcher", None)
+            slot.execution_store = getattr(runtime, "execution_store", None)
+            return result
+
+    async def invoke_async(
+        self,
+        operation: str,
+        arguments: dict[str, Any] | None,
+        *,
+        worker_limiter: Any,
+    ) -> McpToolResult:
+        """Verify first, wait on the existing Session gate, then offload work.
+
+        Verification uses a bounded worker briefly. The asyncio gate is part
+        of the existing Session slot lifecycle, so same-Session waiters do not
+        occupy operation workers while unrelated Sessions remain admissible.
+        """
+        import anyio
+
+        try:
+            logical_arguments, identity = await anyio.to_thread.run_sync(
+                self._verify_invocation,
+                operation,
+                arguments,
+                abandon_on_cancel=False,
+                limiter=worker_limiter,
+            )
+            slot = self._slot(identity)
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+
+        try:
+            if slot.async_lock is None:
+                # There is no await between check and assignment. FastMCP owns
+                # one event loop for this server, and the lock lives on the
+                # already-selected Session slot rather than a second registry.
+                slot.async_lock = asyncio.Lock()
+            async with slot.async_lock:
+                return await anyio.to_thread.run_sync(
+                    self._execute_in_slot,
+                    slot,
+                    identity,
+                    operation,
+                    logical_arguments,
+                    abandon_on_cancel=False,
+                    limiter=worker_limiter,
+                )
+        except BridgeVerificationError as exc:
+            return _unbound_governed_error(operation, exc.code, str(exc))
+        finally:
+            self._release_slot(slot)
+
+    def close(self) -> None:
+        with self._idle:
+            self._closed = True
+            slots = tuple(self._slots.values())
+            self._slots.clear()
+            while any(slot.in_flight for slot in slots):
+                self._idle.wait()
+        for slot in slots:
+            with slot.lock:
+                self._close_slot(slot)
+
+
 class _UnboundAotaAdapter:
     """Single-entry transport for ordinary unbound host sessions.
     Owns only: envelope checks, exposure gating, operation-time ref-scoped
@@ -1608,7 +1953,9 @@ class _UnboundAotaAdapter:
             if located is None:
                 return
             durable_binding, projection_path = located
-            previous_dispatcher = get_execution_dispatcher()
+            previous_dispatcher = (
+                get_execution_dispatcher() if self.context.bind_global_dispatcher else None
+            )
             host: Any | None = None
             try:
                 resolver = self._authority_resolver()
@@ -1624,6 +1971,7 @@ class _UnboundAotaAdapter:
                     governance_store_path=self.context.governance_store_path.strip() or None,
                     git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
                     git_remote=getattr(resolver, "_git_remote", "") or None,
+                    bind_global_dispatcher=self.context.bind_global_dispatcher,
                 )
                 delegate = _SharedAotaMcpAdapter(bound_binding)
                 readback = delegate.invoke("task_main.context", {"mode": "inspect"})
@@ -1655,7 +2003,8 @@ class _UnboundAotaAdapter:
                 self._bound_runtime = host
                 self._bound_binding = bound_binding
             except Exception:
-                bind_execution_dispatcher(previous_dispatcher)
+                if self.context.bind_global_dispatcher:
+                    bind_execution_dispatcher(previous_dispatcher)
                 if host is not None:
                     self._close_activation_runtime(host)
                 raise
@@ -1677,6 +2026,14 @@ class _UnboundAotaAdapter:
                 runtime_config_path=self.context.runtime_config_path or None,
             )
         return self._resolver
+
+    def close(self) -> None:
+        """Release only this Session's composed runtime resources."""
+        if self._bound_runtime is not None:
+            self._close_activation_runtime(self._bound_runtime)
+        self._bound_runtime = None
+        self._bound_delegate = None
+        self._bound_binding = None
 
     def _dispatch_with_binding(
         self, binding: TrustedWorkerBinding, operation: str, arguments: dict[str, Any]
@@ -1793,8 +2150,87 @@ class _UnboundAotaAdapter:
             return _unbound_governed_error("result.hydrate", "GOVERNED_OPERATION_FAILURE", _bounded_failure_message(str(exc)))
         return _project_tool_response(SimpleNamespace(sandbox=sandbox), "result.hydrate", response)
 
+    def _project_bound_plan_promotion_arguments(
+        self, arguments: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Recognize only the narrow same-Project Plan promotion seam.
+
+        Existing bound sessions still delegate every other context request to
+        the canonical context contract. In particular, a different Project,
+        a missing Plan locator, and ``switch`` never enter this path.
+        """
+        binding = self._bound_binding
+        if binding is None or getattr(binding, "plan_authority_binding", None) is not None:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        try:
+            from aota_forge.core.task_main_context import normalize_context_arguments
+            from aota_forge.core_ingress import (
+                resolve_descriptor,
+                validate_operation_input,
+            )
+
+            normalized = normalize_context_arguments(arguments)
+            validated = validate_operation_input(
+                resolve_descriptor("task_main.context"), normalized
+            )
+        except Exception:
+            # Let the existing bound delegate preserve the canonical input
+            # error contract when the request is not a valid promotion shape.
+            return None
+        if validated.get("mode") != "bind":
+            return None
+        plan_selector = validated.get("plan_ref")
+        if not isinstance(plan_selector, str) or not plan_selector.strip():
+            return None
+        project_selector = validated.get("project_ref")
+        if project_selector is not None and project_selector != binding.project_id:
+            return None
+        return validated
+
+    def _promote_project_bound_context(
+        self, arguments: dict[str, Any]
+    ) -> McpToolResult:
+        """Promote this Session from Project-only to one trusted Plan."""
+        binding = self._bound_binding
+        if binding is None:
+            return _unbound_governed_error(
+                "task_main.context",
+                "CONTEXT_BINDING_REQUIRED",
+                "Plan promotion requires a trusted Project-bound Session",
+            )
+        try:
+            return self._bind_unbound_context(arguments, promotion=True)
+        except UnboundBindError as exc:
+            return _governed_error(
+                binding,
+                "task_main.context",
+                exc.code,
+                str(exc),
+            )
+        except ForgeError as exc:
+            return _governed_error(
+                binding,
+                "task_main.context",
+                getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"),
+                str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001 - promotion fails closed
+            return _governed_error(
+                binding,
+                "task_main.context",
+                getattr(exc, "code", "AUTHORITY_RESOLUTION_FAILED"),
+                _bounded_failure_message(str(exc)),
+            )
+
     def invoke(self, operation: str, arguments: dict[str, Any] | None) -> McpToolResult:
         if self._bound_delegate is not None:
+            promotion_arguments = None
+            if operation == "task_main.context":
+                promotion_arguments = self._project_bound_plan_promotion_arguments(arguments)
+            if promotion_arguments is not None:
+                return self._promote_project_bound_context(promotion_arguments)
             # The MCP server closure retains this exact adapter object.  Once
             # installed, every subsequent operation uses the canonical bound
             # delegate without creating a second transport or session.
@@ -1949,7 +2385,12 @@ class _UnboundAotaAdapter:
                 _bounded_failure_message(str(exc)),
             )
 
-    def _bind_unbound_context(self, arguments: dict[str, Any]) -> McpToolResult:
+    def _bind_unbound_context(
+        self,
+        arguments: dict[str, Any],
+        *,
+        promotion: bool = False,
+    ) -> McpToolResult:
         """Prepare, verify, install and read back one trusted bound delegate."""
         from aota_forge.composition.unbound_resolution import (
             materialize_trusted_governance_context,
@@ -1962,10 +2403,20 @@ class _UnboundAotaAdapter:
         from aota_forge.runtime.task_main.context_binding import (
             DurableTaskMainContextBinding,
             FileBackedTaskMainContextBindingProjection,
+            CONTEXT_BINDING_SCHEMA_VERSION,
+            CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION,
+            PLAN_BOUND,
+            PROJECT_BOUND,
             context_binding_projection_path,
         )
         from aota_forge.work_plane.authorized_roots import validate_root_set_against_sandbox
 
+        previous_dispatcher = (
+            get_execution_dispatcher() if self.context.bind_global_dispatcher else None
+        )
+        previous_delegate = self._bound_delegate
+        previous_runtime = self._bound_runtime
+        previous_binding = self._bound_binding
         origin_session_ref = self.context.origin_session_ref.strip()
         if not is_bound_origin_session_ref(origin_session_ref):
             raise UnboundBindError(
@@ -1973,12 +2424,68 @@ class _UnboundAotaAdapter:
                 "same-session bind requires the operator/runtime exact origin_session_ref; "
                 "the unbound placeholder or missing carrier cannot be promoted",
             )
-        project_selector = arguments.get("project_ref")
-        if not isinstance(project_selector, str) or not project_selector.strip():
-            raise UnboundBindError(
-                "CONTEXT_LOCATOR_REQUIRED",
-                "bind requires project_selector (or legacy project_ref)",
-            )
+        current_project_fingerprint: str | None = None
+        if promotion:
+            if previous_delegate is None or previous_binding is None:
+                raise UnboundBindError(
+                    "CONTEXT_BINDING_REQUIRED",
+                    "Plan promotion requires the current trusted Project-bound delegate",
+                )
+            if getattr(previous_binding, "plan_authority_binding", None) is not None:
+                raise UnboundBindError(
+                    "PLAN_CONTEXT_MISMATCH",
+                    "generic Plan rebind is not a project-to-Plan promotion",
+                )
+            if getattr(previous_binding, "session_ref", "") != origin_session_ref:
+                raise UnboundBindError(
+                    "SESSION_RECOVERY_REQUIRED",
+                    "current trusted Project binding does not belong to this Session",
+                )
+            if previous_runtime is None:
+                raise UnboundBindError(
+                    "AUTHORITY_DENIED",
+                    "current trusted Project runtime is unavailable",
+                )
+            current_evidence = getattr(previous_runtime, "project_evidence", None)
+            current_candidates = tuple(getattr(current_evidence, "candidates", ()) or ())
+            if (
+                getattr(current_evidence, "status", None) != "RESOLVED"
+                or len(current_candidates) != 1
+                or current_candidates[0].project_id != previous_binding.project_id
+            ):
+                raise UnboundBindError(
+                    "STALE_CONTEXT",
+                    "current trusted Project evidence is no longer singular",
+                )
+            current_project_fingerprint = current_candidates[0].candidate_fingerprint
+            try:
+                current_roots = previous_binding.effective_authorized_roots
+                validate_root_set_against_sandbox(current_roots, previous_binding.sandbox)
+            except Exception as exc:
+                raise UnboundBindError(
+                    "AUTHORITY_DENIED",
+                    "current trusted Project AuthorizedRootSet is invalid",
+                ) from exc
+            project_selector = arguments.get("project_ref")
+            if project_selector is None:
+                project_selector = previous_binding.project_id
+            if not isinstance(project_selector, str) or not project_selector.strip():
+                raise UnboundBindError(
+                    "CONTEXT_LOCATOR_REQUIRED",
+                    "Plan promotion requires the current Project selector",
+                )
+            if project_selector.strip() != previous_binding.project_id:
+                raise UnboundBindError(
+                    "PROJECT_CONTEXT_MISMATCH",
+                    "Plan promotion cannot change the trusted Project",
+                )
+        else:
+            project_selector = arguments.get("project_ref")
+            if not isinstance(project_selector, str) or not project_selector.strip():
+                raise UnboundBindError(
+                    "CONTEXT_LOCATOR_REQUIRED",
+                    "bind requires project_selector (or legacy project_ref)",
+                )
 
         registry_path = self.context.registry_path.strip()
         if not registry_path:
@@ -2003,8 +2510,16 @@ class _UnboundAotaAdapter:
         candidate = resolution.project.candidate
         if candidate is None:
             raise UnboundBindError("PROJECT_NOT_FOUND", "trusted Project evidence is not singular")
+        if (
+            promotion
+            and current_project_fingerprint is not None
+            and candidate.candidate_fingerprint != current_project_fingerprint
+        ):
+            raise UnboundBindError(
+                "STALE_CONTEXT",
+                "trusted Project evidence changed before Plan promotion",
+            )
 
-        previous_dispatcher = get_execution_dispatcher()
         host: Any | None = None
         try:
             worktree_root = self.context.worktree_root.strip() or candidate.project_root
@@ -2059,6 +2574,9 @@ class _UnboundAotaAdapter:
                 governance_intake_context=project_governance_context,
                 git_integration_branch=getattr(resolver, "_git_integration_branch", "") or None,
                 git_remote=getattr(resolver, "_git_remote", "") or None,
+                bind_global_dispatcher=(
+                    self.context.bind_global_dispatcher and not promotion
+                ),
             )
 
             actual_evidence = getattr(host, "project_evidence", None)
@@ -2068,6 +2586,12 @@ class _UnboundAotaAdapter:
                 or len(actual_candidate) != 1
                 or actual_candidate[0].candidate_fingerprint != candidate.candidate_fingerprint
                 or actual_candidate[0].registry_fingerprint != candidate.registry_fingerprint
+                or (
+                    promotion
+                    and current_project_fingerprint is not None
+                    and actual_candidate[0].candidate_fingerprint
+                    != current_project_fingerprint
+                )
             ):
                 raise UnboundBindError(
                     "STALE_CONTEXT",
@@ -2088,20 +2612,17 @@ class _UnboundAotaAdapter:
 
             roots = host.trusted_binding.effective_authorized_roots
             validate_root_set_against_sandbox(roots, host.trusted_binding.sandbox)
-            durable_binding = None
-            if plan_bound:
-                if not isinstance(actual_plan_binding, PlanAuthorityBinding):
-                    raise UnboundBindError(
-                        "STALE_CONTEXT",
-                        "trusted Plan binding was not materialized by the fresh host",
-                    )
-                durable_binding = DurableTaskMainContextBinding(
-                    project_id=resolution.project_id,
-                    project_fingerprint=candidate.candidate_fingerprint,
-                    plan_binding=actual_plan_binding,
-                    origin_task_main_session_ref=origin_session_ref,
-                    authorized_roots_digest=roots.digest(),
-                )
+            if plan_bound and not isinstance(actual_plan_binding, PlanAuthorityBinding):
+                raise UnboundBindError("STALE_CONTEXT", "fresh host has no trusted Plan binding")
+            durable_binding = DurableTaskMainContextBinding(
+                project_id=resolution.project_id,
+                project_fingerprint=candidate.candidate_fingerprint,
+                plan_binding=actual_plan_binding,
+                origin_task_main_session_ref=origin_session_ref,
+                authorized_roots_digest=roots.digest(),
+                schema_version=CONTEXT_BINDING_SCHEMA_VERSION if plan_bound else CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION,
+                binding_kind=PLAN_BOUND if plan_bound else PROJECT_BOUND,
+            )
             governance_context = materialize_trusted_governance_context(
                 resolution,
                 binding=host.trusted_binding,
@@ -2125,52 +2646,50 @@ class _UnboundAotaAdapter:
                     str(error.get("message") or "trusted context bind failed"),
                 )
 
-            # The commit point is the delegate replacement.  The immediately
-            # following inspect is deliberately sent through that installed
-            # canonical delegate, not through a second adapter or direct Core
-            # call.
-            previous_delegate = self._bound_delegate
-            previous_runtime = self._bound_runtime
-            previous_binding = self._bound_binding
+            # Prepare/read back the candidate before exposing it to this Session.
+            readback = delegate.invoke("task_main.context", {"mode": "inspect"})
+            self._verify_bind_readback(
+                readback,
+                payload=self._readback_payload(delegate, readback),
+                project_id=resolution.project_id,
+                plan_binding=actual_plan_binding,
+                origin_session_ref=origin_session_ref,
+                authorized_roots=roots,
+            )
+            projection = FileBackedTaskMainContextBindingProjection(
+                context_binding_projection_path(host.sandbox.project_root)
+            )
+            try:
+                existing = projection.get_for_session(origin_session_ref) if promotion else None
+                if existing is not None and existing.authorized_roots_digest != current_roots.digest():
+                    raise UnboundBindError("AUTHORITY_DENIED", "Project evidence roots differ before promotion")
+                # Legacy live v4 Project delegates have no record yet. New v5
+                # Project delegates promote via exact-session Project evidence CAS.
+                projection.persist(
+                    durable_binding,
+                    expected_project_binding_digest=existing.binding_digest if existing else None,
+                )
+            except Exception as exc:
+                raise UnboundBindError(
+                    getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED"),
+                    f"context bind durable persistence/readback failed: {exc}",
+                ) from exc
+            # Commit only after the projection verifies the exact Session,
+            # digest and semantic state under its existing transaction lock.
             self._bound_delegate = delegate
             self._bound_runtime = host
             self._bound_binding = bound_binding
-            try:
-                readback = self._bound_delegate.invoke(
-                    "task_main.context", {"mode": "inspect"}
-                )
-                readback_payload = self._readback_payload(self._bound_delegate, readback)
-                self._verify_bind_readback(
-                    readback,
-                    payload=readback_payload,
-                    project_id=resolution.project_id,
-                    plan_binding=actual_plan_binding if plan_bound else None,
-                    origin_session_ref=origin_session_ref,
-                    authorized_roots=roots,
-                )
-                if durable_binding is not None:
-                    projection = FileBackedTaskMainContextBindingProjection(
-                        context_binding_projection_path(host.sandbox.project_root)
-                    )
-                    try:
-                        projection.persist(durable_binding)
-                    except Exception as exc:
-                        code = getattr(exc, "code", "CONTEXT_BINDING_PERSISTENCE_FAILED")
-                        raise UnboundBindError(
-                            code,
-                            f"successful Plan bind could not be durably rehydrated: {exc}",
-                        ) from exc
-            except Exception:
-                self._bound_delegate = previous_delegate
-                self._bound_runtime = previous_runtime
-                self._bound_binding = previous_binding
-                raise
+            if promotion and self.context.bind_global_dispatcher:
+                bind_execution_dispatcher(host.execution_dispatcher)
+            if previous_runtime is not None and previous_runtime is not host:
+                self._close_activation_runtime(previous_runtime)
             return bind_result
         except Exception:
             # compose_thin_task_main_host binds the existing Core dispatcher as
             # part of preparation.  Restore that mechanical carrier whenever
             # preparation or readback does not reach a verified commit point.
-            bind_execution_dispatcher(previous_dispatcher)
+            if self.context.bind_global_dispatcher:
+                bind_execution_dispatcher(previous_dispatcher)
             if host is not None:
                 self._close_activation_runtime(host)
             raise
@@ -2349,7 +2868,12 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
         raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
     if not isinstance(trusted_binding, TrustedWorkerBinding):
         raise TrustedBindingError("trusted server-side binding is required")
-    return _build_shared_mcp_server(_SharedAotaMcpAdapter(trusted_binding).invoke)
+    return _build_shared_mcp_server(
+        _SharedAotaMcpAdapter(
+            trusted_binding,
+            bridge_socket_path=os.environ.get(BRIDGE_SOCKET_ENV, "").strip(),
+        ).invoke
+    )
 
 
 def create_unbound_mcp_server(context: UnboundHostContext):
@@ -2364,13 +2888,40 @@ def create_unbound_mcp_server(context: UnboundHostContext):
         raise McpTransportUnavailable("restricted shared MCP transport requires the standard 'mcp' package")
     if not isinstance(context, UnboundHostContext):
         raise TrustedBindingError("unbound host context is required")
+    if context.bridge_socket_path.strip():
+        return _build_shared_mcp_server(SessionScopedContextRouter(context).invoke)
     return _build_shared_mcp_server(_UnboundAotaAdapter(context).invoke)
 
 
 def _build_shared_mcp_server(invoke_callable: Callable[[str, dict[str, Any] | None], McpToolResult]):
+    try:
+        import anyio
+    except ImportError as exc:  # pragma: no cover - MCP extra unavailable
+        raise McpTransportUnavailable(
+            "async shared MCP dispatch requires the installed anyio dependency"
+        ) from exc
+
+    worker_limiter: Any | None = None
+    router = getattr(invoke_callable, "__self__", None)
+    session_router = (
+        router if isinstance(router, SessionScopedContextRouter) else None
+    )
+    close_router = getattr(router, "close", None)
+
+    @asynccontextmanager
+    async def _server_lifespan(_server: Any):
+        try:
+            yield {}
+        finally:
+            # FastMCP joins/cancels in-flight request handlers before lifespan
+            # teardown. A router close therefore cannot detach a governed call.
+            if callable(close_router):
+                close_router()
+
     server = MCPServer(
         "aota",
         instructions="Restricted AOTA workspace transport. MCP provides transport only; AF remains authority. Single entry: aota.invoke(operation, arguments).",
+        lifespan=_server_lifespan,
     )
 
     def _to_call_tool_result(mcp_result: McpToolResult) -> Any:
@@ -2495,9 +3046,30 @@ def _build_shared_mcp_server(invoke_callable: Callable[[str, dict[str, Any] | No
         name="aota.invoke",
         description="Typed AOTA dispatch. operation is exact canonical name (e.g. workspace.search); arguments is the operation's typed input object.",
     )
-    def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
+    async def aota_invoke(operation: str, arguments: dict[str, Any] | None = None):  # type: ignore[no-redef]
         """Single-entry AOTA dispatch: exact operation resolution → existing descriptor → validate_inputs → existing authority → existing provider."""
-        mcp_result = invoke_callable(operation, arguments if arguments is not None else {})
+        nonlocal worker_limiter
+        if worker_limiter is None:
+            # This executes on FastMCP's event loop without yielding, so every
+            # call shares the same explicit per-server worker bound.
+            worker_limiter = anyio.CapacityLimiter(
+                MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS
+            )
+        logical_arguments = arguments if arguments is not None else {}
+        if session_router is not None:
+            mcp_result = await session_router.invoke_async(
+                operation,
+                logical_arguments,
+                worker_limiter=worker_limiter,
+            )
+        else:
+            mcp_result = await anyio.to_thread.run_sync(
+                invoke_callable,
+                operation,
+                logical_arguments,
+                abandon_on_cancel=False,
+                limiter=worker_limiter,
+            )
         # FastMCP double-emission repair: return explicit CallToolResult so
         # lowlevel server does not re-emit the same dict as both TextContent
         # and structuredContent. This keeps one canonical copy in
@@ -2519,6 +3091,7 @@ __all__ = [
     "MCP_IS_AUTHORITY_ENGINE",
     "MCP_PUBLIC_TOOLS",
     "MCP_PUBLIC_TOOL_COUNT",
+    "MAX_CONCURRENT_SHARED_CHILD_EXECUTIONS",
     "AGENT_FACING_AOTA_TOOL",
     "HERMES_AGENT_FACING_AOTA_TOOL_COUNT",
     "WORKSPACE_OPERATIONS",
@@ -2571,6 +3144,10 @@ __all__ = [
     "create_shared_mcp_server",
     "create_unbound_mcp_server",
     "UnboundHostContext",
+    "SessionScopedContextRouter",
+    "SESSION_VERIFICATION_PER_INVOCATION",
+    "ONE_SESSION_ONE_LOGICAL_AF_CONTEXT",
+    "GLOBAL_BOUND_DELEGATE_SHARED_ACROSS_SESSIONS",
     "GLOBAL_MCP_ENV",
     "UNBOUND_WORKSPACE_ID_ENV",
     "UNBOUND_WORKTREE_ID_ENV",

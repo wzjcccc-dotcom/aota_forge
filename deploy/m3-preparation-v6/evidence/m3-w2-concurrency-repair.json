@@ -1,0 +1,25 @@
+{
+  "candidate": "m3-preparation-v6",
+  "controlled_reactivation_approved": false,
+  "cross_session_overlap_proof": "PASS",
+  "focused_tests_deselected_baseline_expectations": 3,
+  "focused_tests_passed": 387,
+  "isolated_pinned_opencode_proof": "PASS",
+  "mcp_public_tools": [
+    "aota.invoke"
+  ],
+  "next_gate": "EXPLICIT_CONCURRENCY_REPAIR_CONTROLLED_REACTIVATION_APPROVAL",
+  "predecessor_candidate": "m3-preparation-v5r1",
+  "predecessor_digest": "sha256:d605e4a3968f3ec2591ba7baa6536703157476d2208a3af5e0f081ee944f2d4f",
+  "production_activation_performed": false,
+  "repair_approval": "evidence/w2-concurrency-repair-approval.json",
+  "repair_scope": "bounded_cross_session_mcp_execution_with_same_session_serialization",
+  "runtime_semantics_changed": true,
+  "same_session_serialization_proof": "PASS",
+  "source_commit": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "source_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "source_tree": "36ba26cb7482401f9bf298e76d84303a5c8538c6",
+  "status": "PASS_WITH_BASELINE_FINDINGS",
+  "thread_safety_audit": "evidence/source-trace-and-thread-safety-audit.json",
+  "worker_limit": 2
+}

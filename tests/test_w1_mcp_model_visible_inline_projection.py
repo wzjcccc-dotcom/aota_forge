@@ -21,6 +21,7 @@ TEXT_CONTENT_SOURCE=governed_projection, RAW_PROVIDER_RESULT_BYPASS=no
 
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import tempfile
@@ -134,14 +135,17 @@ def _make_binding(root: Path, role: str = "coder", with_write: bool = True):
     return server, binding
 
 def _call(server, operation, arguments):
-    tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-    res = tool.fn(operation=operation, arguments=arguments)
-    structured = res.structuredContent if hasattr(res, "structuredContent") else None
-    text = None
-    if hasattr(res, "content") and res.content:
-        tc = res.content[0]
-        text = tc.text if hasattr(tc, "text") else tc.get("text") if isinstance(tc, dict) else str(tc)
-    return structured, text
+    async def run():
+        tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
+        res = await tool.fn(operation=operation, arguments=arguments)
+        structured = res.structuredContent if hasattr(res, "structuredContent") else None
+        text = None
+        if hasattr(res, "content") and res.content:
+            tc = res.content[0]
+            text = tc.text if hasattr(tc, "text") else tc.get("text") if isinstance(tc, dict) else str(tc)
+        return structured, text
+
+    return asyncio.run(run())
 
 
 # 1. inline generic model-visible serialization

@@ -20,6 +20,7 @@ Reuses existing result.hydrate canonical operation; no new operation.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -95,14 +96,17 @@ def _make_task_main_binding(root: Path):
 
 
 def _call(server, op, args):
-    tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-    res = tool.fn(operation=op, arguments=args)
-    structured = res.structuredContent if hasattr(res, "structuredContent") else None
-    text = None
-    if hasattr(res, "content") and res.content:
-        tc = res.content[0]
-        text = tc.text if hasattr(tc, "text") else tc.get("text") if isinstance(tc, dict) else str(tc)
-    return structured, text
+    async def run():
+        tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
+        res = await tool.fn(operation=op, arguments=args)
+        structured = res.structuredContent if hasattr(res, "structuredContent") else None
+        text = None
+        if hasattr(res, "content") and res.content:
+            tc = res.content[0]
+            text = tc.text if hasattr(tc, "text") else tc.get("text") if isinstance(tc, dict) else str(tc)
+        return structured, text
+
+    return asyncio.run(run())
 
 
 def _bootstrap_payload(server):

@@ -24,6 +24,7 @@ DOES_NOT_PROVE=real Hermes task-main LLM behavior or physical Worker spawn
 from __future__ import annotations
 
 import json
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -327,11 +328,14 @@ class TestR6R7MismatchStillFailsClosed:
 
 
 def _mcp_call(server, operation: str, arguments: dict):
-    tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
-    result = tool.fn(operation=operation, arguments=arguments)
-    structured = result.structuredContent if hasattr(result, "structuredContent") else None
-    text = result.content[0].text if getattr(result, "content", None) else None
-    return structured, text
+    async def run():
+        tool = next(t for t in server._tool_manager.list_tools() if t.name == "aota.invoke")
+        result = await tool.fn(operation=operation, arguments=arguments)
+        structured = result.structuredContent if hasattr(result, "structuredContent") else None
+        text = result.content[0].text if getattr(result, "content", None) else None
+        return structured, text
+
+    return asyncio.run(run())
 
 
 class TestR8R9ModelVisibleTypedFailure:

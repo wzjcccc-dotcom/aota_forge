@@ -199,6 +199,9 @@ class TrustedWorkerBinding:
     # the existing coordinator/execution stores; it is not a context store or
     # an authority source.
     context_switch_runtime: Any | None = None
+    # Session-local dispatcher carrier for headed multi-Session routing. The
+    # process-global ingress binding remains a headless compatibility seam.
+    execution_dispatcher: Any | None = None
     # AF #53 M3/W1 trusted classification of the task-main production
     # composition path this binding was minted for. Mechanical carrier
     # metadata only (it decides no policy); it lets the MCP child classify an

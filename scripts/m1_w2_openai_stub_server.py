@@ -136,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
                     "role": "assistant",
                     "tool_calls": [{
                         "index": 0,
-                        "id": "call_afstub_1",
+                         "id": step.get("call_id", "call_afstub_1"),
                         "type": "function",
                         "function": {"name": step["name"], "arguments": args},
                     }],
@@ -176,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [{
-                    "id": "call_afstub_1",
+                     "id": step.get("call_id", "call_afstub_1"),
                     "type": "function",
                     "function": {"name": step["name"], "arguments": json.dumps(step.get("arguments") or {})},
                 }],

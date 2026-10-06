@@ -8,9 +8,15 @@ import os
 import re
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the supported runtime is POSIX
+    fcntl = None  # type: ignore[assignment]
 
 from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
 from aota_forge.core.contracts.canonical import canonical_json
@@ -18,6 +24,9 @@ from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.core.project.manifest import PROJECT_ID_RE
 
 CONTEXT_BINDING_SCHEMA_VERSION = 1
+CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION = 2
+PROJECT_BOUND = "PROJECT_BOUND"
+PLAN_BOUND = "PLAN_BOUND"
 DURABLE_CONTEXT_BINDING_IS_AUTHORITY = False
 CONTEXT_BINDING_EVIDENCE_IS_AUTHORITY = False
 CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION = 1
@@ -66,11 +75,12 @@ class DurableTaskMainContextBinding:
 
     project_id: str
     project_fingerprint: str
-    plan_binding: PlanAuthorityBinding
+    plan_binding: PlanAuthorityBinding | None
     origin_task_main_session_ref: str
     authorized_roots_digest: str | None = None
     schema_version: int = CONTEXT_BINDING_SCHEMA_VERSION
     binding_digest: str = ""
+    binding_kind: str = PLAN_BOUND
 
     def __post_init__(self) -> None:
         if not isinstance(self.project_id, str) or not PROJECT_ID_RE.fullmatch(self.project_id):
@@ -79,12 +89,20 @@ class DurableTaskMainContextBinding:
                 "durable context binding project_id is not canonical",
             )
         object.__setattr__(self, "project_fingerprint", _digest(self.project_fingerprint, "project_fingerprint"))
-        if not isinstance(self.plan_binding, PlanAuthorityBinding):
+        if type(self.schema_version) is not int or self.schema_version not in (1, 2):
+            raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "unsupported context binding schema_version")
+        if self.binding_kind not in (PROJECT_BOUND, PLAN_BOUND) or (
+            self.schema_version == 1 and self.binding_kind != PLAN_BOUND
+        ):
+            raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "invalid durable binding kind")
+        if self.binding_kind == PROJECT_BOUND and self.plan_binding is not None:
+            raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "Project-only evidence must not carry a Plan")
+        if self.binding_kind == PLAN_BOUND and not isinstance(self.plan_binding, PlanAuthorityBinding):
             raise ContextBindingError(
                 "CONTEXT_BINDING_CORRUPT",
                 "durable context binding requires PlanAuthorityBinding",
             )
-        if self.plan_binding.source_digest is None:
+        if self.binding_kind == PLAN_BOUND and self.plan_binding.source_digest is None:
             raise ContextBindingError(
                 "STALE_CONTEXT",
                 "durable context binding requires an observed Plan source digest",
@@ -102,11 +120,6 @@ class DurableTaskMainContextBinding:
                 "authorized_roots_digest",
                 _digest(self.authorized_roots_digest, "authorized_roots_digest"),
             )
-        if type(self.schema_version) is not int or self.schema_version != CONTEXT_BINDING_SCHEMA_VERSION:
-            raise ContextBindingError(
-                "CONTEXT_BINDING_CORRUPT",
-                f"unsupported context binding schema_version: {self.schema_version!r}",
-            )
         expected = self.compute_digest()
         if self.binding_digest:
             if self.binding_digest != expected:
@@ -118,14 +131,18 @@ class DurableTaskMainContextBinding:
             object.__setattr__(self, "binding_digest", expected)
 
     def canonical_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "project_id": self.project_id,
             "project_fingerprint": self.project_fingerprint,
-            "plan_binding": self.plan_binding.to_dict(),
             "origin_task_main_session_ref": self.origin_task_main_session_ref,
             "authorized_roots_digest": self.authorized_roots_digest,
         }
+        if self.binding_kind == PLAN_BOUND:
+            payload["plan_binding"] = self.plan_binding.to_dict()
+        if self.schema_version == CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION:
+            payload["binding_kind"] = self.binding_kind
+        return payload
 
     def compute_digest(self) -> str:
         return hashlib.sha256(canonical_json(self.canonical_payload()).encode("utf-8")).hexdigest()
@@ -150,6 +167,11 @@ class DurableTaskMainContextBinding:
             "binding_digest",
             "IS_AUTHORITY",
         }
+        version = data.get("schema_version", CONTEXT_BINDING_SCHEMA_VERSION)
+        if type(version) is not int or version not in (1, 2):
+            raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "unsupported context binding schema_version")
+        if version == 2:
+            allowed.add("binding_kind")
         extra = set(data) - allowed
         if extra:
             raise ContextBindingError(
@@ -162,7 +184,14 @@ class DurableTaskMainContextBinding:
                 "durable context binding cannot claim authority",
             )
         try:
-            plan_binding = PlanAuthorityBinding.from_dict(data["plan_binding"])
+            kind = PLAN_BOUND if version == 1 else data["binding_kind"]
+            if version == 2:
+                _digest(data["binding_digest"], "binding_digest")
+            if kind not in (PROJECT_BOUND, PLAN_BOUND):
+                raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "invalid durable binding kind")
+            if kind == PROJECT_BOUND and "plan_binding" in data:
+                raise ContextBindingError("CONTEXT_BINDING_CORRUPT", "Project-only record contains a Plan field")
+            plan_binding = PlanAuthorityBinding.from_dict(data["plan_binding"]) if kind == PLAN_BOUND else None
             return cls(
                 project_id=data["project_id"],
                 project_fingerprint=data["project_fingerprint"],
@@ -171,6 +200,7 @@ class DurableTaskMainContextBinding:
                 authorized_roots_digest=data.get("authorized_roots_digest"),
                 schema_version=data.get("schema_version", CONTEXT_BINDING_SCHEMA_VERSION),
                 binding_digest=data.get("binding_digest", ""),
+                binding_kind=kind,
             )
         except ContextBindingError:
             raise
@@ -193,6 +223,12 @@ class DurableTaskMainContextBinding:
                 "SESSION_RECOVERY_REQUIRED",
                 "exact task-main session differs from durable context binding",
             )
+        if self.binding_kind != current.binding_kind:
+            raise ContextBindingError("PLAN_CONTEXT_MISMATCH", "durable binding kind differs")
+        if self.binding_kind == PROJECT_BOUND:
+            if self.authorized_roots_digest != current.authorized_roots_digest:
+                raise ContextBindingError("AUTHORITY_DENIED", "durable authorized-root evidence changed")
+            return
         if (
             self.plan_binding.plan_id != current.plan_binding.plan_id
             or self.plan_binding.source_kind != current.plan_binding.source_kind
@@ -243,6 +279,10 @@ class DurableTaskMainContextBinding:
                 "SESSION_RECOVERY_REQUIRED",
                 "exact task-main session differs from durable context binding",
             )
+        if self.binding_kind != current.binding_kind:
+            raise ContextBindingError("PLAN_CONTEXT_MISMATCH", "durable binding kind differs")
+        if self.binding_kind == PROJECT_BOUND:
+            return
         if (
             self.plan_binding.plan_id != current.plan_binding.plan_id
             or self.plan_binding.source_kind != current.plan_binding.source_kind
@@ -262,6 +302,8 @@ class DurableTaskMainContextBinding:
         plan_source_revision: str | None,
         origin_task_main_session_ref: str,
     ) -> None:
+        if self.binding_kind != PLAN_BOUND:
+            raise ContextBindingError("PLAN_CONTEXT_MISMATCH", "Project-only evidence has no live Plan")
         if self.project_id != project_id:
             raise ContextBindingError(
                 "PROJECT_CONTEXT_MISMATCH",
@@ -333,6 +375,45 @@ class FileBackedTaskMainContextBindingProjection:
     @property
     def path(self) -> Path:
         return self._path
+
+    @contextmanager
+    def _path_lock(self):
+        """Serialize projection read-modify-write across adapter instances."""
+        lock_path = self._path.with_name(f".{self._path.name}.lock")
+        with self._lock:
+            if fcntl is None:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "inter-process context binding locking is unavailable",
+                )
+            descriptor: int | None = None
+            try:
+                descriptor = os.open(
+                    lock_path,
+                    os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                )
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
+                except OSError as exc:
+                    raise ContextBindingError(
+                        "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                        "inter-process context binding lock could not be acquired",
+                    ) from exc
+                yield
+            except OSError as exc:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
+                    "inter-process context binding lock could not be opened",
+                ) from exc
+            finally:
+                if descriptor is not None:
+                    if fcntl is not None:
+                        try:
+                            fcntl.flock(descriptor, fcntl.LOCK_UN)
+                        except OSError:
+                            pass
+                    os.close(descriptor)
 
     def _read(self) -> list[DurableTaskMainContextBinding]:
         if not self._path.exists():
@@ -454,7 +535,7 @@ class FileBackedTaskMainContextBindingProjection:
                 "SESSION_RECOVERY_REQUIRED",
                 "context binding lookup requires an exact non-placeholder session",
             )
-        with self._lock:
+        with self._path_lock():
             matches = [
                 record
                 for record in self._read()
@@ -467,13 +548,54 @@ class FileBackedTaskMainContextBindingProjection:
                 )
             return matches[0] if matches else None
 
-    def persist(self, binding: DurableTaskMainContextBinding) -> DurableTaskMainContextBinding:
+    def _persist_verified(
+        self,
+        records: list[DurableTaskMainContextBinding],
+        replacement: DurableTaskMainContextBinding,
+        previous: list[DurableTaskMainContextBinding],
+    ) -> DurableTaskMainContextBinding:
+        """Write/readback under the existing lock, restoring evidence on failure."""
+        try:
+            self._persist(records)
+            matches = [
+                record for record in self._read()
+                if record.origin_task_main_session_ref == replacement.origin_task_main_session_ref
+            ]
+            if len(matches) != 1 or matches[0] != replacement:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_PERSISTENCE_FAILED", "exact-session durable readback differs"
+                )
+            return matches[0]
+        except Exception as exc:
+            try:
+                if self._read() != previous:
+                    try:
+                        self._persist(previous)
+                    except Exception:
+                        # A post-write error can occur after atomic replacement;
+                        # the fresh read decides whether restoration succeeded.
+                        if self._read() != previous:
+                            raise
+                if self._read() != previous:
+                    raise ContextBindingError("CONTEXT_BINDING_PERSISTENCE_FAILED", "rollback differs")
+            except Exception as rollback_exc:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_ROLLBACK_FAILED", "durable rollback could not be verified"
+                ) from rollback_exc
+            raise exc
+
+    def persist(
+        self,
+        binding: DurableTaskMainContextBinding,
+        *,
+        expected_project_binding_digest: str | None = None,
+    ) -> DurableTaskMainContextBinding:
         if not isinstance(binding, DurableTaskMainContextBinding):
             raise ContextBindingError(
                 "CONTEXT_BINDING_CORRUPT",
                 "only a typed DurableTaskMainContextBinding may be persisted",
             )
-        with self._lock:
+        with self._path_lock():
             records = self._read()
             same_session = [
                 record
@@ -486,25 +608,77 @@ class FileBackedTaskMainContextBindingProjection:
                     "multiple durable context bindings already match the exact session",
                 )
             if same_session:
+                if expected_project_binding_digest is not None:
+                    current = same_session[0]
+                    if (
+                        current.binding_digest != _digest(expected_project_binding_digest, "expected_project_binding_digest")
+                        or current.binding_kind != PROJECT_BOUND
+                        or binding.binding_kind != PLAN_BOUND
+                        or current.project_id != binding.project_id
+                        or current.project_fingerprint != binding.project_fingerprint
+                    ):
+                        raise ContextBindingError("CONTEXT_BINDING_CONFLICT", "Project promotion CAS/identity differs")
+                    return self._persist_verified(
+                        [binding if record is current else record for record in records], binding, records
+                    )
                 if same_session[0].binding_digest != binding.binding_digest:
                     raise ContextBindingError(
                         "CONTEXT_BINDING_CONFLICT",
                         "a different durable context binding already owns the exact session",
                     )
                 return same_session[0]
+            if expected_project_binding_digest is not None:
+                raise ContextBindingError("CONTEXT_BINDING_CONFLICT", "Project promotion evidence disappeared")
             if len(records) >= MAX_CONTEXT_BINDING_PROJECTION_RECORDS:
                 raise ContextBindingError(
                     "CONTEXT_BINDING_PERSISTENCE_FAILED",
                     "context binding projection record limit reached",
                 )
-            self._persist([*records, binding])
-            readback = self.get_for_session(binding.origin_task_main_session_ref)
-            if readback is None or readback.binding_digest != binding.binding_digest:
+            return self._persist_verified([*records, binding], binding, records)
+
+    def remove_for_session(
+        self,
+        *,
+        origin_task_main_session_ref: str,
+        expected_binding_digest: str,
+    ) -> None:
+        """Rollback one newly-created session record under the same projection lock."""
+        session = _text(origin_task_main_session_ref, "origin_task_main_session_ref")
+        if not is_bound_origin_session_ref(session):
+            raise ContextBindingError(
+                "SESSION_RECOVERY_REQUIRED",
+                "context binding rollback requires an exact non-placeholder session",
+            )
+        expected_digest = _digest(expected_binding_digest, "expected_binding_digest")
+        with self._path_lock():
+            records = self._read()
+            matches = [
+                record
+                for record in records
+                if record.origin_task_main_session_ref == session
+            ]
+            if not matches:
+                return
+            if len(matches) != 1 or matches[0].binding_digest != expected_digest:
+                raise ContextBindingError(
+                    "CONTEXT_BINDING_CONFLICT",
+                    "durable context binding changed before rollback",
+                )
+            self._persist(
+                [
+                    record
+                    for record in records
+                    if record.origin_task_main_session_ref != session
+                ]
+            )
+            if any(
+                record.origin_task_main_session_ref == session
+                for record in self._read()
+            ):
                 raise ContextBindingError(
                     "CONTEXT_BINDING_PERSISTENCE_FAILED",
-                    "durable context binding readback did not match the committed evidence",
+                    "durable context binding rollback readback still contains the record",
                 )
-            return readback
 
     def refresh_for_session(
         self,
@@ -525,7 +699,7 @@ class FileBackedTaskMainContextBindingProjection:
                 "CONTEXT_BINDING_CORRUPT",
                 "only a typed DurableTaskMainContextBinding may replace durable evidence",
             )
-        with self._lock:
+        with self._path_lock():
             records = self._read()
             matches = [
                 record
@@ -554,14 +728,7 @@ class FileBackedTaskMainContextBindingProjection:
                 replacement if record is current else record
                 for record in records
             ]
-            self._persist(replaced)
-            readback = self.get_for_session(replacement.origin_task_main_session_ref)
-            if readback is None or readback.binding_digest != replacement.binding_digest:
-                raise ContextBindingError(
-                    "CONTEXT_BINDING_PERSISTENCE_FAILED",
-                    "durable context binding refresh readback did not match the replacement",
-                )
-            return readback
+            return self._persist_verified(replaced, replacement, records)
 
 
 def context_binding_projection_path(project_root: str | Path) -> Path:
@@ -645,6 +812,9 @@ __all__ = [
     "CONTEXT_BINDING_PROJECTION_IS_AUTHORITY",
     "CONTEXT_BINDING_PROJECTION_SCHEMA_VERSION",
     "CONTEXT_BINDING_SCHEMA_VERSION",
+    "CONTEXT_BINDING_EXPLICIT_SCHEMA_VERSION",
+    "PROJECT_BOUND",
+    "PLAN_BOUND",
     "DURABLE_CONTEXT_BINDING_IS_AUTHORITY",
     "DURABLE_SOURCE_DIGEST_IS_AUTHORITY",
     "DURABLE_SOURCE_REVISION_IS_AUTHORITY",

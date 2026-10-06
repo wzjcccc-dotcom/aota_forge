@@ -1,0 +1,544 @@
+{
+  "status": "PASS",
+  "real_opencode_version": "1.18.30",
+  "reference_commit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "source_frontier": "fb1b92b1173b045043ffbff0a6f87a20c7607158",
+  "sessions": [
+    "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+    "ses_f0d61e3dbffeeyLsG36JvI596d"
+  ],
+  "bridge_observations": [
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "QzQCsXqY57QGpI5J3AglIQ",
+      "call_id": "call_plan004_A",
+      "session_id": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+      "tool": "aota_aota_invoke"
+    },
+    {
+      "args_sha256": "a85a7a83c21044b62f191ab4a6b3a99fa4daa0d546326605b570151f7f152362",
+      "bridge_id": "QzQCsXqY57QGpI5J3AglIQ",
+      "call_id": "call_plan004_B",
+      "session_id": "ses_f0d61e3dbffeeyLsG36JvI596d",
+      "tool": "aota_aota_invoke"
+    }
+  ],
+  "mcp_debug": "{\"event\": \"af59_unbound_mcp_mode\", \"instance_dir\": \"/tmp/plan004-m2-real-yd5di_e3/instance\", \"registry\": \"/home/latios/workspace/.aota/workspaces.json\", \"repo_root\": \"/home/latios/workspace/.aota-worktrees/aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation/M2/m2-bridge\", \"runtime_config\": \"/home/latios/.config/aota-forge/runtime.json\"}\n",
+  "mcp_status": {
+    "aota": {
+      "status": "connected"
+    }
+  },
+  "messages": {
+    "ses_f0d61e3e8ffewkRco3YBLyp2Gf": [
+      {
+        "info": {
+          "id": "msg_0f29e1c39001zeUhL5QAujsqe4",
+          "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+          "role": "user",
+          "time": {
+            "created": 1790776843321
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "afstub",
+            "modelID": "stub-model"
+          }
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e1c3b001477TNXXA3v5EnA",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e1c39001zeUhL5QAujsqe4",
+            "type": "text",
+            "text": "run the bounded Plan #004 bridge inspection"
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_0f29e1e0f001Sb9zwX05oU3tE6",
+          "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+          "role": "assistant",
+          "time": {
+            "created": 1790776843791,
+            "completed": 1790776844524
+          },
+          "parentID": "msg_0f29e1c39001zeUhL5QAujsqe4",
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "tool-calls"
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e1f6d0018a3ylxxyq12UFu",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e1e0f001Sb9zwX05oU3tE6",
+            "type": "step-start"
+          },
+          {
+            "id": "prt_0f29e1f70001ikZzU3qczXZ6OU",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e1e0f001Sb9zwX05oU3tE6",
+            "type": "tool",
+            "callID": "call_plan004_A",
+            "tool": "aota_aota_invoke",
+            "state": {
+              "status": "completed",
+              "input": {
+                "operation": "task_main.context",
+                "arguments": {
+                  "mode": "inspect"
+                }
+              },
+              "output": "{\"context\":null,\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"inspect\",\"session_binding_is_authority\":false,\"state\":\"unbound\"}",
+              "title": "",
+              "metadata": {
+                "truncated": false
+              },
+              "time": {
+                "start": 1790776844152,
+                "end": 1790776844514
+              }
+            }
+          },
+          {
+            "id": "prt_0f29e20e6001nGabf2PMSZfh9Q",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e1e0f001Sb9zwX05oU3tE6",
+            "type": "step-finish",
+            "reason": "tool-calls",
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_0f29e20ef0018XMYD3C2AulVOI",
+          "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+          "role": "assistant",
+          "time": {
+            "created": 1790776844527,
+            "completed": 1790776844558
+          },
+          "parentID": "msg_0f29e1c39001zeUhL5QAujsqe4",
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop"
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e2103001rPU9kfVJPqodKC",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI",
+            "type": "step-start"
+          },
+          {
+            "id": "prt_0f29e21050017lWLJA0La743yu",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI",
+            "type": "text",
+            "text": "AF_PLAN004_SESSION_A_DONE",
+            "time": {
+              "start": 1790776844549,
+              "end": 1790776844552
+            }
+          },
+          {
+            "id": "prt_0f29e210a0014PtqMS4rD8ZqZr",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI",
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "ses_f0d61e3dbffeeyLsG36JvI596d": [
+      {
+        "info": {
+          "id": "msg_0f29e211a001Fg1cFq8x3isDU5",
+          "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+          "role": "user",
+          "time": {
+            "created": 1790776844570
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "afstub",
+            "modelID": "stub-model"
+          }
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e211b001dnCq5vtL4sAV17",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e211a001Fg1cFq8x3isDU5",
+            "type": "text",
+            "text": "run the bounded Plan #004 bridge inspection"
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_0f29e212b001lLaEOm1MIo8gYt",
+          "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+          "role": "assistant",
+          "time": {
+            "created": 1790776844587,
+            "completed": 1790776844663
+          },
+          "parentID": "msg_0f29e211a001Fg1cFq8x3isDU5",
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "tool-calls"
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e213f001j4dZrrtAFfDwHs",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e212b001lLaEOm1MIo8gYt",
+            "type": "step-start"
+          },
+          {
+            "id": "prt_0f29e2141001siW391yzLRT9Gi",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e212b001lLaEOm1MIo8gYt",
+            "type": "tool",
+            "callID": "call_plan004_B",
+            "tool": "aota_aota_invoke",
+            "state": {
+              "status": "completed",
+              "input": {
+                "operation": "task_main.context",
+                "arguments": {
+                  "mode": "inspect"
+                }
+              },
+              "output": "{\"context\":null,\"identity_is_authority\":false,\"locator_is_authority\":false,\"mode\":\"inspect\",\"session_binding_is_authority\":false,\"state\":\"unbound\"}",
+              "title": "",
+              "metadata": {
+                "truncated": false
+              },
+              "time": {
+                "start": 1790776844612,
+                "end": 1790776844657
+              }
+            }
+          },
+          {
+            "id": "prt_0f29e21730011a6P7bJGsSDcLr",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e212b001lLaEOm1MIo8gYt",
+            "type": "step-finish",
+            "reason": "tool-calls",
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_0f29e2179001We79aGKlUfv8dj",
+          "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+          "role": "assistant",
+          "time": {
+            "created": 1790776844665,
+            "completed": 1790776844693
+          },
+          "parentID": "msg_0f29e211a001Fg1cFq8x3isDU5",
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop"
+        },
+        "parts": [
+          {
+            "id": "prt_0f29e218e0016m4j5kwnJD4S8N",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj",
+            "type": "step-start"
+          },
+          {
+            "id": "prt_0f29e2190001PjgdCiWRSAohy1",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj",
+            "type": "text",
+            "text": "AF_PLAN004_SESSION_B_DONE",
+            "time": {
+              "start": 1790776844688,
+              "end": 1790776844689
+            }
+          },
+          {
+            "id": "prt_0f29e2192001GvP9BZ6xTmrrD7",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj",
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "prompt_results": [
+    {
+      "status": 200,
+      "payload": {
+        "info": {
+          "parentID": "msg_0f29e1c39001zeUhL5QAujsqe4",
+          "role": "assistant",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "time": {
+            "created": 1790776844527,
+            "completed": 1790776844558
+          },
+          "finish": "stop",
+          "id": "msg_0f29e20ef0018XMYD3C2AulVOI",
+          "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_0f29e2103001rPU9kfVJPqodKC",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI"
+          },
+          {
+            "type": "text",
+            "text": "AF_PLAN004_SESSION_A_DONE",
+            "time": {
+              "start": 1790776844549,
+              "end": 1790776844552
+            },
+            "id": "prt_0f29e21050017lWLJA0La743yu",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI"
+          },
+          {
+            "reason": "stop",
+            "type": "step-finish",
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "write": 0,
+                "read": 0
+              }
+            },
+            "cost": 0,
+            "id": "prt_0f29e210a0014PtqMS4rD8ZqZr",
+            "sessionID": "ses_f0d61e3e8ffewkRco3YBLyp2Gf",
+            "messageID": "msg_0f29e20ef0018XMYD3C2AulVOI"
+          }
+        ]
+      }
+    },
+    {
+      "status": 200,
+      "payload": {
+        "info": {
+          "parentID": "msg_0f29e211a001Fg1cFq8x3isDU5",
+          "role": "assistant",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/tmp/plan004-m2-real-yd5di_e3/instance",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "modelID": "stub-model",
+          "providerID": "afstub",
+          "time": {
+            "created": 1790776844665,
+            "completed": 1790776844693
+          },
+          "finish": "stop",
+          "id": "msg_0f29e2179001We79aGKlUfv8dj",
+          "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_0f29e218e0016m4j5kwnJD4S8N",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj"
+          },
+          {
+            "type": "text",
+            "text": "AF_PLAN004_SESSION_B_DONE",
+            "time": {
+              "start": 1790776844688,
+              "end": 1790776844689
+            },
+            "id": "prt_0f29e2190001PjgdCiWRSAohy1",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj"
+          },
+          {
+            "reason": "stop",
+            "type": "step-finish",
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "write": 0,
+                "read": 0
+              }
+            },
+            "cost": 0,
+            "id": "prt_0f29e2192001GvP9BZ6xTmrrD7",
+            "sessionID": "ses_f0d61e3dbffeeyLsG36JvI596d",
+            "messageID": "msg_0f29e2179001We79aGKlUfv8dj"
+          }
+        ]
+      }
+    }
+  ],
+  "REAL_MCP_CORRELATION": true,
+  "EXACT_CALL_CORRELATION": true,
+  "ONE_SHARED_BRIDGE_EPOCH": true,
+  "TOKEN_NOT_MODEL_VISIBLE": true,
+  "SECRET_IN_EVIDENCE": false,
+  "MCP_PUBLIC_TOOL_COUNT": 1,
+  "MCP_TOOL_NAMES": [
+    "aota.invoke"
+  ],
+  "generated_at": 1790776844.7187243,
+  "PROVES": "pinned OpenCode plugin hook mutation reached the real AF MCP child and was verified before task_main.context dispatch",
+  "DOES_NOT_PROVE": "M3 production activation or normal 4096 service configuration"
+}

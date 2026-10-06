@@ -12,6 +12,9 @@ import hashlib
 import json
 import os
 import tempfile
+import fcntl
+import stat
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -219,6 +222,41 @@ def _atomic_write_manifest(path: Path, data: dict[str, Any]) -> None:
                 pass
 
 
+@contextmanager
+def _governance_intake_lifecycle_lock(
+    context: GovernanceIntakeContext, project_id: str
+):
+    """Serialize one Project's Plan mutation plus derived projection refresh."""
+    governance_base = _trusted_dir(context.governance_base, "governance_base")
+    assert governance_base is not None
+    lock_suffix = hashlib.sha256(project_id.encode("utf-8")).hexdigest()[:24]
+    lock_path = governance_base / f".governance-intake-{lock_suffix}.lock"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError("Governance intake lock is not a regular file")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise GovernanceIntakeError(
+            "GOVERNANCE_LIFECYCLE_LOCK_UNAVAILABLE",
+            "Project governance lifecycle lock could not be acquired",
+        ) from exc
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
 def _minimal_manifest(
     project_id: str,
     *,
@@ -265,6 +303,17 @@ class GovernanceIntakeService:
         self._resolved_project_root: str | None = None
 
     def project(self, mode: str, *, project_id: str, **arguments: Any) -> dict[str, Any]:
+        if mode == "init":
+            self._project_id(project_id)
+            with _governance_intake_lifecycle_lock(self.context, project_id):
+                return self._project_unlocked(
+                    mode, project_id=project_id, **arguments
+                )
+        return self._project_unlocked(mode, project_id=project_id, **arguments)
+
+    def _project_unlocked(
+        self, mode: str, *, project_id: str, **arguments: Any
+    ) -> dict[str, Any]:
         if mode not in GOVERNANCE_PROJECT_MODES:
             raise GovernanceIntakeError("MODE_INVALID", f"unsupported governance.project mode: {mode!r}")
         project_id = self._project_id(project_id)
@@ -291,7 +340,33 @@ class GovernanceIntakeService:
             write_projection=False,
         )
 
-    def plan(self, mode: str, *, project_id: str, plan_id: str, **arguments: Any) -> dict[str, Any]:
+    def plan(
+        self, mode: str, *, project_id: str, plan_id: str, **arguments: Any
+    ) -> dict[str, Any]:
+        if mode in {"init", "amend", "close"}:
+            self._project_id(project_id)
+            if not is_plan_id(plan_id):
+                raise GovernanceIntakeError(
+                    "PLAN_ID_INVALID",
+                    "plan_id must be one canonical internal Plan ID",
+                )
+            with _governance_intake_lifecycle_lock(self.context, project_id):
+                return self._plan_unlocked(
+                    mode,
+                    project_id=project_id,
+                    plan_id=plan_id,
+                    **arguments,
+                )
+        return self._plan_unlocked(
+            mode,
+            project_id=project_id,
+            plan_id=plan_id,
+            **arguments,
+        )
+
+    def _plan_unlocked(
+        self, mode: str, *, project_id: str, plan_id: str, **arguments: Any
+    ) -> dict[str, Any]:
         if mode not in GOVERNANCE_PLAN_MODES:
             raise GovernanceIntakeError("MODE_INVALID", f"unsupported governance.plan mode: {mode!r}")
         project_id = self._project_id(project_id)

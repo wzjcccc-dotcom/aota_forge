@@ -1,0 +1,28 @@
+{
+  "authorized_roots_reresolved": true,
+  "blocking_findings": [],
+  "candidate": "m3-preparation-v5",
+  "durable_binding_is_authority": false,
+  "exact_session_lookup": true,
+  "finding": "PROJECT_ONLY_BIND_NOT_PERSISTED",
+  "golden_v1_digest": "30743942ab52840f17a2230968b991838a9579eb23e8bdd73255ea44af4cce9a",
+  "live_source_restored_frontier": "abd053d12d38c5a8dbe6815bb040ad39f6117d3a",
+  "next_gate": "EXPLICIT_V5_CONTROLLED_REACTIVATION_APPROVAL",
+  "non_blocking_findings": [
+    "P1 role.bootstrap is denied by the existing headed router pre-bind guard (CONTEXT_BINDING_REQUIRED); P1 inspect and all four mandatory durability stages passed. Bootstrap success is not claimed.",
+    "Live production imports the preparation worktree directly. Repair was initially checkpointed there, then the worktree was restored to abd053d and v5 relocated to an independent worktree without service restart. Candidate activation must materialize a separate source root.",
+    "ruff absent from PATH; existing Pydantic forward-reference warning remains."
+  ],
+  "plan_bound_recovery": "PASS",
+  "production_reactivation_performed": false,
+  "project_only_persist_readback": "PASS",
+  "project_only_recovery": "PASS",
+  "promotion_after_project_recovery": "PASS",
+  "rollback_required": false,
+  "root_cause": "durable schema and bind path represented Plan-bound evidence only",
+  "schema_design": "v1 Plan evidence unchanged; v2 explicit binding_kind and absent Plan field for PROJECT_BOUND",
+  "source_frontier": "71e821777e477e50e982fad9b1b0487140542d22",
+  "source_tree": "5252ddfb12af353d4a9e4613333268a4cf4b1caa",
+  "status": "PASS_WITH_FINDINGS",
+  "trusted_project_registry_reresolved": true
+}

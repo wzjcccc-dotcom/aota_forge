@@ -1,0 +1,38 @@
+{
+  "4096_HEALTH": {
+    "healthy": true,
+    "version": "1.18.30"
+  },
+  "4095_HEALTH": {
+    "healthy": true,
+    "version": "1.18.30"
+  },
+  "services": {
+    "opencode-af-reference.service": {
+      "MainPID": "356425",
+      "ExecMainStartTimestamp": "Thu 2026-10-01 18:09:16 CST",
+      "ActiveState": "active"
+    },
+    "opencode-fixed-4095.service": {
+      "MainPID": "368735",
+      "ExecMainStartTimestamp": "Thu 2026-10-01 18:24:18 CST",
+      "ActiveState": "active"
+    },
+    "af-plan004-bridge-m3-candidate.service": {
+      "MainPID": "4116189",
+      "ExecMainStartTimestamp": "Thu 2026-10-01 07:16:24 CST",
+      "ActiveState": "active"
+    }
+  },
+  "BRIDGE_HEALTH": "PASS_ACTIVE_SAME_PID_IPC_CONNECT_0600_DIR_0700",
+  "live_source_frontier": "abd053d12d38c5a8dbe6815bb040ad39f6117d3a",
+  "active_runtime": "m3-preparation-v4-family-live-runtime",
+  "production_service_restart_performed": false,
+  "production_reactivation_performed": false,
+  "live_artifacts_sha256": {
+    "/home/latios/workspace/.aota-worktrees/aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation/M3/m3-preparation/deploy/m3-preparation-v4/artifact-manifest.json": "1c242ae8fc346f5e2b1736096eac7edd1ed7fb96df41b468b50def1084a0b24d",
+    "/home/latios/.local/share/aota-forge/opencode-reference/runtime/xdg-config/opencode/opencode.json": "f1f72b91f040503e006837bee7f85e7d00cc5e29787403555034cd6a731eda8c",
+    "/home/latios/.config/systemd/user/af-plan004-bridge-m3-candidate.service": "1a84c4aba0fa99931f85dada4f7ac4fb15549cf256786c157781ea98ce9c56c6",
+    "/home/latios/.config/systemd/user/opencode-af-reference.service.d/plan004-bridge.conf": "7d3b7123afa0f79bdeefe9dc4a8b89d1492e7ff82a6b5aea51ba7677d85b5f87"
+  }
+}

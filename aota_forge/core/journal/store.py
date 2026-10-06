@@ -10,10 +10,13 @@ Governance:
 from __future__ import annotations
 
 import abc
+import fcntl
 import hashlib
 import json
 import os
+import stat
 import threading
+from functools import wraps
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
@@ -74,6 +77,38 @@ class InvalidJournalTransitionError(JournalError):
 
 class JournalPersistenceFailureError(JournalError):
     code = JOURNAL_PERSISTENCE_FAILURE
+
+
+def _serialize_file_backed_journal_path(method):
+    """Protect whole-file journal read-modify-write across store instances."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        lock_path = self._path.with_name(f".{self._path.name}.lock")
+        descriptor: int | None = None
+        try:
+            descriptor = os.open(
+                lock_path,
+                os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise OSError("journal lock is not a regular file")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError as exc:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise JournalPersistenceFailureError(
+                "journal store path lock could not be acquired"
+            ) from exc
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    return wrapped
 
 
 def _compute_revision_token(journal_id: str, revision: int, state: JournalState, observed_digest: str | None) -> str:
@@ -568,6 +603,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
     def inject_terminal_persist_fails(self) -> None:
         self.inject_fail_next_persist()
 
+    @_serialize_file_backed_journal_path
     def create_prepared(self, record: JournalRecord) -> DurableJournalEntry:
         if self._closed:
             raise JournalPersistenceFailureError("store closed")
@@ -605,6 +641,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
                 raise JournalPersistenceFailureError(f"persist failed: {e}") from e
             return entry
 
+    @_serialize_file_backed_journal_path
     def cas_transition(
         self,
         journal_id: str,
@@ -681,6 +718,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
                 raise JournalPersistenceFailureError(f"persist failed: {e}") from e
             return (True, new_entry)
 
+    @_serialize_file_backed_journal_path
     def get(self, journal_id: str) -> Optional[DurableJournalEntry]:
         if self._closed:
             # Allow get after close before reopen? We'll reload for reopen case via new instance
@@ -690,6 +728,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
             self._load()
             return self._store.get(journal_id)
 
+    @_serialize_file_backed_journal_path
     def cas_update_evidence(
         self,
         journal_id: str,
@@ -741,6 +780,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
                 raise JournalPersistenceFailureError(f"persist failed: {exc}") from exc
             return (True, new_entry)
 
+    @_serialize_file_backed_journal_path
     def scan_requiring_recovery(self) -> List[DurableJournalEntry]:
         eligible = {JournalState.PREPARED, JournalState.APPLYING, JournalState.OUTCOME_UNKNOWN, JournalState.RECONCILING}
         with self._global_lock:
@@ -752,6 +792,7 @@ class FileBackedDurableJournalStore(DurableJournalStore):
     def scan_nonterminal(self) -> List[DurableJournalEntry]:
         return self.scan_requiring_recovery()
 
+    @_serialize_file_backed_journal_path
     def list_all(self) -> List[DurableJournalEntry]:
         with self._global_lock:
             self._load()
@@ -759,16 +800,19 @@ class FileBackedDurableJournalStore(DurableJournalStore):
             result.sort(key=lambda e: (e.record.journal_id, e.created_at))
             return result
 
+    @_serialize_file_backed_journal_path
     def close(self) -> None:
         with self._global_lock:
             if not self._closed:
                 # Ensure persisted before close
                 try:
+                    self._load()
                     self._persist()
                 except Exception:
                     pass
                 self._closed = True
 
+    @_serialize_file_backed_journal_path
     def reopen(self) -> None:
         with self._global_lock:
             self._closed = False

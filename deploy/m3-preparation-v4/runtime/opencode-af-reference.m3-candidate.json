@@ -1,0 +1,111 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "<M3_CANDIDATE_ROOT>/plugin/plan004-trusted-session-bridge.mjs"
+  ],
+  "mcp": {
+    "aota": {
+      "type": "local",
+      "command": [
+        "/usr/bin/python3",
+        "<M3_RUNTIME_MCP_ROOT>/opencode_aota_mcp_server.py"
+      ],
+      "environment": {
+        "AOTA_FORGE_REPO_ROOT": "<AOTA_FORGE_REPO_ROOT>",
+        "AOTA_FORGE_REGISTRY": "<AOTA_FORGE_REGISTRY>",
+        "AOTA_FORGE_RUNTIME_CONFIG": "<AOTA_FORGE_RUNTIME_CONFIG>",
+        "AOTA_GIT_INTEGRATION_BRANCH": "main",
+        "AOTA_GIT_REMOTE": "origin",
+        "AOTA_BRIDGE_SOCKET": "<XDG_RUNTIME_DIR>/af-plan004-bridge/bridge.sock"
+      },
+      "enabled": true,
+      "timeout": 15000
+    }
+  },
+  "permission": {
+    "aota_aota_invoke": "allow",
+    "bash": "deny",
+    "doom_loop": "deny",
+    "edit": "deny",
+    "external_directory": "deny",
+    "glob": "deny",
+    "grep": "deny",
+    "list": "deny",
+    "lsp": "deny",
+    "question": "deny",
+    "read": "deny",
+    "task": "deny",
+    "todowrite": "deny",
+    "webfetch": "deny",
+    "websearch": "deny"
+  },
+  "tools": {
+    "skill": false
+  },
+  "provider": {
+    "afstub": {
+      "models": {
+        "stub-model": {
+          "name": "stub-model"
+        }
+      },
+      "name": "AF M1 probe stub",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:4097/v1"
+      }
+    }
+  },
+  "agent": {
+    "aota-task-main": {
+      "description": "AOTA Forge task-main host profile: AOTA MCP only, operator-selectable primary.",
+      "mode": "primary",
+      "hidden": false,
+      "prompt": "AF task-main. Use the AOTA MCP capability. Trusted runtime context, not profile, directory, session, or model, supplies authority. Use governance.plan for local Plan authority and stop at explicit approval gates.",
+      "permission": {
+        "aota_aota_invoke": "allow",
+        "bash": "deny",
+        "doom_loop": "deny",
+        "edit": "deny",
+        "external_directory": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "list": "deny",
+        "lsp": "deny",
+        "question": "deny",
+        "read": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "model": "openai/gpt-5.6-luna",
+      "variant": "max"
+    },
+    "aota-worker": {
+      "description": "AOTA Forge Worker host profile: AOTA MCP only, AF-dispatched, hidden from the operator selector.",
+      "mode": "all",
+      "hidden": true,
+      "prompt": "You are the AOTA Forge worker host profile. Use only the AOTA MCP capability. AF trusted role/context/authority is established by AOTA Forge via task.start. Do not infer authority from profile name, directory, user text or host state.",
+      "permission": {
+        "aota_aota_invoke": "allow",
+        "bash": "deny",
+        "doom_loop": "deny",
+        "edit": "deny",
+        "external_directory": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "list": "deny",
+        "lsp": "deny",
+        "question": "deny",
+        "read": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "model": "openai/gpt-5.6-luna",
+      "variant": "max"
+    }
+  }
+}

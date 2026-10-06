@@ -1,0 +1,172 @@
+{
+  "record": "AF_PLAN004_M3_BRIDGE_216_GROUP_REPAIR_RESULT",
+  "status": "PASS_WITH_FINDINGS",
+  "captured_at": "2026-09-30",
+  "project_id": "aota_forge",
+  "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+  "milestone": "M3",
+  "governance_read": {
+    "authority_kind": "local_governance",
+    "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+    "plan_revision": "R9",
+    "source_revision": "d0a15bd94e28a56770e0d52104d672afb18ec0e6b5d6193a70c59216e1931062",
+    "source_digest": "d0a15bd94e28a56770e0d52104d672afb18ec0e6b5d6193a70c59216e1931062",
+    "governance_store_revision": 11,
+    "current_status": "m3_activation_blocked",
+    "current_blocker": "m3_activation_blocked_bridge_unit_216_group",
+    "m2_accepted_frontier": "052fefb297b412052d7c94ffb8f4ab6062259c33",
+    "m3_milestone_closed": false,
+    "previous_activation": "PARTIAL_FAILED_BRIDGE_ONLY",
+    "previous_rollback": "EXECUTED_AND_VERIFIED",
+    "existing_production_activation_approval_reused": false,
+    "new_reactivation_approval_required": true,
+    "opencode_version": "1.18.30",
+    "mcp_public_tool_count": 1,
+    "mcp_public_tool": "aota.invoke"
+  },
+  "root_cause": {
+    "confirmed": true,
+    "manager": "systemctl --user",
+    "manager_pid_observed": 1455,
+    "failed_unit": "af-plan004-bridge-m3-candidate.service",
+    "failed_directives": [
+      "User=latios",
+      "Group=latios"
+    ],
+    "effective_user_manager_identity": "latios:latios (uid=1000,gid=1000)",
+    "failure_stage": "supplementary-group setup before ExecStart and socket creation",
+    "failure_code": "216/GROUP",
+    "journal_observation": "Failed to determine supplementary groups: Operation not permitted",
+    "drop_in_override": false,
+    "socket_created_before_failure": false,
+    "script_started_before_failure": false
+  },
+  "repair": {
+    "applied": true,
+    "candidate_version": "m3-preparation-v2",
+    "candidate_kind": "bounded_overlay_on_m3-preparation-v1",
+    "candidate_manifest_sha256": "1c298dfc2c1b4ea73eab26abf2728be5ed6cda2755d99a78afdbc15e4518fe14",
+    "changed_file": "deploy/m3-preparation-v2/systemd/af-plan004-bridge-m3-candidate.service",
+    "removed_directives": [
+      "User=latios",
+      "Group=latios"
+    ],
+    "preserved_hardening": [
+      "UMask=0077",
+      "RuntimeDirectoryMode=0700",
+      "NoNewPrivileges=yes",
+      "PrivateTmp=yes",
+      "ProtectSystem=strict",
+      "ProtectHome=read-only",
+      "ReadWritePaths=%t/af-plan004-bridge"
+    ],
+    "runtime_and_ipc_wiring_unchanged": true,
+    "m2_source_changed": false,
+    "opencode_upstream_changed": false,
+    "v1_failure_evidence_preserved": true,
+    "prior_version_backup_overwritten": false
+  },
+  "validation": {
+    "unit_static_verify": "PASS",
+    "unit_identity_directives": "PASS",
+    "unit_hardening_check": "PASS",
+    "manifest_json": "PASS",
+    "manifest_file_digests": "PASS",
+    "focused_m2_bridge_regression": "15 passed",
+    "bridge_script_permissions": "PASS",
+    "candidate_artifact_permissions": "PASS",
+    "runtime_secret_config_permissions": "PASS",
+    "isolated_user_manager_smoke": "PASS",
+    "smoke_unit": "af-plan004-bridge-m3-v2-smoke.service",
+    "smoke_runtime_directory": "/run/user/1000/af-plan004-bridge-m3-v2-smoke",
+    "smoke_ipc_endpoint": "/run/user/1000/af-plan004-bridge-m3-v2-smoke/bridge.sock",
+    "unit_start": "PASS",
+    "process_identity": "latios:latios (uid=1000,gid=1000)",
+    "runtime_directory_mode": "0700",
+    "socket_mode": "0600",
+    "socket_owner": "1000:1000",
+    "ipc_permission": "PASS",
+    "token_replay_denial": "PASS",
+    "exit_216_group": "no",
+    "secret_exposure": "no",
+    "smoke_resources_cleaned": "PASS"
+  },
+  "rollback": {
+    "readiness": "PASS_WITH_CONTROLLED_EXTENSION",
+    "artifact_reference": "deploy/m3-preparation-v2/rollback/rollback-artifact-reference.json",
+    "prior_manifest_sha256": "38e9aa1d4ffc1416d05dc280d7b1bbd9f460b53fe29fea3122df2ac7ed119817",
+    "rollback_script_sha256": "a5c57d0797a86046222c61f190b75236e969a16335650dea6a9429d404b96da5",
+    "prior_backup_digests_read_and_recorded": true,
+    "rollback_executed_during_repair": false,
+    "production_rollback_required": false
+  },
+  "bounded_repair_review": {
+    "reviewer": "Codex",
+    "result": "PASS_WITH_FINDINGS",
+    "root_cause_confirmed": true,
+    "minimal_repair_complete": true,
+    "m2_source_unchanged": true,
+    "m3_candidate_versioned": true,
+    "rollback_still_valid": true,
+    "production_4096_unchanged": true,
+    "production_reactivation_performed": false,
+    "m3_w1_w2_w3_started": false,
+    "residual_risks": [
+      "4096 currently has resident MCP children; next controlled activation requires an explicit drain or restart-impact decision.",
+      "The existing OPENCODE_SERVER_PASSWORD-not-set warning remains unchanged and is outside this repair scope."
+    ]
+  },
+  "production_health": {
+    "reference_service": "opencode-af-reference.service",
+    "reference_service_active": true,
+    "reference_health": {
+      "healthy": true,
+      "version": "1.18.30"
+    },
+    "reference_mcp": {
+      "aota": {
+        "status": "connected"
+      }
+    },
+    "mcp_public_tool_count": 1,
+    "mcp_public_tool": "aota.invoke",
+    "mcp_public_surface_unchanged": true,
+    "reference_config_sha256": "3bccb4fd740d7d770423e6d98d5a8b0831ceaa65ad6c705595b615202b5fda3d",
+    "reference_unit_sha256": "a49ba0412a26f0f6a81946a2631302b4f62e04f9ed605de8cfb9b666e66785a2",
+    "reference_binary_sha256": "87bd160e053af86b5b409daabf71f8dc05bbc3a2a3a5f563f36011cdf706a999",
+    "reference_unit_unchanged": true,
+    "reference_config_unchanged": true,
+    "headless_service": "opencode-fixed-4095.service",
+    "headless_service_active": true,
+    "headless_health": {
+      "healthy": true,
+      "version": "1.18.30"
+    },
+    "headless_mcp_baseline_preserved": true,
+    "headless_unit_sha256": "89ad77cc77e94db44832038c419e78417e6668477d33a076365c36004e84b3d8",
+    "production_bridge_socket_absent": true,
+    "production_reactivation_performed": false
+  },
+  "readiness": {
+    "root_cause_confirmed": true,
+    "minimal_repair_complete": true,
+    "m2_source_unchanged": true,
+    "m3_candidate_versioned": true,
+    "rollback_still_valid": true,
+    "production_4096_unchanged": true,
+    "production_reactivation_performed": false,
+    "m3_w1_w2_w3_started": false,
+    "ready_for_controlled_reactivation": true
+  },
+  "blocking_findings": [],
+  "non_blocking_findings": [
+    "Production reactivation and M3 W1/W2/W3 remain intentionally unperformed and require a new explicit controlled reactivation approval.",
+    "This isolated smoke proves the repaired user-manager bridge unit only; it does not prove headed 4096 acceptance, shared-child production isolation, or headless regression under an activated bridge."
+  ],
+  "secret_handling": {
+    "secret_in_evidence": false,
+    "token_in_evidence": false,
+    "bridge_secret_persisted": false
+  },
+  "next_gate": "EXPLICIT_CONTROLLED_REACTIVATION_APPROVAL"
+}

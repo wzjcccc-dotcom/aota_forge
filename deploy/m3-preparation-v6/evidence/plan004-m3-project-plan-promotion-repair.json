@@ -1,0 +1,88 @@
+{
+  "record": "AF_PLAN004_M3_PROJECT_BOUND_PLAN_PROMOTION_REPAIR",
+  "status": "CANDIDATE_REPAIRED_NOT_ACTIVATED",
+  "captured_at": "2026-10-01",
+  "project_id": "aota_forge",
+  "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+  "milestone": "M3",
+  "governance_read": {
+    "plan_revision": "R16",
+    "plan_cas_revision": 18,
+    "source_revision": "6c960a180763d3f4f746112fbffb56818499f7e84fcc337a87247d5e1a00259d",
+    "source_digest": "6c960a180763d3f4f746112fbffb56818499f7e84fcc337a87247d5e1a00259d",
+    "current_status": "m3_validation_blocked_plan_bind_context_mismatch",
+    "current_blocker": "project_bound_plan_bind_unsupported",
+    "durable_finding": "PROJECT_BOUND_PLAN_BIND_UNSUPPORTED"
+  },
+  "governance_after": {
+    "plan_revision": "R17",
+    "plan_cas_revision": 19,
+    "source_revision": "94f9cf7e18d8977ede7db07777932b8e26fefb1fde092c762de2d4cb01019713",
+    "source_digest": "94f9cf7e18d8977ede7db07777932b8e26fefb1fde092c762de2d4cb01019713",
+    "current_status": "ready_for_controlled_reactivation",
+    "current_blocker": "none",
+    "v4_controlled_reactivation_approved": false
+  },
+  "root_cause": {
+    "confirmed": true,
+    "finding": "BOUND_DELEGATE_CAPTURE",
+    "detail": "_UnboundAotaAdapter.invoke routed subsequent context.bind calls directly to the project-bound delegate",
+    "security_error_preserved": "PLAN_CONTEXT_MISMATCH"
+  },
+  "repair": {
+    "source_frontier": "aa40c5f37ec549276dd302f1a882e404a7ce993a",
+    "changed_source": [
+      "aota_forge/mcp_transport.py",
+      "aota_forge/runtime/task_main/context_binding.py",
+      "tests/test_plan004_m3_project_plan_promotion.py"
+    ],
+    "promotion_transition": "project_bound -> bound",
+    "promotion_is_context_switch": false,
+    "same_project_only": true,
+    "trusted_plan_resolution": true,
+    "durable_persist_before_delegate_swap": true,
+    "rollback_on_durable_failure": true
+  },
+  "validation": {
+    "focused_promotion_tests": "11 passed",
+    "plan003_same_session_and_resume": "44 passed",
+    "context_contract_and_switch_guard": "61 passed",
+    "m1_contract": "6 passed",
+    "m2_bridge_and_router": "9 passed",
+    "mcp_transport_surface": "26 passed",
+    "socket_wiring_candidate": "2 passed",
+    "tools_list": ["aota.invoke"],
+    "ruff": "NOT_RUN_TOOL_UNAVAILABLE"
+  },
+  "real_path_v2": {
+    "status": "PASS",
+    "opencode_version": "1.18.30",
+    "reference_commit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+    "source_frontier": "aa40c5f37ec549276dd302f1a882e404a7ce993a",
+    "p1_bootstrap_inspect_unbound": true,
+    "p2_project_only_bind_project_bound": true,
+    "p3_same_session_plan_promotion_bound": true,
+    "plan_context_mismatch": false,
+    "same_session": true,
+    "durable_binding_record": true,
+    "real_mcp_correlation": true,
+    "exact_call_correlation": true,
+    "one_shared_bridge_epoch": true,
+    "token_not_model_visible": true,
+    "mcp_public_tool_count": 1,
+    "mcp_tool_names": ["aota.invoke"],
+    "session_ref": "ses_f09cc3c00ffea2MaPQtCObi44W",
+    "bridge_id": "qVaRkYxH2e78pm7jk08GqA",
+    "secret_in_evidence": false
+  },
+  "candidate_scope": {
+    "production_installation": false,
+    "production_configuration_changed": false,
+    "production_service_restarted": false,
+    "production_reactivation_performed": false,
+    "remote_push": false,
+    "opencode_upstream_changed": false,
+    "prior_candidates_overwritten": false
+  },
+  "next_gate": "EXPLICIT_V4_CONTROLLED_REACTIVATION_APPROVAL"
+}

@@ -1,0 +1,15 @@
+{
+  "candidate_version": "m3-preparation-v6",
+  "new_reactivation_approval_required": true,
+  "preserve_existing_prior_backup": true,
+  "prior_candidate_manifest": "../m3-preparation-v5r1/artifact-manifest.json",
+  "prior_candidate_manifest_sha256": "d605e4a3968f3ec2591ba7baa6536703157476d2208a3af5e0f081ee944f2d4f",
+  "prior_candidate_version": "m3-preparation-v5r1",
+  "prior_live_runtime_at_package_build": "/home/latios/.local/share/aota-forge/plan004-m3-v5r1-runtime-71e821777e47-d605e4a3968f",
+  "prior_rollback_reference": "../m3-preparation-v5r1/rollback/rollback-artifact-reference.json",
+  "production_rollback_executed": false,
+  "reference_version": 1,
+  "secret_in_reference": false,
+  "source_repair_frontier": "875a0b1f650d77b2ec9b6728401456977e10b730",
+  "token_in_reference": false
+}
