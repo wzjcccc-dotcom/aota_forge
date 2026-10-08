@@ -11,6 +11,10 @@ imported by the role catalog and by the ref-scoped authority locator alike).
 
 from __future__ import annotations
 
+GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION = (
+    "governance.terminal_projection.reconcile"
+)
+
 # Operations whose unbound authority is located by the canonical ``plan_ref``
 # input (the smallest existing-ref carrier; declared on these canonical
 # descriptors in .aota/contracts/operations.yaml). Workspace reads/searches
@@ -43,6 +47,7 @@ TASK_MAIN_UNBOUND_EXTRAS: frozenset[str] = frozenset(
     {
         "governance.plan",
         "governance.project",
+        GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
         "help",
         "host.status",
         "operations.list",
@@ -66,5 +71,6 @@ __all__ = [
     "PLAN_REF_SCOPED_OPERATIONS",
     "TASK_MAIN_UNBOUND_EXTRAS",
     "TASK_MAIN_UNBOUND_OPERATIONS",
+    "GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION",
     "canonical_task_main_operations",
 ]

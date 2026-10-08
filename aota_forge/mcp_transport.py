@@ -74,7 +74,10 @@ from aota_forge.work_plane.workspace_tools import (
     BoundedWorkspaceToolProvider,
     WorkspaceAuthorityEvidence,
 )
-from aota_forge.work_plane.task_main_exposure import TASK_MAIN_UNBOUND_OPERATIONS
+from aota_forge.work_plane.task_main_exposure import (
+    GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
+    TASK_MAIN_UNBOUND_OPERATIONS,
+)
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 from aota_forge.core.execution.durable_state import is_bound_origin_session_ref
 from aota_forge.work_plane.tool_result_governance import (
@@ -320,6 +323,7 @@ INTROSPECTION_OPERATIONS: tuple[str, ...] = (
 GOVERNANCE_OPERATIONS: tuple[str, ...] = (
     "governance.project",
     "governance.plan",
+    GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
 )
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
 # operations are Agent-visible through the same single aota.invoke transport.
@@ -956,6 +960,8 @@ def _invoke_core_ingress(
     except Exception as exc:  # noqa: BLE001 - transport boundary
         message = _bounded_failure_message(str(exc))
         return _governed_error(binding, operation, "GOVERNED_OPERATION_FAILURE", message)
+    if isinstance(envelope, ToolResponse):
+        return _governed_from_response(binding, operation, envelope)
     if not isinstance(envelope, dict) or envelope.get("ok") is not True:
         error = envelope.get("error") if isinstance(envelope, dict) else None
         code = str(error.get("code") if isinstance(error, dict) else "GOVERNED_OPERATION_FAILURE")
@@ -1502,6 +1508,7 @@ _HELP_RELEVANT_SKILLS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("operations.list", "host.status", "runtime.status"), "aota-task-main-control@1.0.0"),
     (("governance.project",), "aota-project-governance@1.0.0"),
     (("governance.plan",), "aota-plan-governance@1.0.0"),
+    ((GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,), "aota-plan-governance@1.0.0"),
 )
 
 

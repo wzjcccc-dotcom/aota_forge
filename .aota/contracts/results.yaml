@@ -10,6 +10,12 @@ contracts:
   - governance.project
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'
+- name: result.governance.terminal_projection.reconcile.v1
+  description: Verified terminal Local Plan Governance projection reconciliation result
+  compatible_operations:
+  - governance.terminal_projection.reconcile
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
 - name: canonical_dispatch_result.v1
   description: Canonical dispatch result contract for execution task start
   compatible_operations:

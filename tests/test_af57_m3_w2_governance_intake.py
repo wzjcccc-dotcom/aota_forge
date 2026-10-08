@@ -214,10 +214,21 @@ def test_governance_intake_fails_closed_without_trusted_context(tmp_path: Path) 
 
 
 def test_governance_families_use_descriptor_help_and_single_transport() -> None:
-    assert set(GOVERNANCE_OPERATIONS) == {"governance.project", "governance.plan"}
+    assert set(GOVERNANCE_OPERATIONS) == {
+        "governance.project",
+        "governance.plan",
+        "governance.terminal_projection.reconcile",
+    }
     project_help = help_operation_projection("governance.project")
     plan_help = help_operation_projection("governance.plan")
+    terminal_reconcile_help = help_operation_projection(
+        "governance.terminal_projection.reconcile"
+    )
     assert "mode" in project_help["required_inputs"]
     assert "project_id" in plan_help["required_inputs"]
     assert project_help["relevant_skill_ref"] == "aota-project-governance@1.0.0"
     assert plan_help["relevant_skill_ref"] == "aota-plan-governance@1.0.0"
+    assert terminal_reconcile_help["required_inputs"] == []
+    assert terminal_reconcile_help["optional_inputs"] == []
+    assert terminal_reconcile_help["read_or_write"] == "write"
+    assert terminal_reconcile_help["relevant_skill_ref"] == "aota-plan-governance@1.0.0"

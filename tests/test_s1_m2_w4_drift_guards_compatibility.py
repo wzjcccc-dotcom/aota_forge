@@ -129,7 +129,7 @@ def _diagnostic_digest(entries: list[dict]) -> str:
 
 def test_deterministic_operation_snapshot():
     snap = _operation_snapshot(canonical_root())
-    assert len(snap) == 24
+    assert len(snap) == 44
     names = [s["name"] for s in snap]
     assert names == sorted(names)
     for s in snap:
@@ -188,7 +188,7 @@ def test_operations_mapping_key_order_invariant(tmp_path: pathlib.Path):
     snap_orig = _operation_snapshot(root)
     snap_reordered = _operation_snapshot(tmp_path)
     # Compare to_dict parity and contract_hash parity
-    assert len(snap_orig) == len(snap_reordered) == 24
+    assert len(snap_orig) == len(snap_reordered) == 44
     for a, b in zip(snap_orig, snap_reordered):
         assert a["name"] == b["name"]
         assert a["contract_hash"] == b["contract_hash"]
@@ -300,8 +300,8 @@ print(json.dumps(snapshot, sort_keys=True))
     a = run_once()
     b = run_once()
     assert a == b
-    assert len(a["names"]) == 24
-    # W2 baseline hashes remain 21; current has 24 (21 W2 + 3 W1) — verify W2 subset unchanged
+    assert len(a["names"]) == 44
+    # W2 baseline hashes remain unchanged; verify the frozen subset independently.
     for name, expected in W2_EXPECTED_HASHES.items():
         idx = a["names"].index(name)
         assert a["hashes"][idx] == expected
@@ -1153,9 +1153,9 @@ def test_guard_canonical_tree_pass():
     out = run_guard(canonical_root())
     assert out["status"] == "PASS", out["violations"]
     assert out["violations"] == []
-    assert out["operation_count"] == 24
+    assert out["operation_count"] == 44
     assert out["capability_count"] == 1
-    assert out["result_count"] == 4
+    assert out["result_count"] == 13
 
 
 def test_guard_output_deterministic():
@@ -1187,7 +1187,7 @@ def test_guard_violations_sorted():
 
 def test_w2_hash_parity_13_of_13():
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 24
+    assert len(m) == 44
     for name, expected in W2_EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 
@@ -1211,6 +1211,6 @@ def test_w3_strict_schema_regression():
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
-    # 1 capability, 3 results still
+    # One capability and thirteen existing result descriptors.
     assert len(load_capabilities(canonical_root())["contracts"]) == 1
-    assert len(load_results(canonical_root())["contracts"]) == 4
+    assert len(load_results(canonical_root())["contracts"]) == 13

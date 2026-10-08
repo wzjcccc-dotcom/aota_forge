@@ -470,6 +470,34 @@ contracts:
   - PROJECT_ROOT_REQUIRED
   - GOVERNANCE_PROJECTION_FAILED
   protocol_version: '1.0'
+- name: governance.terminal_projection.reconcile
+  description: Deterministically rebuilds generated Governance projection for one already-retired Local Plan using current server-bound Project and Plan authority
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: governance_projection
+  required_authority: trusted_project_plan_binding
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: deterministic derived projection reconciliation
+  result_contract: result.governance.terminal_projection.reconcile.v1
+  errors:
+  - AUTHORITY_DENIED
+  - TERMINAL_PRECONDITION_FAILED
+  - CURRENT_AUTHORITY_MISMATCH
+  - PROJECT_MISMATCH
+  - DURABLE_OWNER_READ_FAILED
+  - PROJECTION_READ_BACK_MISMATCH
+  - GOVERNANCE_PROJECTION_FAILED
+  - TERMINAL_PROJECTION_RECONCILIATION_FAILED
+  protocol_version: '1.0'
 - name: project.resolve
   description: resolve exactly one registered project deterministically (0/1/many fail-closed)
   inputs:

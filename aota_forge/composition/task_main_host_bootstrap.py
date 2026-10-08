@@ -62,6 +62,7 @@ from aota_forge.governance.project_store import (
     GovernanceMetadataAlreadyExistsError,
     GovernanceMetadataNotFoundError,
     PLAN_LIFECYCLE_ACTIVE,
+    PLAN_LIFECYCLE_RETIRED,
     StaleGovernanceMetadataRevisionError,
     USER_GATE_STATE_REQUIRED,
     USER_GATE_STATE_SATISFIED,
@@ -143,6 +144,9 @@ from aota_forge.work_plane.steward_finalizer import (
     TrustedUserGateState,
 )
 from aota_forge.work_plane.tool_surface import create_role_tool_surface
+from aota_forge.work_plane.task_main_exposure import (
+    GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
+)
 from aota_forge.work_plane.workspace_tools import (
     WORKSPACE_READ_DESCRIPTOR,
     WORKSPACE_SEARCH_DESCRIPTOR,
@@ -2646,6 +2650,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     trusted_review_authority: TrustedPlanAuthority | None = None
     accepted_frontier_authorization = None
     local_governance_root: Any = None
+    terminal_projection_reconciler = None
     if (
         trusted_plan.authority_binding is not None
         and trusted_plan.authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
@@ -2660,6 +2665,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         try:
             from aota_forge.adapters.plan_authority.local_governance import (
                 LocalPlanAuthorityDestination,
+                LocalPlanAuthorityReadAdapter,
             )
             from aota_forge.composition.plan_authority import (
                 resolve_bound_plan_authority,
@@ -2686,11 +2692,50 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 ),
             )
             authority_store = open_project_governance_store(governance_store_path)
-            authority_reader = resolve_bound_plan_authority(
-                trusted_plan.authority_binding,
-                local_destination=local_destination,
-                governance_store=authority_store,
+            current_record = authority_store.get_plan(project_id, plan_id)
+            if (
+                current_record is None
+                or current_record.project_id != project_id
+                or current_record.plan_id != plan_id
+                or current_record.authority.source_kind
+                != trusted_plan.authority_binding.source_kind
+                or current_record.authority.authority_ref
+                != trusted_plan.authority_binding.authority_ref
+            ):
+                raise ReviewAdoptionError(
+                    "current Project Governance record does not match the trusted Plan identity"
+                )
+            from aota_forge.governance.terminal_projection import (
+                create_terminal_projection_reconciler,
             )
+
+            terminal_projection_reconciler = create_terminal_projection_reconciler(
+                project_id=project_id,
+                plan_id=plan_id,
+                project_root=sandbox.project_root,
+                governance_root=local_governance_root,
+                governance_store=governance_store_path,
+                coordinator_store=coord_store,
+                execution_store=exec_store,
+            )
+            if current_record.lifecycle_state == PLAN_LIFECYCLE_RETIRED:
+                # A closed Plan may still need its derived projection repaired.
+                # Its bootstrap revision/digest remain identity provenance only;
+                # the Governance-domain capability re-reads current authority.
+                authority_reader = LocalPlanAuthorityReadAdapter(
+                    local_destination,
+                    binding=current_record.authority,
+                )
+            elif current_record.lifecycle_state == PLAN_LIFECYCLE_ACTIVE:
+                authority_reader = resolve_bound_plan_authority(
+                    trusted_plan.authority_binding,
+                    local_destination=local_destination,
+                    governance_store=authority_store,
+                )
+            else:
+                raise ReviewAdoptionError(
+                    "current Project Governance record has an unsupported lifecycle"
+                )
             observed_binding = getattr(authority_reader, "binding", None)
             snapshot = authority_reader.load()
             if not isinstance(observed_binding, PlanAuthorityBinding):
@@ -2702,27 +2747,28 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 raise ReviewAdoptionError(
                     "local Plan authority changed after the bound source observation"
                 )
-            trusted_review_authority = trusted_plan_authority_from_binding(
-                project_id=project_id,
-                binding=observed_binding,
-                authoritative_reader=authority_reader,
-            )
-            current_coordinator_id = coordinator_id
-            current_state = coord_store.get(current_coordinator_id)
-            if current_state is not None:
-                trusted_frontier = read_trusted_git_frontier(
-                    sandbox,
-                    entry_base=live_view.entry_base,
+            if current_record.lifecycle_state == PLAN_LIFECYCLE_ACTIVE:
+                trusted_review_authority = trusted_plan_authority_from_binding(
+                    project_id=project_id,
+                    binding=observed_binding,
+                    authoritative_reader=authority_reader,
                 )
-                accepted_frontier_authorization = mint_accepted_frontier_authorization(
-                    state=current_state,
-                    live_plan_view=live_view,
-                    plan_id=plan_id,
-                    trusted_frontier=trusted_frontier,
-                    trusted_authority=trusted_review_authority,
-                    reviewer_attempt=reviewer_attempt,
-                    review_cycle=review_cycle,
-                )
+                current_coordinator_id = coordinator_id
+                current_state = coord_store.get(current_coordinator_id)
+                if current_state is not None:
+                    trusted_frontier = read_trusted_git_frontier(
+                        sandbox,
+                        entry_base=live_view.entry_base,
+                    )
+                    accepted_frontier_authorization = mint_accepted_frontier_authorization(
+                        state=current_state,
+                        live_plan_view=live_view,
+                        plan_id=plan_id,
+                        trusted_frontier=trusted_frontier,
+                        trusted_authority=trusted_review_authority,
+                        reviewer_attempt=reviewer_attempt,
+                        review_cycle=review_cycle,
+                    )
         except Exception as exc:
             raise TrustedBindingError(
                 f"trusted local Plan authority re-read failed: {exc}"
@@ -2867,6 +2913,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         next_milestone_view=next_view,
         session_available=True,
         coordinator_id=coordinator_id,
+        terminal_projection_reconciler=terminal_projection_reconciler,
     )
     handoff = TaskHandoff(
         work_role="task-main",
@@ -2893,7 +2940,11 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     tool_surface = create_role_tool_surface(
         "task-main",
         eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection", "handoff.write", "handoff.open", "task.start"),
-        progressive=("result.hydrate", "restricted_shell.run"),
+        progressive=(
+            "result.hydrate",
+            "restricted_shell.run",
+            GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
+        ),
     )
     # W3 broad read: task-main may perform small targeted project search/read
     # without needing Analyst or Worker TaskHandoff. Provide read authorities

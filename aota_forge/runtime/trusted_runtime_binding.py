@@ -114,6 +114,7 @@ class TrustedTaskMainRuntimeContext:
     next_milestone_view: Any | None = None
     session_available: bool = True
     coordinator_id: str | None = None
+    terminal_projection_reconciler: Any | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -147,6 +148,12 @@ class TrustedTaskMainRuntimeContext:
             raise TrustedBindingError("reviewer_canonical_task_id_resolver must be callable or None")
         if self.reviewer_dispatch_resolver is not None and not callable(self.reviewer_dispatch_resolver):
             raise TrustedBindingError("reviewer_dispatch_resolver must be callable or None")
+        if self.terminal_projection_reconciler is not None and not callable(
+            self.terminal_projection_reconciler
+        ):
+            raise TrustedBindingError(
+                "terminal_projection_reconciler must be callable or None"
+            )
         if type(self.session_available) is not bool:
             raise TrustedBindingError("session_available must be bool")
         if self.coordinator_id is not None:

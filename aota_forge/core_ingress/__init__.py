@@ -98,6 +98,7 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "github.issue.comments.read",
     "github.issue.update",
     "github.issue.comment.update",
+    "governance.terminal_projection.reconcile",
     "handoff.write",
     "handoff.open",
     "task.start",
@@ -923,6 +924,79 @@ def _map_role_bootstrap_exception(exc: Exception) -> str:
     return "GOVERNED_OPERATION_FAILURE"
 
 
+def _dispatch_terminal_projection_reconciliation(
+    binding: CanonicalDispatchBinding,
+) -> ToolResponse:
+    """Invoke the trusted Governance capability through the canonical plane."""
+    handoff_role = getattr(getattr(binding.handoff, "work_role", None), "value", None)
+    if not isinstance(handoff_role, str):
+        handoff_role = str(getattr(binding.handoff, "work_role", ""))
+    surface_role = getattr(getattr(binding.tool_surface, "work_role", None), "value", None)
+    if not isinstance(surface_role, str):
+        surface_role = str(getattr(binding.tool_surface, "work_role", ""))
+    if handoff_role != "task-main" or surface_role != "task-main":
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "terminal projection reconciliation requires task-main role"}
+        )
+    try:
+        from aota_forge.adapters.plan_authority.binding import (
+            PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            PlanAuthorityBinding,
+        )
+        from aota_forge.adapters.plan_authority.local_governance import (
+            local_plan_authority_reference,
+        )
+
+        plan_binding = binding.plan_authority_binding
+        if (
+            not isinstance(plan_binding, PlanAuthorityBinding)
+            or plan_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or plan_binding.authority_ref
+            != local_plan_authority_reference(binding.project_id, plan_binding.plan_id)
+            or getattr(binding.trusted_task_main_context.live_plan_view, "plan_authority", None)
+            != plan_binding.authority_ref
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted Local Plan identity is absent or mismatched"}
+            )
+    except Exception:
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "trusted Local Plan identity is unavailable"}
+        )
+    trusted_context = binding.trusted_task_main_context
+    reconciler = getattr(trusted_context, "terminal_projection_reconciler", None)
+    if not callable(reconciler):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "trusted terminal projection context is absent"}
+        )
+    try:
+        from aota_forge.governance.terminal_projection import (
+            TerminalProjectionReconciliationResult,
+        )
+
+        result = reconciler()
+        if not isinstance(result, TerminalProjectionReconciliationResult):
+            return ToolResponse.failure(
+                {"code": "INTERNAL_MECHANICAL_ERROR", "message": "trusted reconciler returned an invalid result"}
+            )
+        if (
+            result.project_id != binding.project_id
+            or result.plan_id != plan_binding.plan_id
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted reconciler identity does not match this binding"}
+            )
+        return ToolResponse.success(result.to_dict())
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        return ToolResponse.failure(
+            {
+                "code": code if isinstance(code, str) and code else "TERMINAL_PROJECTION_RECONCILIATION_FAILED",
+                "message": "terminal projection reconciliation did not verify",
+            }
+        )
+
+
 def _map_skill_open_exception(exc: Exception) -> str:
     """Typed skill.open identity (no string classification).
 
@@ -1615,6 +1689,9 @@ def _dispatch_tool_operation_inner(
             response = ToolResponse.success(payload)
             _persist_governed_if_needed(binding, response, operation)
             return response
+
+        if operation == "governance.terminal_projection.reconcile":
+            return _dispatch_terminal_projection_reconciliation(binding)
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
             return _dispatch_task_main(operation, binding, validated)
