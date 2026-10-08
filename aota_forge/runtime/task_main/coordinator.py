@@ -62,6 +62,7 @@ from aota_forge.core.execution.durable_state import (
     UnboundOriginSessionError,
     is_placeholder_origin_session_ref,
 )
+from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.runtime.completion import (
     AdmissionDecision,
     DurableCompletionCoordinator,
@@ -80,6 +81,7 @@ from aota_forge.runtime.task_main.coordinator_store import (
 from aota_forge.runtime.task_main.context_binding import (
     ContextBindingError,
     DurableTaskMainContextBinding,
+    PLAN_BOUND,
 )
 from aota_forge.work_plane.compiler import (
     TrustedExecutionBinding,
@@ -786,8 +788,79 @@ class DispatchReport:
         return len(self.dispatched)
 
 
-def _default_coordinator_id(*, project_id: str, milestone_id: str) -> str:
-    return f"{project_id}:{milestone_id}"
+def default_coordinator_id(
+    *, project_id: str, plan_id: str | None, milestone_id: str
+) -> str:
+    """Return the one canonical coordinator identity for a trusted Plan context.
+
+    ``plan_id=None`` is retained only for plan-less legacy callers. A bound
+    Plan always includes its canonical internal ID, so equal Milestone IDs in
+    different Plans cannot collide.
+    """
+    project = _require_non_empty_str(project_id, "project_id")
+    milestone = _require_non_empty_str(milestone_id, "milestone_id", max_length=128)
+    if plan_id is None:
+        return f"{project}:{milestone}"
+    if not isinstance(plan_id, str) or not is_plan_id(plan_id):
+        raise CoordinatorBindingError("plan_id must be a canonical trusted Plan ID")
+    return f"{project}:{plan_id}:{milestone}"
+
+
+def coordinator_matches_live_plan(
+    state: TaskMainCoordinatorState,
+    *,
+    project_id: str,
+    live_plan_view: MilestonePlanView,
+    context_binding: DurableTaskMainContextBinding | None,
+) -> bool:
+    """Check all durable coordinator dimensions before routing to a record.
+
+    A legacy record without a PlanAuthorityBinding remains readable and is
+    compatible only with a plan-less legacy view. A bound Plan never adopts a
+    legacy identity by coordinator ID alone.
+    """
+    if not isinstance(state, TaskMainCoordinatorState):
+        return False
+    if state.status not in {
+        CoordinatorStatus.ACTIVE,
+        CoordinatorStatus.USER_GATE_REQUIRED,
+        CoordinatorStatus.SESSION_RECOVERY_REQUIRED,
+    }:
+        return False
+    if (
+        state.project_id != project_id
+        or state.plan_authority != live_plan_view.plan_authority
+        or state.plan_digest != live_plan_view.plan_digest
+        or state.plan_source_revision != live_plan_view.plan_source_revision
+        or state.milestone_id != live_plan_view.milestone_id
+        or state.entry_base != live_plan_view.entry_base
+        or state.work_items != tuple(sorted(live_plan_view.graph.work_items))
+        or state.dependencies != tuple(sorted(live_plan_view.graph.dependencies))
+    ):
+        return False
+    if context_binding is None:
+        return state.context_binding is None
+    if (
+        not isinstance(context_binding, DurableTaskMainContextBinding)
+        or context_binding.binding_kind != PLAN_BOUND
+        or state.context_binding is None
+    ):
+        return False
+    try:
+        context_binding.assert_live_plan(
+            project_id=project_id,
+            plan_authority=live_plan_view.plan_authority,
+            plan_digest=live_plan_view.plan_digest,
+            plan_source_revision=live_plan_view.plan_source_revision,
+            origin_task_main_session_ref=context_binding.origin_task_main_session_ref,
+        )
+        state.context_binding.assert_compatible(context_binding)
+    except Exception:
+        return False
+    return (
+        state.context_binding.plan_binding.plan_id
+        == context_binding.plan_binding.plan_id
+    )
 
 
 def _binding_matches(state: TaskMainCoordinatorState, view: MilestonePlanView) -> bool:
@@ -2004,10 +2077,24 @@ def activate_milestone(
             plan_source_revision=plan_view.plan_source_revision,
             origin_task_main_session_ref=session_ref,
         )
+    trusted_plan_id = (
+        context_binding.plan_binding.plan_id
+        if context_binding is not None
+        and context_binding.binding_kind == PLAN_BOUND
+        else None
+    )
+    canonical_id = default_coordinator_id(
+        project_id=project_id,
+        plan_id=trusted_plan_id,
+        milestone_id=plan_view.milestone_id,
+    )
+    # Bound Plan activation always uses the canonical Plan-aware identity.
+    # An explicitly supplied legacy ID is never allowed to select the old
+    # coordinator. Plan-less callers retain their historical explicit-ID path.
     resolved_id = (
         _require_non_empty_str(coordinator_id, "coordinator_id")
-        if coordinator_id is not None
-        else _default_coordinator_id(project_id=project_id, milestone_id=plan_view.milestone_id)
+        if coordinator_id is not None and trusted_plan_id is None
+        else canonical_id
     )
 
     existing = store.get(resolved_id)
@@ -2263,6 +2350,8 @@ __all__ = [
     "build_work_item_handoff_ref",
     "commit_task_main_work_projection",
     "dispatch_identity_for",
+    "default_coordinator_id",
+    "coordinator_matches_live_plan",
     "evaluate_ready_work_items",
     "recover_coordinator",
     "resolve_task_main_work_handoff",

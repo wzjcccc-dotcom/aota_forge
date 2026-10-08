@@ -605,6 +605,9 @@ def create_task_main_control_service(
     review_adoption_git: GitPort | None = None,
     trusted_plan_authority: TrustedPlanAuthority | None = None,
     context_binding: DurableTaskMainContextBinding | None = None,
+    current_plan_eligibility_resolver: Callable[
+        [str, MilestonePlanView, DurableTaskMainContextBinding], bool
+    ] | None = None,
 ) -> TaskMainControlService:
     """Typed task-main-only control service (``aota-task-main`` only)."""
     store = (
@@ -649,6 +652,7 @@ def create_task_main_control_service(
         review_adoption_git=review_adoption_git,
         trusted_plan_authority=trusted_plan_authority,
         context_binding=context_binding,
+        current_plan_eligibility_resolver=current_plan_eligibility_resolver,
     )
 
 

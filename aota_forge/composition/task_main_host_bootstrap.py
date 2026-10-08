@@ -61,6 +61,7 @@ from aota_forge.governance.cross_project_grant import UserGateApproval
 from aota_forge.governance.project_store import (
     GovernanceMetadataAlreadyExistsError,
     GovernanceMetadataNotFoundError,
+    PLAN_LIFECYCLE_ACTIVE,
     StaleGovernanceMetadataRevisionError,
     USER_GATE_STATE_REQUIRED,
     USER_GATE_STATE_SATISFIED,
@@ -76,7 +77,10 @@ from aota_forge.governance.stewardship import (
 )
 from aota_forge.runtime.config import TASK_MAIN_RUNTIME_PATH_THIN
 from aota_forge.runtime.task_main.context_binding import DurableTaskMainContextBinding
-from aota_forge.runtime.task_main.coordinator import MilestonePlanView
+from aota_forge.runtime.task_main.coordinator import (
+    MilestonePlanView,
+    default_coordinator_id,
+)
 from aota_forge.runtime.task_main.coordinator_store import (
     FileBackedTaskMainCoordinatorStore,
 )
@@ -433,6 +437,91 @@ def _trusted_plan_identity_from_bootstrap(
         raise TrustedBindingError(
             f"bootstrap trusted Plan identity invalid: {exc}"
         ) from exc
+
+
+def _current_local_plan_route_eligible(
+    *,
+    project_id: str,
+    live_plan_view: MilestonePlanView,
+    context_binding: DurableTaskMainContextBinding,
+    trusted_plan_binding: PlanAuthorityBinding,
+    governance_base: Path | None,
+    governance_store_path: Path | None,
+) -> bool:
+    """Verify active lifecycle plus the exact current local Plan source read-only."""
+    binding = context_binding.plan_binding
+    if (
+        governance_base is None
+        or governance_store_path is None
+        or context_binding.project_id != project_id
+        or context_binding.binding_kind != "PLAN_BOUND"
+        or binding != trusted_plan_binding
+        or binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        or binding.source_revision is None
+        or binding.source_digest is None
+        or live_plan_view.plan_authority != binding.authority_ref
+        or live_plan_view.plan_digest != binding.source_digest
+        or str(live_plan_view.plan_source_revision) != str(binding.source_revision)
+    ):
+        return False
+    authority_store = None
+    try:
+        from aota_forge.adapters.plan_authority.local_governance import (
+            LocalPlanAuthorityDestination,
+        )
+        from aota_forge.composition.plan_authority import (
+            resolve_bound_plan_authority,
+        )
+        from aota_forge.composition.project_governance import (
+            open_project_governance_store,
+        )
+        from aota_forge.core.identity.ids import make_id
+        from aota_forge.core.identity.kinds import IdKind, SubjectKind
+        from aota_forge.core.identity.refs import object_ref_subject
+        from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
+
+        local_root = LocalGovernanceRootBinding.from_trusted_base(
+            governance_base,
+            project_id=project_id,
+        )
+        destination = LocalPlanAuthorityDestination(
+            governance_root=local_root,
+            plan_id=binding.plan_id,
+            expected_ref=object_ref_subject(
+                make_id(IdKind.SUBJECT, binding.plan_id, sub_kind=SubjectKind.PLAN)
+            ),
+        )
+        authority_store = open_project_governance_store(governance_store_path)
+        observed_record = authority_store.get_plan(project_id, binding.plan_id)
+        if (
+            observed_record is None
+            or observed_record.lifecycle_state != PLAN_LIFECYCLE_ACTIVE
+            or observed_record.authority != binding
+        ):
+            return False
+        reader = resolve_bound_plan_authority(
+            binding,
+            local_destination=destination,
+            governance_store=authority_store,
+        )
+        first = reader.load()
+        second = reader.load()
+        current_record = authority_store.get_plan(project_id, binding.plan_id)
+        return bool(
+            current_record == observed_record
+            and current_record is not None
+            and current_record.lifecycle_state == PLAN_LIFECYCLE_ACTIVE
+            and current_record.authority == binding
+            and str(first.revision) == str(binding.source_revision)
+            and first.digest == binding.source_digest
+            and second.revision == first.revision
+            and second.digest == first.digest
+        )
+    except Exception:
+        return False
+    finally:
+        if authority_store is not None:
+            authority_store.close()
 
 
 def _readiness_from_durable_state(
@@ -1727,6 +1816,26 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     live_view = _view_from_dict(live_view_dict)
     next_view = _view_from_dict(next_view_dict) if next_view_dict else None
     trusted_plan = _trusted_plan_identity_from_bootstrap(live_view, data)
+    plan_binding = trusted_plan.authority_binding
+    if (
+        plan_binding is not None
+        and plan_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+    ):
+        if plan_binding.source_revision is None or plan_binding.source_digest is None:
+            raise TrustedBindingError(
+                "local Plan coordinator routing requires trusted source revision and digest"
+            )
+        coordinator_id = default_coordinator_id(
+            project_id=project_id,
+            plan_id=plan_binding.plan_id,
+            milestone_id=live_view.milestone_id,
+        )
+    elif not isinstance(coordinator_id, str) or not coordinator_id.strip():
+        coordinator_id = default_coordinator_id(
+            project_id=project_id,
+            plan_id=None,
+            milestone_id=live_view.milestone_id,
+        )
     semantic_facts = _semantic_facts_from_bootstrap(data)
 
     # Reconstruct stores (file-backed, durable)
@@ -2137,7 +2246,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                         opened=opened,
                         payload=payload,
                         state=coord_store.get(
-                            coordinator_id or f"{project_id}:{live_view.milestone_id}"
+                            coordinator_id
                         ),
                         live_view=live_view,
                         sandbox=sandbox,
@@ -2291,7 +2400,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         #    refresh, survives restart via the existing coordinator store).
         #    Fresh read each call so commit + restart are observed without
         #    rebuilding the binding.
-        _durable_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        _durable_coordinator_id = coordinator_id
         try:
             _durable_state = coord_store.get(_durable_coordinator_id)
         except Exception:
@@ -2332,7 +2441,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     _auto_resolver = create_automatic_governed_evidence_resolver(
         execution_store=exec_store,
         coordinator_store=coord_store,
-        coordinator_id=coordinator_id or f"{project_id}:{live_view.milestone_id}",
+        coordinator_id=coordinator_id,
         live_plan_view=live_view,
         handoff_resolver=handoff_resolver,
         project_id=project_id,
@@ -2345,7 +2454,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         return _auto_resolver(wi)
 
     def reviewer_handoff_resolver():
-        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        current_coordinator_id = coordinator_id
         try:
             current_state = coord_store.get(current_coordinator_id)
         except Exception:
@@ -2417,7 +2526,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         # Review truth must come from governed review/reconciliation path
         # (AF_RECONCILIATION_OR_GOVERNED_REVIEW). If review evidence is
         # unavailable, fail closed (do not fabricate PASS).
-        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        current_coordinator_id = coordinator_id
         current_state = coord_store.get(current_coordinator_id)
         frontier_marker = getattr(current_state, "frontier_ref", None)
         trusted_frontier_ref = (
@@ -2458,7 +2567,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             raise TrustedBindingError(
                 "integrated-review dispatch requires the trusted worktree sandbox"
             )
-        current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+        current_coordinator_id = coordinator_id
         try:
             current_state = coord_store.get(current_coordinator_id)
         except Exception:
@@ -2597,7 +2706,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 binding=observed_binding,
                 authoritative_reader=authority_reader,
             )
-            current_coordinator_id = coordinator_id or f"{project_id}:{live_view.milestone_id}"
+            current_coordinator_id = coordinator_id
             current_state = coord_store.get(current_coordinator_id)
             if current_state is not None:
                 trusted_frontier = read_trusted_git_frontier(
@@ -2686,6 +2795,29 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             raise TrustedBindingError(
                 f"durable task-main context binding failed closed: {exc}"
             ) from exc
+
+    def current_plan_eligibility_resolver(
+        route_project_id: str,
+        route_view: MilestonePlanView,
+        route_context: DurableTaskMainContextBinding,
+    ) -> bool:
+        """Re-read active local Plan lifecycle and its exact bound source."""
+        if (
+            route_project_id != project_id
+            or route_view != live_view
+            or route_context != durable_context_binding
+            or not isinstance(trusted_plan.authority_binding, PlanAuthorityBinding)
+        ):
+            return False
+        return _current_local_plan_route_eligible(
+            project_id=route_project_id,
+            live_plan_view=route_view,
+            context_binding=route_context,
+            trusted_plan_binding=trusted_plan.authority_binding,
+            governance_base=governance_base,
+            governance_store_path=governance_store_path,
+        )
+
     control_service = create_task_main_control_service(
         coordinator_store=coord_store,
         execution_store=exec_store,
@@ -2702,6 +2834,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         review_adoption_worktree_root=sandbox,
         trusted_plan_authority=trusted_review_authority,
         context_binding=durable_context_binding,
+        current_plan_eligibility_resolver=current_plan_eligibility_resolver,
     )
     # Build the trusted task-main context (operator-owned)
     ctx = TrustedTaskMainRuntimeContext(
@@ -2892,7 +3025,11 @@ def write_bootstrap_file(
         "runtime_config_path": str(runtime_config_path.resolve()),
         "origin_task_main_session_ref": origin_task_main_session_ref,
         "executor_id": executor_id,
-        "coordinator_id": coordinator_id or f"{project_id}:{live_plan_view.milestone_id}",
+        "coordinator_id": coordinator_id or default_coordinator_id(
+            project_id=project_id,
+            plan_id=None,
+            milestone_id=live_plan_view.milestone_id,
+        ),
         "live_plan_view": view_to_dict(live_plan_view),
         "next_milestone_view": view_to_dict(next_milestone_view) if next_milestone_view else None,
     }
@@ -2914,6 +3051,19 @@ def write_bootstrap_file(
         if plan_authority_binding.authority_ref != live_plan_view.plan_authority:
             raise ValueError(
                 "plan_authority_binding must match the live Plan authority"
+            )
+        if plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+            if (
+                plan_authority_binding.source_revision is None
+                or plan_authority_binding.source_digest is None
+            ):
+                raise ValueError(
+                    "local Plan coordinator identity requires source revision and digest"
+                )
+            payload["coordinator_id"] = default_coordinator_id(
+                project_id=project_id,
+                plan_id=plan_authority_binding.plan_id,
+                milestone_id=live_plan_view.milestone_id,
             )
         payload["plan_authority_binding"] = plan_authority_binding.to_dict()
     if governance_base is not None:

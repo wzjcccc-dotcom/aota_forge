@@ -1411,12 +1411,6 @@ class DailyTaskMainLauncher:
 
         # ---- PHASE 2: bind real origin + continue the exact same session ----
         phase2_coordinator_id = coordinator_id
-        if (
-            ctx_pending.runtime_path != TASK_MAIN_RUNTIME_PATH_THIN
-            and ctx_pending.live_plan_view is not None
-        ):
-            milestone_id = ctx_pending.live_plan_view.milestone_id
-            phase2_coordinator_id = f"{project_id}:{milestone_id}" if milestone_id else None
         ctx = self.prepare(
             worktree_root=Path(worktree_root).resolve(),
             project_id=project_id,
