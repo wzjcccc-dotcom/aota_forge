@@ -105,6 +105,37 @@ class TaskMainControlAuthorityError(PermissionError):
     """Caller lacks task-main profile authority for this typed control."""
 
 
+class TaskMainProjectionConvergenceError(RuntimeError):
+    """Separates verified/unknown authority mutation from projection convergence."""
+
+    code = "PROJECTION_CONVERGENCE_BLOCKED"
+
+    def __init__(
+        self,
+        *,
+        authority_mutation: str,
+        projection_convergence: str = "BLOCKED",
+        cause_code: str,
+        cause_type: str,
+    ) -> None:
+        self.authority_mutation = authority_mutation
+        if projection_convergence not in {"BLOCKED", "NOT_ATTEMPTED"}:
+            raise ValueError("projection_convergence must be BLOCKED or NOT_ATTEMPTED")
+        self.projection_convergence = projection_convergence
+        self.cause_code = cause_code
+        self.cause_type = cause_type
+        self.code = (
+            "PROJECTION_CONVERGENCE_BLOCKED"
+            if projection_convergence == "BLOCKED"
+            else "PROJECTION_CONVERGENCE_NOT_ATTEMPTED"
+        )
+        super().__init__(
+            f"AUTHORITY_MUTATION={authority_mutation}; "
+            f"PROJECTION_CONVERGENCE={projection_convergence}; "
+            f"cause={cause_code or cause_type}"
+        )
+
+
 def _require_task_main_profile(profile: str | None) -> None:
     # AF-neutral authority check (D8): Core/runtime must not depend on Hermes
     # profile literal (AF_CORE_DEPENDS_ON_HERMES_PROFILE_NAME=no,
@@ -197,10 +228,24 @@ class TaskMainControlService:
             )
         self._current_plan_eligibility_resolver = current_plan_eligibility_resolver
 
-    def _refresh_projection_after_transition(self) -> None:
-        """Refresh derived Governance views after durable task-main mutation."""
+    def _refresh_projection_after_transition(
+        self, *, authority_mutation: str = "NOT_APPLICABLE"
+    ) -> None:
+        """Refresh derived views without hiding a post-mutation convergence gap."""
         if self._projection_refresh_hook is not None:
-            self._projection_refresh_hook()
+            try:
+                self._projection_refresh_hook()
+            except Exception as exc:
+                cause_code = getattr(exc, "code", None)
+                raise TaskMainProjectionConvergenceError(
+                    authority_mutation=(
+                        authority_mutation
+                        if authority_mutation in {"VERIFIED", "UNKNOWN", "NOT_APPLICABLE"}
+                        else "UNKNOWN"
+                    ),
+                    cause_code=cause_code if isinstance(cause_code, str) else "",
+                    cause_type=type(exc).__name__,
+                ) from exc
 
     # ---- canonical ownership seam (AF #46 M1/W2, D4) ----
     # Core/runtime owns Plan gate interpretation, coordinator identity
@@ -559,7 +604,33 @@ class TaskMainControlService:
             trusted_plan_authority=self._trusted_plan_authority,
         )
         outcome = runner.advance_once(session_available=session_available)
-        self._refresh_projection_after_transition()
+        authority_mutation = "NOT_APPLICABLE"
+        trusted_authority = self._trusted_plan_authority
+        stewardship_outcome = getattr(runner, "stewardship_outcome", None)
+        checkpoint_outcome = getattr(stewardship_outcome, "checkpoint_outcome", None)
+        checkpoint_kind = getattr(checkpoint_outcome, "kind", None)
+        checkpoint_kind = getattr(checkpoint_kind, "value", checkpoint_kind)
+        if (
+            trusted_authority is not None
+            and trusted_authority.authority_source_kind
+            == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            and checkpoint_kind == "PLAN_CLOSE"
+        ):
+            execution_state = getattr(stewardship_outcome, "execution_state", None)
+            execution_state = getattr(execution_state, "value", execution_state)
+            if execution_state == "FINALIZED":
+                authority_mutation = "VERIFIED"
+            else:
+                raise TaskMainProjectionConvergenceError(
+                    authority_mutation="UNKNOWN",
+                    projection_convergence="NOT_ATTEMPTED",
+                    cause_code=(
+                        getattr(stewardship_outcome, "error_code", None)
+                        or "LOCAL_PLAN_CLOSE_OUTCOME_UNKNOWN"
+                    ),
+                    cause_type="StewardshipOutcomeNotFinalized",
+                )
+        self._refresh_projection_after_transition(authority_mutation=authority_mutation)
         return outcome
 
     def submit_work_projection(
@@ -857,5 +928,6 @@ __all__ = [
     "WORKER_PROFILE",
     "TaskMainControlAuthorityError",
     "TaskMainControlService",
+    "TaskMainProjectionConvergenceError",
     "is_worker_allowed_to_call_task_main_control",
 ]

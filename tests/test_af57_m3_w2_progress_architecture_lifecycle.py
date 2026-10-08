@@ -10,7 +10,13 @@ from unittest.mock import patch
 
 import pytest
 
-from aota_forge.adapters.plan_authority.binding import PlanAuthorityBinding
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
+from aota_forge.adapters.plan_authority.local_governance import (
+    local_plan_authority_reference,
+)
 from aota_forge.composition.task_main import create_task_main_control_service
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import (
@@ -44,6 +50,12 @@ from aota_forge.runtime.task_main.coordinator_store import FileBackedTaskMainCoo
 from aota_forge.work_plane.handoff_runtime import WorkSemanticProjection
 from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 from aota_forge.work_plane.progression import MilestoneWorkItemGraph
+from tests.test_af57_m3_w2_governance_intake import (
+    PLAN_BODY as INTAKE_PLAN_BODY,
+    PLAN_ID as INTAKE_PLAN_ID,
+    PROJECT_ID as INTAKE_PROJECT_ID,
+    MANIFEST as INTAKE_MANIFEST,
+)
 
 
 PROJECT_ID = "aota_forge"
@@ -702,8 +714,31 @@ def test_promotion_rejects_invalid_generated_view_destination_before_authority_w
 
 
 def test_production_task_main_transition_refreshes_progress_without_direct_helper_call(tmp_path: Path):
+    project_root = tmp_path / "source"
+    (project_root / ".aota").mkdir(parents=True)
+    (project_root / ".aota" / "project.yaml").write_text(
+        INTAKE_MANIFEST.replace(INTAKE_PROJECT_ID, PROJECT_ID), encoding="utf-8"
+    )
+    governance_base = tmp_path / "plans"
+    governance_root_path = governance_base / PROJECT_ID
+    plan_directory = governance_root_path / PLAN_ID
+    plan_directory.mkdir(parents=True)
+    plan_body = INTAKE_PLAN_BODY.replace(INTAKE_PROJECT_ID, PROJECT_ID).replace(
+        INTAKE_PLAN_ID, PLAN_ID
+    )
+    (plan_directory / "plan.md").write_text(plan_body, encoding="utf-8")
+    governance_root = LocalGovernanceRootBinding.from_trusted_base(
+        governance_base, project_id=PROJECT_ID
+    )
+    authority = PlanAuthorityBinding(
+        plan_id=PLAN_ID,
+        source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        authority_ref=local_plan_authority_reference(PROJECT_ID, PLAN_ID),
+        source_revision=_digest(plan_body),
+        source_digest=_digest(plan_body),
+    )
     governance = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
-    governance.put_plan(_record())
+    governance.put_plan(replace(_record(), authority=authority))
     coordinator = FileBackedTaskMainCoordinatorStore(tmp_path / "coordinators.json")
     coordinator.create(_coordinator())
     execution = FileBackedExecutionStateStore(tmp_path / "executions.json")
@@ -712,8 +747,8 @@ def test_production_task_main_transition_refreshes_progress_without_direct_helpe
         state_store=execution,
         origin_session_ref="session:w2",
     )
-    (tmp_path / "STATUS.md").write_text("stale projection\n", encoding="utf-8")
-    (tmp_path / "MAP.md").write_text("stale projection\n", encoding="utf-8")
+    (governance_root_path / "STATUS.md").write_text("stale projection\n", encoding="utf-8")
+    (governance_root_path / "MAP.md").write_text("stale projection\n", encoding="utf-8")
     plan_view = MilestonePlanView(
         plan_authority=f"local-governance:{PROJECT_ID}/{PLAN_ID}",
         plan_digest="a" * 64,
@@ -728,6 +763,11 @@ def test_production_task_main_transition_refreshes_progress_without_direct_helpe
             execution_store=execution,
             execution_dispatcher=dispatcher,
             governance_store=governance,
+            projection_project_id=PROJECT_ID,
+            projection_plan_id=PLAN_ID,
+            projection_project_root=project_root,
+            projection_governance_root=governance_root,
+            projection_authority_binding=authority,
         )
         service.submit_work_projection(
             profile=AF_TASK_MAIN_ROLE,
@@ -741,8 +781,8 @@ def test_production_task_main_transition_refreshes_progress_without_direct_helpe
                 semantic_stop_expectations=("stop on semantic uncertainty",),
             ),
         )
-        status = (tmp_path / "STATUS.md").read_text(encoding="utf-8")
-        map_view = (tmp_path / "MAP.md").read_text(encoding="utf-8")
+        status = (governance_root_path / "STATUS.md").read_text(encoding="utf-8")
+        map_view = (governance_root_path / "MAP.md").read_text(encoding="utf-8")
         assert "stale projection" not in status
         assert "active_coordinator_count: 1" in status
         assert "stale projection" not in map_view

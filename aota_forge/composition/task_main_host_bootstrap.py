@@ -2645,6 +2645,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
 
     trusted_review_authority: TrustedPlanAuthority | None = None
     accepted_frontier_authorization = None
+    local_governance_root: Any = None
     if (
         trusted_plan.authority_binding is not None
         and trusted_plan.authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
@@ -2673,12 +2674,12 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                 LocalGovernanceRootBinding,
             )
 
-            local_root = LocalGovernanceRootBinding.from_trusted_base(
+            local_governance_root = LocalGovernanceRootBinding.from_trusted_base(
                 governance_base,
                 project_id=project_id,
             )
             local_destination = LocalPlanAuthorityDestination(
-                governance_root=local_root,
+                governance_root=local_governance_root,
                 plan_id=plan_id,
                 expected_ref=object_ref_subject(
                     make_id(IdKind.SUBJECT, plan_id, sub_kind=SubjectKind.PLAN)
@@ -2830,6 +2831,21 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
         stewardship_repo_path=worktree_root,
         stewardship_origin_session_ref=origin_session,
         governance_store=governance_store_path,
+        projection_project_id=(
+            project_id if local_governance_root is not None else None
+        ),
+        projection_plan_id=(
+            plan_id if local_governance_root is not None else None
+        ),
+        projection_project_root=(
+            sandbox.project_root if local_governance_root is not None else None
+        ),
+        projection_governance_root=local_governance_root,
+        projection_authority_binding=(
+            trusted_plan.authority_binding
+            if local_governance_root is not None
+            else None
+        ),
         accepted_frontier_authorization=accepted_frontier_authorization,
         review_adoption_worktree_root=sandbox,
         trusted_plan_authority=trusted_review_authority,

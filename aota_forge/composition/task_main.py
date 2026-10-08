@@ -18,8 +18,22 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from aota_forge.adapters.plan_authority.binding import (
+    PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+    PlanAuthorityBinding,
+)
+from aota_forge.adapters.plan_authority.local_governance import (
+    LocalPlanAuthorityDestination,
+    LocalPlanAuthorityReadAdapter,
+    load_local_portable_plan,
+    local_plan_authority_reference,
+)
 from aota_forge.core.execution.dispatcher import ExecutionDispatcher
 from aota_forge.core.execution.durable_state import ExecutionStateStore
+from aota_forge.core.identity.ids import make_id
+from aota_forge.core.identity.kinds import IdKind, SubjectKind
+from aota_forge.core.identity.refs import object_ref_subject
+from aota_forge.core.project.manifest import load_project
 from aota_forge.composition.stewardship import (
     LegacyStewardshipExecutor,
     LegacyStewardshipOutcome,
@@ -39,7 +53,18 @@ from aota_forge.core.journal.store import (
     InMemoryDurableJournalStore,
 )
 from aota_forge.governance.local_lifecycle import LocalPlanLifecycleCoordinator
-from aota_forge.governance.projection_lifecycle import GovernanceProjectionLifecycle
+from aota_forge.governance.context_route import ContextRouteInput
+from aota_forge.governance.projection import (
+    GovernanceProjectionInput,
+    REFRESH_TRIGGER_PLAN_MUTATION,
+    REFRESH_TRIGGER_WORK_RECONCILIATION,
+    plan_document_input,
+)
+from aota_forge.governance.projection_lifecycle import (
+    GovernanceProjectionLifecycle,
+    ProjectionLifecycleError,
+)
+from aota_forge.governance.project_store import PLAN_LIFECYCLE_RETIRED
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.governance.stewardship import StewardshipCheckpoint
 from aota_forge.runtime.completion import DurableCompletionCoordinator
@@ -80,6 +105,7 @@ from aota_forge.work_plane.steward_finalizer import (
     SubprocessGitPort,
     TrustedStewardFinalizer,
 )
+from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 from aota_forge.work_plane.worktree_sandbox import WorktreeSandboxBoundary
 
 
@@ -318,16 +344,49 @@ def _default_projection_refresh_hook(
     coordinator_store: TaskMainCoordinatorStore,
     execution_store: ExecutionStateStore,
     governance_store: ProjectGovernanceStore | str | Path | None,
+    project_id: str | None = None,
+    plan_id: str | None = None,
+    project_root: str | Path | None = None,
+    governance_root: LocalGovernanceRootBinding | None = None,
+    authority_binding: PlanAuthorityBinding | None = None,
+    required: bool = False,
 ) -> Callable[[], Any] | None:
-    """Compose the bounded post-mutation refresh from the existing owners."""
+    """Compose the bounded post-mutation refresh from trusted truth owners."""
     if governance_store is None:
         return None
-    destination = _coordinator_storage_path(coordinator_store)
-    if destination is None:
-        return None
-    destination = destination.parent
 
-    def refresh() -> None:
+    missing = []
+    if not isinstance(project_id, str) or not project_id.strip():
+        missing.append("project_id")
+    if not isinstance(project_root, (str, Path)) or not str(project_root).strip():
+        missing.append("project_root")
+    if not isinstance(governance_root, LocalGovernanceRootBinding):
+        missing.append("governance_root")
+    if missing:
+        if required:
+            raise ProjectionLifecycleError(
+                "TRUSTED_PROJECTION_CONTEXT_REQUIRED",
+                f"local Plan projection requires trusted {', '.join(missing)}",
+            )
+        return None
+    assert project_id is not None
+    assert isinstance(governance_root, LocalGovernanceRootBinding)
+    if governance_root.project_id != project_id:
+        raise ProjectionLifecycleError(
+            "PROJECT_MISMATCH", "trusted projection root belongs to another Project"
+        )
+    if plan_id is not None and authority_binding is not None and (
+        authority_binding.plan_id != plan_id
+        or authority_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        or authority_binding.authority_ref != local_plan_authority_reference(project_id, plan_id)
+    ):
+        raise ProjectionLifecycleError(
+            "PLAN_AUTHORITY_MISMATCH", "trusted projection Plan binding does not match the Project"
+        )
+    project_root_path = Path(project_root)
+    project_directory = Path(governance_root.root_path)
+
+    def refresh() -> Any:
         owned_store = False
         store = governance_store
         if isinstance(governance_store, (str, Path)):
@@ -336,20 +395,190 @@ def _default_projection_refresh_hook(
         if not isinstance(store, ProjectGovernanceStore):
             raise TypeError("governance_store must be a ProjectGovernanceStore or storage path")
         try:
-            states = coordinator_store.list_all()
-            project_ids = sorted({state.project_id for state in states})
-            if len(project_ids) != 1:
-                raise RuntimeError(
-                    "projection refresh requires exactly one durable task-main project"
+            governance_root.revalidate()
+            if project_directory.is_symlink() or not project_directory.is_dir():
+                raise ProjectionLifecycleError(
+                    "PROJECT_DIRECTORY_INVALID",
+                    "trusted Governance projection destination is invalid",
                 )
-            GovernanceProjectionLifecycle(
+            resolved_project_root = project_root_path.resolve(strict=True)
+            if project_root_path.is_symlink() or resolved_project_root != project_root_path:
+                raise ProjectionLifecycleError(
+                    "PROJECT_ROOT_INVALID", "trusted Project root must be canonical and non-symlink"
+                )
+            manifest_path = resolved_project_root / ".aota" / "project.yaml"
+            if manifest_path.is_symlink() or not manifest_path.is_file():
+                raise ProjectionLifecycleError(
+                    "PROJECT_MANIFEST_INVALID", "trusted Project manifest is missing or unsafe"
+                )
+            manifest_root, manifest = load_project(manifest_path)
+            if manifest_root != resolved_project_root or manifest["project"]["id"] != project_id:
+                raise ProjectionLifecycleError(
+                    "PROJECT_MISMATCH", "trusted Project manifest does not match projection scope"
+                )
+
+            records = tuple(store.list_plans(project_id))
+            record_by_id = {}
+            documents = []
+            for record in records:
+                if record.project_id != project_id or record.plan_id in record_by_id:
+                    raise ProjectionLifecycleError(
+                        "PLAN_RECORD_CONFLICT", "Project Governance Store returned conflicting Plan identity"
+                    )
+                record_by_id[record.plan_id] = record
+                if record.authority.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+                    continue
+                if (
+                    record.authority.authority_ref
+                    != local_plan_authority_reference(project_id, record.plan_id)
+                    or record.authority.source_revision is None
+                    or record.authority.source_digest is None
+                ):
+                    raise ProjectionLifecycleError(
+                        "PLAN_AUTHORITY_INVALID",
+                        f"local Plan {record.plan_id!r} has no complete trusted authority binding",
+                    )
+                destination = LocalPlanAuthorityDestination(
+                    governance_root=governance_root,
+                    plan_id=record.plan_id,
+                    expected_ref=object_ref_subject(
+                        make_id(IdKind.SUBJECT, record.plan_id, sub_kind=SubjectKind.PLAN)
+                    ),
+                )
+                reader = LocalPlanAuthorityReadAdapter(destination, binding=record.authority)
+                snapshot = reader.load()
+                if (
+                    str(snapshot.revision) != str(record.authority.source_revision)
+                    or snapshot.digest != record.authority.source_digest
+                ):
+                    raise ProjectionLifecycleError(
+                        "STALE_AUTHORITY",
+                        f"local Plan {record.plan_id!r} changed from its current Store binding",
+                    )
+                document = load_local_portable_plan(reader)
+                documents.append(
+                    plan_document_input(
+                        plan_id=record.plan_id,
+                        document=document,
+                        title=getattr(document, "title", None),
+                        current_milestone=getattr(document, "current_milestone", None),
+                        authority=record.authority,
+                    )
+                )
+                if (
+                    record.lifecycle_state == PLAN_LIFECYCLE_RETIRED
+                    and document.plan_status != "completed"
+                ):
+                    raise ProjectionLifecycleError(
+                        "TERMINAL_AUTHORITY_CONFLICT",
+                        f"retired local Plan {record.plan_id!r} does not have a completed authority body",
+                    )
+
+            selected = record_by_id.get(plan_id) if plan_id is not None else None
+            if plan_id is not None and selected is None:
+                raise ProjectionLifecycleError(
+                    "PLAN_RECORD_REQUIRED", "trusted current Plan is absent from the Project Governance Store"
+                )
+            if selected is not None and authority_binding is not None and (
+                selected.authority.source_kind != authority_binding.source_kind
+                or selected.authority.authority_ref != authority_binding.authority_ref
+            ):
+                raise ProjectionLifecycleError(
+                    "PLAN_AUTHORITY_MISMATCH",
+                    "current Project Governance binding no longer identifies the trusted Plan authority",
+                )
+
+            try:
+                coordinator_states = tuple(
+                    state
+                    for state in coordinator_store.list_all()
+                    if state.project_id == project_id
+                )
+                execution_records = tuple(execution_store.list_all())
+            except Exception as exc:
+                raise ProjectionLifecycleError(
+                    "DURABLE_OWNER_READ_FAILED",
+                    f"cannot read task-main/execution projection owners: {type(exc).__name__}",
+                ) from exc
+
+            route = ContextRouteInput(
+                project_id=project_id,
+                plan_id=selected.plan_id if selected is not None else None,
+                authority_source_kind=(selected.authority.source_kind if selected is not None else None),
+                authority_ref=(selected.authority.authority_ref if selected is not None else None),
+                authority_revision=(
+                    str(selected.authority.source_revision)
+                    if selected is not None and selected.authority.source_revision is not None
+                    else None
+                ),
+                authority_digest=(selected.authority.source_digest if selected is not None else None),
+                authorized_root_refs=(("local-governance", ("read", "search")),),
+            )
+            source = GovernanceProjectionInput(
+                project_id=project_id,
+                project_ref=f"project:{project_id}",
+                project_status=manifest["project"]["status"],
+                governance_root_refs=("local-governance",),
+                plan_records=records,
+                plan_documents=tuple(documents),
+                coordinator_states=coordinator_states,
+                execution_records=execution_records,
+            )
+            trigger = REFRESH_TRIGGER_WORK_RECONCILIATION
+            if selected is not None and (
+                selected.lifecycle_state == "retired"
+                or (
+                    authority_binding is not None
+                    and (
+                        selected.authority.source_revision != authority_binding.source_revision
+                        or selected.authority.source_digest != authority_binding.source_digest
+                    )
+                )
+            ):
+                trigger = REFRESH_TRIGGER_PLAN_MUTATION
+            refreshed = GovernanceProjectionLifecycle(
                 governance_store=store,
+                governance_root=governance_root,
                 coordinator_store=coordinator_store,
                 execution_store=execution_store,
-            ).refresh_from_durable_owners(
-                project_id=project_ids[0],
-                project_directory=destination,
+            ).refresh_for_trigger(
+                trigger,
+                source,
+                project_directory=project_directory,
+                context_route_input=route,
             )
+            if (
+                refreshed.bundle.project.project_id != project_id
+                or refreshed.receipt.project_id != project_id
+                or refreshed.map_path.parent != project_directory
+                or refreshed.status_path.parent != project_directory
+            ):
+                raise ProjectionLifecycleError(
+                    "PROJECTION_READ_BACK_MISMATCH", "generated projection identity/root did not verify"
+                )
+            for record in records:
+                card = next(
+                    (item for item in refreshed.bundle.plans if item.plan_id == record.plan_id),
+                    None,
+                )
+                if card is None or card.lifecycle_state != record.lifecycle_state:
+                    raise ProjectionLifecycleError(
+                        "PROJECTION_READ_BACK_MISMATCH",
+                        f"Plan Card lifecycle did not match Store for {record.plan_id!r}",
+                    )
+                if record.authority.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+                    document = next((item for item in documents if item.plan_id == record.plan_id), None)
+                    if (
+                        document is None
+                        or card.plan_status != document.document.plan_status
+                        or card.authority_revision != str(record.authority.source_revision)
+                        or card.authority_digest != record.authority.source_digest
+                    ):
+                        raise ProjectionLifecycleError(
+                            "PROJECTION_READ_BACK_MISMATCH",
+                            f"Plan Card authority/status did not match current truth for {record.plan_id!r}",
+                        )
+            return refreshed
         finally:
             if owned_store:
                 store.close()
@@ -600,6 +829,11 @@ def create_task_main_control_service(
     stewardship_local_plan_lifecycle_coordinator: Any | None = None,
     stewardship_local_plan_close_request_factory: Callable[[StewardshipCheckpoint, Any], Any] | None = None,
     projection_refresh_hook: Callable[[], Any] | None = None,
+    projection_project_id: str | None = None,
+    projection_plan_id: str | None = None,
+    projection_project_root: str | Path | None = None,
+    projection_governance_root: LocalGovernanceRootBinding | None = None,
+    projection_authority_binding: PlanAuthorityBinding | None = None,
     accepted_frontier_authorization: AcceptedFrontierAuthorization | None = None,
     review_adoption_worktree_root: WorktreeSandboxBoundary | None = None,
     review_adoption_git: GitPort | None = None,
@@ -634,10 +868,21 @@ def create_task_main_control_service(
         )
 
     if projection_refresh_hook is None:
+        local_plan_projection_required = (
+            trusted_plan_authority is not None
+            and trusted_plan_authority.authority_source_kind
+            == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        )
         projection_refresh_hook = _default_projection_refresh_hook(
             coordinator_store=store,
             execution_store=execution_store,
             governance_store=governance_store,
+            project_id=projection_project_id,
+            plan_id=projection_plan_id,
+            project_root=projection_project_root,
+            governance_root=projection_governance_root,
+            authority_binding=projection_authority_binding,
+            required=local_plan_projection_required,
         )
 
     return TaskMainControlService(
