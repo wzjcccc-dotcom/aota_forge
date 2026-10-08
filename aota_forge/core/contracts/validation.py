@@ -60,6 +60,7 @@ MAX_STRING_LENGTH = 4096
 MAX_GOVERNANCE_BODY_LENGTH = 64 * 1024
 LARGE_TEXT_INPUT_BOUNDS: dict[tuple[str, str], int] = {
     ("governance.plan", "candidate_body"): 256 * 1024,
+    ("governance.plan.preflight", "candidate_body"): 256 * 1024,
     ("github.issue.update", "body"): MAX_GOVERNANCE_BODY_LENGTH,
     ("github.issue.update", "section_content"): MAX_GOVERNANCE_BODY_LENGTH,
     ("github.issue.comment.update", "body"): MAX_GOVERNANCE_BODY_LENGTH,

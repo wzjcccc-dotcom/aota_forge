@@ -930,6 +930,38 @@ def compose_thin_task_main_host(
                 resolved_governance_store.close()
             raise TrustedBindingError(f"thin host context-switch composition failed: {exc}") from exc
 
+    governance_doctor = None
+    if (
+        isinstance(plan_authority_binding, PlanAuthorityBinding)
+        and plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+        and local_governance_binding is not None
+        and resolved_governance_store is not None
+    ):
+        from aota_forge.governance.doctor import DoctorContext, run_governance_doctor
+
+        doctor_context = DoctorContext(
+            project_id=pid,
+            plan_id=plan_authority_binding.plan_id,
+            plan_authority_binding=plan_authority_binding,
+            governance_root=local_governance_binding,
+            governance_store=resolved_governance_store,
+            project_root=sandbox.project_root,
+            coordinator_store=getattr(context_switch_runtime, "coordinator_store", None),
+            execution_store=(
+                getattr(context_switch_runtime, "execution_store", None)
+                or getattr(dispatcher, "state_store", None)
+            ),
+            expected_coordinator_id=getattr(context_switch_runtime, "coordinator_id", None),
+            runtime_plan_authority_binding=plan_authority_binding,
+            session_ref=origin,
+        )
+
+        def governance_doctor(*, source_observation: Any) -> Any:
+            return run_governance_doctor(
+                doctor_context,
+                source_observation=source_observation,
+            ).to_dict()
+
     binding = TrustedWorkerBinding(
         canonical_task_id=f"{pid}:task-main:{origin[:8]}",
         project_id=pid,
@@ -973,6 +1005,7 @@ def compose_thin_task_main_host(
         authorized_roots=authorized_roots,
         governance_context=governance_context,
         execution_dispatcher=dispatcher,
+        governance_doctor=governance_doctor,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 

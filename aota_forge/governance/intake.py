@@ -66,6 +66,7 @@ from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 
 GOVERNANCE_PROJECT_OPERATION = "governance.project"
 GOVERNANCE_PLAN_OPERATION = "governance.plan"
+GOVERNANCE_PLAN_PREFLIGHT_OPERATION = "governance.plan.preflight"
 GOVERNANCE_OPERATIONS = (GOVERNANCE_PROJECT_OPERATION, GOVERNANCE_PLAN_OPERATION)
 GOVERNANCE_PROJECT_MODES = frozenset({"init", "inspect", "reconcile"})
 GOVERNANCE_PLAN_MODES = frozenset({"init", "inspect", "amend", "close"})
@@ -998,15 +999,42 @@ def dispatch_governance_operation(
     principal = trusted_context.principal.id if trusted_context.principal is not None else "unbound"
     try:
         service = GovernanceIntakeService(context, principal=principal)
-        mode = arguments.get("mode")
-        if not isinstance(mode, str):
-            raise GovernanceIntakeError("MODE_REQUIRED", "governance operation requires mode")
-        if operation == GOVERNANCE_PROJECT_OPERATION:
+        if operation == GOVERNANCE_PLAN_PREFLIGHT_OPERATION:
+            project_id = arguments.get("project_id")
+            project_root = _trusted_dir(context.project_root, "project_root", required=False)
+            if project_root is None:
+                raise GovernanceIntakeError(
+                    "PROJECT_ROOT_REQUIRED", "trusted project_root is required for agent-facing Plan preflight"
+                )
+            manifest_path = project_root / ".aota" / "project.yaml"
+            try:
+                manifest_root, manifest = load_project(manifest_path)
+            except Exception as exc:
+                raise GovernanceIntakeError(
+                    "PROJECT_MANIFEST_INVALID", "trusted Project manifest could not be verified"
+                ) from exc
+            if manifest_root != project_root or manifest["project"]["id"] != project_id:
+                raise GovernanceIntakeError(
+                    "PROJECT_ID_MISMATCH", "candidate Project does not match the trusted Project context"
+                )
+            result = service.preflight_plan_candidate(
+                candidate_kind=arguments.get("candidate_kind"),
+                project_id=arguments.get("project_id"),
+                plan_id=arguments.get("plan_id"),
+                candidate_body=arguments.get("candidate_body"),
+            ).to_dict()
+        elif operation == GOVERNANCE_PROJECT_OPERATION:
+            mode = arguments.get("mode")
+            if not isinstance(mode, str):
+                raise GovernanceIntakeError("MODE_REQUIRED", "governance operation requires mode")
             payload = dict(arguments)
             payload.pop("mode", None)
             payload.pop("project_id", None)
             result = service.project(mode, project_id=arguments.get("project_id"), **payload)
         elif operation == GOVERNANCE_PLAN_OPERATION:
+            mode = arguments.get("mode")
+            if not isinstance(mode, str):
+                raise GovernanceIntakeError("MODE_REQUIRED", "governance operation requires mode")
             payload = dict(arguments)
             payload.pop("mode", None)
             payload.pop("project_id", None)
@@ -1029,6 +1057,7 @@ def dispatch_governance_operation(
 __all__ = [
     "GOVERNANCE_PROJECT_OPERATION",
     "GOVERNANCE_PLAN_OPERATION",
+    "GOVERNANCE_PLAN_PREFLIGHT_OPERATION",
     "GOVERNANCE_OPERATIONS",
     "GOVERNANCE_PROJECT_MODES",
     "GOVERNANCE_PLAN_MODES",

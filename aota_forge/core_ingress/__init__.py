@@ -98,6 +98,8 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "github.issue.comments.read",
     "github.issue.update",
     "github.issue.comment.update",
+    "governance.doctor",
+    "governance.plan.preflight",
     "governance.terminal_projection.reconcile",
     "handoff.write",
     "handoff.open",
@@ -240,6 +242,8 @@ class CanonicalDispatchBinding:
     # transport resolves operation authority from canonical refs at the
     # operation boundary before Core dispatch. It grants nothing by itself.
     unbound_host_session: bool = False
+    # AF #57 M1/W4: trusted read-only Doctor capability, when composed.
+    governance_doctor: Any | None = None
 
     @property
     def effective_authorized_roots(self) -> Any | None:
@@ -997,6 +1001,151 @@ def _dispatch_terminal_projection_reconciliation(
         )
 
 
+def _task_main_governance_role(binding: CanonicalDispatchBinding) -> bool:
+    handoff_role = getattr(getattr(binding.handoff, "work_role", None), "value", None)
+    surface_role = getattr(getattr(binding.tool_surface, "work_role", None), "value", None)
+    return handoff_role == "task-main" and surface_role == "task-main"
+
+
+def _dispatch_plan_candidate_preflight(
+    binding: CanonicalDispatchBinding,
+    arguments: Mapping[str, Any],
+) -> ToolResponse:
+    if not _task_main_governance_role(binding):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "Plan candidate preflight requires task-main role"}
+        )
+    trusted_context = binding.trusted_context
+    try:
+        from aota_forge.core.context import TrustedContext
+        from aota_forge.governance.intake import (
+            GOVERNANCE_PLAN_PREFLIGHT_OPERATION,
+            GovernanceIntakeContext,
+            dispatch_governance_operation,
+        )
+        from aota_forge.adapters.plan_authority.binding import (
+            PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            PlanAuthorityBinding,
+        )
+        from aota_forge.adapters.plan_authority.local_governance import (
+            local_plan_authority_reference,
+        )
+
+        intake_context = getattr(trusted_context, "governance_intake_context", None)
+        if (
+            not isinstance(trusted_context, TrustedContext)
+            or not trusted_context.is_bound
+            or not isinstance(intake_context, GovernanceIntakeContext)
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted Project Governance intake context is required"}
+            )
+        project_id = arguments.get("project_id")
+        plan_id = arguments.get("plan_id")
+        candidate_kind = arguments.get("candidate_kind")
+        if project_id != binding.project_id:
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "candidate Project does not match the trusted Project binding"}
+            )
+        plan_binding = binding.plan_authority_binding
+        if plan_binding is None:
+            if candidate_kind == "amend":
+                return ToolResponse.failure(
+                    {"code": "AUTHORITY_DENIED", "message": "Plan Amend preflight requires a trusted Plan binding"}
+                )
+        elif (
+            not isinstance(plan_binding, PlanAuthorityBinding)
+            or plan_binding.plan_id != plan_id
+            or plan_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or plan_binding.authority_ref
+            != local_plan_authority_reference(binding.project_id, plan_binding.plan_id)
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "candidate Plan does not match the trusted Plan binding"}
+            )
+        return dispatch_governance_operation(
+            GOVERNANCE_PLAN_PREFLIGHT_OPERATION,
+            arguments,
+            context=intake_context,
+            trusted_context=trusted_context,
+        )
+    except Exception:
+        return ToolResponse.failure(
+            {"code": "INTERNAL_MECHANICAL_ERROR", "message": "Plan candidate preflight could not be evaluated"}
+        )
+
+
+def _trusted_git_source_observation(binding: CanonicalDispatchBinding) -> dict[str, Any]:
+    """Reuse the existing bound git.status provider without exposing its paths."""
+    authority = _authority_for(binding.git_authorities, "git.status")
+    if authority is None:
+        return {"available": False, "complete": False, "is_dirty": None}
+    try:
+        from aota_forge.work_plane.git_tools import BoundedGitToolProvider
+
+        descriptor = resolve_descriptor("git.status")
+        inputs = validate_operation_input(descriptor, {})
+        response = BoundedGitToolProvider(authority).invoke(
+            ToolRequest(operation=authority.operation, inputs=inputs)
+        )
+        payload = getattr(response, "payload", None)
+        if not getattr(response, "ok", False) or not isinstance(payload, Mapping):
+            return {"available": False, "complete": False, "is_dirty": None}
+        complete = True
+        for category in ("staged", "unstaged", "untracked"):
+            entry = payload.get(category)
+            if isinstance(entry, Mapping) and entry.get("truncated") is True:
+                complete = False
+        return {
+            "available": payload.get("available") is True,
+            "complete": complete,
+            "is_dirty": payload.get("is_dirty") is True,
+        }
+    except Exception:
+        return {"available": False, "complete": False, "is_dirty": None}
+
+
+def _dispatch_governance_doctor(binding: CanonicalDispatchBinding) -> ToolResponse:
+    if not _task_main_governance_role(binding):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "governance Doctor requires task-main role"}
+        )
+    try:
+        from aota_forge.adapters.plan_authority.binding import (
+            PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            PlanAuthorityBinding,
+        )
+        from aota_forge.adapters.plan_authority.local_governance import (
+            local_plan_authority_reference,
+        )
+
+        plan_binding = binding.plan_authority_binding
+        if (
+            not isinstance(plan_binding, PlanAuthorityBinding)
+            or plan_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or plan_binding.authority_ref
+            != local_plan_authority_reference(binding.project_id, plan_binding.plan_id)
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted Local Plan binding is required"}
+            )
+        doctor = binding.governance_doctor
+        if not callable(doctor):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted Doctor owner context is unavailable"}
+            )
+        result = doctor(source_observation=_trusted_git_source_observation(binding))
+        if not isinstance(result, Mapping):
+            return ToolResponse.failure(
+                {"code": "INTERNAL_MECHANICAL_ERROR", "message": "trusted Doctor returned an invalid result"}
+            )
+        return ToolResponse.success(dict(result))
+    except Exception:
+        return ToolResponse.failure(
+            {"code": "INTERNAL_MECHANICAL_ERROR", "message": "governance Doctor could not inspect current readiness"}
+        )
+
+
 def _map_skill_open_exception(exc: Exception) -> str:
     """Typed skill.open identity (no string classification).
 
@@ -1692,6 +1841,12 @@ def _dispatch_tool_operation_inner(
 
         if operation == "governance.terminal_projection.reconcile":
             return _dispatch_terminal_projection_reconciliation(binding)
+
+        if operation == "governance.doctor":
+            return _dispatch_governance_doctor(binding)
+
+        if operation == "governance.plan.preflight":
+            return _dispatch_plan_candidate_preflight(binding, validated)
 
         if operation in ("task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection"):
             return _dispatch_task_main(operation, binding, validated)

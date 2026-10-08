@@ -243,6 +243,9 @@ class TrustedWorkerBinding:
     # legacy binding (unchanged behavior).
     work_handoff_ref: str = ""
     work_handoff_digest: str = ""
+    # AF #57 M1/W4: server-composed read-only Doctor capability over current
+    # Governance/runtime owners. It is never exposed to Worker bindings.
+    governance_doctor: Any | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -488,6 +491,11 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("task-main context requires tool_surface work_role task-main")
             if not hasattr(ctx.control_service, "activate_milestone"):
                 raise TrustedBindingError("task-main context control_service missing activate_milestone")
+        if self.governance_doctor is not None:
+            if not callable(self.governance_doctor):
+                raise TrustedBindingError("governance_doctor must be callable or None")
+            if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
+                raise TrustedBindingError("governance_doctor may only be carried by a task-main binding")
         if self.context_switch_runtime is not None:
             if not callable(getattr(self.context_switch_runtime, "current_context", None)):
                 raise TrustedBindingError("context_switch_runtime must expose current_context")

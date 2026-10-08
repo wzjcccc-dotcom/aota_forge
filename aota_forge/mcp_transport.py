@@ -323,6 +323,8 @@ INTROSPECTION_OPERATIONS: tuple[str, ...] = (
 GOVERNANCE_OPERATIONS: tuple[str, ...] = (
     "governance.project",
     "governance.plan",
+    "governance.doctor",
+    "governance.plan.preflight",
     GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
 )
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
@@ -892,6 +894,7 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         # Authority binding (never authority by itself).
         plan_authority_binding=getattr(binding, "plan_authority_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
+        governance_doctor=getattr(binding, "governance_doctor", None),
         # M2/W4: preserve the existing-store switch composition carrier across
         # the canonical aota.invoke boundary; it is not a second store.
         context_switch_runtime=getattr(binding, "context_switch_runtime", None),
@@ -1508,6 +1511,8 @@ _HELP_RELEVANT_SKILLS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("operations.list", "host.status", "runtime.status"), "aota-task-main-control@1.0.0"),
     (("governance.project",), "aota-project-governance@1.0.0"),
     (("governance.plan",), "aota-plan-governance@1.0.0"),
+    (("governance.doctor",), "aota-task-main-governance@1.0.0"),
+    (("governance.plan.preflight",), "aota-plan-governance@1.0.0"),
     ((GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,), "aota-plan-governance@1.0.0"),
 )
 

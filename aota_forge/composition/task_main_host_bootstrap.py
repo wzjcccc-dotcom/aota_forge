@@ -2651,6 +2651,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     accepted_frontier_authorization = None
     local_governance_root: Any = None
     terminal_projection_reconciler = None
+    governance_doctor_store: Any = None
     if (
         trusted_plan.authority_binding is not None
         and trusted_plan.authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
@@ -2769,13 +2770,13 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
                         reviewer_attempt=reviewer_attempt,
                         review_cycle=review_cycle,
                     )
+            governance_doctor_store = authority_store
         except Exception as exc:
+            if authority_store is not None:
+                authority_store.close()
             raise TrustedBindingError(
                 f"trusted local Plan authority re-read failed: {exc}"
             ) from exc
-        finally:
-            if authority_store is not None:
-                authority_store.close()
 
     def resolve_current_milestone_close_user_gate() -> TrustedUserGateState:
         """Read the trusted intermediate Milestone-close gate without writing."""
@@ -2939,7 +2940,7 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
     # decides execution (Worker task.start remains denied).
     tool_surface = create_role_tool_surface(
         "task-main",
-        eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection", "handoff.write", "handoff.open", "task.start"),
+        eager=("workspace.search", "workspace.read", "task_main.activate_milestone", "task_main.recover_coordinator", "task_main.advance_once", "task_main.submit_work_projection", "handoff.write", "handoff.open", "task.start", "governance.doctor", "governance.plan.preflight"),
         progressive=(
             "result.hydrate",
             "restricted_shell.run",
@@ -2984,21 +2985,75 @@ def try_build_task_main_binding() -> TrustedWorkerBinding | None:
             trusted_plan_binding = TrustedPlanGitHubBinding.from_plan_ref(
                 trusted_plan.authority_binding.authority_ref
             )
-    binding = TrustedWorkerBinding(
-        canonical_task_id=f"{project_id}:{live_view.milestone_id}:task-main:{origin_session[:8]}",
-        project_id=project_id,
-        worktree_id=worktree_id,
-        trusted_context=bind_trusted_context(principal_id="task-main", principal_type="task-main", channel="mcp"),
-        handoff=handoff,
-        sandbox=sandbox,
-        tool_surface=tool_surface,
-        read_authorities=read_authorities,
-        mutation_authority=None,
-        restricted_shell_authority=restricted_shell_authority,
-        plan_binding=trusted_plan_binding,
-        plan_authority_binding=trusted_plan.authority_binding,
-        trusted_task_main_context=ctx,
-    )
+    governance_intake_context = None
+    governance_doctor = None
+    if local_governance_root is not None and governance_base is not None:
+        from aota_forge.governance.intake import GovernanceIntakeContext
+
+        governance_intake_context = GovernanceIntakeContext(
+            workspace_id=str(getattr(_ev, "workspace_id", "") or f"task-main-{project_id}"),
+            governance_base=governance_base,
+            registry_path=bootstrap_registry_path,
+            workspace_root=getattr(_ev, "workspace_root", None),
+            project_root=sandbox.project_root,
+            governance_store_path=governance_store_path,
+            journal_path=Path(sandbox.project_root) / ".aota" / "governance-journal.json",
+            source_repository=bootstrap_source_repository or "",
+        )
+    if (
+        isinstance(trusted_plan.authority_binding, PlanAuthorityBinding)
+        and local_governance_root is not None
+        and governance_doctor_store is not None
+    ):
+        from aota_forge.governance.doctor import DoctorContext, run_governance_doctor
+
+        doctor_context = DoctorContext(
+            project_id=project_id,
+            plan_id=trusted_plan.authority_binding.plan_id,
+            plan_authority_binding=trusted_plan.authority_binding,
+            governance_root=local_governance_root,
+            governance_store=governance_doctor_store,
+            project_root=sandbox.project_root,
+            coordinator_store=coord_store,
+            execution_store=exec_store,
+            expected_coordinator_id=ctx.coordinator_id,
+            runtime_plan_authority_binding=trusted_plan.authority_binding,
+            runtime_live_plan_authority=live_view.plan_authority,
+            session_ref=origin_session,
+        )
+
+        def governance_doctor(*, source_observation: Any) -> Any:
+            return run_governance_doctor(
+                doctor_context,
+                source_observation=source_observation,
+            ).to_dict()
+
+    try:
+        binding = TrustedWorkerBinding(
+            canonical_task_id=f"{project_id}:{live_view.milestone_id}:task-main:{origin_session[:8]}",
+            project_id=project_id,
+            worktree_id=worktree_id,
+            trusted_context=bind_trusted_context(
+                principal_id="task-main",
+                principal_type="task-main",
+                channel="mcp",
+                governance_intake_context=governance_intake_context,
+            ),
+            handoff=handoff,
+            sandbox=sandbox,
+            tool_surface=tool_surface,
+            read_authorities=read_authorities,
+            mutation_authority=None,
+            restricted_shell_authority=restricted_shell_authority,
+            plan_binding=trusted_plan_binding,
+            plan_authority_binding=trusted_plan.authority_binding,
+            trusted_task_main_context=ctx,
+            governance_doctor=governance_doctor,
+        )
+    except Exception:
+        if governance_doctor_store is not None:
+            governance_doctor_store.close()
+        raise
     return binding
 
 

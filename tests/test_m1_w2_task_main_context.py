@@ -49,12 +49,22 @@ constraints: []
 
 PLAN_BODY = """# M1/W2 context integration fixture
 
-```text
+## Plan Identity
+PROJECT_ID=aota_forge
+PLAN_ID=plan_m1_w2_context
+PLAN_REVISION=R1
+
+## Current State
 PLAN_STATUS=active
 CURRENT_MILESTONE=M1
 M1_STATUS=ready
 M1_USER_APPROVAL_SATISFIED=yes
-```
+
+## M1 — Context integration
+Prove trusted Project and Plan context propagation.
+
+#### M1/W1 — Root boundary
+Verify bounded AuthorizedRootSet behavior.
 """
 
 

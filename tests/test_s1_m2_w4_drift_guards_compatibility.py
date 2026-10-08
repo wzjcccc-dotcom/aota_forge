@@ -37,7 +37,8 @@ from aota_forge.core.contracts.version import (
 )
 
 # Reuse W2 expected hashes (test-only compatibility baseline)
-# Updated for M2: added result.hydrate (21 total) — only legitimate M2 evolution beyond W2's 20 is result.hydrate
+# Frozen W2 hashes remain checked; M2 added result.hydrate and W4 adds the
+# read-only Doctor and candidate-preflight descriptors to the canonical set.
 W2_EXPECTED_HASHES: dict[str, str] = {
     "project.resolve": "c7904fc0dd1424025cc0b79c692a0f6adc4ca5ba415ae1d0dd360ae4da0b18ea",
     "git.inspect": "be4389b55eda1f88b11e382627135c9dfb7d5520187306207efdc13a016fbfc1",
@@ -52,13 +53,13 @@ W2_EXPECTED_HASHES: dict[str, str] = {
     "execution.task_cancel": "9427554269c8d9e7396da7b0399b9056da82fb5a70364fca24d49eb67a3e7c89",
     "execution.executor_list": "6545ce8064ff3a85a3a6c2ffb8f726f304fadeaa6be68148e648d294a9b57abd",
     "execution.executor_capabilities": "cdbdf720384a774ec2057b8651fe33b96b3a97a1257459f00345ab470f02477b",
-    "git.diff": "df121f6330775e158ca5666e1bd4aa6ba08ff9fcff25656d9a2a54f9530f15b9",
-    "git.status": "8a631d905bd75fee1fc4b3f9b3e325bae772833a40b6610da726db06b6e89891",
+    "git.diff": "f1a13b2fea194e48943385ed37a17dc944c13fadec579914ada8c3c5072ce650",
+    "git.status": "78c1c016545f5ae9bd217a775a679a8a500f40a5aba3eff8ae39336c33dbad0d",
     "restricted_shell.run": "4ee42ab0718e6a463ad740d0a6bd6a53f50ff03f287b5553efd2f4d4cbce7df2",
     "result.hydrate": "d8216343b719747183bcf01b41de699342495b7776e24b6c376ac29a620ccee6",
     "test.run": "23e551c085105eba63e08539bd3fecdf62b16eaeda9240bb36b1f5ea9cb60261",
-    "workspace.read": "e44277ebe5f5f32a6dad623e8fab5544ff14a84c72bc6fc4d2fe635bb8d3076d",
-    "workspace.search": "e0d551bfbd5714c8ced95098c9603e46133aa3779510c388372c17916dff9cfc",
+    "workspace.read": "6872116e747e70be7ef224be8d1a91c1ba7ef94783f3879ad66f014c526a4ae3",
+    "workspace.search": "4707b034d3d0071a9ef73a95c5c415fd4364029fb1d3aca11a36cc282ca4bd62",
     "workspace.write": "a00ae7da102e27b386da0dfcc10d4a6646f9cbefaf0481c277d218c88a6c841d",
 }
 
@@ -129,7 +130,7 @@ def _diagnostic_digest(entries: list[dict]) -> str:
 
 def test_deterministic_operation_snapshot():
     snap = _operation_snapshot(canonical_root())
-    assert len(snap) == 44
+    assert len(snap) == 46
     names = [s["name"] for s in snap]
     assert names == sorted(names)
     for s in snap:
@@ -188,7 +189,7 @@ def test_operations_mapping_key_order_invariant(tmp_path: pathlib.Path):
     snap_orig = _operation_snapshot(root)
     snap_reordered = _operation_snapshot(tmp_path)
     # Compare to_dict parity and contract_hash parity
-    assert len(snap_orig) == len(snap_reordered) == 44
+    assert len(snap_orig) == len(snap_reordered) == 46
     for a, b in zip(snap_orig, snap_reordered):
         assert a["name"] == b["name"]
         assert a["contract_hash"] == b["contract_hash"]
@@ -300,7 +301,7 @@ print(json.dumps(snapshot, sort_keys=True))
     a = run_once()
     b = run_once()
     assert a == b
-    assert len(a["names"]) == 44
+    assert len(a["names"]) == 46
     # W2 baseline hashes remain unchanged; verify the frozen subset independently.
     for name, expected in W2_EXPECTED_HASHES.items():
         idx = a["names"].index(name)
@@ -1153,7 +1154,7 @@ def test_guard_canonical_tree_pass():
     out = run_guard(canonical_root())
     assert out["status"] == "PASS", out["violations"]
     assert out["violations"] == []
-    assert out["operation_count"] == 44
+    assert out["operation_count"] == 46
     assert out["capability_count"] == 1
     assert out["result_count"] == 13
 
@@ -1187,7 +1188,7 @@ def test_guard_violations_sorted():
 
 def test_w2_hash_parity_13_of_13():
     m = load_operation_descriptor_map(canonical_root())
-    assert len(m) == 44
+    assert len(m) == 46
     for name, expected in W2_EXPECTED_HASHES.items():
         assert m[name].contract_hash() == expected, f"hash mismatch {name}"
 
