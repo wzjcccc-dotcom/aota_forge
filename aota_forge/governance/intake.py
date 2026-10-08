@@ -44,10 +44,13 @@ from aota_forge.core.project.lifecycle import (
 from aota_forge.core.project.manifest import PROJECT_ID_RE, load_project
 from aota_forge.governance.context_route import ContextRouteInput, build_context_route
 from aota_forge.governance.local_lifecycle import (
+    LocalPlanCandidatePreflight,
     LocalPlanLifecycleCoordinator,
     LocalPlanLifecycleError,
     LocalPlanLifecycleRequest,
+    PlanCandidateKind,
     PlanCloseMaterializationEvidence,
+    preflight_local_plan_candidate,
 )
 from aota_forge.governance.projection import (
     GovernanceProjectionInput,
@@ -311,6 +314,30 @@ class GovernanceIntakeService:
                 )
         return self._project_unlocked(mode, project_id=project_id, **arguments)
 
+    def preflight_plan_candidate(
+        self,
+        *,
+        candidate_kind: PlanCandidateKind | str,
+        project_id: str,
+        plan_id: str,
+        candidate_body: str,
+    ) -> LocalPlanCandidatePreflight:
+        """Read-only readiness check; does not inspect or mutate durable owners."""
+        project_id = self._project_id(project_id)
+        if not is_plan_id(plan_id):
+            raise GovernanceIntakeError(
+                "PLAN_ID_INVALID", "plan_id must be one canonical internal Plan ID"
+            )
+        try:
+            return preflight_local_plan_candidate(
+                candidate_kind=candidate_kind,
+                project_id=project_id,
+                plan_id=plan_id,
+                candidate_body=candidate_body,
+            )
+        except LocalPlanLifecycleError as exc:
+            raise GovernanceIntakeError(exc.code, exc.message) from exc
+
     def _project_unlocked(
         self, mode: str, *, project_id: str, **arguments: Any
     ) -> dict[str, Any]:
@@ -372,6 +399,23 @@ class GovernanceIntakeService:
         project_id = self._project_id(project_id)
         if not is_plan_id(plan_id):
             raise GovernanceIntakeError("PLAN_ID_INVALID", "plan_id must be one canonical internal Plan ID")
+        if mode in {"init", "amend"}:
+            body = arguments.get("candidate_body")
+            if not isinstance(body, str) or not body.strip():
+                raise GovernanceIntakeError("PLAN_BODY_REQUIRED", "Plan mutation requires candidate_body")
+            try:
+                admission = preflight_local_plan_candidate(
+                    candidate_kind=mode,
+                    project_id=project_id,
+                    plan_id=plan_id,
+                    candidate_body=body,
+                )
+            except LocalPlanLifecycleError as exc:
+                raise GovernanceIntakeError(exc.code, exc.message) from exc
+            if admission.semantic_readiness != "READY":
+                codes = ", ".join(admission.finding_codes)
+                code = admission.finding_codes[0] if admission.finding_codes else "PLAN_CANDIDATE_NOT_READY"
+                raise GovernanceIntakeError(code, f"Plan candidate failed semantic admission: {codes}")
         source_repository = self._source_repository(arguments.get("source_repository"))
         registration = (
             self._reconcile_registered(project_id, source_repository)
@@ -394,9 +438,12 @@ class GovernanceIntakeService:
                     candidate_body=body,
                     arguments=arguments,
                 )
-                result = LocalPlanLifecycleCoordinator(store, journal).initialize(
-                    lifecycle_request, body
-                )
+                try:
+                    result = LocalPlanLifecycleCoordinator(store, journal).initialize(
+                        lifecycle_request, body
+                    )
+                except LocalPlanLifecycleError as exc:
+                    raise GovernanceIntakeError(exc.code, exc.message) from exc
                 if not result.ok:
                     raise GovernanceIntakeError(result.error_code or "PLAN_INIT_FAILED", result.error_message or "Plan init failed")
                 return self._plan_result(
@@ -428,12 +475,15 @@ class GovernanceIntakeService:
                     "event": "plan_amendment",
                     "decision_ref": arguments.get("semantic_decision_ref") or "governance-intake",
                 }
-                result = LocalPlanLifecycleCoordinator(store, journal).amend(
-                    request,
-                    body,
-                    expected_authority=current.authority,
-                    amendment_event=event,
-                )
+                try:
+                    result = LocalPlanLifecycleCoordinator(store, journal).amend(
+                        request,
+                        body,
+                        expected_authority=current.authority,
+                        amendment_event=event,
+                    )
+                except LocalPlanLifecycleError as exc:
+                    raise GovernanceIntakeError(exc.code, exc.message) from exc
                 if not result.ok:
                     raise GovernanceIntakeError(result.error_code or "PLAN_AMEND_FAILED", result.error_message or "Plan amendment failed")
                 return self._plan_result(

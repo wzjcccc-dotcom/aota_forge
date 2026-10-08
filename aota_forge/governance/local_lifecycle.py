@@ -59,6 +59,7 @@ from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import (
     MAX_PLAN_BYTES,
     PORTABLE_PLAN_SOURCE_LOCAL,
+    PortablePlanDocument,
     portable_plan_digest,
 )
 from aota_forge.core.plan.sections import KIND_CURRENT, parse_body_sections
@@ -77,7 +78,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
-# W1 implementation and negative-ownership markers.
+# Local Plan lifecycle implementation and negative-ownership markers.
 LOCAL_PLAN_LIFECYCLE_IMPLEMENTED = True
 LOCAL_PLAN_AUTHORITY_CUTOVER_IMPLEMENTED = True
 LOCAL_PLAN_AUTHORITY_CUTOVER_USES_EXISTING_PORT = True
@@ -92,9 +93,26 @@ LOCAL_PLAN_CLOSE_MATERIALIZATION_USES_EXISTING_AMENDMENT = True
 LOCAL_PLAN_CLOSE_MATERIALIZATION_BEFORE_RETIREMENT = True
 LOCAL_PLAN_CLOSE_APPLIED_IMPLIES_TERMINAL_BODY_CONVERGED = True
 LOCAL_PLAN_RETIRED_FINAL_BODY_RECOVERY_IMPLEMENTED = True
+PLAN_CANDIDATE_SEMANTIC_ADMISSION_IMPLEMENTED = True
+PLAN_CANDIDATE_PREFLIGHT_READ_ONLY = True
+PLAN_CANDIDATE_PREFLIGHT_REUSES_MUTATION_VALIDATOR = True
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND = "active_local_plan_orphan_body_recovery"
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_REASON = (
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_WITHOUT_DURABLE_AMENDMENT_LINEAGE"
+)
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_IMPLEMENTED = True
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_JOURNAL = True
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_EXECUTOR = True
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_ADAPTER = True
+ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_PROJECT_STORE_CAS = True
 NORMAL_RETIRED_PLAN_MUTATION_DENIED = True
 SECOND_PLAN_MUTATION_PROTOCOL_CREATED = False
 SECOND_TRANSACTION_FRAMEWORK_CREATED = False
+SECOND_GOVERNANCE_STORE_CREATED = False
+NEW_AGENT_OPERATION_CREATED = False
+NEW_GOVERNANCE_PLAN_MODE_CREATED = False
+MODEL_FACING_RECOVERY_CAPABILITY_CREATED = False
+NEW_JOURNAL_STATE_CREATED = False
 SILENT_DUAL_AUTHORITY_ALLOWED = False
 POST_CUTOVER_FALLBACK_TO_OLD_AUTHORITY_ALLOWED = False
 CUTOVER_UNKNOWN_OUTCOME_FAILS_CLOSED = True
@@ -337,6 +355,35 @@ class LocalPlanLifecycleResult:
         return self.phase is LocalPlanLifecyclePhase.VERIFIED
 
 
+class PlanCandidateKind(str, Enum):
+    INIT = "init"
+    AMEND = "amend"
+
+
+@dataclass(frozen=True)
+class LocalPlanCandidatePreflight:
+    """Bounded, read-only semantic readiness result for one candidate body."""
+
+    candidate_kind: PlanCandidateKind
+    normalization_valid: bool
+    semantic_readiness: str
+    finding_codes: tuple[str, ...]
+    normalized_current_state_usable: bool
+    mutation_authorization: str = "NOT_EVALUATED"
+    durable_materialization: str = "NOT_ATTEMPTED"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_kind": self.candidate_kind.value,
+            "normalization_valid": self.normalization_valid,
+            "semantic_readiness": self.semantic_readiness,
+            "finding_codes": list(self.finding_codes[:8]),
+            "normalized_current_state_usable": self.normalized_current_state_usable,
+            "mutation_authorization": self.mutation_authorization,
+            "durable_materialization": self.durable_materialization,
+        }
+
+
 def _digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
@@ -362,6 +409,193 @@ def _normalized_digest(body: str) -> str:
             "PLAN_BODY_INVALID", f"canonical Plan normalization failed: {exc}"
         ) from exc
     return portable_plan_digest(document)
+
+
+def _candidate_identity_findings(
+    body: str,
+    *,
+    project_id: str,
+    plan_id: str,
+) -> list[str]:
+    """Check explicit candidate identity echoes using the canonical section parser."""
+    values: dict[str, list[str]] = {
+        "project_id": [],
+        "plan_id": [],
+    }
+    identity_keys = {
+        "PROJECT_ID": "project_id",
+        "CANONICAL_PROJECT_ID": "project_id",
+        "PLAN_ID": "plan_id",
+    }
+    for section in parse_body_sections(body):
+        is_identity_section = section.title.strip().casefold() == "plan identity"
+        if section.kind != KIND_CURRENT and not is_identity_section:
+            continue
+        for key, logical_key in identity_keys.items():
+            if key in section.key_values:
+                values[logical_key].append(section.key_values[key].strip())
+            for duplicate_key, duplicate_values in section.duplicates:
+                if duplicate_key == key:
+                    values[logical_key].extend(value.strip() for value in duplicate_values)
+
+    findings: list[str] = []
+    expected = {"project_id": project_id, "plan_id": plan_id}
+    for logical_key in ("project_id", "plan_id"):
+        observed = values[logical_key]
+        if not observed:
+            continue
+        if any(not value for value in observed):
+            findings.append("CANDIDATE_IDENTITY_EMPTY")
+        if len(set(observed)) > 1:
+            findings.append("CANDIDATE_IDENTITY_CONTRADICTION")
+        if any(value != expected[logical_key] for value in observed):
+            findings.append(
+                "CANDIDATE_PROJECT_ID_MISMATCH"
+                if logical_key == "project_id"
+                else "CANDIDATE_PLAN_ID_MISMATCH"
+            )
+    return list(dict.fromkeys(findings))
+
+
+def _candidate_preflight(
+    *,
+    candidate_kind: PlanCandidateKind | str,
+    project_id: str,
+    plan_id: str,
+    candidate_body: str,
+) -> tuple[LocalPlanCandidatePreflight, PortablePlanDocument | None]:
+    """Normalize and semantically inspect a candidate without durable effects.
+
+    This is intentionally not an authorization or materialization operation.
+    Mutation methods consume the same validator and add their ordinary trusted
+    authorization, binding, journal and CAS checks afterwards.
+    """
+    try:
+        kind = PlanCandidateKind(candidate_kind)
+    except (TypeError, ValueError) as exc:
+        raise LocalPlanLifecycleError(
+            "CANDIDATE_KIND_INVALID", "candidate_kind must be init or amend"
+        ) from exc
+
+    try:
+        body = _bounded_body(candidate_body)
+    except LocalPlanLifecycleError as exc:
+        return (
+            LocalPlanCandidatePreflight(
+                candidate_kind=kind,
+                normalization_valid=False,
+                semantic_readiness="BLOCKED",
+                finding_codes=(exc.code,),
+                normalized_current_state_usable=False,
+            ),
+            None,
+        )
+
+    try:
+        document = normalize_portable_plan(
+            body,
+            source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+        )
+    except Exception:
+        return (
+            LocalPlanCandidatePreflight(
+                candidate_kind=kind,
+                normalization_valid=False,
+                semantic_readiness="BLOCKED",
+                finding_codes=("PLAN_BODY_INVALID",),
+                normalized_current_state_usable=False,
+            ),
+            None,
+        )
+
+    findings: list[str] = []
+    state_findings: list[str] = []
+    status = document.plan_status.strip() if isinstance(document.plan_status, str) else ""
+    if not status:
+        state_findings.append("PLAN_STATUS_MISSING")
+    elif kind is PlanCandidateKind.INIT and status.casefold().replace("_", "-") in {
+        "completed",
+        "complete",
+        "closed",
+        "retired",
+    }:
+        state_findings.append("PLAN_STATUS_NOT_INITIALIZABLE")
+
+    milestone_id = document.current_milestone
+    if milestone_id is None:
+        state_findings.append("CURRENT_MILESTONE_MISSING")
+    else:
+        milestone = document.milestone_specs.get(milestone_id)
+        milestone_status = document.milestone_status.get(milestone_id)
+        if isinstance(milestone, Mapping):
+            if not str(milestone.get("title") or "").strip():
+                state_findings.append("CURRENT_MILESTONE_NOT_DEFINED")
+            if milestone_status is None:
+                milestone_status = milestone.get("status")
+        elif milestone_status is None:
+            state_findings.append("CURRENT_MILESTONE_NOT_DEFINED")
+        if not isinstance(milestone_status, str) or not milestone_status.strip():
+            state_findings.append("CURRENT_MILESTONE_STATUS_MISSING")
+
+    findings.extend(state_findings)
+    findings.extend(
+        _candidate_identity_findings(
+            body,
+            project_id=project_id,
+            plan_id=plan_id,
+        )
+    )
+    findings = list(dict.fromkeys(findings))[:8]
+    return (
+        LocalPlanCandidatePreflight(
+            candidate_kind=kind,
+            normalization_valid=True,
+            semantic_readiness="READY" if not findings else "BLOCKED",
+            finding_codes=tuple(findings),
+            normalized_current_state_usable=not state_findings,
+        ),
+        document,
+    )
+
+
+def preflight_local_plan_candidate(
+    *,
+    candidate_kind: PlanCandidateKind | str,
+    project_id: str,
+    plan_id: str,
+    candidate_body: str,
+) -> LocalPlanCandidatePreflight:
+    """Return the bounded read-only portion of the shared admission result."""
+    result, _ = _candidate_preflight(
+        candidate_kind=candidate_kind,
+        project_id=project_id,
+        plan_id=plan_id,
+        candidate_body=candidate_body,
+    )
+    return result
+
+
+def _require_candidate_admission(
+    *,
+    candidate_kind: PlanCandidateKind,
+    project_id: str,
+    plan_id: str,
+    candidate_body: str,
+) -> tuple[LocalPlanCandidatePreflight, PortablePlanDocument]:
+    result, document = _candidate_preflight(
+        candidate_kind=candidate_kind,
+        project_id=project_id,
+        plan_id=plan_id,
+        candidate_body=candidate_body,
+    )
+    if result.semantic_readiness != "READY" or document is None:
+        code = result.finding_codes[0] if result.finding_codes else "PLAN_CANDIDATE_NOT_READY"
+        raise LocalPlanLifecycleError(
+            code,
+            "Plan candidate failed semantic admission"
+            + (f": {', '.join(result.finding_codes)}" if result.finding_codes else ""),
+        )
+    return result, document
 
 
 def next_plan_revision(body: str) -> str:
@@ -660,6 +894,38 @@ def _request_identity(
     )
 
 
+def _active_orphan_recovery_identity(
+    request: LocalPlanLifecycleRequest,
+    *,
+    expected_authority: PlanAuthorityBinding,
+    orphan_source_revision: str | int,
+    orphan_digest: str,
+    recovery_reason: str,
+) -> str:
+    """Bind the exact predecessor Store authority and observed orphan body."""
+    return _canonical_digest(
+        {
+            "kind": ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
+            "project_id": request.project_id,
+            "plan_id": request.plan_id,
+            "target_authority_ref": request.destination.authority_ref,
+            "source_target": _source_target(request).serialize(),
+            "predecessor_store_binding": expected_authority.to_dict(),
+            "predecessor_store_revision": request.expected_plan_revision,
+            "orphan_source_revision": orphan_source_revision,
+            "orphan_raw_digest": orphan_digest,
+            "recovery_reason": recovery_reason,
+            "principal": request.principal,
+            "authorization_reference": request.authorization_reference,
+            "lease_reference": request.lease_reference,
+            "idempotency_key": request.idempotency_key,
+            "correlation_id": request.correlation_id,
+            "intent_fingerprint": request.intent_fingerprint,
+            "contract_hash": request.contract_hash,
+        }
+    )
+
+
 def _journal_id(identity: str) -> str:
     return f"local-lifecycle-{identity[:48]}"
 
@@ -837,6 +1103,7 @@ def _find_existing(
             "local_plan_amendment",
             "authority_cutover",
             "final_plan_body_materialization_recovery",
+            ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
         }:
             raise LocalPlanLifecycleError(
                 "IDEMPOTENCY_CONFLICT",
@@ -854,6 +1121,27 @@ def _find_existing(
             )
         return entry
     return None
+
+
+def _journal_entry_may_match_plan(
+    entry: DurableJournalEntry,
+    request: LocalPlanLifecycleRequest,
+) -> bool:
+    """Match explicit lifecycle identity, or conservatively inspect its target."""
+    evidence = entry.record.evidence
+    project_id = evidence.get("project_id")
+    plan_id = evidence.get("plan_id")
+    if project_id == request.project_id and plan_id == request.plan_id:
+        return True
+    if project_id not in (None, request.project_id) or plan_id not in (None, request.plan_id):
+        return False
+    try:
+        return (
+            entry.record.typed_target.to_canonical()
+            == request.destination.expected_ref.to_canonical()
+        )
+    except Exception:
+        return False
 
 
 def _source_snapshot_matches(
@@ -928,7 +1216,13 @@ class LocalPlanLifecycleCoordinator:
         """Materialize one new local Plan and durably register it as active."""
         body = _bounded_body(candidate_body)
         candidate_digest = _digest(body)
-        normalized_digest = _normalized_digest(body)
+        _, document = _require_candidate_admission(
+            candidate_kind=PlanCandidateKind.INIT,
+            project_id=request.project_id,
+            plan_id=request.plan_id,
+            candidate_body=body,
+        )
+        normalized_digest = portable_plan_digest(document)
         current = self.governance_store.get_plan(request.project_id, request.plan_id)
         target_adapter = LocalPlanAuthorityAdapter(request.destination)
         identity = _request_identity(
@@ -977,6 +1271,13 @@ class LocalPlanLifecycleCoordinator:
                     "existing non-local authority requires explicit cutover",
                     plan_record=current,
                 )
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_ALREADY_INITIALIZED",
+                "an active local Plan cannot be reinitialized; use the amendment lifecycle",
+                plan_record=current,
+            )
 
         try:
             target_revision, target_digest, _ = target_adapter.read_raw_authority(
@@ -1041,7 +1342,13 @@ class LocalPlanLifecycleCoordinator:
         """
         body = _bounded_body(candidate_body)
         candidate_digest = _digest(body)
-        normalized_digest = _normalized_digest(body)
+        _, document = _require_candidate_admission(
+            candidate_kind=PlanCandidateKind.AMEND,
+            project_id=request.project_id,
+            plan_id=request.plan_id,
+            candidate_body=body,
+        )
+        normalized_digest = portable_plan_digest(document)
         current = self.governance_store.get_plan(request.project_id, request.plan_id)
 
         if not isinstance(expected_authority, PlanAuthorityBinding):
@@ -1527,6 +1834,332 @@ class LocalPlanLifecycleCoordinator:
             recovery=True,
         )
 
+    def recover_active_local_plan_orphan_body(
+        self,
+        request: LocalPlanLifecycleRequest,
+        *,
+        expected_authority: PlanAuthorityBinding,
+        expected_orphan_digest: str,
+        recovery_reason: str,
+    ) -> LocalPlanLifecycleResult:
+        """Reconcile one observed active local Plan body through the Gov2 lifecycle.
+
+        The body is read only from the trusted destination. Recovery does not
+        synthesize Plan content and reuses the existing journal, adapter,
+        RecoveryExecutor and Project Governance Store CAS.
+        """
+        if not isinstance(request, LocalPlanLifecycleRequest):
+            raise TypeError("request must be LocalPlanLifecycleRequest")
+        current = self.governance_store.get_plan(request.project_id, request.plan_id)
+        if current is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_RECORD_REQUIRED",
+                "active orphan-body recovery requires an existing Project Governance Plan record",
+            )
+        if current.lifecycle_state != PLAN_LIFECYCLE_ACTIVE:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_NOT_ACTIVE",
+                "active orphan-body recovery requires lifecycle_state=active",
+                plan_record=current,
+            )
+        if not isinstance(expected_authority, PlanAuthorityBinding):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "RECOVERY_PRECONDITION_BINDING_INVALID",
+                "recovery requires the exact predecessor Store authority binding",
+                plan_record=current,
+            )
+        if (
+            expected_authority.plan_id != request.plan_id
+            or expected_authority.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or expected_authority.authority_ref != request.destination.authority_ref
+            or expected_authority.source_revision is None
+            or expected_authority.source_digest is None
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "RECOVERY_PRECONDITION_BINDING_INVALID",
+                "recovery predecessor must be the complete local authority binding for this Plan",
+                plan_record=current,
+            )
+        if request.expected_plan_revision is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_REVISION_REQUIRED",
+                "active orphan-body recovery requires an explicit Store CAS revision",
+                plan_record=current,
+            )
+        if not isinstance(expected_orphan_digest, str) or not _SHA256_RE.fullmatch(
+            expected_orphan_digest
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ORPHAN_DIGEST_INVALID",
+                "expected_orphan_digest must be a lowercase SHA-256 digest",
+                plan_record=current,
+            )
+        if recovery_reason != ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_REASON:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "RECOVERY_REASON_INVALID",
+                "recovery_reason must identify the bounded active orphan-body case",
+                plan_record=current,
+            )
+
+        target_adapter = LocalPlanAuthorityAdapter(
+            request.destination,
+            allow_existing_replacement=True,
+        )
+        try:
+            orphan_revision, orphan_digest, orphan_body = target_adapter.read_raw_authority(
+                request.destination.expected_ref
+            )
+        except Exception as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ORPHAN_PLAN_READ_UNKNOWN",
+                str(exc),
+                plan_record=current,
+            )
+        try:
+            orphan_body = _bounded_body(orphan_body)
+            _, document = _require_candidate_admission(
+                candidate_kind=PlanCandidateKind.AMEND,
+                project_id=request.project_id,
+                plan_id=request.plan_id,
+                candidate_body=orphan_body,
+            )
+        except LocalPlanLifecycleError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                exc.code,
+                exc.message,
+                plan_record=current,
+            )
+        normalized_digest = portable_plan_digest(document)
+        if (
+            orphan_digest != expected_orphan_digest
+            or _digest(orphan_body) != expected_orphan_digest
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ORPHAN_BODY_DIGEST_MISMATCH",
+                "trusted local Plan bytes do not match the authorized orphan digest",
+                plan_record=current,
+            )
+        if orphan_revision != orphan_digest:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ORPHAN_SOURCE_REVISION_MISMATCH",
+                "local Plan source revision does not match its observed raw digest",
+                plan_record=current,
+            )
+
+        identity = _active_orphan_recovery_identity(
+            request,
+            expected_authority=expected_authority,
+            orphan_source_revision=orphan_revision,
+            orphan_digest=orphan_digest,
+            recovery_reason=recovery_reason,
+        )
+        try:
+            existing = _find_existing(self.journal_store, request, identity)
+        except LocalPlanLifecycleError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                exc.code,
+                exc.message,
+                plan_record=current,
+            )
+        if existing is not None:
+            evidence = existing.record.evidence
+            if (
+                evidence.get("local_plan_lifecycle")
+                != ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND
+                or evidence.get("candidate_raw_digest") != orphan_digest
+                or evidence.get("orphan_observed_raw_digest") != orphan_digest
+                or evidence.get("orphan_observed_revision") != orphan_revision
+                or evidence.get("predecessor_store_revision")
+                != request.expected_plan_revision
+                or evidence.get("recovery_precondition_binding")
+                != expected_authority.to_dict()
+            ):
+                return _failure(
+                    request,
+                    LocalPlanLifecyclePhase.FAILED_CLOSED,
+                    "ORPHAN_RECOVERY_JOURNAL_IDENTITY_MISMATCH",
+                    "existing recovery journal does not bind both exact sides of this authority split",
+                    journal_entry=existing,
+                    plan_record=current,
+                )
+            if existing.record.journal_state is JournalState.PREPARED:
+                try:
+                    entry = RecoveryExecutor(
+                        self.journal_store, target_adapter
+                    ).attempt_external_mutation(
+                        existing.record.journal_id,
+                        _mutation_request(existing.record, orphan_body),
+                    )
+                except Exception as exc:
+                    return _failure(
+                        request,
+                        LocalPlanLifecyclePhase.UNKNOWN,
+                        "ORPHAN_RECOVERY_ATTEMPT_UNKNOWN",
+                        str(exc),
+                        journal_entry=existing,
+                        plan_record=current,
+                    )
+                return self._after_materialization(
+                    request,
+                    entry,
+                    candidate_body=orphan_body,
+                    target_adapter=target_adapter,
+                    source_adapter=None,
+                    source_binding=None,
+                    source_revision=orphan_revision,
+                    source_digest=orphan_digest,
+                    source_body=orphan_body,
+                )
+            return self._resume(
+                request,
+                existing,
+                candidate_body=None,
+                source_adapter=None,
+                source_binding=None,
+            )
+
+        try:
+            all_entries = self.journal_store.list_all()
+        except Exception as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ORPHAN_RECOVERY_JOURNAL_SCAN_UNKNOWN",
+                str(exc),
+                plan_record=current,
+            )
+        for entry in all_entries:
+            evidence = entry.record.evidence
+            if (
+                _journal_entry_may_match_plan(entry, request)
+                and (
+                    entry.record.candidate_raw_digest == orphan_digest
+                    or evidence.get("candidate_plan_raw_digest") == orphan_digest
+                )
+            ):
+                return _failure(
+                    request,
+                    LocalPlanLifecyclePhase.FAILED_CLOSED,
+                    "ORPHAN_RECOVERY_EXISTING_CANDIDATE_LINEAGE",
+                    "another durable journal already owns the exact orphan candidate digest",
+                    journal_entry=entry,
+                    plan_record=current,
+                )
+
+        try:
+            nonterminal = self.journal_store.scan_nonterminal()
+        except Exception as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ORPHAN_RECOVERY_NONTERMINAL_SCAN_UNKNOWN",
+                str(exc),
+                plan_record=current,
+            )
+        for entry in nonterminal:
+            if _journal_entry_may_match_plan(entry, request):
+                return _failure(
+                    request,
+                    LocalPlanLifecyclePhase.FAILED_CLOSED,
+                    "ACTIVE_PLAN_RECOVERY_CONCURRENT_MUTATION",
+                    "another nonterminal local lifecycle mutation exists for this Plan",
+                    journal_entry=entry,
+                    plan_record=current,
+                )
+
+        desired = PlanAuthorityBinding(
+            plan_id=request.plan_id,
+            source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            authority_ref=request.destination.authority_ref,
+            source_revision=orphan_revision,
+            source_digest=orphan_digest,
+        )
+        if current.authority == desired:
+            return _success(request, journal_entry=None, plan_record=current)
+        if expected_authority.source_digest == orphan_digest:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ORPHAN_RECOVERY_PREDECESSOR_NOT_DISTINCT",
+                "the expected predecessor digest is not distinct from the observed orphan body",
+                plan_record=current,
+            )
+        if current.revision != request.expected_plan_revision:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "STALE_PLAN_REVISION",
+                "Project Governance Store revision differs from the recovery CAS precondition",
+                plan_record=current,
+            )
+        if not _source_binding_matches(current.authority, expected_authority):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "RECOVERY_PRECONDITION_BINDING_MISMATCH",
+                "current Store authority does not exactly match the supplied predecessor binding",
+                plan_record=current,
+            )
+
+        record = _new_record(
+            request,
+            kind=ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
+            identity=identity,
+            target_revision=orphan_revision,
+            target_digest=orphan_digest,
+            candidate_digest=orphan_digest,
+            normalized_digest=normalized_digest,
+            subject_revision=current.revision,
+            source_binding=None,
+            source_revision=orphan_revision,
+            source_digest=orphan_digest,
+            evidence_extra={
+                "event": ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
+                "recovery_reason": recovery_reason,
+                "recovery_precondition_binding": expected_authority.to_dict(),
+                "predecessor_store_revision": current.revision,
+                "orphan_observed_revision": orphan_revision,
+                "orphan_observed_raw_digest": orphan_digest,
+                "recovery_phase": LocalPlanLifecyclePhase.PREPARED.value,
+                "authority_identity_switch": "unchanged",
+            },
+        )
+        return self._create_and_attempt(
+            request,
+            record,
+            orphan_body,
+            target_adapter,
+            source_adapter=None,
+            source_binding=None,
+            source_revision=orphan_revision,
+            source_digest=orphan_digest,
+            source_body=orphan_body,
+        )
+
     def cutover(
         self,
         request: LocalPlanLifecycleRequest,
@@ -1732,6 +2365,27 @@ class LocalPlanLifecycleCoordinator:
                 "SOURCE_TARGET_MISMATCH",
                 "fresh-process recovery target differs from the durable lifecycle target",
                 journal_entry=entry,
+            )
+        if evidence.get("local_plan_lifecycle") == ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND:
+            try:
+                expected_authority = PlanAuthorityBinding.from_dict(
+                    evidence["recovery_precondition_binding"]
+                )
+                orphan_digest = str(evidence["orphan_observed_raw_digest"])
+                recovery_reason = str(evidence["recovery_reason"])
+            except (KeyError, TypeError, ValueError) as exc:
+                return _failure(
+                    request,
+                    LocalPlanLifecyclePhase.FAILED_CLOSED,
+                    "JOURNAL_CORRUPT",
+                    f"active orphan recovery journal evidence is invalid: {exc}",
+                    journal_entry=entry,
+                )
+            return self.recover_active_local_plan_orphan_body(
+                request,
+                expected_authority=expected_authority,
+                expected_orphan_digest=orphan_digest,
+                recovery_reason=recovery_reason,
             )
         try:
             stored_source = evidence.get("source_binding")
@@ -1971,6 +2625,24 @@ class LocalPlanLifecycleCoordinator:
                 "authority_switch": "unchanged",
                 "binding_revision": result.plan_record.revision if result.plan_record else None,
             }
+        elif lifecycle_kind == ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND:
+            predecessor = entry.record.evidence.get("recovery_precondition_binding")
+            predecessor_digest = (
+                predecessor.get("source_digest") if isinstance(predecessor, Mapping) else None
+            )
+            recovered_digest = (
+                result.plan_record.authority.source_digest if result.plan_record else None
+            )
+            completion_evidence = {
+                "event": ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
+                "recovery_phase": LocalPlanLifecyclePhase.VERIFIED.value,
+                "authority_switch": "unchanged",
+                "authority_identity_switch": "unchanged",
+                "authority_binding_digest_converged": True,
+                "binding_revision": result.plan_record.revision if result.plan_record else None,
+                "predecessor_source_digest": predecessor_digest,
+                "recovered_source_digest": recovered_digest,
+            }
         else:
             completion_evidence = {
                 "authority_switch": "complete",
@@ -2129,7 +2801,11 @@ class LocalPlanLifecycleCoordinator:
             request.destination,
             allow_existing_replacement=(
                 entry.record.evidence.get("local_plan_lifecycle")
-                in {"local_plan_amendment", "final_plan_body_materialization_recovery"}
+                in {
+                    "local_plan_amendment",
+                    "final_plan_body_materialization_recovery",
+                    ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND,
+                }
             ),
         )
         current = self.governance_store.get_plan(request.project_id, request.plan_id)
@@ -2359,6 +3035,10 @@ class LocalPlanLifecycleCoordinator:
             return self._complete_local_amendment(request, entry, current, desired)
         if kind == "final_plan_body_materialization_recovery":
             return self._complete_local_body_recovery(request, entry, current, desired)
+        if kind == ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND:
+            return self._complete_active_orphan_body_recovery(
+                request, entry, current, desired
+            )
         if kind != "authority_cutover":
             return _failure(
                 request,
@@ -2724,6 +3404,161 @@ class LocalPlanLifecycleCoordinator:
             request, _success(request, journal_entry=entry, plan_record=verified)
         )
 
+    def _complete_active_orphan_body_recovery(
+        self,
+        request: LocalPlanLifecycleRequest,
+        entry: DurableJournalEntry,
+        current: ProjectPlanRecord | None,
+        desired: PlanAuthorityBinding,
+    ) -> LocalPlanLifecycleResult:
+        if current is None:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_RECORD_MISSING",
+                "active orphan-body recovery cannot update a missing Store record",
+                journal_entry=entry,
+            )
+        if current.lifecycle_state != PLAN_LIFECYCLE_ACTIVE:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "PLAN_NOT_ACTIVE",
+                "active orphan-body recovery cannot mutate a non-active Plan",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        evidence = entry.record.evidence
+        try:
+            expected = PlanAuthorityBinding.from_dict(
+                evidence["recovery_precondition_binding"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "JOURNAL_CORRUPT",
+                f"active orphan-body recovery predecessor binding is invalid: {exc}",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        orphan_digest = entry.record.candidate_raw_digest
+        orphan_revision = entry.record.authority_source_revision
+        if (
+            evidence.get("local_plan_lifecycle")
+            != ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND
+            or evidence.get("event") != ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND
+            or evidence.get("recovery_reason")
+            != ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_REASON
+            or evidence.get("project_id") != request.project_id
+            or evidence.get("plan_id") != request.plan_id
+            or evidence.get("predecessor_store_revision")
+            != entry.record.subject_expected_revision
+            or request.expected_plan_revision != entry.record.subject_expected_revision
+            or evidence.get("orphan_observed_revision") != orphan_revision
+            or evidence.get("orphan_observed_raw_digest") != orphan_digest
+            or entry.record.authority_observed_raw_digest != orphan_digest
+            or desired.source_revision != orphan_revision
+            or desired.source_digest != orphan_digest
+            or expected.source_digest == orphan_digest
+            or _binding_identity(expected) != _binding_identity(desired)
+            or _source_binding_matches(expected, desired)
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ORPHAN_RECOVERY_JOURNAL_IDENTITY_MISMATCH",
+                "durable recovery journal does not bind the exact predecessor and orphan body",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        if _source_binding_matches(current.authority, desired):
+            return self._mark_terminal_evidence(
+                request, _success(request, journal_entry=entry, plan_record=current)
+            )
+        if current.revision != entry.record.subject_expected_revision:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ACTIVE_ORPHAN_STORE_REVISION_CONFLICT",
+                "Project Governance Store revision changed before orphan recovery CAS",
+                journal_entry=entry,
+                plan_record=current,
+            )
+        if not _source_binding_matches(current.authority, expected):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ACTIVE_ORPHAN_STORE_BINDING_CONFLICT",
+                "Project Governance Store no longer matches the exact predecessor binding",
+                journal_entry=entry,
+                plan_record=current,
+            )
+
+        try:
+            updated = self.governance_store.compare_and_swap_plan(
+                request.project_id,
+                request.plan_id,
+                current.revision,
+                authority=desired,
+            )
+        except StalePlanRevisionError:
+            latest = self.governance_store.get_plan(request.project_id, request.plan_id)
+            if (
+                latest is not None
+                and latest.lifecycle_state == PLAN_LIFECYCLE_ACTIVE
+                and _source_binding_matches(latest.authority, desired)
+            ):
+                return self._mark_terminal_evidence(
+                    request, _success(request, journal_entry=entry, plan_record=latest)
+                )
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "ACTIVE_ORPHAN_STORE_CAS_CONFLICT",
+                "Store authority CAS lost to a conflicting update",
+                journal_entry=entry,
+                plan_record=latest,
+            )
+        except ProjectGovernancePersistenceError as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ACTIVE_ORPHAN_STORE_CAS_UNKNOWN",
+                str(exc),
+                journal_entry=entry,
+                plan_record=current,
+            )
+
+        try:
+            verified = self.governance_store.get_plan(request.project_id, request.plan_id)
+        except Exception as exc:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ACTIVE_ORPHAN_STORE_READBACK_UNKNOWN",
+                str(exc),
+                journal_entry=entry,
+                plan_record=updated,
+            )
+        if (
+            verified is None
+            or verified.lifecycle_state != PLAN_LIFECYCLE_ACTIVE
+            or verified.revision != updated.revision
+            or not _source_binding_matches(verified.authority, desired)
+        ):
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.UNKNOWN,
+                "ACTIVE_ORPHAN_STORE_READBACK_FAILED",
+                "Store authority did not verify the exact recovered local binding",
+                journal_entry=entry,
+                plan_record=verified or updated,
+            )
+        return self._mark_terminal_evidence(
+            request, _success(request, journal_entry=entry, plan_record=verified)
+        )
+
     def _complete_local_init(
         self,
         request: LocalPlanLifecycleRequest,
@@ -2885,6 +3720,25 @@ def recover_retired_final_plan_body(
     )
 
 
+def recover_active_local_plan_orphan_body(
+    *,
+    governance_store: ProjectGovernanceStore,
+    journal_store: DurableJournalStore,
+    request: LocalPlanLifecycleRequest,
+    expected_authority: PlanAuthorityBinding,
+    expected_orphan_digest: str,
+    recovery_reason: str,
+) -> LocalPlanLifecycleResult:
+    return LocalPlanLifecycleCoordinator(
+        governance_store, journal_store
+    ).recover_active_local_plan_orphan_body(
+        request,
+        expected_authority=expected_authority,
+        expected_orphan_digest=expected_orphan_digest,
+        recovery_reason=recovery_reason,
+    )
+
+
 __all__ = [
     "LOCAL_PLAN_LIFECYCLE_IMPLEMENTED",
     "LOCAL_PLAN_AUTHORITY_CUTOVER_IMPLEMENTED",
@@ -2903,9 +3757,27 @@ __all__ = [
     "LOCAL_PLAN_CLOSE_MATERIALIZATION_BEFORE_RETIREMENT",
     "LOCAL_PLAN_CLOSE_APPLIED_IMPLIES_TERMINAL_BODY_CONVERGED",
     "LOCAL_PLAN_RETIRED_FINAL_BODY_RECOVERY_IMPLEMENTED",
+    "PLAN_CANDIDATE_SEMANTIC_ADMISSION_IMPLEMENTED",
+    "PLAN_CANDIDATE_PREFLIGHT_READ_ONLY",
+    "PLAN_CANDIDATE_PREFLIGHT_REUSES_MUTATION_VALIDATOR",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_KIND",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_REASON",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_IMPLEMENTED",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_JOURNAL",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_EXECUTOR",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_EXISTING_ADAPTER",
+    "ACTIVE_LOCAL_PLAN_ORPHAN_BODY_RECOVERY_USES_PROJECT_STORE_CAS",
+    "SECOND_GOVERNANCE_STORE_CREATED",
+    "NEW_AGENT_OPERATION_CREATED",
+    "NEW_GOVERNANCE_PLAN_MODE_CREATED",
+    "MODEL_FACING_RECOVERY_CAPABILITY_CREATED",
+    "NEW_JOURNAL_STATE_CREATED",
     "NORMAL_RETIRED_PLAN_MUTATION_DENIED",
     "LocalPlanLifecyclePhase",
     "LocalPlanLifecycleError",
+    "PlanCandidateKind",
+    "LocalPlanCandidatePreflight",
+    "preflight_local_plan_candidate",
     "LocalPlanLifecycleRequest",
     "PlanCloseMaterializationEvidence",
     "LocalPlanLifecycleResult",
@@ -2918,4 +3790,5 @@ __all__ = [
     "retire_local_plan",
     "close_local_plan",
     "recover_retired_final_plan_body",
+    "recover_active_local_plan_orphan_body",
 ]
