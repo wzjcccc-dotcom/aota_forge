@@ -350,6 +350,14 @@ def test_D1_healthy_current_plan_returns_deterministic_domains(doctor_world: Doc
     assert first.domains["PROJECTION"] == "READY"
     assert "RUNTIME_ACTIVE_ELIGIBILITY_NOT_YET_PROVEN" in _finding_codes(first)
 
+    dirty_source = run_governance_doctor(
+        doctor_world.context(),
+        source_observation={"available": True, "complete": True, "is_dirty": True},
+    )
+    assert dirty_source.domains["SOURCE_FRONTIER"] == "DEGRADED"
+    assert dirty_source.overall_status.value == "DEGRADED"
+    assert "SOURCE_RUNTIME_CLASSIFICATION_PENDING" in _finding_codes(dirty_source)
+
 
 def test_D2_retired_plan_active_coordinator_is_reported_without_deletion(tmp_path: Path) -> None:
     world = _world(tmp_path, body=COMPLETED_BODY, lifecycle_state=PLAN_LIFECYCLE_RETIRED)
