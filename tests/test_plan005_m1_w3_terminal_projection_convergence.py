@@ -42,6 +42,7 @@ from aota_forge.governance.local_lifecycle import (
 from aota_forge.governance.projection_lifecycle import ProjectionLifecycleError
 from aota_forge.governance.stewardship import GovernanceCheckpointKind
 from aota_forge.governance.project_store import (
+    PLAN_LIFECYCLE_ACTIVE,
     PLAN_LIFECYCLE_RETIRED,
     ProjectPlanRecord,
 )
@@ -112,6 +113,8 @@ from tests.test_af57_m3_w3_steward_production_composition import (
 
 PLAN002_ID = "plan_002_session_first_context_activation"
 PLAN004_ID = "plan_004_trusted_opencode_session_bridge_context_isolation"
+PLAN001_ID = "plan_001_gov2_session_first_adoption"
+PLAN005_ID = "plan_005_governance_self_hosting_routing_runtime_lifecycle"
 
 
 def _digest(value: str) -> str:
@@ -152,7 +155,12 @@ def _request(
     )
 
 
-def _world(tmp_path: Path) -> dict[str, object]:
+def _world(
+    tmp_path: Path,
+    *,
+    current_plan_id: str = PLAN_ID,
+    current_plan_revision: str = "R1",
+) -> dict[str, object]:
     (tmp_path / ".aota").mkdir(parents=True)
     (tmp_path / ".aota" / "project.yaml").write_text(
         INTAKE_MANIFEST.replace(INTAKE_PROJECT_ID, PROJECT_ID), encoding="utf-8"
@@ -165,8 +173,12 @@ def _world(tmp_path: Path) -> dict[str, object]:
     store = SQLiteProjectGovernanceStore(tmp_path / ".aota" / "governance.sqlite3")
     journal = FileBackedDurableJournalStore(tmp_path / ".aota" / "governance-journal.json")
     lifecycle = LocalPlanLifecycleCoordinator(store, journal)
-    for plan_id in (PLAN_ID, PLAN002_ID):
+    for plan_id in (current_plan_id, PLAN002_ID):
         body = LOCAL_PLAN_BODY.replace(PLAN_ID, plan_id)
+        if plan_id == current_plan_id:
+            body = body.replace(
+                "PLAN_REVISION=R1", f"PLAN_REVISION={current_plan_revision}"
+            )
         initialized = lifecycle.initialize(
             _request(governance_root, plan_id, f"{plan_id}-init"), body
         )
@@ -208,8 +220,41 @@ def _world(tmp_path: Path) -> dict[str, object]:
     }
 
 
+def _add_historical_retired_active_plan(
+    world: dict[str, object], plan_id: str
+) -> tuple[ProjectPlanRecord, str]:
+    root = world["governance_root"]
+    store = world["store"]
+    assert isinstance(root, LocalGovernanceRootBinding)
+    assert isinstance(store, SQLiteProjectGovernanceStore)
+    body = LOCAL_PLAN_BODY.replace(PLAN_ID, plan_id)
+    directory = Path(root.root_path) / plan_id
+    directory.mkdir()
+    (directory / "plan.md").write_text(body, encoding="utf-8")
+    digest = _digest(body)
+    record = ProjectPlanRecord(
+        project_id=PROJECT_ID,
+        plan_id=plan_id,
+        lifecycle_state=PLAN_LIFECYCLE_RETIRED,
+        authority=PlanAuthorityBinding(
+            plan_id=plan_id,
+            source_kind="local_governance",
+            authority_ref=local_plan_authority_reference(PROJECT_ID, plan_id),
+            source_revision=digest,
+            source_digest=digest,
+        ),
+        revision=1,
+    )
+    store.put_plan(record)
+    return record, body
+
+
 def _checkpoint_for_local_plan(
-    *, kind: str, accepted: bool, authority: PlanAuthorityBinding
+    *,
+    kind: str,
+    accepted: bool,
+    authority: PlanAuthorityBinding,
+    plan_id: str = PLAN_ID,
 ) -> tuple[object, PlanAuthorityBinding]:
     trusted_plan = TrustedPlanIdentity(
         governing_repo=None,
@@ -226,7 +271,7 @@ def _checkpoint_for_local_plan(
         trusted_plan=trusted_plan,
         closure_phase=ClosurePhase.ACCEPTED_CLOSURE if accepted else ClosurePhase.REVIEWED_CLOSURE,
         user_gate=TrustedUserGateState(user_approval_satisfied=accepted),
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         all_milestones_closed=(True if kind == "PLAN_CLOSE" else None),
     )
     return checkpoint, authority
@@ -239,17 +284,19 @@ def _control_service(
     accepted: bool = True,
     projection_hook=None,
     projection_plan_id: str = PLAN_ID,
+    current_plan_id: str = PLAN_ID,
+    coordinator_id: str | None = None,
 ):
     root = world["governance_root"]
     store = world["store"]
     assert isinstance(root, LocalGovernanceRootBinding)
     assert isinstance(store, SQLiteProjectGovernanceStore)
-    record = store.get_plan(PROJECT_ID, PLAN_ID)
+    record = store.get_plan(PROJECT_ID, current_plan_id)
     assert record is not None
     destination = LocalPlanAuthorityDestination(
         root,
-        PLAN_ID,
-        object_ref_subject(make_id(IdKind.SUBJECT, PLAN_ID, sub_kind=SubjectKind.PLAN)),
+        current_plan_id,
+        object_ref_subject(make_id(IdKind.SUBJECT, current_plan_id, sub_kind=SubjectKind.PLAN)),
     )
     reader = LocalPlanAuthorityReadAdapter(destination, binding=record.authority)
     trusted_review_authority = trusted_plan_authority_from_binding(
@@ -258,9 +305,13 @@ def _control_service(
         authoritative_reader=reader,
     )
     checkpoint, trusted_binding = _checkpoint_for_local_plan(
-        kind=checkpoint_kind, accepted=accepted, authority=record.authority
+        kind=checkpoint_kind,
+        accepted=accepted,
+        authority=record.authority,
+        plan_id=current_plan_id,
     )
 
+    coordinator_id = coordinator_id or f"{PROJECT_ID}:{MILESTONE}"
     coordinator_store = FileBackedTaskMainCoordinatorStore(
         Path(world["project_root"]) / "coordinator.json"
     )
@@ -274,10 +325,10 @@ def _control_service(
         ),
         milestone_user_approval_satisfied=True,
     )
-    if coordinator_store.get(f"{PROJECT_ID}:{MILESTONE}") is None:
+    if coordinator_store.get(coordinator_id) is None:
         coordinator_store.create(
             TaskMainCoordinatorState(
-                coordinator_id=f"{PROJECT_ID}:{MILESTONE}",
+                coordinator_id=coordinator_id,
                 plan_authority=trusted_binding.authority_ref,
                 plan_digest="d" * 64,
                 milestone_id=MILESTONE,
@@ -314,7 +365,7 @@ def _control_service(
             execution_store=execution_store,
             governance_store=store,
             project_id=PROJECT_ID,
-            plan_id=PLAN_ID,
+            plan_id=current_plan_id,
             project_root=world["project_root"],
             governance_root=root,
             authority_binding=trusted_binding,
@@ -347,10 +398,15 @@ def _control_service(
     return service, coordinator_store, execution_store, live_view
 
 
-def _invoke(service, live_view: MilestonePlanView):
+def _invoke(
+    service,
+    live_view: MilestonePlanView,
+    *,
+    coordinator_id: str | None = None,
+):
     return service.advance_once(
         profile=AF_TASK_MAIN_ROLE,
-        coordinator_id=f"{PROJECT_ID}:{MILESTONE}",
+        coordinator_id=coordinator_id or f"{PROJECT_ID}:{MILESTONE}",
         live_plan_view=live_view,
         handoff_resolver=lambda _ref: pytest.fail("terminal checkpoint must not dispatch a Worker"),
     )
@@ -1363,3 +1419,197 @@ def test_stale_foreign_or_missing_projection_authority_fails_closed(tmp_path: Pa
     assert missing_source_error.value.code == "STALE_AUTHORITY"
     assert not (Path(root.root_path) / "MAP.md").exists()
     assert not (Path(root.root_path) / "STATUS.md").exists()
+
+
+def _refresh_current_projection(world: dict[str, object], current_plan_id: str):
+    coordinator = FileBackedTaskMainCoordinatorStore(
+        Path(world["project_root"]) / "quarantine-coordinator.json"
+    )
+    execution = FileBackedExecutionStateStore(
+        Path(world["project_root"]) / "quarantine-executions.json"
+    )
+    store = world["store"]
+    root = world["governance_root"]
+    assert isinstance(store, SQLiteProjectGovernanceStore)
+    assert isinstance(root, LocalGovernanceRootBinding)
+    current = store.get_plan(PROJECT_ID, current_plan_id)
+    assert current is not None
+    hook = _default_projection_refresh_hook(
+        coordinator_store=coordinator,
+        execution_store=execution,
+        governance_store=store,
+        project_id=PROJECT_ID,
+        plan_id=current_plan_id,
+        project_root=world["project_root"],
+        governance_root=root,
+        authority_binding=current.authority,
+        required=True,
+    )
+    try:
+        return hook()
+    finally:
+        coordinator.close()
+        execution.close()
+
+
+def _route_eligible_for_plan(world: dict[str, object], record: ProjectPlanRecord) -> bool:
+    context_binding = DurableTaskMainContextBinding(
+        project_id=PROJECT_ID,
+        project_fingerprint="c" * 64,
+        plan_binding=record.authority,
+        origin_task_main_session_ref=f"session:{record.plan_id}",
+    )
+    view = MilestonePlanView(
+        plan_authority=record.authority.authority_ref,
+        plan_digest=record.authority.source_digest,
+        plan_source_revision=str(record.authority.source_revision),
+        milestone_id=MILESTONE,
+        entry_base="b" * 40,
+        graph=MilestoneWorkItemGraph(
+            milestone_ref=MILESTONE, work_items=["W1"], dependencies=[]
+        ),
+        milestone_user_approval_satisfied=True,
+    )
+    root = world["governance_root"]
+    assert isinstance(root, LocalGovernanceRootBinding)
+    return _current_local_plan_route_eligible(
+        project_id=PROJECT_ID,
+        live_plan_view=view,
+        context_binding=context_binding,
+        trusted_plan_binding=record.authority,
+        governance_base=Path(root.root_path).parent,
+        governance_store_path=Path(world["project_root"])
+        / ".aota"
+        / "governance.sqlite3",
+    )
+
+
+def test_historical_retired_active_plan_is_projected_without_blocking_current_route(
+    tmp_path: Path,
+) -> None:
+    world = _world(
+        tmp_path, current_plan_id=PLAN005_ID, current_plan_revision="R4"
+    )
+    historical, historical_body = _add_historical_retired_active_plan(
+        world, PLAN001_ID
+    )
+
+    result = _refresh_current_projection(world, PLAN005_ID)
+
+    card = next(item for item in result.bundle.plans if item.plan_id == PLAN001_ID)
+    assert card.lifecycle_state == PLAN_LIFECYCLE_RETIRED
+    assert card.plan_status == "active"
+    assert result.context_route.plan_id == PLAN005_ID
+    assert not _route_eligible_for_plan(world, historical)
+    reader = LocalPlanAuthorityReadAdapter(
+        LocalPlanAuthorityDestination(
+            world["governance_root"],
+            PLAN001_ID,
+            object_ref_subject(
+                make_id(IdKind.SUBJECT, PLAN001_ID, sub_kind=SubjectKind.PLAN)
+            ),
+        ),
+        binding=historical.authority,
+    )
+    assert load_local_portable_plan(reader).plan_status == "active"
+    historical_path = Path(world["governance_root"].root_path) / PLAN001_ID / "plan.md"
+    assert historical_path.read_text(encoding="utf-8") == historical_body
+
+
+def test_multiple_historical_retired_active_plans_remain_projected_and_quarantined(
+    tmp_path: Path,
+) -> None:
+    world = _world(tmp_path)
+    history = tuple(
+        _add_historical_retired_active_plan(world, plan_id)
+        for plan_id in ("plan_historical_retired_active_a", "plan_historical_retired_active_b")
+    )
+
+    result = _refresh_current_projection(world, PLAN_ID)
+
+    cards = {card.plan_id: card for card in result.bundle.plans}
+    for record, _body in history:
+        assert cards[record.plan_id].lifecycle_state == PLAN_LIFECYCLE_RETIRED
+        assert cards[record.plan_id].plan_status == "active"
+        assert not _route_eligible_for_plan(world, record)
+        reader = LocalPlanAuthorityReadAdapter(
+            LocalPlanAuthorityDestination(
+                world["governance_root"],
+                record.plan_id,
+                object_ref_subject(
+                    make_id(IdKind.SUBJECT, record.plan_id, sub_kind=SubjectKind.PLAN)
+                ),
+            ),
+            binding=record.authority,
+        )
+        assert load_local_portable_plan(reader).plan_status == "active"
+
+
+def test_plan005_task_main_refresh_quarantines_plan001_without_authority_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _world(
+        tmp_path, current_plan_id=PLAN005_ID, current_plan_revision="R4"
+    )
+    plan001, plan001_body = _add_historical_retired_active_plan(world, PLAN001_ID)
+    store = world["store"]
+    root = world["governance_root"]
+    assert isinstance(store, SQLiteProjectGovernanceStore)
+    assert isinstance(root, LocalGovernanceRootBinding)
+    plan005_before = store.get_plan(PROJECT_ID, PLAN005_ID)
+    plan001_before = store.get_plan(PROJECT_ID, PLAN001_ID)
+    assert plan005_before is not None and plan001_before == plan001
+    assert plan005_before.lifecycle_state == PLAN_LIFECYCLE_ACTIVE
+    plan005_path = Path(root.root_path) / PLAN005_ID / "plan.md"
+    plan001_path = Path(root.root_path) / PLAN001_ID / "plan.md"
+    plan005_body_before = plan005_path.read_text(encoding="utf-8")
+    plan001_body_before = plan001_path.read_text(encoding="utf-8")
+    assert "PLAN_REVISION=R4" in plan005_body_before
+    assert "PLAN_STATUS=active" in plan005_body_before
+    assert plan001_body_before == plan001_body
+
+    monkeypatch.setattr(runner_module.TaskMainMilestoneRunner, "advance_once", _closure_ready)
+    coordinator_id = default_coordinator_id(
+        project_id=PROJECT_ID, plan_id=PLAN005_ID, milestone_id=MILESTONE
+    )
+    service, coordinator, _execution, live_view = _control_service(
+        world,
+        checkpoint_kind="MILESTONE_CLOSE",
+        current_plan_id=PLAN005_ID,
+        projection_plan_id=PLAN005_ID,
+        coordinator_id=coordinator_id,
+    )
+    coordinator_before = coordinator.get(coordinator_id)
+    assert coordinator_before is not None
+    assert coordinator_before.plan_authority == plan005_before.authority.authority_ref
+    assert coordinator_before.status.value == "ACTIVE"
+    projection_results = []
+    original_refresh = service._projection_refresh_hook
+    assert original_refresh is not None
+
+    def capture_refresh():
+        result = original_refresh()
+        projection_results.append(result)
+        return result
+
+    service._projection_refresh_hook = capture_refresh
+    outcome = _invoke(service, live_view, coordinator_id=coordinator_id)
+
+    assert outcome.milestone_closure_ready is True
+    assert len(projection_results) == 1
+    projection = projection_results[0]
+    assert projection.context_route.plan_id == PLAN005_ID
+    plan001_card = next(
+        card for card in projection.bundle.plans if card.plan_id == PLAN001_ID
+    )
+    assert plan001_card.lifecycle_state == PLAN_LIFECYCLE_RETIRED
+    assert plan001_card.plan_status == "active"
+    assert store.get_plan(PROJECT_ID, PLAN001_ID) == plan001_before
+    assert store.get_plan(PROJECT_ID, PLAN005_ID) == plan005_before
+    assert plan001_path.read_text(encoding="utf-8") == plan001_body_before
+    assert plan005_path.read_text(encoding="utf-8") == plan005_body_before
+    coordinator_after = coordinator.get(coordinator_id)
+    assert coordinator_after is not None
+    assert coordinator_after.coordinator_id == coordinator_id
+    assert coordinator_after.plan_authority == plan005_before.authority.authority_ref
+    assert coordinator_after.status.value == "ACTIVE"

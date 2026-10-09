@@ -468,6 +468,7 @@ def _default_projection_refresh_hook(
                 if (
                     record.lifecycle_state == PLAN_LIFECYCLE_RETIRED
                     and document.plan_status != "completed"
+                    and record.plan_id == plan_id
                 ):
                     raise ProjectionLifecycleError(
                         "TERMINAL_AUTHORITY_CONFLICT",
