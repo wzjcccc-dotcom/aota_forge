@@ -1962,13 +1962,21 @@ class SessionScopedContextRouter:
         runtime_config: Any,
         project_id: str,
         worktree_id: str,
+        handoff_from: threading.Thread | None = None,
     ) -> None:
-        """Start at most one bounded continuation for this live exact slot."""
+        """Start or hand off to one bounded continuation for this exact slot."""
         with self._lock:
             if self._closed or self._slots.get(slot.session_id) is not slot:
+                if handoff_from is not None:
+                    with slot.completion_lock:
+                        if slot.completion_thread is handoff_from:
+                            slot.completion_active = False
+                            slot.completion_thread = None
                 return
         with slot.completion_lock:
-            if slot.completion_active:
+            if slot.completion_active and (
+                handoff_from is None or slot.completion_thread is not handoff_from
+            ):
                 return
             generation = slot.completion_request_generation
             slot.completion_active = True
@@ -2015,9 +2023,19 @@ class SessionScopedContextRouter:
         worktree_id: str,
     ) -> None:
         """Run the existing bounded completion lifecycle on trusted slot data."""
+        report: Any | None = None
+        bounded_stop_reasons: frozenset[str] = frozenset()
         try:
             from aota_forge.composition.execution import (
+                COMPLETION_CONTINUATION_STOP_ITERATION_BUDGET,
+                COMPLETION_CONTINUATION_STOP_LIFECYCLE_TIMEOUT,
                 run_bounded_completion_continuation,
+            )
+            bounded_stop_reasons = frozenset(
+                {
+                    COMPLETION_CONTINUATION_STOP_LIFECYCLE_TIMEOUT,
+                    COMPLETION_CONTINUATION_STOP_ITERATION_BUDGET,
+                }
             )
 
             report = run_bounded_completion_continuation(
@@ -2041,22 +2059,78 @@ class SessionScopedContextRouter:
                 relevant_origin_session_ref,
             )
         finally:
-            with slot.completion_lock:
-                rerun_requested = slot.completion_request_generation != generation
-                slot.completion_active = False
-                slot.completion_thread = None
-            if rerun_requested:
-                self._launch_headed_thin_completion(
-                    slot,
-                    relevant_origin_session_ref=relevant_origin_session_ref,
-                    execution_store_path=execution_store_path,
-                    execution_store=execution_store,
-                    completion_coordinator=completion_coordinator,
-                    worktree_root=worktree_root,
-                    runtime_config=runtime_config,
-                    project_id=project_id,
-                    worktree_id=worktree_id,
+            active_after_bound_cycle = False
+            if (
+                report is not None
+                and getattr(report, "stop_reason", None) in bounded_stop_reasons
+            ):
+                active_after_bound_cycle = self._has_known_active_headed_execution(
+                    slot, relevant_origin_session_ref
                 )
+
+            current_thread = threading.current_thread()
+            with self._lock:
+                with slot.completion_lock:
+                    rerun_requested = (
+                        slot.completion_request_generation != generation
+                    )
+                    should_rearm = rerun_requested or active_after_bound_cycle
+                    slot_still_owned = (
+                        not self._closed
+                        and self._slots.get(slot.session_id) is slot
+                    )
+                    if not should_rearm or not slot_still_owned:
+                        if slot.completion_thread is current_thread:
+                            slot.completion_active = False
+                            slot.completion_thread = None
+                if should_rearm and slot_still_owned:
+                    self._launch_headed_thin_completion(
+                        slot,
+                        relevant_origin_session_ref=relevant_origin_session_ref,
+                        execution_store_path=execution_store_path,
+                        execution_store=execution_store,
+                        completion_coordinator=completion_coordinator,
+                        worktree_root=worktree_root,
+                        runtime_config=runtime_config,
+                        project_id=project_id,
+                        worktree_id=worktree_id,
+                        handoff_from=current_thread,
+                    )
+
+    @staticmethod
+    def _has_known_active_headed_execution(
+        slot: _SessionSlot, relevant_origin_session_ref: str
+    ) -> bool:
+        """Return whether this exact parent still owns a known-active task.
+
+        UNKNOWN is deliberately excluded: a bounded cycle with only uncertain
+        evidence must not turn into an autonomous retry loop.
+        """
+        store = slot.execution_store
+        if store is None:
+            return False
+        from aota_forge.core.execution.state import CanonicalTaskState
+
+        known_active_states = {
+            CanonicalTaskState.ACCEPTED,
+            CanonicalTaskState.QUEUED,
+            CanonicalTaskState.RUNNING,
+            CanonicalTaskState.WAITING,
+        }
+        try:
+            records = store.list_all()
+        except Exception:  # noqa: BLE001 - uncertainty is fail-closed, never a re-arm
+            _LOGGER.exception(
+                "headed thin completion owner cannot inspect durable state for exact Session %s",
+                relevant_origin_session_ref,
+            )
+            return False
+        return any(
+            getattr(getattr(record, "origin_session_ref", None), "value", None)
+            == relevant_origin_session_ref
+            and getattr(record, "canonical_task_state", None) in known_active_states
+            for record in records
+        )
 
     async def invoke_async(
         self,

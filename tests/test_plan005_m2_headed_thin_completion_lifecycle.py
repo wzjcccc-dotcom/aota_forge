@@ -18,6 +18,7 @@ from aota_forge.core.execution.durable_state import (
     card_digest_for,
 )
 from aota_forge.core.execution.adapter import TaskStatusResult
+from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.registry import ExecutorRegistry
 from aota_forge.core.execution.state import CanonicalTaskState
 from aota_forge.core.project.resolver import (
@@ -163,6 +164,56 @@ def _headed_router(
         identity,
     )
     return router, slot, identity
+
+
+class _RelevantExecutionStore:
+    def __init__(self, records: list[Any]) -> None:
+        self.records = records
+
+    def list_all(self) -> list[Any]:
+        return list(self.records)
+
+
+def _completion_owner_router(
+    tmp_path: Path, store: Any
+) -> tuple[SessionScopedContextRouter, _SessionSlot, Any]:
+    runtime = SimpleNamespace(
+        execution_store_path=tmp_path / "completion-owner.json",
+        execution_store=store,
+        completion_coordinator=object(),
+        worktree_root=tmp_path,
+        runtime_config=object(),
+        project_id=PROJECT_ID,
+        worktree_id=WORKTREE_ID,
+        origin_task_main_session_ref=PARENT_SESSION,
+    )
+
+    class Adapter:
+        _bound_delegate = object()
+        _bound_runtime = runtime
+        _bound_binding = _thin_binding()
+
+        def invoke(self, operation: str, _arguments: dict[str, Any]) -> dict[str, Any]:
+            return {"ok": True, "operation": operation}
+
+        def close(self) -> None:
+            return None
+
+    router, slot, _identity = _headed_router(
+        tmp_path, session_id=PARENT_SESSION, adapter=Adapter()
+    )
+    slot.execution_store = store
+    return router, slot, runtime
+
+
+def _known_active_record(
+    state: CanonicalTaskState,
+    session_id: str = PARENT_SESSION,
+) -> Any:
+    return SimpleNamespace(
+        canonical_task_state=state,
+        origin_session_ref=OriginSessionRef(session_id),
+    )
 
 
 def test_headed_thin_task_start_runs_full_parent_completion_without_manual_recovery(
@@ -557,6 +608,433 @@ def test_completion_owners_are_isolated_by_verified_exact_session(
             (session_a, tmp_path / f"{session_a}.json"),
             (session_b, tmp_path / f"{session_b}.json"),
         }
+    finally:
+        release.set()
+        router.close()
+
+
+@pytest.mark.parametrize(
+    "expired_reason", ("lifecycle_timeout", "iteration_budget_exhausted")
+)
+def test_known_active_execution_rearms_after_bounded_cycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    expired_reason: str,
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    record = _known_active_record(CanonicalTaskState.RUNNING)
+    store = _RelevantExecutionStore([record])
+    router, slot, _runtime = _completion_owner_router(tmp_path, store)
+    second_started = threading.Event()
+    release_second = threading.Event()
+    lock = threading.Lock()
+    calls = 0
+    active_calls = 0
+    max_active_calls = 0
+
+    def bounded_pass(**_kwargs: Any) -> Any:
+        nonlocal calls, active_calls, max_active_calls
+        with lock:
+            calls += 1
+            ordinal = calls
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+        try:
+            if ordinal == 1:
+                return SimpleNamespace(
+                    stop_reason=expired_reason, relevant_records_remaining=1
+                )
+            second_started.set()
+            assert release_second.wait(timeout=3)
+            return SimpleNamespace(
+                stop_reason="no_relevant_active_execution",
+                relevant_records_remaining=0,
+            )
+        finally:
+            with lock:
+                active_calls -= 1
+
+    monkeypatch.setattr(
+        execution_module, "run_bounded_completion_continuation", bounded_pass
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert second_started.wait(timeout=3)
+        assert calls == 2
+        assert max_active_calls == 1
+        assert slot.completion_active is True
+
+        router.MAX_SLOTS = 1
+        other_identity = VerifiedInvocationIdentity(
+            session_id="ses_plan005_other_parent",
+            call_id="call-other",
+            bridge_id=slot.bridge_id,
+            tool="aota_aota_invoke",
+            args_sha256="c" * 64,
+            nonce="o" * 32,
+        )
+        with pytest.raises(Exception, match="capacity"):
+            router._slot(other_identity)
+        assert router._slots[PARENT_SESSION] is slot
+
+        record.canonical_task_state = CanonicalTaskState.UNKNOWN
+        release_second.set()
+        worker = slot.completion_thread
+        assert worker is not None
+        worker.join(timeout=3)
+        assert not worker.is_alive()
+        assert calls == 2
+        assert slot.completion_active is False
+    finally:
+        release_second.set()
+        router.close()
+
+
+def test_eventual_terminal_result_after_rearm_reconciles_and_delivers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    root = tmp_path / "project"
+    (root / ".aota").mkdir(parents=True)
+    sandbox = _sandbox(root)
+    store_path = root / ".aota" / "execution-sessions" / "parent.json"
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store = FileBackedExecutionStateStore(store_path)
+    worker_adapter = _DelayedReturnAdapter(sandbox)
+    registry = ExecutorRegistry()
+    registry.register(worker_adapter)
+    dispatcher = ExecutionDispatcher(
+        registry,
+        state_store=store,
+        origin_session_ref=OriginSessionRef(PARENT_SESSION),
+        admission_scope_resolver=lambda _package: "durable-fake:coder",
+    )
+    transport = _ExactParentTransport()
+    completion = DurableCompletionCoordinator(
+        dispatcher=dispatcher,
+        store=store,
+        transport=transport,
+        semantic_return_provider=WorktreeSemanticReturnEvidenceProvider(sandbox),
+    )
+    runtime = SimpleNamespace(
+        execution_store_path=store_path,
+        execution_store=store,
+        completion_coordinator=completion,
+        worktree_root=root,
+        runtime_config=load_runtime_config(
+            config_path=os.environ["AOTA_FORGE_RUNTIME_CONFIG"]
+        ),
+        project_id=PROJECT_ID,
+        worktree_id=WORKTREE_ID,
+        origin_task_main_session_ref=PARENT_SESSION,
+    )
+
+    class Adapter:
+        _bound_delegate = object()
+        _bound_runtime = runtime
+        _bound_binding = _thin_binding()
+
+        def invoke(self, operation: str, _arguments: dict[str, Any]) -> dict[str, Any]:
+            return {"ok": True, "operation": operation}
+
+        def close(self) -> None:
+            return None
+
+    router, slot, _identity = _headed_router(
+        tmp_path, session_id=PARENT_SESSION, adapter=Adapter()
+    )
+    slot.execution_store = store
+    task_id = "aota_forge:plan005:headed-long-worker:01234567:abcdef12"
+    dispatcher.dispatch(
+        ExecutionPackage.create(
+            canonical_task_id=task_id,
+            project_id=PROJECT_ID,
+            canonical_role="coder",
+            instruction="bounded long-running completion re-arm test",
+        ),
+        target_executor_id="durable-fake",
+    )
+
+    original_continuation = execution_module.run_bounded_completion_continuation
+    second_started = threading.Event()
+    allow_terminal_reconciliation = threading.Event()
+    calls = 0
+    lock = threading.Lock()
+
+    def expire_then_reconcile(**kwargs: Any) -> Any:
+        nonlocal calls
+        with lock:
+            calls += 1
+            ordinal = calls
+        if ordinal == 1:
+            return SimpleNamespace(
+                stop_reason="lifecycle_timeout", relevant_records_remaining=1
+            )
+        second_started.set()
+        assert allow_terminal_reconciliation.wait(timeout=3)
+        return original_continuation(
+            **kwargs,
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.001,
+            max_iterations=10,
+        )
+
+    monkeypatch.setattr(
+        execution_module,
+        "run_bounded_completion_continuation",
+        expire_then_reconcile,
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert second_started.wait(timeout=3)
+        active = store.get(task_id)
+        assert active is not None
+        assert active.canonical_task_state is CanonicalTaskState.RUNNING
+
+        result_ref = handoff_write(
+            mode="result",
+            semantic={
+                "summary": "completion arrives after the first bounded cycle",
+                "work_done": "valid governed result for the re-arm regression",
+            },
+            caller_role="coder",
+            sandbox=sandbox,
+            plan_ref=f"local-governance:{PROJECT_ID}/{PLAN_ID}",
+            milestone_id="M2",
+            work_item_id="W1",
+            task_id=task_id,
+        )
+        returned = task_return(
+            status="completed",
+            result_ref=result_ref.ref,
+            caller_role="coder",
+            caller_task_id=task_id,
+            sandbox=sandbox,
+        )
+        assert returned["parent_store_mutated"] is False
+        allow_terminal_reconciliation.set()
+
+        worker = slot.completion_thread
+        assert worker is not None
+        worker.join(timeout=4)
+        assert not worker.is_alive()
+        final = store.get(task_id)
+        assert final is not None
+        assert final.canonical_task_state is CanonicalTaskState.COMPLETED
+        assert final.terminal_result is not None and final.terminal_result.ok is True
+        assert final.worker_result_card is not None
+        WorkerResultCard.from_dict(dict(final.worker_result_card))
+        assert final.delivery_state is DeliveryState.ACKNOWLEDGED
+        assert transport.deliveries == [
+            {
+                "session_ref": PARENT_SESSION,
+                "task_id": task_id,
+                "card_digest": final.worker_result_card_digest,
+            }
+        ]
+        assert calls == 2
+    finally:
+        allow_terminal_reconciliation.set()
+        router.close()
+
+
+def test_unknown_only_execution_does_not_rearm_after_bounded_cycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    store = _RelevantExecutionStore(
+        [_known_active_record(CanonicalTaskState.UNKNOWN)]
+    )
+    router, slot, _runtime = _completion_owner_router(tmp_path, store)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def bounded_pass(**_kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(timeout=3)
+        return SimpleNamespace(
+            stop_reason="lifecycle_timeout", relevant_records_remaining=1
+        )
+
+    monkeypatch.setattr(
+        execution_module, "run_bounded_completion_continuation", bounded_pass
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert started.wait(timeout=3)
+        worker = slot.completion_thread
+        assert worker is not None
+        release.set()
+        worker.join(timeout=3)
+        assert not worker.is_alive()
+        assert calls == 1
+        assert slot.completion_active is False
+    finally:
+        release.set()
+        router.close()
+
+
+def test_additional_task_start_during_active_cycle_queues_one_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    store = _RelevantExecutionStore(
+        [_known_active_record(CanonicalTaskState.UNKNOWN)]
+    )
+    router, slot, _runtime = _completion_owner_router(tmp_path, store)
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
+    release_second = threading.Event()
+    calls = 0
+    active_calls = 0
+    max_active_calls = 0
+    lock = threading.Lock()
+
+    def bounded_pass(**_kwargs: Any) -> Any:
+        nonlocal calls, active_calls, max_active_calls
+        with lock:
+            calls += 1
+            ordinal = calls
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+        try:
+            if ordinal == 1:
+                first_started.set()
+                assert release_first.wait(timeout=3)
+            else:
+                second_started.set()
+                assert release_second.wait(timeout=3)
+            return SimpleNamespace(
+                stop_reason="no_relevant_active_execution",
+                relevant_records_remaining=0,
+            )
+        finally:
+            with lock:
+                active_calls -= 1
+
+    monkeypatch.setattr(
+        execution_module, "run_bounded_completion_continuation", bounded_pass
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert first_started.wait(timeout=3)
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert calls == 1
+        assert max_active_calls == 1
+
+        release_first.set()
+        assert second_started.wait(timeout=3)
+        worker = slot.completion_thread
+        assert worker is not None
+        release_second.set()
+        worker.join(timeout=3)
+        assert not worker.is_alive()
+        assert calls == 2
+        assert max_active_calls == 1
+    finally:
+        release_first.set()
+        release_second.set()
+        router.close()
+
+
+def test_other_session_known_active_execution_does_not_rearm_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    store = _RelevantExecutionStore(
+        [_known_active_record(CanonicalTaskState.RUNNING, "ses_plan005_other_parent")]
+    )
+    router, slot, _runtime = _completion_owner_router(tmp_path, store)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def bounded_pass(**_kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(timeout=3)
+        return SimpleNamespace(
+            stop_reason="lifecycle_timeout", relevant_records_remaining=1
+        )
+
+    monkeypatch.setattr(
+        execution_module, "run_bounded_completion_continuation", bounded_pass
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert started.wait(timeout=3)
+        worker = slot.completion_thread
+        assert worker is not None
+        release.set()
+        worker.join(timeout=3)
+        assert not worker.is_alive()
+        assert calls == 1
+        assert slot.completion_active is False
+    finally:
+        release.set()
+        router.close()
+
+
+def test_router_close_prevents_completion_rearm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aota_forge.composition.execution as execution_module
+
+    store = _RelevantExecutionStore(
+        [_known_active_record(CanonicalTaskState.RUNNING)]
+    )
+    router, slot, _runtime = _completion_owner_router(tmp_path, store)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def bounded_pass(**_kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(timeout=3)
+        return SimpleNamespace(
+            stop_reason="lifecycle_timeout", relevant_records_remaining=1
+        )
+
+    monkeypatch.setattr(
+        execution_module, "run_bounded_completion_continuation", bounded_pass
+    )
+    try:
+        router._maybe_start_headed_thin_completion(
+            slot, PARENT_SESSION, "task.start", {"ok": True}
+        )
+        assert started.wait(timeout=3)
+        worker = slot.completion_thread
+        assert worker is not None
+        router.close()
+        release.set()
+        worker.join(timeout=3)
+        assert not worker.is_alive()
+        assert calls == 1
+        assert slot.completion_active is False
     finally:
         release.set()
         router.close()
