@@ -66,6 +66,7 @@ from aota_forge.work_plane.handoff import TaskHandoff
 from aota_forge.work_plane.tool_surface import ToolRoleSurface
 from aota_forge.work_plane.workspace_mutation import (
     WORKSPACE_WRITE_DESCRIPTOR,
+    WORKSPACE_EDIT_DESCRIPTOR,
     BoundedWorkspaceMutationProvider,
     WorkspaceMutationAuthority,
 )
@@ -289,6 +290,7 @@ WORKSPACE_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
     "workspace.write",
+    "workspace.edit",
 )
 M2_OPERATIONS: tuple[str, ...] = (
     "result.hydrate",
@@ -398,6 +400,7 @@ _DESCRIPTOR_MAP: dict[str, Any] = {
     WORKSPACE_SEARCH_DESCRIPTOR.name: WORKSPACE_SEARCH_DESCRIPTOR,
     WORKSPACE_READ_DESCRIPTOR.name: WORKSPACE_READ_DESCRIPTOR,
     WORKSPACE_WRITE_DESCRIPTOR.name: WORKSPACE_WRITE_DESCRIPTOR,
+    WORKSPACE_EDIT_DESCRIPTOR.name: WORKSPACE_EDIT_DESCRIPTOR,
 }
 # M2 descriptors (canonical, lazy-loaded to keep import-time fail-closed minimal)
 if RESULT_HYDRATE_DESCRIPTOR is not None:
@@ -888,6 +891,7 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         tool_surface=getattr(binding, "tool_surface", None),
         read_authorities=tuple(getattr(binding, "read_authorities", ()) or ()),
         mutation_authority=getattr(binding, "mutation_authority", None),
+        workspace_edit_authority=getattr(binding, "workspace_edit_authority", None),
         restricted_shell_authority=getattr(binding, "restricted_shell_authority", None),
         test_execution_authority=getattr(binding, "test_execution_authority", None),
         git_authorities=tuple(getattr(binding, "git_authorities", ()) or ()),
@@ -1560,7 +1564,10 @@ def help_operation_projection(operation: str) -> dict[str, Any]:
             projection["preferred_plan_state_update"] = "section_marker+section_content"
     if "state" in declared:
         projection["state"] = "open|closed"
-    if "expected_updated_at" in declared:
+    if descriptor.name == "workspace.edit":
+        projection["CAS_semantics"] = "expected_sha256=full_file_sha256_precondition"
+        projection["edit_semantics"] = "one_exact_literal_match"
+    elif "expected_updated_at" in declared:
         projection["CAS_semantics"] = "expected_updated_at=CAS_PRECONDITION"
     elif "expected_digest" in declared:
         projection["CAS_semantics"] = "expected_digest=CAS_PRECONDITION"
@@ -3147,7 +3154,8 @@ def create_shared_mcp_server(trusted_binding: TrustedWorkerBinding):
 
     * ``aota.invoke(operation: string, arguments: object)``
 
-    ``workspace.search``, ``workspace.read``, and ``workspace.write`` are
+    ``workspace.search``, ``workspace.read``, ``workspace.write``, and
+    ``workspace.edit`` are
     logical operation identities dispatched through that single transport.
     They are NOT separate MCP Tools (MCP_TRANSPORT_TOOL_COUNT=1).
     """

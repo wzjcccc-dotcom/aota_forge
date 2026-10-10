@@ -213,25 +213,31 @@ READ_RESULT_IS_PLAN_AUTHORITY: bool = False
 # ---------------------------------------------------------------------------
 
 WRITE_NAME: str = "write"
-WRITE_CALLER_APPLICABLE_ROLES: tuple[str, ...] = COMMON_ROLES  # conceptual; enforcement is role_and_scope_bounded
-WRITE_AGENT_INTENT: str = "mutate assigned project worktree product content"
-WRITE_LLM_SUPPLIED_INPUT: tuple[str, ...] = ("path", "content", "mode")
+WRITE_CALLER_APPLICABLE_ROLES: tuple[str, ...] = ("coder",)
+WRITE_AGENT_INTENT: str = "create or exactly modify assigned active-worktree product content"
+WRITE_LLM_SUPPLIED_INPUT: tuple[str, ...] = (
+    "workspace.write: path/content/mode",
+    "workspace.edit: path/literal old_text/new_text/expected_matches/full-file expected_sha256",
+)
 WRITE_CONTROL_PLANE_SUPPLIED_INPUT: tuple[str, ...] = SEARCH_CONTROL_PLANE_SUPPLIED_INPUT
 WRITE_CONTROL_PLANE_VALIDATION: tuple[str, ...] = (
     "role_and_scope bounded check",
     "mutation authority distinct from read authority",
+    "operation-specific canonical authority; workspace.write and workspace.edit cannot substitute",
     "worktree-bound path validation and revalidation at use",
+    "workspace.edit exact-one-match compare-and-swap",
     "symlink escape fail-closed",
     "atomic replace",
 )
-WRITE_OUTPUT: tuple[str, ...] = ("bounded artifact reference with digest",)
+WRITE_OUTPUT: tuple[str, ...] = ("bounded mutation evidence and digest; no full-file echo",)
 WRITE_EXPLICIT_NON_RESPONSIBILITIES: tuple[str, ...] = (
     "W1 does not implement full W3 authority rebalance",
     "broad read does not imply broad write",
+    "no arbitrary shell, regex edit, or generic patch language",
     "Control-plane artifact/state write distinct from product source write",
 )
 WRITE_INTERNAL_REUSED_SEAM: str = "BoundedWorkspaceMutationProvider + WorktreeSandboxBoundary"
-WRITE_AUTHORITY_SOURCE: str = "AF_CORE server-side mutation authority (sandbox + handoff + policy + workspace.write descriptor)"
+WRITE_AUTHORITY_SOURCE: str = "AF_CORE operation-bound mutation authority (sandbox + handoff + policy + exact workspace.write/workspace.edit descriptor)"
 
 AUTHORIZED_PROJECT_WRITE: str = "role_and_scope_bounded"
 BROAD_READ: bool = True

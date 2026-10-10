@@ -12,7 +12,8 @@ aota.invoke(operation="result.hydrate", arguments={...})
 取得 bootstrap 後，依其中的 SOUL、TaskHandoff、Tool surface 與 base Skills
 執行本次 bounded 工作的正常生命週期：
 handoff.open(ref=TASK_HANDOFF.handoff_ref（bootstrap 公布的那個真實 durable ref）)
-→ workspace.search / workspace.read（僅在 TaskHandoff 授權時才 workspace.write）
+→ workspace.search / workspace.read
+→ coder 對既有大型檔案做小幅精確修改時優先 workspace.edit；建立新檔或有界整檔替換使用 workspace.write
 → handoff.write(mode="result")
 → task.return。
 

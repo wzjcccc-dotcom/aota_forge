@@ -974,6 +974,47 @@ contracts:
   - DIGEST_CONFLICT
   - PHYSICAL_WRITE_FAILURE
   protocol_version: '1.0'
+- name: workspace.edit
+  description: Bounded exact compare-and-swap edit of one existing active-worktree file
+  inputs:
+  - name: expected_matches
+    type: int
+  - name: expected_sha256
+    type: str
+  - name: new_text
+    type: str
+  - name: old_text
+    type: str
+  - name: path
+    type: str
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: workspace
+  required_authority: trusted_workspace_mutation
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: not_idempotent
+  result_contract: result.workspace.edit.v1
+  errors:
+  - AUTHORITY_DENIED
+  - PATH_ESCAPE
+  - SYMLINK_ESCAPE
+  - CROSS_PROJECT_WRITE_FAIL_CLOSED
+  - CROSS_WORKTREE_WRITE_FAIL_CLOSED
+  - STALE_FILE
+  - MATCH_COUNT_MISMATCH
+  - INVALID_ENCODING
+  - OVERSIZED_EDIT
+  - TARGET_FILE_TOO_LARGE
+  - PHYSICAL_WRITE_FAILURE
+  protocol_version: '1.0'
 - name: result.hydrate
   description: Durable selective hydration of a bounded governed result reference (worktree-scoped, digest-verified, reauthorized)
   inputs:

@@ -153,6 +153,7 @@ _SIDE_EFFECT_BY_OPERATION: dict[str, str] = {
     "workspace.read": "read",
     "workspace.search": "read",
     "workspace.write": "write_mutation",
+    "workspace.edit": "write_mutation",
     "test.run": "test_execution",
     "git.status": "git_read",
     "git.diff": "git_read",

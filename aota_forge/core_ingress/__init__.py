@@ -79,6 +79,7 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "workspace.search",
     "workspace.read",
     "workspace.write",
+    "workspace.edit",
     "result.hydrate",
     "restricted_shell.run",
     "role.bootstrap",
@@ -244,6 +245,8 @@ class CanonicalDispatchBinding:
     unbound_host_session: bool = False
     # AF #57 M1/W4: trusted read-only Doctor capability, when composed.
     governance_doctor: Any | None = None
+    # Separate operation-bound workspace.edit authority carrier.
+    workspace_edit_authority: Any | None = None
 
     @property
     def effective_authorized_roots(self) -> Any | None:
@@ -1721,19 +1724,24 @@ def _dispatch_tool_operation_inner(
 
     # Dispatch routing (Core-owned provider selection; reuse leaves).
     try:
-        if operation == "workspace.write":
-            if binding.mutation_authority is None:
+        if operation in ("workspace.write", "workspace.edit"):
+            mutation_authority = (
+                binding.mutation_authority
+                if operation == "workspace.write"
+                else getattr(binding, "workspace_edit_authority", None)
+            )
+            if mutation_authority is None:
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted mutation authority is absent"})
-            if getattr(getattr(binding.mutation_authority, "operation", None), "name", None) != operation:
+            if getattr(getattr(mutation_authority, "operation", None), "name", None) != operation:
                 return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "mutation authority mismatch"})
             try:
-                if binding.mutation_authority.operation.contract_hash() != descriptor.contract_hash():
+                if mutation_authority.operation.contract_hash() != descriptor.contract_hash():
                     return ToolResponse.failure({"code": "CONTRACT_DRIFT", "message": "operation contract hash differs from authority"})
             except Exception:
                 pass
             from aota_forge.work_plane.workspace_mutation import BoundedWorkspaceMutationProvider
 
-            provider = BoundedWorkspaceMutationProvider(binding.mutation_authority)
+            provider = BoundedWorkspaceMutationProvider(mutation_authority)
             response = provider.invoke(ToolRequest(operation=descriptor, inputs=validated))
             _persist_governed_if_needed(binding, response, operation)
             return response

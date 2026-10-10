@@ -57,7 +57,7 @@ Rationale:
 ## Transport / surface note (deferred to convergence)
 
 - **Current branch (M2/W2 core):** `TrustedWorkerBinding` and `ToolRoleSurface` remain bounded to
-  `workspace.*` only (`SUPPORTED_OPERATIONS = {"workspace.search","workspace.read","workspace.write"}`).
+  `workspace.*` only (`SUPPORTED_OPERATIONS = {"workspace.search","workspace.read","workspace.write","workspace.edit"}`).
   `aota.invoke` does **not** yet expose `restricted_shell.run` through MCP. This is intentional
   (`MCP_TRANSPORT_MUTATION=no`) to avoid parallel hot-file conflict with `M2/W1`.
 - **Serialized convergence (after W1):** A single ordered convergence branch will:

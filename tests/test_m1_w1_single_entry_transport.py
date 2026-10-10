@@ -291,7 +291,7 @@ def test_vector_11_transport_vs_logical(tmp_path: Path):
     assert TRANSPORT_OPERATION_IDENTITY_SEPARATED is True
     assert TOOL_VISIBILITY_IS_AUTHORITY is False
     assert set(MCP_PUBLIC_TOOLS) == {"aota.invoke"}
-    assert set(WORKSPACE_OPERATIONS) == {"workspace.search", "workspace.read", "workspace.write"}
+    assert set(WORKSPACE_OPERATIONS) == {"workspace.search", "workspace.read", "workspace.write", "workspace.edit"}
     assert set(MCP_PUBLIC_TOOLS) != set(WORKSPACE_OPERATIONS)
     binding = _binding(tmp_path, with_write=True)
     assert set(binding.tool_surface.all_capability_names()) == set(WORKSPACE_OPERATIONS)

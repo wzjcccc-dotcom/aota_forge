@@ -268,7 +268,7 @@ def test_transport_surface_not_equal_logical_surface(tmp_path: Path):
     # W1 separation: MCP_PUBLIC_TOOLS (transport) != WORKSPACE_OPERATIONS (logical)
     assert set(MCP_PUBLIC_TOOLS) != set(WORKSPACE_OPERATIONS)
     assert MCP_PUBLIC_TOOLS == ("aota.invoke",)
-    assert set(WORKSPACE_OPERATIONS) == {"workspace.search", "workspace.read", "workspace.write"}
+    assert set(WORKSPACE_OPERATIONS) == {"workspace.search", "workspace.read", "workspace.write", "workspace.edit"}
     # ToolRoleSurface must carry logical, not transport
     binding = _binding(tmp_path, with_write=True)
     assert set(binding.tool_surface.all_capability_names()) == set(WORKSPACE_OPERATIONS)

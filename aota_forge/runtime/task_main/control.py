@@ -9,7 +9,8 @@ server-side profile/authority binding guarantees:
 * ``aota-task-main`` → may access bounded task-main control
 * ``aota-worker``     → cannot access task-main control (fail-closed)
 
-Workers retain only ``workspace.search / read / write`` via the shared AOTA MCP.
+Workers retain bounded ``workspace.search / read / write / edit`` via the
+shared AOTA MCP; source mutation remains coder-only and active-worktree-bound.
 
 The semantic coordinator modules (``coordinator.py`` / ``reconciliation.py`` /
 ``runner.py``) remain Hermes-free — they never import ``adapters.hermes``.

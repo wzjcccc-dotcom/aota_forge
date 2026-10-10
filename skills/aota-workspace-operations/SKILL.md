@@ -2,59 +2,36 @@
 name: aota-workspace-operations
 description: Shared bounded workspace operations via aota.invoke
 category: forge
-tags: [aota, workspace, operations, search, read, write, test, lifecycle]
+tags: [aota, workspace, operations, search, read, write, edit, test, lifecycle]
 ---
 
 # AOTA Workspace Operations — Shared Canonical Procedure
 
 > `AOTA_SKILL_CANONICAL_SOURCE=aota_forge`, `SKILL_IS_AUTHORITY=no`. Per-role workflow lives in your Role Skill. AF decides authorization; visibility is never authority.
 
-## Contexts
+## Context and reads
 
-```text
-Task-main unbound: supply the canonical plan_ref locator.
-  workspace.search { plan_ref, root_ref?, query, ... }
-  workspace.read   { plan_ref, root_ref?, path, ... }
-  plan_ref locates trusted Project server-side; root_ref is a granted-root
-  capability name, never a path. Bound task-main: plan_ref is normally NOT required;
-  trusted binding supplies scope.
-  Plan authority is read with `governance.plan`, never with `workspace.read`.
-Worker / trusted bound: project, worktree and handoff scope come from the
-  trusted binding; do not restate authority fields.
-```
+Unbound task-main uses `plan_ref` only as a locator; `plan_ref` is normally NOT required for a bound task-main. The trusted binding supplies authority. Plan authority is read with `governance.plan`, never `workspace.read`. Workers use their trusted project/worktree binding. `root_ref` is a granted capability name, never a path.
 
-## Search
+Use `workspace.search` for bounded discovery and `workspace.read` for project-relative UTF-8 content. Check `truncated` and `offset`; `file_sha256` identifies the full file even for ranged reads. Paths are revalidated and symlink escapes fail closed. Use `help(operation=...)` for exact current input details.
 
-`workspace.search {"plan_ref": "owner/repo#59", "root_ref": "active-worktree", "query": "needle", "max_results": 10}`. Query is non-empty <=256; max_results 1..50; scope is project-relative. Lexical, bounded evidence; no symlink follow.
+## Mutation
 
-## Read
+- `workspace.write` creates a file or performs a bounded whole-file replacement.
+- `workspace.edit` is coder-only and active-worktree-only. It makes one exact literal UTF-8 compare-and-swap edit to an existing file and requires the full-file SHA-256 from `workspace.read`. Prefer edit for small changes to existing large files rather than reconstructing the whole file.
+- `workspace.edit` is not regex or generic patch language. Neither operation supports file delete, move, or rename. There is no arbitrary path or shell.
+- Mutation authority is trusted and operation-specific; `workspace.write` authority cannot authorize `workspace.edit`. Visibility and Skill text do not grant authority.
 
-`workspace.read {"plan_ref": "owner/repo#59", "root_ref": "active-worktree", "path": "src/main.py", "max_bytes": 8192}`. Path is project-relative, no traversal; max_bytes 1..32768; offset >=0. Revalidated, symlink fail-closed, UTF-8 strict. If scope cannot resolve, stop with needs_input/blocked.
+## Validation and lifecycle
 
-## Write
+Use `test.run` when authorized by your Role Skill. Open the Worker handoff, implement only its bounded scope, write a result with `handoff.write(mode=result)`, then complete with `task.return`; process exit alone is not completion. Task-main reconciles completion cards and governed results.
 
-`workspace.write {"path", "content", "mode"}`. Modes exactly `create_only|replace_existing|create_or_replace`. Bounded 4096 bytes, atomic replace, digest-bound ref. Requires trusted mutation authority for your role. Fail-closed on traversal/cross-project/symlink. There is no delete/move operation: stop and report.
+## Role policy
 
-## Test
+- task-main: read-only workspace; dispatch guidance is in the task-main base Skill.
+- coder: source mutation through `workspace.write` / `workspace.edit`; `test.run` for validation.
+- analyst: conditional artifact-only output; no source mutation.
+- reviewer: read/test per Role Skill; no source mutation.
+- project-steward: read-only workspace; no generic source mutation.
 
-`test.run {"runner": "pytest", "targets": ["tests/..."], "timeout": 30}`. Trusted `pytest` only, worktree cwd, timeout 1..300, bounded output. Nonzero exit is a test-failure payload, not a provider failure. Whether you hold test authority at all — and under what condition — is decided server-side per role; your Role Skill states your concrete policy.
-
-## Worker lifecycle (coder / analyst / reviewer / project-steward)
-
-- `handoff.open {"ref", "view"}` consumes your Work handoff (`view=card` compact).
-- `handoff.write {"mode": "result", "payload": {"summary": "...", ...}}` records your bounded result; `work_item`/`milestone` are task-main only.
-- `task.return {"status": "completed|blocked|failed", "result_ref"}` is your required governed completion. Process exit alone is never completion.
-
-Task-main consumes child results through completion cards / `result.hydrate`, not `task.return` (task-main is denied that operation).
-
-## Role policy (server-enforced; this prose never grants)
-
-- task-main: read-only workspace located by `plan_ref`; dispatch lives in the task-main base Skill.
-- coder: bounded `workspace.write` within handoff scope; `test.run` normal for validation.
-- analyst: artifact write only when the handoff explicitly requires it.
-- reviewer: read/test per Role Skill policy; no source writes.
-- project-steward: read-only; no write/test/shell.
-
-## Stop
-
-Stop on `AUTHORITY_DENIED` (a boundary, not a puzzle; do not retry with wider scope). `needs_input` on scope gap. Never guess absolute paths. Never use shell when a specialized operation exists.
+Stop on `AUTHORITY_DENIED`; do not retry with wider scope. Stop on unresolved scope gaps. Never guess absolute paths or use shell when a specialized operation exists.

@@ -246,6 +246,9 @@ class TrustedWorkerBinding:
     # AF #57 M1/W4: server-composed read-only Doctor capability over current
     # Governance/runtime owners. It is never exposed to Worker bindings.
     governance_doctor: Any | None = None
+    # Separate operation-bound source edit authority. It is never substituted
+    # for the existing workspace.write authority.
+    workspace_edit_authority: WorkspaceMutationAuthority | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -310,6 +313,7 @@ class TrustedWorkerBinding:
                 "workspace.search",
                 "workspace.read",
                 "workspace.write",
+                "workspace.edit",
                 "result.hydrate",
                 "restricted_shell.run",
                 "role.bootstrap",
@@ -363,6 +367,17 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("mutation authority does not match trusted binding")
             if self.mutation_authority.operation.name != "workspace.write":
                 raise TrustedBindingError(f"mutation authority operation must be workspace.write, got {self.mutation_authority.operation.name!r}")
+        if self.workspace_edit_authority is not None:
+            if not isinstance(self.workspace_edit_authority, WorkspaceMutationAuthority):
+                raise TrustedBindingError("workspace_edit_authority must be typed")
+            if self.workspace_edit_authority.sandbox != self.sandbox or self.workspace_edit_authority.handoff != self.handoff:
+                raise TrustedBindingError("workspace.edit authority does not match trusted binding")
+            if self.workspace_edit_authority.operation.name != "workspace.edit":
+                raise TrustedBindingError(
+                    f"workspace.edit authority operation must be workspace.edit, got {self.workspace_edit_authority.operation.name!r}"
+                )
+            if self.handoff.work_role.value != "coder":
+                raise TrustedBindingError("workspace.edit authority requires coder role binding")
         if self.restricted_shell_authority is not None:
             if _ShellEv is not None and not isinstance(self.restricted_shell_authority, _ShellEv):
                 raise TrustedBindingError(f"restricted_shell_authority must be RestrictedShellAuthorityEvidence, got {type(self.restricted_shell_authority).__name__}")

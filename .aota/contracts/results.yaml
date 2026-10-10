@@ -34,6 +34,12 @@ contracts:
   - workspace.write
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'
+- name: result.workspace.edit.v1
+  description: Workspace exact compare-and-swap edit result
+  compatible_operations:
+  - workspace.edit
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
 - name: result.handoff.write.v1
   description: Semantic handoff write result
   compatible_operations:

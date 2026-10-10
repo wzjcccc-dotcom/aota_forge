@@ -943,13 +943,12 @@ class BoundedWorkspaceToolProvider:
             "returned_bytes": len(sliced),
             "offset": offset,
             "truncated": truncated,
+            "file_sha256": hashlib.sha256(raw_bytes).hexdigest(),
             "project_id": self._sandbox.project_id,
             "worktree_id": self._sandbox.worktree_id,
             # AF #55 M2: the granted root this read resolved through (bounded
             # name; never a model-supplied path).
             "root_ref": root_obj.root_ref,
-            "canonical_path": str(canonical_path),
-            # Note: canonical_path is physical layer path holder, not authority; included for traceability but not as authority grant
         }
         # Caller identity remains the trusted task-main session. Add source
         # identity only when the selected root is an explicit governed

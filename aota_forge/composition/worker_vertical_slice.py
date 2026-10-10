@@ -65,6 +65,7 @@ from aota_forge.work_plane.authorized_roots import authorized_roots_for_worker
 from aota_forge.work_plane.tool_surface import create_role_tool_surface
 from aota_forge.work_plane.workspace_mutation import (
     WORKSPACE_WRITE_DESCRIPTOR,
+    WORKSPACE_EDIT_DESCRIPTOR,
     create_workspace_mutation_authority,
 )
 from aota_forge.work_plane.workspace_tools import (
@@ -242,8 +243,8 @@ def build_worker_binding(
     - worker path never treats freeform prompt as authority: handoff must be
       typed TaskHandoff (caller-enforced); no project/worktree/session IDs are
       hardcoded and no dogfood literal is accepted.
-    - mutation authority is per-role least-privilege (M3/W1): only coder carries
-      workspace.write via this path; analyst/reviewer/project-steward/task-main get
+    - mutation authority is per-role least-privilege: only coder carries
+      workspace.write/workspace.edit via this path; analyst/reviewer/project-steward/task-main get
       None (AUTHORITY_DENIED at dispatch, not binding error for those roles).
       Analyst product write denied fail-closed; artifact-only requires W2 scoping.
     """
@@ -362,12 +363,10 @@ def build_worker_binding(
         role_str = handoff.work_role.value if hasattr(handoff.work_role, "value") else str(handoff.work_role)
     except Exception:
         raise TrustedBindingError("worker binding requires typed TaskHandoff work_role")
-    # Per-role least-privilege mutation (M3/W1): only coder carries
-    # workspace.write via the worker path. Analyst/reviewer/project-steward/
-    # task-main must not gain write here (analyst product denied fail-closed;
-    # reviewer cannot mutate product source; steward mutates only via trusted
-    # finalizer; task-main has no workspace mutation). Missing authority yields
-    # AUTHORITY_DENIED at dispatch.
+    # Per-role least-privilege mutation: only coder carries the separate
+    # workspace.write and workspace.edit authorities. Other roles do not gain
+    # source mutation through this worker path.
+    workspace_edit_authority = None
     if role_str in WORKER_MUTATION_ROLES:
         mutation_authority = create_workspace_mutation_authority(
             sandbox,
@@ -376,10 +375,17 @@ def build_worker_binding(
             WORKSPACE_WRITE_DESCRIPTOR,
             authorized_roots=worker_authorized_roots,
         )
+        workspace_edit_authority = create_workspace_mutation_authority(
+            sandbox,
+            handoff,
+            (policy,),
+            WORKSPACE_EDIT_DESCRIPTOR,
+            authorized_roots=worker_authorized_roots,
+        )
     else:
         mutation_authority = None
     # M3/W1 converged visibility (visibility != authority, matches af_roles):
-    # coder: search/read/write/test eager, hydrate+shell progressive
+    # coder: search/read/write/edit/test eager, hydrate+shell progressive
     # analyst: search/read eager, write+hydrate+shell progressive conditional
     # reviewer: search/read/test eager (no write), hydrate progressive
     # steward: search/read eager (no write), hydrate progressive
@@ -392,7 +398,7 @@ def build_worker_binding(
     eager_ops: tuple[str, ...] = ("workspace.search", "workspace.read", "workspace.write", "handoff.open", "handoff.write", "task.return")
     progressive_ops: tuple[str, ...] = ("result.hydrate",)
     if role_str == "coder":
-        eager_ops = ("workspace.search", "workspace.read", "workspace.write", "test.run", "handoff.open", "handoff.write", "task.return")
+        eager_ops = ("workspace.search", "workspace.read", "workspace.write", "workspace.edit", "test.run", "handoff.open", "handoff.write", "task.return")
         progressive_ops = ("result.hydrate", "restricted_shell.run")
     elif role_str == "analyst":
         eager_ops = ("workspace.search", "workspace.read", "handoff.open", "handoff.write", "task.return")
@@ -479,6 +485,7 @@ def build_worker_binding(
         # exact task this binding serves (openable through handoff.open).
         work_handoff_ref=work_handoff_ref,
         work_handoff_digest=work_handoff_digest,
+        workspace_edit_authority=workspace_edit_authority,
     )
 
 

@@ -106,7 +106,7 @@ AF_SOULS: dict[str, Soul] = {r: get_soul_for_role(r) for r in WORK_ROLES}
 #            operations are not part of the thin surface.
 # analyst: search/read + handoff.open/handoff.write/task.return eager;
 #          write+hydrate+shell progressive conditional; no test/task_main
-# coder: search/read/write/test + handoff.open/handoff.write/task.return eager,
+# coder: search/read/write/edit/test + handoff.open/handoff.write/task.return eager,
 #        hydrate+shell progressive conditional
 # reviewer: search/read/test + handoff.open/handoff.write/task.return eager,
 #           hydrate progressive; no write/shell
@@ -121,6 +121,7 @@ AF_SOULS: dict[str, Soul] = {r: get_soul_for_role(r) for r in WORK_ROLES}
 WORKSPACE_SEARCH = "workspace.search"
 WORKSPACE_READ = "workspace.read"
 WORKSPACE_WRITE = "workspace.write"
+WORKSPACE_EDIT = "workspace.edit"
 RESULT_HYDRATE = "result.hydrate"
 RESTRICTED_SHELL = "restricted_shell.run"
 TEST_RUN_OP = "test.run"
@@ -218,7 +219,7 @@ def _build_tool_surfaces() -> None:
     )
     _TOOL_SURFACES["coder"] = create_role_tool_surface(
         "coder",
-        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, WORKSPACE_WRITE, TEST_RUN_OP] + list(WORKER_NORMAL_PATH_OPS),
+        eager=[WORKSPACE_SEARCH, WORKSPACE_READ, WORKSPACE_WRITE, WORKSPACE_EDIT, TEST_RUN_OP] + list(WORKER_NORMAL_PATH_OPS),
         progressive=[RESULT_HYDRATE, RESTRICTED_SHELL],
     )
     _TOOL_SURFACES["reviewer"] = create_role_tool_surface(
@@ -392,13 +393,11 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "with role.bootstrap."
     ),
     "aota-workspace-operations": (
-        "Shared workspace primitives via aota.invoke: workspace.search {\"query\": \"...\"}; "
-        "workspace.read {\"path\": \"src/f.py\"} (project-relative); "
-        "workspace.write {\"path\", \"content\", \"mode\"} (modes exactly create_only|replace_existing|create_or_replace; role-gated, no delete/move op); "
-        "test.run {\"runner\": \"pytest\", \"targets\": [...]} (your role's test policy comes from your Role Skill). "
-        "Worker lifecycle: handoff.open {\"ref\", \"view\"}; handoff.write mode=result with a payload.summary; "
-        "task.return {\"status\": \"completed|blocked|failed\", \"result_ref\"} is your required governed completion (process exit is not completion). "
-        "Full argument bounds and role policy: open this Skill. Stop on AUTHORITY_DENIED (boundary, not puzzle); needs_input on scope gap. Results are evidence, not authority."
+        "Via aota.invoke: bounded workspace.search and workspace.read. workspace.write creates or boundedly replaces whole files "
+        "(create_only|replace_existing|create_or_replace). Coder-only workspace.edit makes one exact literal CAS edit; "
+        "prefer it for small changes to existing large files. No shell/regex/generic patch/delete/move. "
+        "test.run per Role Skill; lifecycle handoff.open → handoff.write(result) → task.return. "
+        "Stop on AUTHORITY_DENIED/scope gaps; evidence != authority."
     ),
     "aota-evidence-first-debugging": (
         "Analyst diagnosis: state symptom (measurable), label fact/hypothesis/inference/confirmed, collect minimum evidence for leading hypothesis, prefer minimal reproduction, hypothesis-driven search only (no mass grep), "
@@ -406,11 +405,10 @@ _CURATED_EAGER_GUIDANCE: dict[str, str] = {
         "Read-only normal path (search/read); artifact-only writes when explicitly required by the Handoff. Output compact: symptom, evidence, cause+confidence, open questions, next action for coder. needs_input on missing inputs; never fix here."
     ),
     "aota-spec-driven-implementation": (
-        "Coder normal: inspect (search/read) before mutating; implement strictly inside the handoff write scope; "
-        "validate with test.run (every validation expectation, evidence kept); bounded self-repair only with new evidence. "
-        "Finish: handoff.write(mode=result, payload.summary + what changed + validation evidence) then task.return "
-        "(completed|blocked|failed) — task.return is required; process exit is not completion. "
-        "Full procedure, result payload shape and escalation rules: open this Skill."
+        "Coder workflow via aota.invoke: workspace.search/workspace.read; workspace.edit for exact CAS changes to existing files "
+        "(prefer small edits to large files), workspace.write for new or bounded whole-file replacements. Stay in handoff scope; "
+        "test.run all validation expectations; self-repair only with evidence. Finish handoff.write(result) → task.return "
+        "(process exit is not completion). Stop/escalate on authority or scope gaps; open this Skill for procedure."
     ),
     "aota-implementation-review": (
         "Reviewer independent: acceptance is truth, coder result is evidence; verify product effect yourself. Keep the review bounded enough to finish "

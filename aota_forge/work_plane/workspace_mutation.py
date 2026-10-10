@@ -6,7 +6,7 @@ Thin vertical slice:
     + write/mutation OperationContractDescriptor + trusted side-effect authority
     + approval where required
         ↓
-    bounded workspace mutation (workspace.write)
+    bounded workspace mutation (workspace.write / workspace.edit)
         ↓
     ToolResponse
         ↓
@@ -58,7 +58,8 @@ Reuse
 * Reuses GovernedReference / ResultGovernanceProjection (M2 W3) as reference primitive
 * Does NOT create WorkspaceToolProviderV2, MutationRuntime, FileAuthorityEngine, etc.
 
-Minimal surface: workspace.write only (workspace.mkdir optional and not required).
+Minimal surface: bounded workspace.write plus exact-CAS workspace.edit
+(workspace.mkdir optional and not required).
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -192,6 +194,8 @@ BROAD_READ_IMPLEMENTED: bool = True
 
 MAX_WRITE_BYTES: int = 4096
 MAX_WRITE_PAYLOAD_CHARS: int = 4096
+MAX_EDIT_TEXT_BYTES: int = 4096
+MAX_EDIT_TARGET_BYTES: int = 1024 * 1024
 MAX_PATH_LENGTH: int = 512
 MAX_TOTAL_OUTPUT_BYTES: int = 64 * 1024
 
@@ -216,10 +220,14 @@ def _load_canonical_descriptor(name: str) -> OperationContractDescriptor:
 
 
 WORKSPACE_WRITE_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("workspace.write")
+WORKSPACE_EDIT_DESCRIPTOR: OperationContractDescriptor = _load_canonical_descriptor("workspace.edit")
 
 assert WORKSPACE_WRITE_DESCRIPTOR.read_write == "write"
 assert WORKSPACE_WRITE_DESCRIPTOR.mutation_scope == "workspace"
 assert WORKSPACE_WRITE_DESCRIPTOR.approval_required is False
+assert WORKSPACE_EDIT_DESCRIPTOR.read_write == "write"
+assert WORKSPACE_EDIT_DESCRIPTOR.mutation_scope == "workspace"
+assert WORKSPACE_EDIT_DESCRIPTOR.approval_required is False
 
 # ---------------------------------------------------------------------------
 # Errors — fail-closed
@@ -280,8 +288,16 @@ class WorkspaceMutationAuthority:
             raise WorkspaceMutationAuthorityError("workspace mutation authority requires write operation")
         if not isinstance(self.evidence_id, str) or not self.evidence_id.strip():
             raise WorkspaceMutationAuthorityError("evidence_id must be non-empty string")
-        if self.operation.name != "workspace.write":
-            raise WorkspaceMutationAuthorityError(f"operation name must be workspace.write, got {self.operation.name!r}")
+        canonical_operation = {
+            "workspace.write": WORKSPACE_WRITE_DESCRIPTOR,
+            "workspace.edit": WORKSPACE_EDIT_DESCRIPTOR,
+        }.get(self.operation.name)
+        if canonical_operation is None:
+            raise WorkspaceMutationAuthorityError(
+                f"operation name must be workspace.write or workspace.edit, got {self.operation.name!r}"
+            )
+        if self.operation.contract_hash() != canonical_operation.contract_hash():
+            raise WorkspaceMutationAuthorityError("operation descriptor differs from the canonical mutation contract")
         # AF #55 M2: explicit root sets must be the trusted sandbox's own roots
         # and must include the write-capable active worktree (narrow write).
         if self.authorized_roots is not None:
@@ -347,7 +363,7 @@ def create_workspace_mutation_authority(
     * sandbox is trusted WorktreeSandboxBoundary
     * handoff is structured TaskHandoff
     * applicable_policies via S1 resolve_applicable_policies
-    * operation is canonical write descriptor for workspace.write
+    * operation is the exact canonical workspace.write or workspace.edit descriptor
 
     Fail-closed if any prerequisite missing or mismatched.
     Model-supplied dicts cannot self-assert this type.
@@ -361,8 +377,16 @@ def create_workspace_mutation_authority(
     operation.validate()
     if operation.read_write == "read":
         raise WorkspaceMutationAuthorityError("operation must be write for mutation authority")
-    if operation.name != "workspace.write":
-        raise WorkspaceMutationAuthorityError(f"operation must be workspace.write, got {operation.name!r}")
+    canonical_operation = {
+        "workspace.write": WORKSPACE_WRITE_DESCRIPTOR,
+        "workspace.edit": WORKSPACE_EDIT_DESCRIPTOR,
+    }.get(operation.name)
+    if canonical_operation is None:
+        raise WorkspaceMutationAuthorityError(
+            f"operation must be workspace.write or workspace.edit, got {operation.name!r}"
+        )
+    if operation.contract_hash() != canonical_operation.contract_hash():
+        raise WorkspaceMutationAuthorityError("operation descriptor differs from the canonical mutation contract")
     policies_tuple = tuple(applicable_policies) if applicable_policies is not None else ()
     for p in policies_tuple:
         if not isinstance(p, AgentsPolicyCandidate):
@@ -651,7 +675,7 @@ def validate_artifact_reference(
 
 
 class BoundedWorkspaceMutationProvider:
-    """Bounded workspace mutation Tool provider handling workspace.write.
+    """Bounded workspace mutation provider for workspace.write and workspace.edit.
 
     Implements existing ToolProvider; does NOT create new ontology.
     Consumes trusted WorkspaceMutationAuthority.
@@ -740,14 +764,15 @@ class BoundedWorkspaceMutationProvider:
                 role_val = getattr(getattr(self._handoff, "work_role", None), "value", None) or str(getattr(self._handoff, "work_role", ""))
             except Exception:
                 role_val = ""
-            # Only coder is allowed for generic product/source write inside assigned worktree.
-            # project-steward only via governed finalizer, not generic workspace.write.
-            # task-main / analyst / reviewer are denied for product write.
+            # Only coder is allowed for generic product/source mutation inside
+            # the assigned active worktree. Other roles remain denied.
             allowed_mutation_roles = {"coder"}
             if role_val not in allowed_mutation_roles:
-                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": f"role {role_val!r} not authorized for product source write (narrow write)"})
+                return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": f"role {role_val!r} not authorized for product source mutation (narrow write)"})
             if request.operation.name == "workspace.write":
                 return self._handle_write(request)
+            if request.operation.name == "workspace.edit":
+                return self._handle_edit(request)
             else:
                 return ToolResponse.failure({"code": "UNKNOWN_OPERATION", "message": f"unsupported: {request.operation.name!r}"})
         except Exception as exc:
@@ -932,9 +957,194 @@ class BoundedWorkspaceMutationProvider:
             return ToolResponse.failure({"code": "OUTPUT_BOUNDED_EXCEEDED", "message": f"output size {payload_json_size} exceeds max"})
         return ToolResponse.success(payload)
 
+    def _read_edit_target(self, path: Path) -> tuple[bytes, int]:
+        """Read a bounded regular file without following its final symlink."""
+        try:
+            _ensure_under_root(self._root, path, self._root)
+            before = path.lstat()
+            if not stat.S_ISREG(before.st_mode):
+                raise WorkspaceMutationError("target must be an existing regular file")
+            if before.st_size > MAX_EDIT_TARGET_BYTES:
+                raise WorkspaceMutationError("target file exceeds the finite edit bound")
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(path, flags)
+            with os.fdopen(fd, "rb") as handle:
+                opened = os.fstat(handle.fileno())
+                if not stat.S_ISREG(opened.st_mode):
+                    raise WorkspaceMutationError("target must be an existing regular file")
+                if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                    raise WorkspaceMutationError("target changed during edit validation")
+                if opened.st_size > MAX_EDIT_TARGET_BYTES:
+                    raise WorkspaceMutationError("target file exceeds the finite edit bound")
+                raw = handle.read(MAX_EDIT_TARGET_BYTES + 1)
+                if len(raw) > MAX_EDIT_TARGET_BYTES:
+                    raise WorkspaceMutationError("target file exceeds the finite edit bound")
+                if len(raw) != opened.st_size:
+                    raise WorkspaceMutationError("target changed during edit validation")
+                mode = stat.S_IMODE(opened.st_mode)
+            if path.is_symlink():
+                raise WorkspaceMutationError("symlink target rejected")
+            path.resolve(strict=True).relative_to(self._root)
+            return raw, mode
+        except WorkspaceMutationError:
+            raise
+        except (OSError, ValueError) as exc:
+            raise WorkspaceMutationError("target changed or escaped the active worktree") from exc
+
+    def _handle_edit(self, request: ToolRequest) -> ToolResponse:
+        inputs = request.inputs
+        path_val = inputs.get("path")
+        old_val = inputs.get("old_text")
+        new_val = inputs.get("new_text")
+        matches_val = inputs.get("expected_matches")
+        expected_digest = inputs.get("expected_sha256")
+        if any(value is None for value in (path_val, old_val, new_val, matches_val, expected_digest)):
+            return ToolResponse.failure({"code": "INVALID_INPUT", "message": "path, old_text, new_text, expected_matches, and expected_sha256 are required"})
+        if not isinstance(path_val, str) or type(path_val) is not str:
+            return ToolResponse.failure({"code": "INVALID_INPUT", "message": "path must be string"})
+        if type(matches_val) is not int or matches_val != 1:
+            return ToolResponse.failure({"code": "INVALID_INPUT", "message": "expected_matches must be exactly 1"})
+        if not isinstance(expected_digest, str) or type(expected_digest) is not str or not _DIGEST_HEX_RE.fullmatch(expected_digest):
+            return ToolResponse.failure({"code": "INVALID_INPUT", "message": "expected_sha256 must be 64 lowercase hex characters"})
+        try:
+            if not isinstance(old_val, str) or type(old_val) is not str or not old_val:
+                raise WorkspaceMutationError("old_text must be a non-empty string")
+            if not isinstance(new_val, str) or type(new_val) is not str:
+                raise WorkspaceMutationError("new_text must be a string")
+            if "\x00" in old_val or "\x00" in new_val:
+                raise WorkspaceMutationError("edit text must not contain NUL")
+            old_bytes = old_val.encode("utf-8", errors="strict")
+            new_bytes = new_val.encode("utf-8", errors="strict")
+        except UnicodeEncodeError:
+            return ToolResponse.failure({"code": "INVALID_ENCODING", "message": "edit text must be deterministic UTF-8"})
+        except WorkspaceMutationError as exc:
+            return ToolResponse.failure({"code": "INVALID_INPUT", "message": str(exc)})
+        if len(old_bytes) > MAX_EDIT_TEXT_BYTES or len(new_bytes) > MAX_EDIT_TEXT_BYTES:
+            return ToolResponse.failure({"code": "OVERSIZED_EDIT", "message": f"old_text and new_text are each limited to {MAX_EDIT_TEXT_BYTES} UTF-8 bytes"})
+
+        raw_path = path_val
+        try:
+            evidence = resolve_worktree_resource(self._sandbox, raw_path)
+        except Exception as exc:
+            message = str(exc).lower()
+            code = "PATH_ESCAPE" if any(token in message for token in ("absolute", "traversal", "relative", "'..'")) else "SYMLINK_ESCAPE" if "symlink" in message else "INVALID_PATH"
+            return ToolResponse.failure({"code": code, "message": "path rejected by the active-worktree resolver"})
+        if evidence.project_id != self._sandbox.project_id:
+            return ToolResponse.failure({"code": "CROSS_PROJECT_WRITE_FAIL_CLOSED", "message": "project mismatch"})
+        if evidence.worktree_id != self._sandbox.worktree_id:
+            return ToolResponse.failure({"code": "CROSS_WORKTREE_WRITE_FAIL_CLOSED", "message": "worktree mismatch"})
+        if not evidence.exists or evidence.kind != "file":
+            return ToolResponse.failure({"code": "INVALID_PATH", "message": "edit target must be an existing regular file"})
+        try:
+            fresh = resolve_worktree_resource(self._sandbox, raw_path)
+            if fresh.canonical_path != evidence.canonical_path or not fresh.exists or fresh.kind != "file":
+                return ToolResponse.failure({"code": "STALE_FILE", "message": "target changed during edit validation"})
+            canonical_path = Path(fresh.canonical_path)
+            raw, mode = self._read_edit_target(canonical_path)
+        except WorkspaceMutationError as exc:
+            message = str(exc).lower()
+            code = "TARGET_FILE_TOO_LARGE" if "finite edit bound" in message else "SYMLINK_ESCAPE" if "symlink" in message or "escaped" in message else "STALE_FILE"
+            return ToolResponse.failure({"code": code, "message": str(exc)})
+        except Exception:
+            return ToolResponse.failure({"code": "STALE_FILE", "message": "target could not be safely revalidated"})
+
+        pre_digest = hashlib.sha256(raw).hexdigest()
+        if pre_digest != expected_digest:
+            return ToolResponse.failure({"code": "STALE_FILE", "message": "full-file SHA-256 does not match expected_sha256"})
+        try:
+            current_text = raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return ToolResponse.failure({"code": "INVALID_ENCODING", "message": "edit target is not valid UTF-8"})
+        if current_text.count(old_val) != 1:
+            return ToolResponse.failure({"code": "MATCH_COUNT_MISMATCH", "message": f"expected exactly one literal match; found {current_text.count(old_val)}"})
+        updated_bytes = current_text.replace(old_val, new_val, 1).encode("utf-8")
+        if len(updated_bytes) > MAX_EDIT_TARGET_BYTES:
+            return ToolResponse.failure({"code": "TARGET_FILE_TOO_LARGE", "message": f"edited file exceeds the {MAX_EDIT_TARGET_BYTES}-byte bound"})
+        post_digest = hashlib.sha256(updated_bytes).hexdigest()
+
+        root_canonical = self._root
+        parent_dir = canonical_path.parent
+        tmp_path: Path | None = None
+        try:
+            _ensure_under_root(root_canonical, canonical_path, root_canonical)
+            if canonical_path.is_symlink():
+                return ToolResponse.failure({"code": "SYMLINK_ESCAPE", "message": "edit target became a symlink"})
+            latest_raw, _ = self._read_edit_target(canonical_path)
+            if hashlib.sha256(latest_raw).hexdigest() != pre_digest:
+                return ToolResponse.failure({"code": "STALE_FILE", "message": "target changed before atomic replacement"})
+            fd, tmp_name = tempfile.mkstemp(dir=str(parent_dir), prefix=".tmp-edit-")
+            tmp_path = Path(tmp_name)
+            with os.fdopen(fd, "wb") as handle:
+                os.fchmod(handle.fileno(), mode)
+                handle.write(updated_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if tmp_path.is_symlink():
+                return ToolResponse.failure({"code": "SYMLINK_ESCAPE", "message": "temporary edit file became a symlink"})
+            tmp_path.resolve(strict=True).relative_to(root_canonical)
+            # Final CAS check immediately before the atomic replace.
+            latest_raw, _ = self._read_edit_target(canonical_path)
+            if hashlib.sha256(latest_raw).hexdigest() != pre_digest:
+                return ToolResponse.failure({"code": "STALE_FILE", "message": "target changed before atomic replacement"})
+            os.replace(str(tmp_path), str(canonical_path))
+            tmp_path = None
+            if canonical_path.is_symlink():
+                return ToolResponse.failure({"code": "SYMLINK_ESCAPE", "message": "post-write target is a symlink"})
+            canonical_path.resolve(strict=True).relative_to(root_canonical)
+            written_bytes, _ = self._read_edit_target(canonical_path)
+            if written_bytes != updated_bytes or hashlib.sha256(written_bytes).hexdigest() != post_digest:
+                return ToolResponse.failure({"code": "PHYSICAL_WRITE_FAILURE", "message": "post-write digest verification failed"})
+            dir_fd = os.open(parent_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except WorkspaceMutationError as exc:
+            message = str(exc).lower()
+            if "finite edit bound" in message:
+                code = "TARGET_FILE_TOO_LARGE"
+            elif "symlink" in message or "escaped" in message:
+                code = "SYMLINK_ESCAPE"
+            elif "changed" in message:
+                code = "STALE_FILE"
+            else:
+                code = "PHYSICAL_WRITE_FAILURE"
+            return ToolResponse.failure({"code": code, "message": f"atomic edit failed verification: {type(exc).__name__}"})
+        except ValueError as exc:
+            return ToolResponse.failure({"code": "SYMLINK_ESCAPE", "message": f"atomic edit containment failed: {type(exc).__name__}"})
+        except OSError as exc:
+            return ToolResponse.failure({"code": "PHYSICAL_WRITE_FAILURE", "message": f"atomic edit failed verification: {type(exc).__name__}"})
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        payload = {
+            "path": raw_path,
+            "operation": "workspace.edit",
+            "matches_replaced": 1,
+            "pre_sha256": pre_digest,
+            "post_sha256": post_digest,
+            "pre_bytes": len(raw),
+            "post_bytes": len(updated_bytes),
+            "project_id": self._sandbox.project_id,
+            "worktree_id": self._sandbox.worktree_id,
+            "root_ref": self._write_root.root_ref,
+        }
+        try:
+            payload_json_size = len(canonical_json(payload).encode("utf-8"))
+        except Exception:
+            payload_json_size = len(str(payload).encode("utf-8"))
+        if payload_json_size > MAX_TOTAL_OUTPUT_BYTES:
+            return ToolResponse.failure({"code": "OUTPUT_BOUNDED_EXCEEDED", "message": f"output size {payload_json_size} exceeds max"})
+        return ToolResponse.success(payload)
+
 
 __all__ = [
     "WORKSPACE_WRITE_DESCRIPTOR",
+    "WORKSPACE_EDIT_DESCRIPTOR",
     "WorkspaceMutationAuthority",
     "create_workspace_mutation_authority",
     "BoundedWorkspaceMutationProvider",
@@ -946,6 +1156,8 @@ __all__ = [
     "ArtifactReferenceError",
     "ArtifactTamperError",
     "MAX_WRITE_BYTES",
+    "MAX_EDIT_TEXT_BYTES",
+    "MAX_EDIT_TARGET_BYTES",
     "WRITE_MODES",
     "MAX_PATH_LENGTH",
     "READ_AUTHORITY_IS_WRITE_AUTHORITY",
