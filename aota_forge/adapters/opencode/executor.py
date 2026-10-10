@@ -737,6 +737,12 @@ class OpenCodeAdapter(ExecutorAdapter):
             if evidence.aborted:
                 return CanonicalTaskState.CANCELLED, evidence, evidence.last_assistant_error
             return CanonicalTaskState.FAILED, evidence, evidence.last_assistant_error
+        if evidence.last_assistant_finish == "length":
+            return (
+                CanonicalTaskState.FAILED,
+                evidence,
+                "assistant turn exhausted its output length",
+            )
         if evidence.terminal_success:
             return CanonicalTaskState.COMPLETED, evidence, "dispatched turn terminated"
         if evidence.has_assistant:
@@ -842,11 +848,24 @@ class OpenCodeAdapter(ExecutorAdapter):
                 correlation_id=correlation_id,
             )
         if state == CanonicalTaskState.FAILED:
+            length_exhausted = (
+                evidence is not None
+                and evidence.last_assistant_error is None
+                and evidence.last_assistant_finish == "length"
+            )
             return CanonicalResult.failure(
                 canonical_task_id=canonical_task_id,
                 executor_id=OPENCODE_EXECUTOR_ID,
-                error_code="OPENCODE_SESSION_ERROR",
-                error_message=f"OpenCode exact session reported an assistant error ({detail})",
+                error_code=(
+                    "OPENCODE_TURN_LENGTH_EXHAUSTED"
+                    if length_exhausted
+                    else "OPENCODE_SESSION_ERROR"
+                ),
+                error_message=(
+                    f"OpenCode dispatched assistant turn exhausted its output length ({detail})"
+                    if length_exhausted
+                    else f"OpenCode exact session reported an assistant error ({detail})"
+                ),
                 retryable=False,
                 exit_code=None,
                 correlation_id=correlation_id,

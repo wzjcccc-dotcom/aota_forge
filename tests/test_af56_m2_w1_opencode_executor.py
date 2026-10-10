@@ -529,6 +529,19 @@ def _terminal_messages() -> list[dict[str, Any]]:
     ]
 
 
+def _length_finished_messages() -> list[dict[str, Any]]:
+    return [
+        {
+            "info": {"role": "user", "id": "msg_u1"},
+            "parts": [{"type": "text", "text": "do it"}],
+        },
+        {
+            "info": {"role": "assistant", "id": "msg_a1", "finish": "length"},
+            "parts": [{"type": "text", "text": "partial output"}],
+        },
+    ]
+
+
 def test_result_terminal_turn_projects_mechanical_success_without_text_authority() -> None:
     transport = FakeTransport()
     adapter = _dispatch_for_observation(transport)
@@ -540,6 +553,26 @@ def test_result_terminal_turn_projects_mechanical_success_without_text_authority
     assert result.executor_id == "opencode"
     assert result.result_data["mechanical_execution"]["turn_terminated"] is True
     assert "final answer" not in json.dumps(result.to_dict())
+
+
+def test_length_finish_is_mechanical_terminal_failure() -> None:
+    transport = FakeTransport()
+    adapter = _dispatch_for_observation(transport)
+    transport.push(_json_response(200, {}))
+    transport.push(_json_response(200, _length_finished_messages()))
+    status = adapter.status(_package().canonical_task_id, SES)
+    assert status.state is CanonicalTaskState.FAILED
+    assert status.progress["last_assistant_finish"] == "length"
+
+    transport.push(_json_response(200, {}))
+    transport.push(_json_response(200, _length_finished_messages()))
+    result = adapter.result(_package().canonical_task_id, SES)
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.canonical_task_state == CanonicalTaskState.FAILED.value
+    assert result.error is not None
+    assert result.error["code"] == "OPENCODE_TURN_LENGTH_EXHAUSTED"
+    assert result.error["retryable"] is False
 
 
 def test_result_never_projects_success_from_idle_alone() -> None:
@@ -584,6 +617,32 @@ def test_result_aborted_maps_cancelled() -> None:
     result = adapter.result(_package().canonical_task_id, SES)
     assert result.status == "cancelled"
     assert result.canonical_task_state == CanonicalTaskState.CANCELLED.value
+
+
+def test_explicit_assistant_error_still_maps_failed_when_finish_is_length() -> None:
+    transport = FakeTransport()
+    adapter = _dispatch_for_observation(transport)
+    transport.push(_json_response(200, {}))
+    transport.push(
+        _json_response(
+            200,
+            [
+                {
+                    "info": {
+                        "role": "assistant",
+                        "finish": "length",
+                        "error": {"name": "ProviderError", "data": {}},
+                    },
+                    "parts": [],
+                }
+            ],
+        )
+    )
+    result = adapter.result(_package().canonical_task_id, SES)
+    assert result.status == "failed"
+    assert result.canonical_task_state == CanonicalTaskState.FAILED.value
+    assert result.error is not None
+    assert result.error["code"] == "OPENCODE_SESSION_ERROR"
 
 
 # ---------------------------------------------------------------------------

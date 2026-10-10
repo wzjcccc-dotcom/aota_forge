@@ -54,8 +54,10 @@ from aota_forge.runtime.config import (
     RuntimeConfigError,
 )
 from aota_forge.work_plane.handoff_store import handoff_write
+from aota_forge.work_plane.result_card import WorkerResultCard
 from aota_forge.work_plane.task_return_receipt import (
     WorktreeSemanticReturnEvidenceProvider,
+    read_task_return_receipt,
     write_task_return_receipt,
 )
 from aota_forge.work_plane.worktree_sandbox import bind_worktree_sandbox
@@ -170,10 +172,16 @@ def _session_payload(
     return payload
 
 
-def _worker_terminal_messages() -> list[dict[str, Any]]:
+def _worker_terminal_messages(finish: str = "stop") -> list[dict[str, Any]]:
     return [
-        {"info": {"role": "user", "id": "u1"}, "parts": [{"type": "text", "text": "work"}]},
-        {"info": {"role": "assistant", "id": "a1", "finish": "stop"}, "parts": [{"type": "text", "text": "done"}]},
+        {
+            "info": {"role": "user", "id": "u1"},
+            "parts": [{"type": "text", "text": "work"}],
+        },
+        {
+            "info": {"role": "assistant", "id": "a1", "finish": finish},
+            "parts": [{"type": "text", "text": "done"}],
+        },
     ]
 
 
@@ -392,6 +400,7 @@ def _dispatch_and_complete(
     *,
     task_id: str,
     semantic_return: bool,
+    worker_finish: str = "stop",
 ) -> tuple[Any, Any, Any]:
     store = InMemoryExecutionStateStore()
     config = _config(tmp_path)
@@ -440,9 +449,9 @@ def _dispatch_and_complete(
     )
     # terminal observations for recovery (observe_status + dispatcher.result)
     transport.push(_resp(200, {}))
-    transport.push(_resp(200, _worker_terminal_messages()))
+    transport.push(_resp(200, _worker_terminal_messages(worker_finish)))
     transport.push(_resp(200, {}))
-    transport.push(_resp(200, _worker_terminal_messages()))
+    transport.push(_resp(200, _worker_terminal_messages(worker_finish)))
     return store, coordinator, config
 
 
@@ -554,6 +563,57 @@ def test_no_task_return_rejects_semantic_success_truthfully(tmp_path: pathlib.Pa
     # must learn about the failure; no success card is ever derived)
     assert record.worker_result_card is not None
     assert record.delivery_state is DeliveryState.PENDING
+
+
+def test_finish_length_failure_card_delivers_to_exact_parent_without_task_return(
+    tmp_path: pathlib.Path,
+) -> None:
+    transport = FakeTransport()
+    task_id = _package().canonical_task_id
+    store, coordinator, _ = _dispatch_and_complete(
+        tmp_path,
+        transport,
+        task_id=task_id,
+        semantic_return=False,
+        worker_finish="length",
+    )
+
+    report = coordinator.recover_once()
+    assert report.observations[task_id] == "terminal_result_persisted"
+    record = store.get(task_id)
+    assert record.canonical_task_state is CanonicalTaskState.FAILED
+    assert record.terminal_result is not None
+    assert record.terminal_result.error is not None
+    assert record.terminal_result.error["code"] == "OPENCODE_TURN_LENGTH_EXHAUSTED"
+    assert record.worker_result_card is not None
+    assert record.worker_result_card_digest is not None
+    card = WorkerResultCard.from_dict(dict(record.worker_result_card))
+    assert card.outcome.value == "failure"
+    assert card.summary == "durable terminal worker result: status=failed state=FAILED"
+    assert card.compute_card_digest() == record.worker_result_card_digest
+    assert record.delivery_state is DeliveryState.PENDING
+    assert read_task_return_receipt(_synthetic_sandbox(tmp_path), task_id) is None
+
+    transport.push(_resp(200, _session_payload(PARENT, DIR)))
+    transport.push(_resp(200, []))
+    transport.push(_resp(204))
+    transport.push(
+        _resp(200, [_assistant_message(_ack_text(task_id, record.worker_result_card_digest))])
+    )
+    delivery = coordinator.deliver_pending_once()
+    assert delivery.outcomes[task_id] == "acknowledged"
+    assert store.get(task_id).delivery_state is DeliveryState.ACKNOWLEDGED
+    assert any(
+        f"/session/{PARENT}/prompt_async" in request["url"]
+        for request in transport.requests
+    )
+    session_creates = [
+        request
+        for request in transport.requests
+        if request["method"] == "POST"
+        and (request["url"].rstrip("/").endswith("/session") or "/session?directory=" in request["url"])
+    ]
+    assert len(session_creates) == 1
 
 
 def test_duplicate_redelivery_reconciles_idempotently(tmp_path: pathlib.Path) -> None:
