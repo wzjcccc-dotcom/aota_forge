@@ -167,6 +167,7 @@ def inspect_git(project_root: Path, boundary: Path | None = None, max_entries: i
 
     return {
         "available": True,
+        "complete": not any((staged_truncated, unstaged_truncated, untracked_truncated, ignored_truncated)),
         "repo_root": repo_root,
         "branch": branch.strip() or "unknown",
         "head_sha": head_sha,
