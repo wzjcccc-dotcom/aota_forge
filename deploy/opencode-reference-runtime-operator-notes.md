@@ -155,15 +155,45 @@ AOTA_GLOBAL_MCP=1
 Deployment shape used by the reference host (operator-owned `opencode.json`):
 
 ```json
-"mcp": {"aota": {"type": "local",
-  "command": ["/usr/bin/python3", "<runtime>/mcp/opencode_aota_mcp_server.py"],
-  "environment": {
-    "AOTA_FORGE_REPO_ROOT": "<aota_forge checkout>",
-    "AOTA_FORGE_REGISTRY": "<operator workspace registry>",
-    "AOTA_FORGE_RUNTIME_CONFIG": "<operator runtime config for this host>"
-  },
-  "enabled": true, "timeout": 15000}}
+{
+  "mcp": {
+    "aota": {
+      "type": "local",
+      "command": ["/usr/bin/python3", "<runtime>/mcp/opencode_aota_mcp_server.py"],
+      "environment": {
+        "AOTA_FORGE_REPO_ROOT": "<aota_forge checkout>",
+        "AOTA_FORGE_REGISTRY": "<operator workspace registry>",
+        "AOTA_FORGE_RUNTIME_CONFIG": "<operator runtime config for this host>"
+      },
+      "enabled": true,
+      "timeout": 361000
+    }
+  }
+}
 ```
+
+### Synchronous operation timeout ordering
+
+The operator-owned `mcp.aota.timeout` is the OpenCode host's request timeout in
+milliseconds. It must exceed the longest legal synchronous AF operation plus a
+bounded transport margin; OpenCode passes it to each MCP `callTool` request.
+The AF `test.run` contract remains bounded at 300 seconds. This deployment
+uses a 60-second transport margin plus 1 second of strict-ordering headroom:
+
+```text
+TEST_RUN_MAX_TIMEOUT_SECONDS=300
+TRANSPORT_MARGIN_MS=60000
+OPENCODE_AOTA_MCP_TIMEOUT_MS=361000
+361000 > 300000 + 60000
+```
+
+`test.run` does not emit MCP progress while its bounded subprocess is running,
+so the host request timeout must cover the complete legal operation and its
+bounded cleanup. The regression guard in
+`tests/test_af_plan005_m2_opencode_mcp_timeout_contract.py` checks the rendered
+operator config contract against the canonical AF bounds. Do not raise the
+timeout arbitrarily or make it infinite; if an AF synchronous bound changes,
+update this bounded contract and guard together.
 
 Boundaries and known limits:
 
