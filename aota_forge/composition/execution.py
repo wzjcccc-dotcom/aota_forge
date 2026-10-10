@@ -835,6 +835,8 @@ def run_bounded_completion_continuation(
     timeout_seconds: float = DEFAULT_COMPLETION_CONTINUATION_TIMEOUT_SECONDS,
     poll_interval_seconds: float = DEFAULT_COMPLETION_CONTINUATION_POLL_SECONDS,
     max_iterations: int = MAX_COMPLETION_CONTINUATION_ITERATIONS,
+    execution_store: ExecutionStateStore | None = None,
+    completion_coordinator: DurableCompletionCoordinator | None = None,
     host_client: Any | None = None,
     host_client_factory: Callable[..., Any] | None = None,
     transport: Any | None = None,
@@ -864,6 +866,11 @@ def run_bounded_completion_continuation(
     ``task.return`` reconciles to truthful failure. Both are supplied together
     by the production launcher; omitting them keeps the historical
     component-level behavior (no semantic-return gate configured).
+
+    A headed thin session may supply its already-composed store and coordinator
+    so the bounded lifecycle shares the exact session-local runtime objects
+    instead of opening a second view of the same file-backed store. Launcher
+    callers omit both and retain the existing fresh-process reconstruction.
     """
     if not isinstance(relevant_origin_session_ref, str) or not relevant_origin_session_ref.strip():
         raise CompletionContinuationError("relevant_origin_session_ref must be a non-empty string")
@@ -886,7 +893,32 @@ def run_bounded_completion_continuation(
 
     session_ref = relevant_origin_session_ref.strip()
     config = _resolve_operator_runtime_config(runtime_config)
-    store = FileBackedExecutionStateStore(Path(execution_store_path))
+    if (execution_store is None) != (completion_coordinator is None):
+        raise CompletionContinuationError(
+            "execution_store and completion_coordinator must be supplied together"
+        )
+    if execution_store is not None:
+        if not isinstance(execution_store, ExecutionStateStore):
+            raise CompletionContinuationError(
+                "the supplied headed execution store must implement ExecutionStateStore"
+            )
+        if not isinstance(completion_coordinator, DurableCompletionCoordinator):
+            raise CompletionContinuationError(
+                "the supplied headed coordinator must be DurableCompletionCoordinator"
+            )
+        if completion_coordinator.store is not execution_store:
+            raise CompletionContinuationError(
+                "the supplied completion coordinator must use the exact supplied execution store"
+            )
+        if transport is not None or host_client is not None or host_client_factory is not None:
+            raise CompletionContinuationError(
+                "fresh-process host/transport overrides cannot be combined with a live completion coordinator"
+            )
+    store = (
+        execution_store
+        if execution_store is not None
+        else FileBackedExecutionStateStore(Path(execution_store_path))
+    )
 
     initial_relevant = _relevant_records(store, session_ref)
     if not initial_relevant:
@@ -900,54 +932,58 @@ def run_bounded_completion_continuation(
             relevant_records_remaining=0,
         )
 
-    # AF #49 M1/W9: relevant terminal reconciliation requires governed
-    # semantic-return proof. Build it from trusted lifecycle identity; missing
-    # canonical project evidence fails closed (never gate-less success).
-    semantic_return_provider: Any | None = None
-    if project_id is not None or worktree_id is not None:
-        if not (
-            isinstance(project_id, str)
-            and project_id.strip()
-            and isinstance(worktree_id, str)
-            and worktree_id.strip()
-        ):
-            raise CompletionContinuationError(
-                "project_id and worktree_id must be supplied together (trusted lifecycle "
-                "identity) to enable governed semantic-return proof"
-            )
-        semantic_return_provider = build_semantic_return_evidence_provider(
-            worktree_root=worktree_root,
-            project_id=project_id.strip(),
-            worktree_id=worktree_id.strip(),
-        )
-
-    dispatcher_kwargs: dict[str, Any] = {
-        "default_cwd": worktree_root,
-        "runtime_config": config,
-        "state_store": store,
-    }
-    if host_client is not None:
-        dispatcher_kwargs["host_client"] = host_client
-    if host_client_factory is not None:
-        dispatcher_kwargs["host_client_factory"] = host_client_factory
-    dispatcher = create_production_execution_dispatcher(**dispatcher_kwargs)
-    if transport is not None:
-        effective_transport = transport
-    elif config.executor == EXECUTOR_OPENCODE:
-        # AF #56 M2/W3: the completion transport is selected by the SAME
-        # operator RuntimeConfig authority that selected the dispatch host. The
-        # target parent session arrives per delivery from durable
-        # origin_session_ref truth only.
-        effective_transport = create_opencode_completion_delivery_transport(runtime_config=config)
+    if completion_coordinator is not None:
+        coordinator = completion_coordinator
     else:
-        effective_transport = create_hermes_completion_delivery_transport(runtime_config=config)
-    coordinator = create_durable_completion_coordinator(
-        dispatcher=dispatcher,
-        state_store=store,
-        runtime_config=config,
-        transport=effective_transport,
-        semantic_return_provider=semantic_return_provider,
-    )
+        # AF #49 M1/W9: relevant terminal reconciliation requires governed
+        # semantic-return proof. Build it from trusted lifecycle identity;
+        # missing canonical project evidence fails closed (never gate-less
+        # success).
+        semantic_return_provider: Any | None = None
+        if project_id is not None or worktree_id is not None:
+            if not (
+                isinstance(project_id, str)
+                and project_id.strip()
+                and isinstance(worktree_id, str)
+                and worktree_id.strip()
+            ):
+                raise CompletionContinuationError(
+                    "project_id and worktree_id must be supplied together (trusted lifecycle "
+                    "identity) to enable governed semantic-return proof"
+                )
+            semantic_return_provider = build_semantic_return_evidence_provider(
+                worktree_root=worktree_root,
+                project_id=project_id.strip(),
+                worktree_id=worktree_id.strip(),
+            )
+
+        dispatcher_kwargs: dict[str, Any] = {
+            "default_cwd": worktree_root,
+            "runtime_config": config,
+            "state_store": store,
+        }
+        if host_client is not None:
+            dispatcher_kwargs["host_client"] = host_client
+        if host_client_factory is not None:
+            dispatcher_kwargs["host_client_factory"] = host_client_factory
+        dispatcher = create_production_execution_dispatcher(**dispatcher_kwargs)
+        if transport is not None:
+            effective_transport = transport
+        elif config.executor == EXECUTOR_OPENCODE:
+            # AF #56 M2/W3: the completion transport is selected by the SAME
+            # operator RuntimeConfig authority that selected the dispatch host.
+            # The target parent session arrives per delivery from durable
+            # origin_session_ref truth only.
+            effective_transport = create_opencode_completion_delivery_transport(runtime_config=config)
+        else:
+            effective_transport = create_hermes_completion_delivery_transport(runtime_config=config)
+        coordinator = create_durable_completion_coordinator(
+            dispatcher=dispatcher,
+            state_store=store,
+            runtime_config=config,
+            transport=effective_transport,
+            semantic_return_provider=semantic_return_provider,
+        )
 
     deadline = now_fn() + float(timeout_seconds)
     iterations = 0

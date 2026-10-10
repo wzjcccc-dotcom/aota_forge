@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import threading
@@ -99,6 +100,8 @@ from aota_forge.session_bridge import (
     VerifiedInvocationIdentity,
     extract_carrier,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 # M2 activation: durable hydration bound reuse (constant only, no persistence).
 # D5 convergence: MCP never persists durable payloads directly
@@ -1663,6 +1666,11 @@ class _SessionSlot:
         self.bridge_id = bridge_id
         self.execution_dispatcher: Any | None = None
         self.execution_store: Any | None = None
+        self.completion_lock = threading.Lock()
+        self.completion_recovery_checked = False
+        self.completion_request_generation = 0
+        self.completion_active = False
+        self.completion_thread: threading.Thread | None = None
         self.lock = threading.RLock()
         self.async_lock: asyncio.Lock | None = None
         # ``in_flight`` is protected by SessionScopedContextRouter._lock.
@@ -1701,7 +1709,7 @@ class SessionScopedContextRouter:
             existing = self._slots.get(identity.session_id)
             if existing is not None:
                 if existing.bridge_id != identity.bridge_id:
-                    if existing.in_flight:
+                    if existing.in_flight or self._completion_is_active(existing):
                         raise BridgeVerificationError(
                             "TOKEN_EPOCH_STALE",
                             "Session slot is still serving the previous bridge epoch",
@@ -1717,7 +1725,7 @@ class SessionScopedContextRouter:
             if len(self._slots) >= self.MAX_SLOTS:
                 evicted = False
                 for key, candidate in tuple(self._slots.items()):
-                    if candidate.in_flight:
+                    if candidate.in_flight or self._completion_is_active(candidate):
                         continue
                     self._slots.pop(key, None)
                     retired.append(candidate)
@@ -1750,6 +1758,11 @@ class SessionScopedContextRouter:
         if adapter is not None:
             adapter.close()
 
+    @staticmethod
+    def _completion_is_active(slot: _SessionSlot) -> bool:
+        with slot.completion_lock:
+            return slot.completion_active
+
     def _release_slot(self, slot: _SessionSlot) -> None:
         with self._idle:
             slot.in_flight -= 1
@@ -1778,7 +1791,11 @@ class SessionScopedContextRouter:
             return _unbound_governed_error(operation, exc.code, str(exc))
 
         try:
-            return self._execute_in_slot(slot, identity, operation, logical_arguments)
+            result = self._execute_in_slot(slot, identity, operation, logical_arguments)
+            self._maybe_start_headed_thin_completion(
+                slot, identity.session_id, operation, result
+            )
+            return result
         except BridgeVerificationError as exc:
             return _unbound_governed_error(operation, exc.code, str(exc))
         finally:
@@ -1861,6 +1878,186 @@ class SessionScopedContextRouter:
             slot.execution_store = getattr(runtime, "execution_store", None)
             return result
 
+    def _maybe_start_headed_thin_completion(
+        self,
+        slot: _SessionSlot,
+        verified_session_id: str,
+        operation: str,
+        result: McpToolResult,
+    ) -> None:
+        """Give a successful headed thin task-main call a bounded parent owner.
+
+        The first successful bound call is also the restart-recovery trigger;
+        every successful ``task.start`` requests a pass for newly dispatched
+        work. The continuation itself reads only this slot's trusted session
+        store and durable exact origin. Worker bindings never satisfy the thin
+        task-main checks below and ``task.return`` remains receipt-only.
+        """
+        if result.get("ok") is not True:
+            return
+        adapter = slot.adapter
+        runtime = getattr(adapter, "_bound_runtime", None)
+        binding = getattr(adapter, "_bound_binding", None)
+        if runtime is None or binding is None:
+            return
+        if getattr(binding, "task_main_runtime_path", None) != "thin":
+            return
+        work_role = getattr(getattr(binding, "handoff", None), "work_role", None)
+        if getattr(work_role, "value", None) != "task-main":
+            return
+        if getattr(runtime, "origin_task_main_session_ref", None) != verified_session_id:
+            return
+
+        with slot.completion_lock:
+            if operation != "task.start" and slot.completion_recovery_checked:
+                return
+            slot.completion_recovery_checked = True
+            slot.completion_request_generation += 1
+
+        execution_store_path = getattr(runtime, "execution_store_path", None)
+        execution_store = getattr(runtime, "execution_store", None)
+        completion_coordinator = getattr(runtime, "completion_coordinator", None)
+        worktree_root = getattr(runtime, "worktree_root", None)
+        runtime_config = getattr(runtime, "runtime_config", None)
+        project_id = getattr(runtime, "project_id", None)
+        worktree_id = getattr(runtime, "worktree_id", None)
+        if not isinstance(execution_store_path, Path) or not execution_store_path.is_absolute():
+            _LOGGER.warning(
+                "headed thin completion owner unavailable for exact Session %s: "
+                "no durable execution-store path",
+                verified_session_id,
+            )
+            return
+        if not isinstance(worktree_root, Path) or not worktree_root.is_absolute():
+            return
+        if execution_store is None or completion_coordinator is None:
+            return
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (project_id, worktree_id)
+        ):
+            return
+
+        self._launch_headed_thin_completion(
+            slot,
+            relevant_origin_session_ref=verified_session_id,
+            execution_store_path=execution_store_path,
+            execution_store=execution_store,
+            completion_coordinator=completion_coordinator,
+            worktree_root=worktree_root,
+            runtime_config=runtime_config,
+            project_id=project_id,
+            worktree_id=worktree_id,
+        )
+
+    def _launch_headed_thin_completion(
+        self,
+        slot: _SessionSlot,
+        *,
+        relevant_origin_session_ref: str,
+        execution_store_path: Path,
+        execution_store: Any,
+        completion_coordinator: Any,
+        worktree_root: Path,
+        runtime_config: Any,
+        project_id: str,
+        worktree_id: str,
+    ) -> None:
+        """Start at most one bounded continuation for this live exact slot."""
+        with self._lock:
+            if self._closed or self._slots.get(slot.session_id) is not slot:
+                return
+        with slot.completion_lock:
+            if slot.completion_active:
+                return
+            generation = slot.completion_request_generation
+            slot.completion_active = True
+            worker = threading.Thread(
+                target=self._run_headed_thin_completion,
+                kwargs={
+                    "slot": slot,
+                    "generation": generation,
+                    "relevant_origin_session_ref": relevant_origin_session_ref,
+                    "execution_store_path": execution_store_path,
+                    "execution_store": execution_store,
+                    "completion_coordinator": completion_coordinator,
+                    "worktree_root": worktree_root,
+                    "runtime_config": runtime_config,
+                    "project_id": project_id,
+                    "worktree_id": worktree_id,
+                },
+                name=f"aota-completion-{slot.session_id[:32]}",
+                daemon=True,
+            )
+            slot.completion_thread = worker
+            try:
+                worker.start()
+            except Exception:
+                slot.completion_active = False
+                slot.completion_thread = None
+                _LOGGER.exception(
+                    "headed thin completion owner could not start for exact Session %s",
+                    slot.session_id,
+                )
+
+    def _run_headed_thin_completion(
+        self,
+        *,
+        slot: _SessionSlot,
+        generation: int,
+        relevant_origin_session_ref: str,
+        execution_store_path: Path,
+        execution_store: Any,
+        completion_coordinator: Any,
+        worktree_root: Path,
+        runtime_config: Any,
+        project_id: str,
+        worktree_id: str,
+    ) -> None:
+        """Run the existing bounded completion lifecycle on trusted slot data."""
+        try:
+            from aota_forge.composition.execution import (
+                run_bounded_completion_continuation,
+            )
+
+            report = run_bounded_completion_continuation(
+                execution_store_path=execution_store_path,
+                worktree_root=worktree_root,
+                runtime_config=runtime_config,
+                relevant_origin_session_ref=relevant_origin_session_ref,
+                project_id=project_id,
+                worktree_id=worktree_id,
+                execution_store=execution_store,
+                completion_coordinator=completion_coordinator,
+            )
+            _LOGGER.debug(
+                "headed thin completion pass ended for exact Session %s: %s",
+                relevant_origin_session_ref,
+                getattr(report, "stop_reason", "unknown"),
+            )
+        except Exception:
+            _LOGGER.exception(
+                "headed thin completion continuation failed for exact Session %s",
+                relevant_origin_session_ref,
+            )
+        finally:
+            with slot.completion_lock:
+                rerun_requested = slot.completion_request_generation != generation
+                slot.completion_active = False
+                slot.completion_thread = None
+            if rerun_requested:
+                self._launch_headed_thin_completion(
+                    slot,
+                    relevant_origin_session_ref=relevant_origin_session_ref,
+                    execution_store_path=execution_store_path,
+                    execution_store=execution_store,
+                    completion_coordinator=completion_coordinator,
+                    worktree_root=worktree_root,
+                    runtime_config=runtime_config,
+                    project_id=project_id,
+                    worktree_id=worktree_id,
+                )
+
     async def invoke_async(
         self,
         operation: str,
@@ -1895,7 +2092,7 @@ class SessionScopedContextRouter:
                 # already-selected Session slot rather than a second registry.
                 slot.async_lock = asyncio.Lock()
             async with slot.async_lock:
-                return await anyio.to_thread.run_sync(
+                result = await anyio.to_thread.run_sync(
                     self._execute_in_slot,
                     slot,
                     identity,
@@ -1904,6 +2101,10 @@ class SessionScopedContextRouter:
                     abandon_on_cancel=False,
                     limiter=worker_limiter,
                 )
+                self._maybe_start_headed_thin_completion(
+                    slot, identity.session_id, operation, result
+                )
+                return result
         except BridgeVerificationError as exc:
             return _unbound_governed_error(operation, exc.code, str(exc))
         finally:

@@ -447,6 +447,7 @@ class ThinTaskMainHost:
     trusted_binding: TrustedWorkerBinding
     tool_surface: ToolRoleSurface
     execution_store: ExecutionStateStore
+    execution_store_path: Path | None
     execution_dispatcher: ExecutionDispatcher
     completion_coordinator: DurableCompletionCoordinator
     completion_transport: Any
@@ -724,10 +725,20 @@ def compose_thin_task_main_host(
         headed_store_path = root / ".aota" / "execution-sessions" / f"{session_digest}.json"
     elif session_execution_store_path is not None:
         headed_store_path = Path(session_execution_store_path)
+    selected_store_path: Path | None = Path(
+        headed_store_path or root / ".aota" / "execution.json"
+    ).resolve()
+    if execution_store is not None:
+        raw_store_path = getattr(execution_store, "_path", None)
+        selected_store_path = (
+            Path(raw_store_path).resolve()
+            if isinstance(raw_store_path, (str, PathLike))
+            else None
+        )
     store: ExecutionStateStore = (
         execution_store
         if execution_store is not None
-        else _default_execution_store(root, store_path=headed_store_path)
+        else _default_execution_store(root, store_path=selected_store_path)
     )
 
     # AF #53 M3/W2-R1 (I53-B001): the thin production dispatcher is composed
@@ -1041,6 +1052,7 @@ def compose_thin_task_main_host(
         trusted_binding=binding,
         tool_surface=tool_surface,
         execution_store=store,
+        execution_store_path=selected_store_path,
         execution_dispatcher=dispatcher,
         completion_coordinator=completion_coordinator,
         completion_transport=transport,
