@@ -262,9 +262,6 @@ def evaluate_live_runtime_provenance(
     )
     decision = result["eligibility"]
     parity = decision["capability_parity"] or {}
-    capability_refs = projection.get("capability_evidence_refs")
-    if not isinstance(capability_refs, Mapping):
-        capability_refs = {}
     stage_refs: dict[str, dict[str, Any]] = {}
     for stage in RUNTIME_STAGES:
         item = recorded_evidence.get(stage)
@@ -273,7 +270,6 @@ def evaluate_live_runtime_provenance(
             "evidence_ref": stage_provenance.get("evidence_ref")
             if isinstance(stage_provenance, Mapping)
             else None,
-            "capability_evidence_ref": capability_refs.get(stage),
         }
     return {
         "runtime_subject": source_subject,
