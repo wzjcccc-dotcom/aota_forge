@@ -330,6 +330,8 @@ GOVERNANCE_OPERATIONS: tuple[str, ...] = (
     "governance.plan",
     "governance.doctor",
     "governance.plan.preflight",
+    "governance.work.acceptance.materialize",
+    "governance.milestone.close",
     GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
 )
 # W5 (AF #49 M1/W5, I49-B001): canonical normal-path handoff/task lifecycle
@@ -902,6 +904,7 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         plan_authority_binding=getattr(binding, "plan_authority_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
         governance_doctor=getattr(binding, "governance_doctor", None),
+        governance_milestone_closure=getattr(binding, "governance_milestone_closure", None),
         # M2/W4: preserve the existing-store switch composition carrier across
         # the canonical aota.invoke boundary; it is not a second store.
         context_switch_runtime=getattr(binding, "context_switch_runtime", None),

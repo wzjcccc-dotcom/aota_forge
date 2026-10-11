@@ -16,6 +16,18 @@ contracts:
   - governance.terminal_projection.reconcile
   protocol: aota-forge.operation-contract
   protocol_version: '1.0'
+- name: result.governance.work.acceptance.materialize.v1
+  description: Immutable exact-parent Work acceptance projection receipt reference
+  compatible_operations:
+  - governance.work.acceptance.materialize
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
+- name: result.governance.milestone.close.v1
+  description: Deterministic Steward MILESTONE_CLOSE result backed by thin cross-owner evidence
+  compatible_operations:
+  - governance.milestone.close
+  protocol: aota-forge.operation-contract
+  protocol_version: '1.0'
 - name: canonical_dispatch_result.v1
   description: Canonical dispatch result contract for execution task start
   compatible_operations:

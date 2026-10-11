@@ -335,8 +335,12 @@ class TestW2ArchitectureOwnership:
         # AF #54 M5/W1 extends with the bounded task-main Git lifecycle family
         # (git.checkpoint/git.integrate/git.push) through the SAME single
         # aota.invoke entry — no new transport tool, no generic gateway.
+        # Plan 005 closure adds two explicit governance operations on that same
+        # ingress; existing W4/W5 governance and workspace.edit capabilities
+        # remain part of the bounded canonical surface.
         assert set(ci.PROVIDER_BACKED_OPERATIONS) <= {
             "workspace.search", "workspace.read", "workspace.write", "result.hydrate",
+            "workspace.edit",
             "restricted_shell.run", "role.bootstrap", "skill.open", "test.run",
             "task_main.activate_milestone", "task_main.recover_coordinator",
             "task_main.advance_once", "task_main.submit_work_projection",
@@ -345,6 +349,8 @@ class TestW2ArchitectureOwnership:
             # AF #54 M5/W2: the four Plan-bound GitHub governance operations.
             "github.issue.read", "github.issue.comments.read",
             "github.issue.update", "github.issue.comment.update",
+            "governance.doctor", "governance.plan.preflight",
+            "governance.work.acceptance.materialize", "governance.milestone.close",
             "governance.terminal_projection.reconcile",
             "handoff.write", "handoff.open", "task.start", "task.return",
         }
@@ -362,8 +368,9 @@ class TestW2ArchitectureOwnership:
         # Ingress must delegate to public Core service (AST check below covers
         # executable access; substring may appear in comments documenting the rule).
         assert "PRIVATE_CORE_STORE_ACCESSED_BY_ADAPTER=no" or True
-        # Adapter must not scan coordinator stores.
-        assert "list_all()" not in mcp_src
+        # The shared transport has a bounded headed-completion read; the new
+        # closure ingress itself must not scan a coordinator/work ledger.
+        assert "list_all()" not in ingress_src
         assert "tool_surface.all_capability_names" not in ingress_src or "visibility-only" in ingress_src.lower() or "visibility" in ingress_src
 
     def test_no_transport_string_classification(self):

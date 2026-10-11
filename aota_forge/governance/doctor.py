@@ -148,6 +148,7 @@ class DoctorContext:
     runtime_plan_authority_binding: PlanAuthorityBinding | None = None
     runtime_live_plan_authority: str | None = None
     session_ref: str = ""
+    milestone_close_evidence_adapter: Any | None = None
 
 
 def _expected_plan_ref(plan_id: str) -> Any:
@@ -485,12 +486,31 @@ def run_governance_doctor(
         except Exception:
             add("PROJECTION", DoctorStatus.DEGRADED, "PROJECTION_READ_FAILED", "Generated views or trusted projection inputs could not be read.")
 
-    add(
-        "TRANSITION_READINESS",
-        DoctorStatus.ADVISORY,
-        "VALIDATOR_NOT_YET_AVAILABLE",
-        "Canonical deterministic validators are not yet available for all reported transitions.",
-    )
+    close_evidence = None
+    if context.milestone_close_evidence_adapter is None:
+        add(
+            "TRANSITION_READINESS",
+            DoctorStatus.ADVISORY,
+            "VALIDATOR_NOT_YET_AVAILABLE",
+            "Canonical deterministic validators are not yet available for all reported transitions.",
+        )
+    else:
+        try:
+            close_evidence = context.milestone_close_evidence_adapter.project(source_observation)
+            if close_evidence.ready_for_project_steward is not True:
+                add(
+                    "TRANSITION_READINESS",
+                    DoctorStatus.BLOCKED,
+                    "MILESTONE_CLOSE_EVIDENCE_INCOMPLETE",
+                    "; ".join(close_evidence.blocking_reasons) or "trusted closure evidence is incomplete",
+                )
+        except Exception:
+            add(
+                "TRANSITION_READINESS",
+                DoctorStatus.BLOCKED,
+                "MILESTONE_CLOSE_EVIDENCE_INVALID",
+                "Trusted milestone-close evidence could not be projected.",
+            )
 
     domain_status: dict[str, str] = {domain: DoctorStatus.READY.value for domain in DOCTOR_DOMAINS}
     for finding in findings:
@@ -520,6 +540,26 @@ def run_governance_doctor(
         }
         for transition in TRANSITIONS
     }
+    if context.milestone_close_evidence_adapter is not None:
+        if close_evidence is None:
+            transition_readiness["MILESTONE_CLOSE"] = {
+                "status": DoctorStatus.BLOCKED.value,
+                "code": "MILESTONE_CLOSE_EVIDENCE_INVALID",
+                "ready_for_project_steward": "no",
+            }
+        elif close_evidence.ready_for_project_steward is True:
+            transition_readiness["MILESTONE_CLOSE"] = {
+                "status": DoctorStatus.READY.value,
+                "code": "READY_FOR_PROJECT_STEWARD",
+                "ready_for_project_steward": "yes",
+                "evidence_digest": close_evidence.readiness.digest if close_evidence.readiness else "",
+            }
+        else:
+            transition_readiness["MILESTONE_CLOSE"] = {
+                "status": DoctorStatus.BLOCKED.value,
+                "code": "MILESTONE_CLOSE_EVIDENCE_INCOMPLETE",
+                "ready_for_project_steward": "no",
+            }
     visible_findings = list(ordered_findings[:MAX_DOCTOR_FINDINGS])
     truncated = len(visible_findings) < len(ordered_findings)
     result = DoctorResult(

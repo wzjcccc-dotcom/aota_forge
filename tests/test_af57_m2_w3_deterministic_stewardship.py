@@ -106,6 +106,7 @@ from aota_forge.work_plane.steward_dispatch import (
 )
 from aota_forge.work_plane.steward_finalizer import (
     ClosurePhase,
+    FinalizerError,
     FinalizerInput,
     InMemoryGitHubPort,
     InMemoryGitPort,
@@ -113,6 +114,7 @@ from aota_forge.work_plane.steward_finalizer import (
     TrustedPlanIdentity,
     TrustedStewardFinalizer,
     TrustedUserGateState,
+    authorize_finalizer_call,
     make_trusted_binding_for_test,
 )
 
@@ -1057,6 +1059,22 @@ def test_v2_deterministic_path_reaches_existing_finalizer() -> None:
     assert receipt.git_final_refs["remote"] == B_SHA
     assert receipt.github_evidence is not None
     assert COMMENT_ROLE in receipt.github_evidence
+
+
+def test_milestone_close_ingress_reuses_finalizer_without_legacy_coordinator() -> None:
+    authorize_finalizer_call(
+        caller_role="governance.milestone.close",
+        via_coordinator=False,
+        via_milestone_close_ingress=True,
+        has_closure_evidence=True,
+    )
+    with pytest.raises(FinalizerError):
+        authorize_finalizer_call(
+            caller_role="task-main",
+            via_coordinator=False,
+            via_milestone_close_ingress=True,
+            has_closure_evidence=True,
+        )
 
 
 def test_v2_semantic_residual_to_existing_steward_result_contract() -> None:

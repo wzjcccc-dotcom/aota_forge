@@ -8,6 +8,7 @@ import json
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -357,6 +358,31 @@ def test_D1_healthy_current_plan_returns_deterministic_domains(doctor_world: Doc
     assert dirty_source.domains["SOURCE_FRONTIER"] == "DEGRADED"
     assert dirty_source.overall_status.value == "DEGRADED"
     assert "SOURCE_RUNTIME_CLASSIFICATION_PENDING" in _finding_codes(dirty_source)
+
+
+def test_D1b_milestone_close_uses_the_shared_thin_evidence_adapter(doctor_world: DoctorWorld) -> None:
+    evidence = SimpleNamespace(
+        ready_for_project_steward=True,
+        blocking_reasons=(),
+        readiness=SimpleNamespace(digest="a" * 64),
+    )
+
+    class ClosureAdapter:
+        def project(self, source_observation):
+            assert source_observation is CLEAN_SOURCE
+            return evidence
+
+    result = run_governance_doctor(
+        doctor_world.context(milestone_close_evidence_adapter=ClosureAdapter()),
+        source_observation=CLEAN_SOURCE,
+    )
+    assert result.transition_readiness["MILESTONE_CLOSE"] == {
+        "status": "READY",
+        "code": "READY_FOR_PROJECT_STEWARD",
+        "ready_for_project_steward": "yes",
+        "evidence_digest": "a" * 64,
+    }
+    assert "VALIDATOR_NOT_YET_AVAILABLE" not in _finding_codes(result)
 
 
 def test_D2_retired_plan_active_coordinator_is_reported_without_deletion(tmp_path: Path) -> None:

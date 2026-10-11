@@ -249,6 +249,10 @@ class TrustedWorkerBinding:
     # Separate operation-bound source edit authority. It is never substituted
     # for the existing workspace.write authority.
     workspace_edit_authority: WorkspaceMutationAuthority | None = None
+    # AF Plan 005 M2: server-composed thin closure evidence owner. The
+    # projection is derived from existing evidence stores; it owns no Work
+    # progression state and never performs semantic acceptance.
+    governance_milestone_closure: Any | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities

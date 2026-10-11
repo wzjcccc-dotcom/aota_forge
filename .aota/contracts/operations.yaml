@@ -442,6 +442,82 @@ contracts:
   - PROJECTION_READ_FAILED
   - INTERNAL_MECHANICAL_ERROR
   protocol_version: '1.0'
+- name: governance.work.acceptance.materialize
+  description: Materializes one existing exact-parent Work acceptance as an immutable receipt bound to its canonical result, CARD, Plan revision, session, and accepted source frontier
+  inputs:
+  - name: work_item_id
+    type: str
+  - name: canonical_task_id
+    type: str
+  - name: acceptance_decision
+    type: str
+  - name: accepted_frontier
+    type: str
+  - name: decision_ref
+    type: str
+  - name: decision_digest
+    type: str
+  - name: production_proof
+    type: dict?
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: immutable_governance_evidence
+  required_authority: trusted_project_plan_binding
+  approval_required: false
+  decision_required: false
+  valid_predecessor_state: any
+  valid_successor_state: any
+  subject_revision_precondition: false
+  external_authority_precondition: false
+  idempotency: content_addressed_immutable_receipt
+  result_contract: result.governance.work.acceptance.materialize.v1
+  errors:
+  - AUTHORITY_DENIED
+  - WORK_IDENTITY_MISMATCH
+  - FOREIGN_PARENT_DECISION
+  - PARENT_DECISION_NOT_ACCEPTED
+  - STALE_PLAN_BINDING
+  - WORK_RESULT_MISSING
+  - WORK_CARD_MISMATCH
+  - WORK_CARD_INVALID
+  - WORK_RESULT_MISMATCH
+  - ACCEPTED_FRONTIER_NOT_IN_SOURCE
+  - PRODUCTION_RECEIPT_MISSING
+  - PRODUCTION_RECEIPT_MISMATCH
+  - PRODUCTION_PROOF_INVALID
+  - EVIDENCE_INVALID
+  - EVIDENCE_DIGEST_MISMATCH
+  - EVIDENCE_STORE_INVALID
+  - EVIDENCE_STORE_CONFLICT
+  protocol_version: '1.0'
+- name: governance.milestone.close
+  description: Closes one ready Milestone through the existing deterministic Steward MILESTONE_CLOSE machinery after resolving the existing durable user gate
+  inputs: []
+  required_context: []
+  optional_context: []
+  internal_ids_required: []
+  internal_ids_created: []
+  read_write: write
+  mutation_scope: milestone_close
+  required_authority: trusted_project_plan_binding
+  approval_required: true
+  decision_required: false
+  valid_predecessor_state: milestone_close_ready
+  valid_successor_state: milestone_closed
+  subject_revision_precondition: false
+  external_authority_precondition: true
+  idempotency: deterministic_closure_receipt
+  result_contract: result.governance.milestone.close.v1
+  errors:
+  - AUTHORITY_DENIED
+  - MILESTONE_CLOSE_NOT_READY
+  - USER_GATE_REQUIRED
+  - FINALIZER_FAILED
+  - MILESTONE_CLOSE_FAILED
+  protocol_version: '1.0'
 - name: governance.plan.preflight
   description: Read-only semantic readiness check for one Plan Init or Amend candidate using the existing Governance intake validator
   inputs:

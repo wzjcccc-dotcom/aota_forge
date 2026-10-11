@@ -101,6 +101,8 @@ PROVIDER_BACKED_OPERATIONS: tuple[str, ...] = (
     "github.issue.comment.update",
     "governance.doctor",
     "governance.plan.preflight",
+    "governance.work.acceptance.materialize",
+    "governance.milestone.close",
     "governance.terminal_projection.reconcile",
     "handoff.write",
     "handoff.open",
@@ -245,6 +247,7 @@ class CanonicalDispatchBinding:
     unbound_host_session: bool = False
     # AF #57 M1/W4: trusted read-only Doctor capability, when composed.
     governance_doctor: Any | None = None
+    governance_milestone_closure: Any | None = None
     # Separate operation-bound workspace.edit authority carrier.
     workspace_edit_authority: Any | None = None
 
@@ -1103,6 +1106,7 @@ def _trusted_git_source_observation(binding: CanonicalDispatchBinding) -> dict[s
             "available": payload.get("available") is True,
             "complete": complete,
             "is_dirty": payload.get("is_dirty") is True,
+            "head_sha": payload.get("head_sha"),
         }
     except Exception:
         return {"available": False, "complete": False, "is_dirty": None}
@@ -1146,6 +1150,116 @@ def _dispatch_governance_doctor(binding: CanonicalDispatchBinding) -> ToolRespon
     except Exception:
         return ToolResponse.failure(
             {"code": "INTERNAL_MECHANICAL_ERROR", "message": "governance Doctor could not inspect current readiness"}
+        )
+
+
+def _dispatch_governance_work_acceptance_materialize(
+    binding: CanonicalDispatchBinding,
+    arguments: Mapping[str, Any],
+) -> ToolResponse:
+    if not _task_main_governance_role(binding):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "parent Work acceptance projection requires task-main role"}
+        )
+    adapter = binding.governance_milestone_closure
+    if not callable(getattr(adapter, "materialize_parent_acceptance", None)):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "trusted parent acceptance projection owner is unavailable"}
+        )
+    try:
+        from aota_forge.adapters.plan_authority.binding import (
+            PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            PlanAuthorityBinding,
+        )
+        from aota_forge.adapters.plan_authority.local_governance import local_plan_authority_reference
+
+        plan_binding = binding.plan_authority_binding
+        if (
+            not isinstance(plan_binding, PlanAuthorityBinding)
+            or plan_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or binding.project_id != getattr(adapter, "project_id", None)
+            or plan_binding != getattr(adapter, "plan_binding", None)
+            or plan_binding.plan_id != getattr(adapter, "plan_binding", None).plan_id
+            or plan_binding.authority_ref != local_plan_authority_reference(binding.project_id, plan_binding.plan_id)
+            or not binding.session_ref
+            or binding.session_ref != getattr(adapter, "parent_session_ref", None)
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "exact parent Plan/session binding is required"}
+            )
+        receipt = adapter.materialize_parent_acceptance(
+            work_item_id=arguments["work_item_id"],
+            canonical_task_id=arguments["canonical_task_id"],
+            acceptance_decision=arguments["acceptance_decision"],
+            accepted_frontier=arguments["accepted_frontier"],
+            decision_ref=arguments["decision_ref"],
+            decision_digest=arguments["decision_digest"],
+            production_proof=arguments.get("production_proof"),
+            source_observation=_trusted_git_source_observation(binding),
+        )
+        return ToolResponse.success(
+            {
+                "receipt_ref": f"parent-work-acceptance:{receipt.receipt_digest}",
+                "receipt": receipt.to_dict(),
+                "semantic_redecision": False,
+                "work_progression_state_created": False,
+            }
+        )
+    except Exception as exc:
+        code = getattr(exc, "code", "PARENT_ACCEPTANCE_PROJECTION_FAILED")
+        return ToolResponse.failure(
+            {"code": code if isinstance(code, str) else "PARENT_ACCEPTANCE_PROJECTION_FAILED", "message": str(exc)[:512]}
+        )
+
+
+def _dispatch_governance_milestone_close(binding: CanonicalDispatchBinding) -> ToolResponse:
+    if not _task_main_governance_role(binding):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "milestone close requires task-main role"}
+        )
+    adapter = binding.governance_milestone_closure
+    if not callable(getattr(adapter, "close", None)):
+        return ToolResponse.failure(
+            {"code": "AUTHORITY_DENIED", "message": "trusted milestone-close owner is unavailable"}
+        )
+    try:
+        from aota_forge.adapters.plan_authority.binding import (
+            PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+            PlanAuthorityBinding,
+        )
+        from aota_forge.adapters.plan_authority.local_governance import local_plan_authority_reference
+
+        plan_binding = binding.plan_authority_binding
+        if (
+            not isinstance(plan_binding, PlanAuthorityBinding)
+            or plan_binding.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+            or binding.project_id != getattr(adapter, "project_id", None)
+            or plan_binding != getattr(adapter, "plan_binding", None)
+            or plan_binding.authority_ref != local_plan_authority_reference(binding.project_id, plan_binding.plan_id)
+            or plan_binding.plan_id != getattr(adapter, "plan_binding", None).plan_id
+            or binding.session_ref != getattr(adapter, "parent_session_ref", None)
+        ):
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "exact parent Local Plan binding is required"}
+            )
+        result = adapter.close(source_observation=_trusted_git_source_observation(binding))
+        if not isinstance(result, Mapping):
+            return ToolResponse.failure(
+                {"code": "INTERNAL_MECHANICAL_ERROR", "message": "milestone-close owner returned an invalid result"}
+            )
+        if result.get("status") == "blocked":
+            return ToolResponse.failure(
+                {"code": "MILESTONE_CLOSE_NOT_READY", "message": "; ".join(result.get("blocking_reasons", ()))[:512]}
+            )
+        if result.get("status") == "user_gate_required":
+            return ToolResponse.failure(
+                {"code": "USER_GATE_REQUIRED", "message": "the existing durable M2 user gate must be materialized after readiness PASS"}
+            )
+        return ToolResponse.success(dict(result))
+    except Exception as exc:
+        code = getattr(exc, "code", "MILESTONE_CLOSE_FAILED")
+        return ToolResponse.failure(
+            {"code": code if isinstance(code, str) else "MILESTONE_CLOSE_FAILED", "message": str(exc)[:512]}
         )
 
 
@@ -1852,6 +1966,12 @@ def _dispatch_tool_operation_inner(
 
         if operation == "governance.doctor":
             return _dispatch_governance_doctor(binding)
+
+        if operation == "governance.work.acceptance.materialize":
+            return _dispatch_governance_work_acceptance_materialize(binding, validated)
+
+        if operation == "governance.milestone.close":
+            return _dispatch_governance_milestone_close(binding)
 
         if operation == "governance.plan.preflight":
             return _dispatch_plan_candidate_preflight(binding, validated)

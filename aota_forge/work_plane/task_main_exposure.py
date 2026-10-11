@@ -49,6 +49,8 @@ TASK_MAIN_UNBOUND_EXTRAS: frozenset[str] = frozenset(
         "governance.project",
         "governance.doctor",
         "governance.plan.preflight",
+        "governance.work.acceptance.materialize",
+        "governance.milestone.close",
         GOVERNANCE_TERMINAL_PROJECTION_RECONCILE_OPERATION,
         "help",
         "host.status",

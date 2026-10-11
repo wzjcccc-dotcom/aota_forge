@@ -942,6 +942,7 @@ def compose_thin_task_main_host(
             raise TrustedBindingError(f"thin host context-switch composition failed: {exc}") from exc
 
     governance_doctor = None
+    governance_milestone_closure = None
     if (
         isinstance(plan_authority_binding, PlanAuthorityBinding)
         and plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
@@ -949,6 +950,20 @@ def compose_thin_task_main_host(
         and resolved_governance_store is not None
     ):
         from aota_forge.governance.doctor import DoctorContext, run_governance_doctor
+        from aota_forge.governance.milestone_closure_evidence import (
+            ThinMilestoneClosureEvidenceAdapter,
+        )
+
+        governance_milestone_closure = ThinMilestoneClosureEvidenceAdapter(
+            project_id=pid,
+            project_root=sandbox.project_root,
+            governance_root=local_governance_binding,
+            plan_binding=plan_authority_binding,
+            parent_session_ref=origin,
+            execution_store=store,
+            sandbox=sandbox,
+            governance_store=resolved_governance_store,
+        )
 
         doctor_context = DoctorContext(
             project_id=pid,
@@ -965,6 +980,7 @@ def compose_thin_task_main_host(
             expected_coordinator_id=getattr(context_switch_runtime, "coordinator_id", None),
             runtime_plan_authority_binding=plan_authority_binding,
             session_ref=origin,
+            milestone_close_evidence_adapter=governance_milestone_closure,
         )
 
         def governance_doctor(*, source_observation: Any) -> Any:
@@ -1017,6 +1033,7 @@ def compose_thin_task_main_host(
         governance_context=governance_context,
         execution_dispatcher=dispatcher,
         governance_doctor=governance_doctor,
+        governance_milestone_closure=governance_milestone_closure,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 

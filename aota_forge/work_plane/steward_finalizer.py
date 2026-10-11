@@ -1169,17 +1169,31 @@ class InMemoryReceiptStore:
 _ALLOWED_INTERNAL_CALLER = "coordinator-internal"
 
 
-def authorize_finalizer_call(*, caller_role: str, via_coordinator: bool, has_closure_evidence: bool) -> None:
-    """Fail closed unless the call arrives via the exact coordinator transition.
+def authorize_finalizer_call(
+    *,
+    caller_role: str,
+    via_coordinator: bool,
+    has_closure_evidence: bool,
+    via_milestone_close_ingress: bool = False,
+) -> None:
+    """Fail closed unless the call arrives through a trusted closure ingress.
 
     Every AgentWorkRole direct call is denied — including project-steward,
     coder, reviewer, analyst, and task-main without exact evidence. The only
-    allowed path is the internal coordinator transition carrying
-    MilestoneClosureReadiness + StewardResult + trusted binding evidence.
+    allowed paths are the internal coordinator transition or the canonical
+    governance.milestone.close ingress, each carrying MilestoneClosureReadiness
+    + StewardResult + trusted binding evidence.
     """
     if not isinstance(caller_role, str) or not caller_role.strip():
         raise FinalizerError(FinalizerFailure.TRUST_BINDING_MISMATCH, "caller_role must be non-empty")
     role = caller_role.strip()
+    if via_milestone_close_ingress:
+        if role == "governance.milestone.close" and has_closure_evidence and not via_coordinator:
+            return
+        raise FinalizerError(
+            FinalizerFailure.TRUST_BINDING_MISMATCH,
+            "milestone-close finalizer route requires its exact trusted ingress and closure evidence",
+        )
     # All direct Role calls denied, even task-main without evidence.
     if not via_coordinator or not has_closure_evidence:
         raise FinalizerError(
@@ -1228,11 +1242,17 @@ class TrustedStewardFinalizer:
         *,
         caller_role: str = "coordinator-internal",
         via_coordinator: bool = True,
+        via_milestone_close_ingress: bool = False,
         has_closure_evidence: bool = True,
     ) -> MaterializationReceipt:
         """Execute the bounded trusted finalization (idempotent, CAS, recoverable)."""
         # 0. Server authority: Role direct calls denied.
-        authorize_finalizer_call(caller_role=caller_role, via_coordinator=via_coordinator, has_closure_evidence=has_closure_evidence)
+        authorize_finalizer_call(
+            caller_role=caller_role,
+            via_coordinator=via_coordinator,
+            via_milestone_close_ingress=via_milestone_close_ingress,
+            has_closure_evidence=has_closure_evidence,
+        )
 
         if not isinstance(finalizer_input, FinalizerInput):
             raise FinalizerError(FinalizerFailure.INVALID_STEWARD_RESULT, f"input must be FinalizerInput, got {type(finalizer_input).__name__}")
