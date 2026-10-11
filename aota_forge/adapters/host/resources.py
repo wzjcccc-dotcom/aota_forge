@@ -32,6 +32,7 @@ from aota_forge.core.resources.resolver import (
     TrustedResourceResolver,
 )
 from aota_forge.core.runtime.inspect import process_status, version_identity
+from aota_forge.adapters.host.runtime_provenance import evaluate_live_runtime_provenance
 
 HOST_RESOURCE_ROOT_ENV = {
     "runtime_pidfile": "AOTA_FORGE_HOST_ROOT_PIDFILE",
@@ -82,6 +83,25 @@ def read_deployment_receipt_ref(resource_id: str, config: TrustedResourceConfig)
     """Bounded managed deployment receipt inspection by logical receipt id."""
     path = _resolve_host_resource_path("managed_deployment_receipt", resource_id, config)
     return read_receipt(path)
+
+
+def evaluate_runtime_provenance_ref(
+    resource_id: str, source_root: Path, config: TrustedResourceConfig
+) -> dict[str, Any] | None:
+    """Adapt a managed receipt plus live host observations into the W2 evaluator."""
+    receipt = read_deployment_receipt_ref(resource_id, config)
+    projection = receipt.get("runtime_provenance")
+    if not isinstance(projection, dict):
+        return None
+    pid = read_pidfile(_resolve_host_resource_path("runtime_pidfile", resource_id, config))
+    runtime_root = _resolve_host_resource_path("runtime_identity", resource_id, config).parent
+    return evaluate_live_runtime_provenance(
+        projection,
+        runtime_id=resource_id,
+        source_root=source_root,
+        runtime_root=runtime_root,
+        pid=pid,
+    )
 
 
 def host_runtime_identity_ref(resource_id: str, config: TrustedResourceConfig) -> dict[str, Any]:

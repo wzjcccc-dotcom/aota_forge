@@ -181,6 +181,7 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
     registry_path_supplied = isinstance(registry_path, str) and bool(registry_path)
     registry_id_supplied = isinstance(registry_id, str) and bool(registry_id)
     project_requested = workspace_supplied and project_supplied
+    project_root: Path | None = None
 
     if project_requested:
         checks["project"]["requested"] = True
@@ -272,6 +273,30 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
             checks["deployment_receipt"]["state"] = "failed"
             checks["deployment_receipt"]["error_code"] = exc.code
             warnings.append(f"deployment receipt check failed: {exc.code}")
+
+    if (
+        project_root is not None
+        and isinstance(pidfile_id, str)
+        and pidfile_id
+        and isinstance(receipt_id, str)
+        and receipt_id == pidfile_id
+        and isinstance(data.get("deployment_receipt"), dict)
+        and isinstance(data["deployment_receipt"].get("runtime_provenance"), dict)
+    ):
+        try:
+            provenance_result = host_resources.evaluate_runtime_provenance_ref(
+                receipt_id, project_root, trusted_config
+            )
+            if provenance_result is not None:
+                data["runtime_provenance"] = provenance_result
+                data["active_runtime_eligibility"] = provenance_result["eligibility"]
+        except (ForgeError, TypeError, ValueError) as exc:
+            code = getattr(exc, "code", "RUNTIME_PROVENANCE_INVALID")
+            data["runtime_provenance"] = {
+                "state": "failed",
+                "error_code": code,
+            }
+            warnings.append(f"runtime provenance evaluation failed: {code}")
 
     data["checks"] = checks
     payload: dict[str, Any] = {"data": data}
