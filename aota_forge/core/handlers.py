@@ -253,6 +253,7 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
 
     receipt = params.get("receipt")
     receipt_id = params.get("receipt_id")
+    receipt_has_runtime_provenance = False
     if isinstance(receipt, str) and receipt:
         checks["deployment_receipt"]["requested"] = True
         try:
@@ -266,7 +267,15 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
     elif isinstance(receipt_id, str) and receipt_id:
         checks["deployment_receipt"]["requested"] = True
         try:
-            data["deployment_receipt"] = host_resources.read_deployment_receipt_ref(receipt_id, trusted_config)
+            receipt_data = host_resources.read_deployment_receipt_ref(receipt_id, trusted_config)
+            receipt_has_runtime_provenance = isinstance(
+                receipt_data.get("runtime_provenance"), dict
+            )
+            data["deployment_receipt"] = (
+                host_resources.deployment_receipt_reference_ref(receipt_id, trusted_config)
+                if receipt_has_runtime_provenance
+                else receipt_data
+            )
             checks["deployment_receipt"]["state"] = "available"
         except ForgeError as exc:
             data["deployment_receipt"] = {"state": "failed", "error_code": exc.code, "message": exc.message}
@@ -280,8 +289,7 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
         and pidfile_id
         and isinstance(receipt_id, str)
         and receipt_id == pidfile_id
-        and isinstance(data.get("deployment_receipt"), dict)
-        and isinstance(data["deployment_receipt"].get("runtime_provenance"), dict)
+        and receipt_has_runtime_provenance
     ):
         try:
             provenance_result = host_resources.evaluate_runtime_provenance_ref(
@@ -289,7 +297,6 @@ def _handle_host_status(ctx: OperationContext) -> dict[str, Any]:
             )
             if provenance_result is not None:
                 data["runtime_provenance"] = provenance_result
-                data["active_runtime_eligibility"] = provenance_result["eligibility"]
         except (ForgeError, TypeError, ValueError) as exc:
             code = getattr(exc, "code", "RUNTIME_PROVENANCE_INVALID")
             data["runtime_provenance"] = {

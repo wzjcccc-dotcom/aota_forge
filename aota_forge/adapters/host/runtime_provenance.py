@@ -248,7 +248,7 @@ def evaluate_live_runtime_provenance(
             provenance[stage] = item.get("provenance")
             capabilities[stage] = item.get("capabilities")
     live_capabilities = canonical_role_capabilities()
-    capabilities["running"] = live_capabilities
+    capabilities["running"] = live_capabilities if running_subject is not None else None
     result = evaluate_runtime_provenance(
         subjects,
         provenance,
@@ -257,46 +257,81 @@ def evaluate_live_runtime_provenance(
         expected_generation=projection.get("operator_generation"),
         now=now,
     )
-    result["observations"] = {
+    decision = result["eligibility"]
+    parity = decision["capability_parity"] or {}
+    capability_refs = projection.get("capability_evidence_refs")
+    if not isinstance(capability_refs, Mapping):
+        capability_refs = {}
+    stage_refs: dict[str, dict[str, Any]] = {}
+    for stage in RUNTIME_STAGES:
+        item = recorded_evidence.get(stage)
+        stage_provenance = item.get("provenance") if isinstance(item, Mapping) else None
+        stage_refs[stage] = {
+            "authority_ref": stage_provenance.get("authority_ref")
+            if isinstance(stage_provenance, Mapping)
+            else None,
+            "evidence_ref": stage_provenance.get("evidence_ref")
+            if isinstance(stage_provenance, Mapping)
+            else None,
+            "capability_evidence_ref": capability_refs.get(stage),
+            "observed": stage != "running" or running_subject is not None,
+        }
+    return {
         "runtime_id": runtime_id,
-        "source": {
-            "source_commit": source_subject["source_commit"] if source_subject else None,
-            "source_tree": source_subject["source_tree"] if source_subject else None,
-            "evidence_ref": f"git:{source_subject['source_commit']}:{source_subject['source_tree']}"
-            if source_subject
-            else None,
-            "capability_evidence_ref": f"af-role-surface:git:{source_subject['source_commit']}:{source_subject['source_tree']}"
-            if source_subject
-            else None,
+        "runtime_subject": source_subject,
+        "fingerprints": result["fingerprints"],
+        "eligibility": {
+            "eligible": decision["eligible"],
+            "reason_codes": decision["reason_codes"],
+            "provenance_valid": decision["provenance_valid"],
+            "external_evidence_present": decision["external_evidence_present"],
+            "capability_parity": {
+                "parity": parity.get("parity", False),
+                "reason_codes": parity.get("reason_codes", []),
+                "missing_count": len(parity.get("missing") or []),
+                "unexpected_count": len(parity.get("unexpected") or []),
+                "expected_count": len(parity.get("expected") or []),
+                "observed_count": len(parity.get("observed") or []),
+                "expected_sha256": compute_source_fingerprint(parity.get("expected") or []),
+                "observed_sha256": compute_source_fingerprint(parity.get("observed") or []),
+            },
         },
-        "configured": {
-            "configuration_sha256": config_digest,
-            "evidence_ref": f"activation-config:sha256:{config_digest}" if config_digest else None,
-            "capability_evidence_ref": f"af-role-surface:activation-config:sha256:{config_digest}"
-            if config_digest
-            else None,
+        "capability_sets": {
+            stage: _capability_summary(
+                capabilities.get(stage)
+            )
+            for stage in RUNTIME_STAGES
         },
-        "deployed": {
-            **deployment_refs,
-            "capability_evidence_ref": f"af-role-surface:runtime-identity:sha256:{deployment_refs['runtime_identity_sha256']}"
-            if deployment_refs.get("runtime_identity_sha256")
-            else None,
-        },
-        "running": {
-            **process_ref,
-            "capabilities": sorted(live_capabilities),
-            "capability_evidence_ref": f"af-role-surface:live-mainpid:{process_ref['pid']}"
-            if process_ref.get("pid") is not None
-            else None,
+        "stage_evidence_refs": stage_refs,
+        "observations": {
+            "source": {
+                "evidence_ref": f"git:{source_subject['source_commit']}:{source_subject['source_tree']}"
+                if source_subject
+                else None,
+            },
+            "configured": {"configuration_sha256": config_digest},
+            "deployed": deployment_refs,
+            "running": process_ref,
         },
     }
-    return result
 
 
 def _incomplete_projection_result(*, now: Any) -> dict[str, Any]:
     return evaluate_runtime_provenance(
         {}, {}, required_capabilities=None, capabilities={}, now=now
     )
+
+
+def _capability_summary(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"count": None, "sha256": None}
+    if isinstance(value, str):
+        names = [value]
+    elif isinstance(value, Mapping):
+        names = sorted(name for name, enabled in value.items() if enabled is True)
+    else:
+        names = sorted(set(value))
+    return {"count": len(names), "sha256": compute_source_fingerprint(names)}
 
 
 def _source_subject(source_root: Path, commit: str) -> dict[str, str] | None:

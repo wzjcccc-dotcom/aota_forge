@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
 from aota_forge.adapters.host.process import read_receipt
+from aota_forge.adapters.host.resources import deployment_receipt_reference_ref
 from aota_forge.adapters.host.runtime_provenance import (
     build_runtime_provenance_projection,
+    canonical_role_capabilities,
     evaluate_runtime_provenance,
+    evaluate_live_runtime_provenance,
     evaluate_runtime_provenance_projection,
     runtime_subject,
 )
+import aota_forge.adapters.host.runtime_provenance as host_provenance
+from aota_forge.core.resources.resolver import TrustedResourceConfig
 from aota_forge.core.runtime.provenance import (
     REASON_CAPABILITY_PARITY,
     REASON_FINGERPRINT_PARITY,
@@ -183,3 +190,155 @@ def test_schema_version_one_minimal_and_additive_receipts_remain_readable(
     assert evaluate_runtime_provenance_projection(
         loaded["runtime_provenance"], now=200
     )["eligibility"]["eligible"] is True
+
+
+def test_live_adapter_rebuilds_observations_and_returns_bounded_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_root = Path(__file__).resolve().parents[1]
+    import subprocess
+
+    commit = subprocess.run(
+        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "-C", str(source_root), "rev-parse", "HEAD^{tree}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subject = runtime_subject(
+        project_id="aota_forge",
+        source_commit=commit,
+        source_tree=tree,
+        version="0.1.0",
+    )
+    runtime_root = tmp_path / "runtime-candidate-1"
+    (runtime_root / "activation").mkdir(parents=True)
+    (runtime_root / "xdg-config" / "opencode").mkdir(parents=True)
+    (runtime_root / ".aota").mkdir()
+    (runtime_root / "VERSION").write_text("0.1.0\n", encoding="utf-8")
+    (runtime_root / ".aota" / "project.yaml").write_text(
+        "project:\n  id: aota_forge\n", encoding="utf-8"
+    )
+    identity = {
+        "source_commit": commit,
+        "source_tree": tree,
+        "source_archive_sha256": "4" * 64,
+    }
+    (runtime_root / "activation" / "runtime-source-identity.json").write_text(
+        json.dumps(identity), encoding="utf-8"
+    )
+    config = {
+        "mcp": {
+            "aota": {
+                "environment": {
+                    "AOTA_FORGE_RUNTIME_PROJECT_ID": "aota_forge",
+                    "AOTA_FORGE_RUNTIME_SOURCE_COMMIT": commit,
+                    "AOTA_FORGE_RUNTIME_SOURCE_TREE": tree,
+                    "AOTA_FORGE_RUNTIME_VERSION": "0.1.0",
+                }
+            }
+        }
+    }
+    config_bytes = json.dumps(config).encode()
+    (runtime_root / "activation" / "opencode.json").write_bytes(config_bytes)
+    (runtime_root / "xdg-config" / "opencode" / "opencode.json").write_bytes(config_bytes)
+    caps = canonical_role_capabilities()
+    evidence = {}
+    for stage in STAGES:
+        evidence[stage] = provenance(
+            stage,
+            fingerprint=compute_source_fingerprint(subject),
+            generation="live-generation",
+        )
+    projection = build_runtime_provenance_projection(
+        runtime_id=runtime_root.name,
+        operator_generation="live-generation",
+        subjects={stage: dict(subject) for stage in STAGES},
+        stage_provenance=evidence,
+        stage_capabilities={stage: caps for stage in STAGES},
+        required_capabilities=caps,
+        evidence_refs={stage: f"operator-observation:{stage}" for stage in STAGES},
+    )
+    projection["process"] = {
+        "pid": 321,
+        "start_time": "123.000",
+        "runtime_id": runtime_root.name,
+    }
+    monkeypatch.setattr(
+        host_provenance,
+        "_running_subject",
+        lambda root, rid, pid: (
+            dict(subject),
+            {"pid": pid, "process_start_time": "123.000", "runtime_id": rid},
+        ),
+    )
+
+    result = evaluate_live_runtime_provenance(
+        projection,
+        runtime_id=runtime_root.name,
+        source_root=source_root,
+        runtime_root=runtime_root,
+        pid=321,
+        now=200,
+    )
+
+    assert result["eligibility"]["eligible"] is True
+    assert result["eligibility"]["provenance_valid"] is True
+    assert result["eligibility"]["capability_parity"]["parity"] is True
+    assert set(result["capability_sets"]) == set(STAGES)
+    assert len(json.dumps(result, separators=(",", ":")).encode()) < 2800
+    host_status = {
+        "data": {
+            "identity": {"env_keys_present": ["AOTA_FORGE_REPO_ROOT", "AOTA_FORGE_REGISTRY"]},
+            "project": {
+                "project_id": "aota_forge",
+                "workspace_id": "aota_forge",
+                "project_root": str(source_root),
+                "fingerprint": "5" * 64,
+            },
+            "runtime_identity": {"name": "aota-forge", "version": "0.1.0", "kind": None},
+            "process": {"running": True, "pid": 321, "start_time": "123.000"},
+            "deployment_receipt": {
+                "schema_version": 1,
+                "runtime_provenance_ref": {
+                    "resource_kind": "managed_deployment_receipt",
+                    "resource_id": runtime_root.name,
+                    "sha256": "6" * 64,
+                },
+            },
+            "checks": {
+                name: {"requested": True, "state": "available", "error_code": None, "message": None}
+                for name in ("project", "runtime_identity", "process", "deployment_receipt")
+            },
+            "runtime_provenance": result,
+        }
+    }
+    assert len(json.dumps(host_status, separators=(",", ":")).encode()) < 4096
+
+
+def test_host_status_receipt_reference_is_bounded_and_durable(tmp_path: Path) -> None:
+    receipts = tmp_path / "receipts"
+    (receipts / "runtime-1").mkdir(parents=True)
+    receipt = receipts / "runtime-1" / "deployment.json"
+    receipt.write_text(
+        json.dumps({"schema_version": 1, "runtime_provenance": projection()}),
+        encoding="utf-8",
+    )
+
+    result = deployment_receipt_reference_ref(
+        "runtime-1", TrustedResourceConfig({"managed_deployment_receipt": receipts})
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "runtime_provenance_ref": {
+            "resource_kind": "managed_deployment_receipt",
+            "resource_id": "runtime-1",
+            "sha256": hashlib.sha256(receipt.read_bytes()).hexdigest(),
+        },
+    }

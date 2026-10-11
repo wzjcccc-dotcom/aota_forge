@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from aota_forge.adapters.host.process import (
+    MAX_RECEIPT_BYTES,
     backup_rollback_readiness,
     read_pidfile,
     read_receipt,
@@ -31,7 +32,7 @@ from aota_forge.core.resources.resolver import (
     TrustedResourceConfig,
     TrustedResourceResolver,
 )
-from aota_forge.core.runtime.inspect import process_status, version_identity
+from aota_forge.core.runtime.inspect import file_sha256, process_status, version_identity
 from aota_forge.adapters.host.runtime_provenance import evaluate_live_runtime_provenance
 
 HOST_RESOURCE_ROOT_ENV = {
@@ -83,6 +84,24 @@ def read_deployment_receipt_ref(resource_id: str, config: TrustedResourceConfig)
     """Bounded managed deployment receipt inspection by logical receipt id."""
     path = _resolve_host_resource_path("managed_deployment_receipt", resource_id, config)
     return read_receipt(path)
+
+
+def deployment_receipt_reference_ref(
+    resource_id: str, config: TrustedResourceConfig
+) -> dict[str, Any]:
+    """Return a bounded durable reference for an additive provenance receipt."""
+    path = _resolve_host_resource_path("managed_deployment_receipt", resource_id, config)
+    receipt = read_receipt(path)
+    if not isinstance(receipt.get("runtime_provenance"), dict):
+        return receipt
+    return {
+        "schema_version": receipt["schema_version"],
+        "runtime_provenance_ref": {
+            "resource_kind": "managed_deployment_receipt",
+            "resource_id": resource_id,
+            "sha256": file_sha256(path, MAX_RECEIPT_BYTES),
+        },
+    }
 
 
 def evaluate_runtime_provenance_ref(
