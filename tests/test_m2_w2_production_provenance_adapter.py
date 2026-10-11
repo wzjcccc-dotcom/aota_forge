@@ -266,7 +266,7 @@ def test_live_adapter_rebuilds_observations_and_returns_bounded_evidence(
     )
     projection["process"] = {
         "pid": 321,
-        "start_time": "123.000",
+        "start_time": "122.500",
         "runtime_id": runtime_root.name,
     }
     monkeypatch.setattr(

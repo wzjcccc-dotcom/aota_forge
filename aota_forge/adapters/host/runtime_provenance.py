@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
 from typing import Any
 
+from aota_forge.core.contracts.errors import ForgeError
+from aota_forge.core.runtime.inspect import process_status
 from aota_forge.core.runtime.provenance import (
     RuntimeIdentityContract,
     RuntimeIdentityEvidence,
@@ -228,7 +229,9 @@ def evaluate_live_runtime_provenance(
         not isinstance(recorded_process, Mapping)
         or recorded_process.get("pid") != pid
         or recorded_process.get("runtime_id") != runtime_id
-        or recorded_process.get("start_time") != process_ref.get("process_start_time")
+        or not _same_process_start(
+            recorded_process.get("start_time"), process_ref.get("process_start_time")
+        )
         or not process_ref.get("process_start_time")
     ):
         running_subject = None
@@ -327,6 +330,13 @@ def _capability_summary(value: Any) -> dict[str, Any]:
     return {"count": len(names), "sha256": compute_source_fingerprint(names)}
 
 
+def _same_process_start(recorded: Any, observed: Any) -> bool:
+    try:
+        return abs(float(recorded) - float(observed)) <= 1.0
+    except (TypeError, ValueError):
+        return False
+
+
 def _source_subject(source_root: Path, commit: str) -> dict[str, str] | None:
     try:
         tree = subprocess.run(
@@ -418,10 +428,12 @@ def _running_subject(
 ) -> tuple[dict[str, str] | None, dict[str, Any]]:
     process = Path("/proc") / str(pid)
     try:
+        status = process_status(pid)
         environment = _parse_process_environment(_bounded_file(process / "environ", 64 * 1024))
         arguments = _bounded_file(process / "cmdline", 16 * 1024).decode("utf-8").split("\0")
         if (
-            environment.get("AOTA_FORGE_REPO_ROOT") != str(runtime_root)
+            not status.running
+            or environment.get("AOTA_FORGE_REPO_ROOT") != str(runtime_root)
             or runtime_root.name != runtime_id
             or "serve" not in arguments
             or "--port" not in arguments
@@ -432,12 +444,12 @@ def _running_subject(
         subject, refs = _deployed_subject(runtime_root)
         return subject, {
             "pid": pid,
-            "process_start_time": _process_start_time(process / "stat"),
+            "process_start_time": status.start_time,
             "runtime_id": runtime_id,
             "evidence_ref": f"systemd-mainpid:{pid}:runtime:{runtime_id}",
             "runtime_identity_sha256": refs.get("runtime_identity_sha256"),
         }
-    except (OSError, UnicodeError, ValueError):
+    except (ForgeError, OSError, UnicodeError, ValueError):
         return None, {}
 
 
@@ -461,21 +473,6 @@ def _parse_process_environment(raw: bytes) -> dict[str, str]:
         if separator:
             result[key] = value
     return result
-
-
-def _process_start_time(path: Path) -> str | None:
-    try:
-        stat_fields = path.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
-        start_ticks = int(stat_fields[19])
-        clock_ticks = os.sysconf("SC_CLK_TCK")
-        boot = next(
-            float(line.split()[1])
-            for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines()
-            if line.startswith("btime ")
-        )
-        return f"{boot + start_ticks / clock_ticks:.3f}"
-    except (OSError, ValueError, IndexError, StopIteration):
-        return None
 
 
 def _bounded_file(path: Path, limit: int) -> bytes:
