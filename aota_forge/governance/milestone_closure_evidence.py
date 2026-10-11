@@ -13,6 +13,7 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -338,6 +339,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         sandbox: Any,
         governance_store: Any | None = None,
         receipt_store: FileBackedParentWorkAcceptanceProjectionStore | None = None,
+        parent_decision_reader: Callable[[str], Sequence[Mapping[str, Any]]] | None = None,
         host_config: Any | None = None,
         git_port: Any | None = None,
         handoff_reader=handoff_open,
@@ -352,6 +354,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         self.sandbox = sandbox
         self.governance_store = governance_store
         self.receipt_store = receipt_store or FileBackedParentWorkAcceptanceProjectionStore(project_root)
+        self.parent_decision_reader = parent_decision_reader
         self.host_config = host_config or host_resources.host_resource_config_from_env()
         self.git_port = git_port or SubprocessGitPort()
         self.handoff_reader = handoff_reader
@@ -382,6 +385,11 @@ class ThinMilestoneClosureEvidenceAdapter:
         match = _MESSAGE_REF_RE.fullmatch(decision_ref)
         if match is None or match.group(1) != self.parent_session_ref or match.group(3) != work_item_id:
             raise MilestoneClosureEvidenceError("FOREIGN_PARENT_DECISION", "decision ref is not bound to this exact parent Work decision")
+        self._verify_parent_decision(
+            decision_ref=decision_ref,
+            decision_digest=decision_digest,
+            messages=self._read_parent_decision_messages(),
+        )
         head = source_observation.get("head_sha")
         if not isinstance(head, str) or not _COMMIT_RE.fullmatch(head) or not self.git_port.is_ancestor(self.project_root, accepted_frontier, head):
             raise MilestoneClosureEvidenceError("ACCEPTED_FRONTIER_NOT_IN_SOURCE", "accepted frontier is not a trusted ancestor of current source")
@@ -461,6 +469,12 @@ class ThinMilestoneClosureEvidenceAdapter:
         if plan.current_milestone != "M2":
             reasons.append("bound Plan current milestone is not M2")
         receipts = self.receipt_store.list_for_milestone(self.project_id, self.plan_binding.plan_id, "M2")
+        parent_messages = None
+        if receipts:
+            try:
+                parent_messages = self._read_parent_decision_messages()
+            except MilestoneClosureEvidenceError as exc:
+                reasons.append(f"parent decision source: {exc.code}")
         selected: dict[str, ParentWorkAcceptanceProjection] = {}
         for receipt in receipts:
             if receipt.parent_session_ref != self.parent_session_ref:
@@ -480,6 +494,16 @@ class ThinMilestoneClosureEvidenceAdapter:
                 reasons.append(f"ambiguous accepted lineage for {receipt.work_item_id}")
                 continue
             try:
+                if parent_messages is None:
+                    raise MilestoneClosureEvidenceError(
+                        "PARENT_DECISION_SOURCE_UNAVAILABLE",
+                        "exact parent decision history is unavailable",
+                    )
+                self._verify_parent_decision(
+                    decision_ref=receipt.decision_ref,
+                    decision_digest=receipt.decision_digest,
+                    messages=parent_messages,
+                )
                 self._verify_result_lineage(receipt)
             except MilestoneClosureEvidenceError as exc:
                 reasons.append(f"{receipt.work_item_id}: {exc.code}")
@@ -695,6 +719,80 @@ class ThinMilestoneClosureEvidenceAdapter:
             or receipt.result_ref != f"handoff://{receipt.project_id}/{self.sandbox.worktree_id}/result/{envelope.get('artifact_id')}/{receipt.result_digest}"
         ):
             raise MilestoneClosureEvidenceError("WORK_RESULT_MISMATCH", "receipt does not match the canonical result handoff")
+
+    def _read_parent_decision_messages(self) -> dict[str, Mapping[str, Any]]:
+        reader = self.parent_decision_reader
+        if not callable(reader):
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_SOURCE_UNAVAILABLE",
+                "trusted exact-parent decision reader is unavailable",
+            )
+        try:
+            raw_messages = reader(self.parent_session_ref)
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_SOURCE_UNAVAILABLE",
+                "trusted exact-parent decision history could not be read",
+            ) from exc
+        if not isinstance(raw_messages, Sequence) or isinstance(raw_messages, (str, bytes)):
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_SOURCE_INVALID",
+                "trusted exact-parent decision history has an invalid shape",
+            )
+        messages: dict[str, Mapping[str, Any]] = {}
+        for raw in raw_messages:
+            if not isinstance(raw, Mapping):
+                raise MilestoneClosureEvidenceError(
+                    "PARENT_DECISION_SOURCE_INVALID",
+                    "trusted exact-parent history contains an invalid message",
+                )
+            message_id = raw.get("message_id")
+            if not isinstance(message_id, str) or not message_id:
+                continue
+            if message_id in messages:
+                raise MilestoneClosureEvidenceError(
+                    "PARENT_DECISION_SOURCE_INVALID",
+                    "trusted exact-parent history contains a duplicate message id",
+                )
+            messages[message_id] = raw
+        return messages
+
+    @staticmethod
+    def _verify_parent_decision(
+        *,
+        decision_ref: str,
+        decision_digest: str,
+        messages: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        match = _MESSAGE_REF_RE.fullmatch(decision_ref)
+        message = messages.get(match.group(2)) if match is not None else None
+        if message is None:
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_MISSING",
+                "referenced exact-parent decision message is unavailable",
+            )
+        if message.get("session_ref") != match.group(1):
+            raise MilestoneClosureEvidenceError(
+                "FOREIGN_PARENT_DECISION",
+                "referenced decision message is not from the exact parent session",
+            )
+        if message.get("role") != "assistant" or message.get("finish") != "stop":
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_INVALID",
+                "referenced parent decision is not a completed assistant message",
+            )
+        text = message.get("text")
+        if not isinstance(text, str) or not text:
+            raise MilestoneClosureEvidenceError(
+                "PARENT_DECISION_INVALID",
+                "referenced parent decision has no canonical text content",
+            )
+        actual_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if actual_digest != decision_digest:
+            raise MilestoneClosureEvidenceError(
+                "EVIDENCE_DIGEST_MISMATCH",
+                "parent decision message digest differs from the acceptance receipt",
+            )
 
     def _w2_production_evidence(self, stored_proof: Mapping[str, Any] | None = None) -> dict[str, Any]:
         resource_id = self.production_runtime_id

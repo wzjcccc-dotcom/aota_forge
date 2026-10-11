@@ -77,6 +77,15 @@ class MemoryExecutions:
         return self.records.get(task_id)
 
 
+class MemoryParentDecisionReader:
+    def __init__(self) -> None:
+        self.messages = []
+
+    def __call__(self, session_ref: str):
+        assert session_ref == PARENT
+        return tuple(self.messages)
+
+
 class FakeGit:
     def is_ancestor(self, repo: Path, ancestor: str, descendant: str) -> bool:
         chain = (W2_FRONTIER, W3_FRONTIER, FRONTIER, HEAD)
@@ -99,6 +108,7 @@ def _adapter(monkeypatch, *, project_root: Path | None = None):
     sandbox = SimpleNamespace(project_id=PROJECT, worktree_id="aota_forge-unbound", digest="a" * 64)
     executions = MemoryExecutions()
     digests = {}
+    parent_decision_reader = MemoryParentDecisionReader()
 
     def read_handoff(ref, *, sandbox):
         digest = ref["digest"]
@@ -121,6 +131,7 @@ def _adapter(monkeypatch, *, project_root: Path | None = None):
         execution_store=executions,
         sandbox=sandbox,
         receipt_store=MemoryReceipts(),
+        parent_decision_reader=parent_decision_reader,
         host_config=object(),
         git_port=FakeGit(),
         handoff_reader=read_handoff,
@@ -177,13 +188,25 @@ def _add_accepted(
     task_id = _task(work)
     _, digest = executions.add(task_id, summary=summary)
     digests[task_id] = digest
+    decision_id = f"msg_{work.lower()}"
+    decision_text = f"accepted:{task_id}"
+    decision_digest = hashlib.sha256(decision_text.encode()).hexdigest()
+    adapter.parent_decision_reader.messages.append(
+        {
+            "session_ref": PARENT,
+            "message_id": decision_id,
+            "role": "assistant",
+            "finish": "stop",
+            "text": decision_text,
+        }
+    )
     return adapter.materialize_parent_acceptance(
         work_item_id=work,
         canonical_task_id=task_id,
         acceptance_decision="accepted",
         accepted_frontier=frontier,
-        decision_ref=f"task-main-decision:{PARENT}:msg_{work.lower()}:{work}",
-        decision_digest=hashlib.sha256(f"accepted:{task_id}".encode()).hexdigest(),
+        decision_ref=f"task-main-decision:{PARENT}:{decision_id}:{work}",
+        decision_digest=decision_digest,
         production_proof=production_proof,
         source_observation=SOURCE,
     )
@@ -396,6 +419,92 @@ def test_t15_readiness_composes_cross_owner_evidence(monkeypatch):
     assert result.accepted_frontier == FRONTIER
     assert result.accepted_tree == TREE
     assert len(result.work_acceptances) == 5
+
+
+def test_t16_parent_decision_message_digest_is_reverified_on_readback(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    original = next(item for item in adapter.receipt_store.items if item.work_item_id == "W1")
+    payload = original.canonical_payload()
+    payload["decision_digest"] = "0" * 64
+    tampered = closure.ParentWorkAcceptanceProjection.from_dict(payload)
+    adapter.receipt_store.items = [
+        tampered if item.work_item_id == "W1" else item
+        for item in adapter.receipt_store.items
+    ]
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: EVIDENCE_DIGEST_MISMATCH" in result.blocking_reasons
+
+
+def test_t17_missing_exact_parent_message_fails_readiness_closed(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader.messages.clear()
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: PARENT_DECISION_MISSING" in result.blocking_reasons
+
+
+def test_t18_nonterminal_parent_message_cannot_back_acceptance(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader.messages[0]["finish"] = "length"
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: PARENT_DECISION_INVALID" in result.blocking_reasons
+
+
+def test_t19_duplicate_parent_message_id_fails_readiness_closed(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader.messages.append(
+        dict(adapter.parent_decision_reader.messages[0])
+    )
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "parent decision source: PARENT_DECISION_SOURCE_INVALID" in result.blocking_reasons
+
+
+def test_t20_wrong_role_parent_message_cannot_back_acceptance(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader.messages[0]["role"] = "user"
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: PARENT_DECISION_INVALID" in result.blocking_reasons
+
+
+def test_t21_foreign_session_parent_message_cannot_back_acceptance(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader.messages[0]["session_ref"] = "ses_foreign"
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: FOREIGN_PARENT_DECISION" in result.blocking_reasons
+
+
+def test_t22_unavailable_parent_history_fails_with_typed_source_code(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter.parent_decision_reader = None
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "parent decision source: PARENT_DECISION_SOURCE_UNAVAILABLE" in result.blocking_reasons
 
 
 def test_milestone_close_requires_existing_user_gate_and_writes_steward_receipt(monkeypatch, tmp_path):

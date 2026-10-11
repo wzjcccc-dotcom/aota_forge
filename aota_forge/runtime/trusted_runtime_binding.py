@@ -249,10 +249,9 @@ class TrustedWorkerBinding:
     # Separate operation-bound source edit authority. It is never substituted
     # for the existing workspace.write authority.
     workspace_edit_authority: WorkspaceMutationAuthority | None = None
-    # AF Plan 005 M2: server-composed thin closure evidence owner. The
-    # projection is derived from existing evidence stores; it owns no Work
-    # progression state and never performs semantic acceptance.
-    governance_milestone_closure: Any | None = None
+    # AF Plan 005 M2: trusted closure capability handle. Its adapter projects
+    # existing evidence only; it carries no milestone or Work progression state.
+    governance_closure: Any | None = None
 
     def __post_init__(self) -> None:
         # Import here to avoid circular at import time for optional authorities
@@ -515,6 +514,15 @@ class TrustedWorkerBinding:
                 raise TrustedBindingError("governance_doctor must be callable or None")
             if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
                 raise TrustedBindingError("governance_doctor may only be carried by a task-main binding")
+        if self.governance_closure is not None:
+            if not callable(getattr(self.governance_closure, "close", None)) or not callable(
+                getattr(self.governance_closure, "materialize_parent_acceptance", None)
+            ):
+                raise TrustedBindingError(
+                    "governance_closure must expose the trusted closure capability"
+                )
+            if self.handoff.work_role.value != "task-main" or self.tool_surface.work_role.value != "task-main":
+                raise TrustedBindingError("governance_closure may only be carried by a task-main binding")
         if self.context_switch_runtime is not None:
             if not callable(getattr(self.context_switch_runtime, "current_context", None)):
                 raise TrustedBindingError("context_switch_runtime must expose current_context")

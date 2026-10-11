@@ -904,7 +904,7 @@ def _to_canonical_binding(binding: TrustedWorkerBinding):  # type: ignore[no-unt
         plan_authority_binding=getattr(binding, "plan_authority_binding", None),
         trusted_task_main_context=getattr(binding, "trusted_task_main_context", None),
         governance_doctor=getattr(binding, "governance_doctor", None),
-        governance_milestone_closure=getattr(binding, "governance_milestone_closure", None),
+        governance_closure=getattr(binding, "governance_closure", None),
         # M2/W4: preserve the existing-store switch composition carrier across
         # the canonical aota.invoke boundary; it is not a second store.
         context_switch_runtime=getattr(binding, "context_switch_runtime", None),

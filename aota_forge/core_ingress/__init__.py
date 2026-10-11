@@ -247,7 +247,7 @@ class CanonicalDispatchBinding:
     unbound_host_session: bool = False
     # AF #57 M1/W4: trusted read-only Doctor capability, when composed.
     governance_doctor: Any | None = None
-    governance_milestone_closure: Any | None = None
+    governance_closure: Any | None = None
     # Separate operation-bound workspace.edit authority carrier.
     workspace_edit_authority: Any | None = None
 
@@ -1161,7 +1161,7 @@ def _dispatch_governance_work_acceptance_materialize(
         return ToolResponse.failure(
             {"code": "AUTHORITY_DENIED", "message": "parent Work acceptance projection requires task-main role"}
         )
-    adapter = binding.governance_milestone_closure
+    adapter = binding.governance_closure
     if not callable(getattr(adapter, "materialize_parent_acceptance", None)):
         return ToolResponse.failure(
             {"code": "AUTHORITY_DENIED", "message": "trusted parent acceptance projection owner is unavailable"}
@@ -1217,7 +1217,7 @@ def _dispatch_governance_milestone_close(binding: CanonicalDispatchBinding) -> T
         return ToolResponse.failure(
             {"code": "AUTHORITY_DENIED", "message": "milestone close requires task-main role"}
         )
-    adapter = binding.governance_milestone_closure
+    adapter = binding.governance_closure
     if not callable(getattr(adapter, "close", None)):
         return ToolResponse.failure(
             {"code": "AUTHORITY_DENIED", "message": "trusted milestone-close owner is unavailable"}

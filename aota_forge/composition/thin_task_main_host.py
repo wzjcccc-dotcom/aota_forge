@@ -624,6 +624,14 @@ def compose_thin_task_main_host(
     runtime_config = load_runtime_config(config_path=str(config_path))
     if not isinstance(runtime_config, RuntimeConfig):
         raise TrustedBindingError("thin host requires the canonical RuntimeConfig authority")
+    if runtime_config.executor == EXECUTOR_OPENCODE and host_client is None:
+        from aota_forge.adapters.hermes.host_client import HermesHostClient
+
+        if host_client_factory is None or host_client_factory is HermesHostClient:
+            from aota_forge.adapters.opencode.host_client import OpenCodeHostClient
+
+            assert runtime_config.host_endpoint is not None
+            host_client = OpenCodeHostClient(runtime_config.host_endpoint)
 
     project_evidence, sandbox, trusted_project_context = _resolve_sandbox(
         worktree_root=root,
@@ -942,7 +950,7 @@ def compose_thin_task_main_host(
             raise TrustedBindingError(f"thin host context-switch composition failed: {exc}") from exc
 
     governance_doctor = None
-    governance_milestone_closure = None
+    governance_closure = None
     if (
         isinstance(plan_authority_binding, PlanAuthorityBinding)
         and plan_authority_binding.source_kind == PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
@@ -954,7 +962,33 @@ def compose_thin_task_main_host(
             ThinMilestoneClosureEvidenceAdapter,
         )
 
-        governance_milestone_closure = ThinMilestoneClosureEvidenceAdapter(
+        parent_decision_reader = None
+        read_session_messages = getattr(host_client, "fetch_session_messages", None)
+        if runtime_config.executor == EXECUTOR_OPENCODE and callable(read_session_messages):
+            from aota_forge.adapters.opencode.host_client import (
+                message_finish,
+                message_info,
+                message_role,
+                message_text_parts,
+            )
+
+            def parent_decision_reader(session_ref: str) -> tuple[dict[str, str], ...]:
+                messages = read_session_messages(
+                    session_ref,
+                    directory=str(sandbox.project_root),
+                )
+                return tuple(
+                    {
+                        "session_ref": session_ref,
+                        "message_id": str(message_info(message).get("id") or ""),
+                        "role": str(message_role(message) or ""),
+                        "finish": str(message_finish(message) or ""),
+                        "text": "".join(message_text_parts(message)),
+                    }
+                    for message in messages
+                )
+
+        governance_closure = ThinMilestoneClosureEvidenceAdapter(
             project_id=pid,
             project_root=sandbox.project_root,
             governance_root=local_governance_binding,
@@ -963,6 +997,7 @@ def compose_thin_task_main_host(
             execution_store=store,
             sandbox=sandbox,
             governance_store=resolved_governance_store,
+            parent_decision_reader=parent_decision_reader,
         )
 
         doctor_context = DoctorContext(
@@ -980,7 +1015,7 @@ def compose_thin_task_main_host(
             expected_coordinator_id=getattr(context_switch_runtime, "coordinator_id", None),
             runtime_plan_authority_binding=plan_authority_binding,
             session_ref=origin,
-            milestone_close_evidence_adapter=governance_milestone_closure,
+            milestone_close_evidence_adapter=governance_closure,
         )
 
         def governance_doctor(*, source_observation: Any) -> Any:
@@ -1033,7 +1068,7 @@ def compose_thin_task_main_host(
         governance_context=governance_context,
         execution_dispatcher=dispatcher,
         governance_doctor=governance_doctor,
-        governance_milestone_closure=governance_milestone_closure,
+        governance_closure=governance_closure,
     )
     aota_invoke = create_aota_invoke_dispatch(binding)
 
