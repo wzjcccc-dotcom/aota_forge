@@ -1,0 +1,49 @@
+{
+  "bootstrap_path": "/home/latios/workspace/aota_forge/.aota/production-source-activation-preflight-1790478081762499647-415873/task-main-thin-bootstrap.json",
+  "canonical_repo_root": "/home/latios/workspace/aota_forge",
+  "context_inspect_actual_mcp": true,
+  "context_inspect_local_governance_root": true,
+  "context_inspect_plan_id": "plan_002_session_first_context_activation",
+  "context_inspect_project_id": "aota_forge",
+  "context_inspect_state": "bound",
+  "coordinator_id": "aota_forge:M3:source-activation-preflight-1790478081762688355",
+  "envelope_path": "/home/latios/workspace/aota_forge/.aota/pre-resolved-bindings/task-main-50f021cd-d085a194.json",
+  "fresh_child_pythonpath_begins_canonical_main": true,
+  "fresh_mcp_bootstrap": "/home/latios/workspace/aota_forge/.aota/production-source-activation-preflight-1790478081762499647-415873/task-main-thin-bootstrap.json",
+  "fresh_mcp_command": "/usr/bin/python3 -m aota_forge.composition.worker_vertical_slice --mcp-server",
+  "fresh_mcp_pid": 415890,
+  "fresh_mcp_pre_resolved_binding": "/home/latios/workspace/aota_forge/.aota/opencode/instances/task-main-activation-preflight-1790478081762689557/.aota/pre-resolved-bindings/task-main-50f021cd-d085a194.json",
+  "fresh_mcp_pythonpath_source": "/home/latios/workspace/aota_forge",
+  "fresh_mcp_repo_root": "/home/latios/workspace/aota_forge",
+  "fresh_task_main_session_id": "ses_f1f30a0ecffeTk2bEBf6KH7VAh",
+  "instance_directory": "/home/latios/workspace/aota_forge/.aota/opencode/instances/task-main-activation-preflight-1790478081762689557",
+  "live_context_switch_runtime_present": true,
+  "live_coordinator_store_attached": true,
+  "live_execution_store_attached": true,
+  "live_governance_store_attached": true,
+  "live_target_resolver_configured": true,
+  "mcp_status": {
+    "aota": {
+      "status": "connected"
+    }
+  },
+  "plan_created": false,
+  "pointer_path": "/home/latios/workspace/aota_forge/.aota/opencode/instances/task-main-activation-preflight-1790478081762689557/.aota/opencode/active_binding.json",
+  "preflight_root": "/home/latios/workspace/aota_forge/.aota/production-source-activation-preflight-1790478081762499647-415873",
+  "record": "AF_GOV2_PLAN002_M3_W3 production source activation preflight",
+  "reference_health": {
+    "healthy": true,
+    "version": "1.18.30"
+  },
+  "role_bootstrap_actual_mcp": true,
+  "role_bootstrap_hydrate_ref": "tool_output:role.bootstrap:058a21e65ecbed4c",
+  "role_bootstrap_hydrated_actual_mcp": true,
+  "role_bootstrap_output_mode": "by_ref",
+  "role_bootstrap_role": "task-main",
+  "role_bootstrap_tool_status": "completed",
+  "semantic_switch_called": false,
+  "source_repo_root_is_canonical_main": true,
+  "staged_envelope_path": "/home/latios/workspace/aota_forge/.aota/opencode/instances/task-main-activation-preflight-1790478081762689557/.aota/pre-resolved-bindings/task-main-50f021cd-d085a194.json",
+  "thin_child_composition_constructed": true,
+  "w3_operation_called": false
+}

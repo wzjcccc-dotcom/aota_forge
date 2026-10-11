@@ -101,6 +101,62 @@ AOTA_READER_ROLE=readonly_observation
 AOTA_READER_GOVERNANCE_WRITE=no
 ```
 
+## W5 Thin Execution Boundary
+
+ChatGPT/Friday owns semantic planning, user review, and supervision. It does
+not become the execution scheduler. The normal path is AF-native thin
+execution owned by task-main; Codex is only a mechanical relay, and the
+headless launcher is only an operator/bootstrap adapter.
+
+```text
+AF_NATIVE_THIN_EXECUTION=yes
+AF_NATIVE_EXECUTION_OWNER=task-main
+CHATGPT_FRIDAY_ROLE=planning_supervision
+CHATGPT_FRIDAY_EXECUTION_AUTHORITY=no
+CODEX_IS_MECHANICAL_RELAY_ONLY=yes
+DAILY_TASK_MAIN_LAUNCHER_ROLE=headless_operator_bootstrap_adapter
+DAILY_TASK_MAIN_LAUNCHER_EXCLUSIVE_AUTHORITY=no
+
+AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD
+TASK_MAIN_OWNS_WORK_SELECTION=yes
+TASK_MAIN_OWNS_HANDOFF=yes
+TASK_MAIN_OWNS_WORKER_ROLE=yes
+TASK_MAIN_OWNS_TASK_START=yes
+TASK_MAIN_OWNS_PARENT_RECONCILIATION=yes
+TASK_MAIN_OWNS_RETRY_REPAIR=yes
+TASK_MAIN_OWNS_DAG_DECISIONS=yes
+
+ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=no
+ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=no
+TRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=no
+TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=no
+AOTA_FORGE_UNBOUND_ROLE=worktree_runtime_label_only
+AOTA_FORGE_UNBOUND_IS_AUTHORITY=no
+AOTA_FORGE_UNBOUND_IS_READINESS=no
+
+WORKSPACE_WRITE_SEMANTICS=create_or_bounded_whole_file_replacement
+WORKSPACE_EDIT_SEMANTICS=coder_only_exact_local_CAS_edit
+WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=no
+```
+
+The exact AF-native path is:
+
+```text
+role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD
+```
+
+`activate_milestone`, `advance_once`, and a non-null
+`TrustedTaskMainRuntimeContext` are not normal thin-path readiness
+requirements. `trusted_task_main_context=None` is not a thin execution
+blocker. `aota_forge-unbound` is only a worktree/runtime label, never an
+authority, readiness gate, scheduler, or Work selector. AF-native task-main
+owns Work selection, handoff, Worker role, start, reconciliation, retry/repair,
+and DAG decisions.
+
+`workspace.write` is create-or-bounded-whole-file replacement. `workspace.edit`
+is a coder-only exact local CAS edit. Neither workspace operation substitutes
+for AF-native task-main execution.
+
 If this map conflicts with an implementation contract, the trusted runtime
 descriptor and result contract win; do not document an unavailable mode or
 operation here.

@@ -176,6 +176,210 @@ EXPECTED_ADAPTER_REFERENCES = {
     "aota-github-issue-planning.md": ["LEGACY_COMPATIBILITY_ALIAS_ONLY=yes"],
 }
 
+# W5 canonical AF-native thin-execution boundary. These structural markers
+# keep compatibility terms from becoming runtime authority or readiness gates.
+THIN_EXECUTION_REQUIRED_MARKERS = {
+    "GOVERNANCE_INDEX.md": (
+        "AF_NATIVE_THIN_EXECUTION=yes",
+        "AF_NATIVE_EXECUTION_OWNER=task-main",
+        "CHATGPT_FRIDAY_ROLE=planning_supervision",
+        "CODEX_IS_MECHANICAL_RELAY_ONLY=yes",
+        "DAILY_TASK_MAIN_LAUNCHER_ROLE=headless_operator_bootstrap_adapter",
+        "DAILY_TASK_MAIN_LAUNCHER_EXCLUSIVE_AUTHORITY=no",
+        "AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD",
+        "TASK_MAIN_OWNS_WORK_SELECTION=yes",
+        "TASK_MAIN_OWNS_HANDOFF=yes",
+        "TASK_MAIN_OWNS_WORKER_ROLE=yes",
+        "TASK_MAIN_OWNS_TASK_START=yes",
+        "TASK_MAIN_OWNS_PARENT_RECONCILIATION=yes",
+        "TASK_MAIN_OWNS_RETRY_REPAIR=yes",
+        "TASK_MAIN_OWNS_DAG_DECISIONS=yes",
+        "ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=no",
+        "ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=no",
+        "TRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=no",
+        "TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=no",
+        "AOTA_FORGE_UNBOUND_ROLE=worktree_runtime_label_only",
+        "AOTA_FORGE_UNBOUND_IS_AUTHORITY=no",
+        "AOTA_FORGE_UNBOUND_IS_READINESS=no",
+        "WORKSPACE_WRITE_SEMANTICS=create_or_bounded_whole_file_replacement",
+        "WORKSPACE_EDIT_SEMANTICS=coder_only_exact_local_CAS_edit",
+        "WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=no",
+    ),
+    "aota-chatgpt-project-planning.md": (
+        "TASK_MAIN_OWNS_EXECUTION=yes",
+        "AF_NATIVE_EXECUTION_OWNER=task-main",
+        "CONSTRUCTION_PROMPT_AF_NATIVE_EXECUTION_OWNER=task-main",
+        "CODEX_MECHANICAL_RELAY_ONLY=yes",
+        "DAILY_TASK_MAIN_LAUNCHER_ROLE=headless_operator_bootstrap_adapter",
+        "DAILY_TASK_MAIN_LAUNCHER_EXCLUSIVE_AUTHORITY=no",
+        "AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD",
+        "ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=no",
+        "ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=no",
+        "TRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=no",
+        "TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=no",
+        "AOTA_FORGE_UNBOUND_ROLE=worktree_runtime_label_only",
+        "AOTA_FORGE_UNBOUND_IS_AUTHORITY=no",
+        "AOTA_FORGE_UNBOUND_IS_READINESS=no",
+        "WORKSPACE_WRITE_SEMANTICS=create_or_bounded_whole_file_replacement",
+        "WORKSPACE_EDIT_SEMANTICS=coder_only_exact_local_CAS_edit",
+        "WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=no",
+    ),
+    "aota-chatgpt-parallel-development.md": (
+        "MANUAL_CODEX_WORKFLOW=transitional_compatibility_adapter",
+        "MANUAL_CODEX_IS_TRANSITIONAL=yes",
+        "MANUAL_CODEX_ADAPTER_REPLACES_AF_NATIVE_SCHEDULING=no",
+        "MANUAL_CODEX_DISPATCH_IS_EXECUTION_AUTHORITY=no",
+        "AF_NATIVE_SCHEDULING_PRECEDENCE=yes",
+        "AF_NATIVE_EXECUTION_OWNER=task-main",
+        "TASK_MAIN_OWNS_WORK_SELECTION=yes",
+        "TASK_MAIN_OWNS_HANDOFF=yes",
+        "TASK_MAIN_OWNS_WORKER_ROLE=yes",
+        "TASK_MAIN_OWNS_TASK_START=yes",
+        "TASK_MAIN_OWNS_PARENT_RECONCILIATION=yes",
+        "TASK_MAIN_OWNS_RETRY_REPAIR=yes",
+        "TASK_MAIN_OWNS_DAG_DECISIONS=yes",
+        "AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD",
+    ),
+}
+
+# Positive (=yes) forms are prohibited; canonical compatibility references use
+# the explicit (=no) forms above.
+THIN_EXECUTION_FORBIDDEN_MARKERS = (
+    ("ACTIVATE_MILESTONE_REQUIRED_FOR_THIN_EXECUTION=yes", "activate_milestone made a thin-path requirement"),
+    ("ADVANCE_ONCE_REQUIRED_FOR_THIN_EXECUTION=yes", "advance_once made a thin-path requirement"),
+    ("ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=yes", "activate_milestone made normal readiness"),
+    ("ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=yes", "advance_once made normal readiness"),
+    ("ACTIVATE_MILESTONE_IS_THIN_EXECUTION_GATE=yes", "activate_milestone made an execution gate"),
+    ("ADVANCE_ONCE_IS_THIN_EXECUTION_GATE=yes", "advance_once made an execution gate"),
+    ("TRUSTED_TASK_MAIN_CONTEXT_REQUIRED_FOR_THIN_EXECUTION=yes", "trusted task-main context made mandatory"),
+    ("TRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=yes", "non-null runtime context made normal readiness"),
+    ("TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=yes", "None context made a thin execution blocker"),
+    ("TRUSTED_TASK_MAIN_CONTEXT_NONE_BLOCKS_THIN_EXECUTION=yes", "None context made a thin execution blocker"),
+    ("AOTA_FORGE_UNBOUND_IS_AUTHORITY=yes", "worktree label made authority"),
+    ("AOTA_FORGE_UNBOUND_IS_EXECUTION_AUTHORITY=yes", "worktree label made execution authority"),
+    ("AOTA_FORGE_UNBOUND_IS_READINESS=yes", "worktree label made readiness"),
+    ("AOTA_FORGE_UNBOUND_IS_READINESS_GATE=yes", "worktree label made a readiness gate"),
+    ("AOTA_FORGE_UNBOUND_SELECTS_WORK=yes", "worktree label made Work selection authority"),
+    ("MANUAL_CODEX_ADAPTER_REPLACES_AF_NATIVE_SCHEDULING=yes", "manual Codex replaced AF-native scheduling"),
+    ("MANUAL_CODEX_SCHEDULING_IS_CANONICAL=yes", "manual Codex made canonical scheduling"),
+    ("MANUAL_CODEX_DISPATCH_IS_EXECUTION_AUTHORITY=yes", "manual Codex dispatch made execution authority"),
+    ("AF_NATIVE_SCHEDULING_PRECEDENCE=no", "AF-native scheduling precedence disabled"),
+    ("WORKSPACE_WRITE_REPLACES_AF_NATIVE_EXECUTION=yes", "workspace.write replaced AF-native execution"),
+    ("WORKSPACE_EDIT_REPLACES_AF_NATIVE_EXECUTION=yes", "workspace.edit replaced AF-native execution"),
+    ("WORKSPACE_WRITE_IS_EXECUTION_AUTHORITY=yes", "workspace.write made execution authority"),
+    ("WORKSPACE_EDIT_IS_EXECUTION_AUTHORITY=yes", "workspace.edit made execution authority"),
+    ("WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=yes", "workspace write/edit substituted for thin execution"),
+    ("WORKSPACE_WRITE_OR_EDIT_REPLACES_TASK_MAIN=yes", "workspace write/edit replaced task-main"),
+)
+
+THIN_EXECUTION_PROHIBITED_PATTERNS = (
+    (
+        re.compile(
+            r"\b(?:task_main\.)?(?:activate_milestone|advance_once)\b[^\n]{0,100}"
+            r"\b(?:required|mandatory|must|readiness\s+requirements?|readiness\s+gate|"
+            r"execution\s+(?:requirements?|gate|blocker))\b",
+            re.IGNORECASE,
+        ),
+        "legacy activation operation made a normal thin-path gate",
+    ),
+    (
+        re.compile(
+            r"\b(?:non[- ]?null\s+)?TrustedTaskMainRuntimeContext\b[^\n]{0,100}"
+            r"\b(?:required|mandatory|must|readiness|block(?:er|ing))\b",
+            re.IGNORECASE,
+        ),
+        "non-null TrustedTaskMainRuntimeContext made a thin-path prerequisite",
+    ),
+    (
+        re.compile(
+            r"\btrusted_task_main_context\s*=\s*None\b[^\n]{0,100}"
+            r"\b(?:blocks?|blocker|invalid|unready|cannot|must\s+stop)\b",
+            re.IGNORECASE,
+        ),
+        "trusted_task_main_context=None made a thin-path blocker",
+    ),
+    (
+        re.compile(
+            r"\baota_forge-unbound\b[^\n]{0,100}"
+            r"\b(?:authority|readiness|scheduler|selector|owner|execution)\b",
+            re.IGNORECASE,
+        ),
+        "aota_forge-unbound label made execution authority",
+    ),
+    (
+        re.compile(
+            r"\bmanual[- ]Codex\b[^\n]{0,100}"
+            r"\b(?:replaces?|owns?|canonical|authoritative|scheduler|scheduling)\b",
+            re.IGNORECASE,
+        ),
+        "manual Codex made the AF-native scheduler",
+    ),
+    (
+        re.compile(
+            r"\bworkspace\.(?:write|edit)\b[^\n]{0,100}"
+            r"\b(?:replaces?|substitutes?|authority|authoritative|scheduler|task-main|execution)\b",
+            re.IGNORECASE,
+        ),
+        "workspace.write/edit substituted for AF-native execution",
+    ),
+    # Assignment-style or reversed-order claims are covered without relying
+    # on a particular marker spelling.
+    (
+        re.compile(
+            "(?=.*(?:activate_milestone|advance_once))"
+            "(?=.*(?:required|requires|mandatory|readiness|gate|blocker|must))",
+            re.IGNORECASE,
+        ),
+        "legacy activation operation made a normal thin-path gate",
+    ),
+    (
+        re.compile(
+            "(?=.*TrustedTaskMainRuntimeContext)"
+            "(?=.*(?:required|requires|mandatory|non-null|readiness|blocker|must))",
+            re.IGNORECASE,
+        ),
+        "non-null TrustedTaskMainRuntimeContext made a thin-path prerequisite",
+    ),
+    (
+        re.compile(
+            "(?=.*trusted_task_main_context[ ]*=[ ]*None)"
+            "(?=.*(?:block|invalid|unready|must[ ]+stop))",
+            re.IGNORECASE,
+        ),
+        "trusted_task_main_context=None made a thin-path blocker",
+    ),
+    (
+        re.compile(
+            "(?=.*aota_forge-unbound)"
+            "(?=.*(?:authority|readiness|scheduler|selector|owner|execution))",
+            re.IGNORECASE,
+        ),
+        "aota_forge-unbound label made execution authority",
+    ),
+    (
+        re.compile(
+            "(?=.*manual[- ]Codex)"
+            "(?=.*(?:replaces?|owns?|canonical|authoritative|scheduler|scheduling))",
+            re.IGNORECASE,
+        ),
+        "manual Codex made the AF-native scheduler",
+    ),
+    (
+        re.compile(
+            "(?=.*workspace[.](?:write|edit))"
+            "(?=.*(?:replaces|replaced|substitutes|substituted|authority|authoritative|scheduler|task-main|execution))",
+            re.IGNORECASE,
+        ),
+        "workspace.write/edit substituted for AF-native execution",
+    ),
+)
+
+THIN_EXECUTION_NEGATION = re.compile(
+    r"\b(?:not|never|no|none|cannot|can't|doesn't|does\s+not|do\s+not|"
+    r"without|neither|only)\b",
+    re.IGNORECASE,
+)
+
 def read_text(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
@@ -204,6 +408,47 @@ def contains_legacy_section_context(text: str, match_start: int) -> bool:
     # For exact forbidden markers like NORMAL_WORK_ITEM...=yes, never tolerate generic LEGACY word
     # So don't treat generic LEGACY_W_AS_WORKSTREAM as covering unrelated markers
     return False
+
+def validate_thin_execution_boundary(file_texts: dict[str, str]) -> list[tuple[str, str]]:
+    """Return stable CG010 findings for W5 thin-execution boundary drift."""
+    findings: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(detail: str) -> None:
+        item = ("CG010_THIN_EXECUTION_BOUNDARY", detail)
+        if item not in seen:
+            seen.add(item)
+            findings.append(item)
+
+    for filename, markers in THIN_EXECUTION_REQUIRED_MARKERS.items():
+        text = file_texts.get(filename)
+        if text is None:
+            add(f"thin execution boundary file missing: {filename}")
+            continue
+        for marker in markers:
+            if marker not in text:
+                add(f"{filename} missing thin execution marker: {marker}")
+
+    for filename, text in file_texts.items():
+        lower_text = text.lower()
+        for marker, detail in THIN_EXECUTION_FORBIDDEN_MARKERS:
+            if marker.lower() in lower_text:
+                add(f"{detail} in {filename}: {marker}")
+
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for pattern, detail in THIN_EXECUTION_PROHIBITED_PATTERNS:
+                match = pattern.search(line)
+                if not match:
+                    continue
+                # Canonical text deliberately documents rejected legacy terms
+                # in negative sentences. Only positive claims are violations;
+                # exact (=yes) markers above remain strict.
+                context = line[max(0, match.start() - 120): min(len(line), match.end() + 120)]
+                if THIN_EXECUTION_NEGATION.search(context):
+                    continue
+                add(f"{detail} in {filename}:{line_number}")
+
+    return findings
 
 def main(argv=None) -> int:
     import os, argparse
@@ -382,6 +627,13 @@ def main(argv=None) -> int:
                 # Check if it copies hierarchy table
                 if "SUBPLAN_IDENTIFIER" in text:
                     errors.append(("CG003_DUPLICATE_NORMATIVE_AUTHORITY", f"alias {fname} duplicates hierarchy definition"))
+
+    # 4b. W5 AF-native thin execution boundary guard
+    thin_file_texts = {}
+    for f in all_files:
+        if f.is_file():
+            thin_file_texts[f.name] = read_text(f)
+    errors.extend(validate_thin_execution_boundary(thin_file_texts))
 
     # 5. Drift/hash guard for generated mirror if present
     # Look for expected mirror locations

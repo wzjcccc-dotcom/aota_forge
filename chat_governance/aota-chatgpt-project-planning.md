@@ -252,6 +252,49 @@ CONSTRUCTION_PROMPT_BOUND_TO_CURRENT_PLAN_AUTHORITY=yes
 CONSTRUCTION_PROMPT_REQUIRES_EXPLICIT_USER_REQUEST=yes
 ```
 
+### AF-native thin execution gate
+
+A construction prompt is a bounded mechanical relay package, not a second
+scheduler or execution authority. AF-native task-main owns the normal Work
+execution after the semantic planning and approval gate; Codex only relays the
+approved package mechanically.
+
+```text
+TASK_MAIN_OWNS_EXECUTION=yes
+AF_NATIVE_EXECUTION_OWNER=task-main
+CONSTRUCTION_PROMPT_AF_NATIVE_EXECUTION_OWNER=task-main
+CODEX_MECHANICAL_RELAY_ONLY=yes
+DAILY_TASK_MAIN_LAUNCHER_ROLE=headless_operator_bootstrap_adapter
+DAILY_TASK_MAIN_LAUNCHER_EXCLUSIVE_AUTHORITY=no
+
+AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD
+ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=no
+ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=no
+TRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=no
+TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=no
+
+AOTA_FORGE_UNBOUND_ROLE=worktree_runtime_label_only
+AOTA_FORGE_UNBOUND_IS_AUTHORITY=no
+AOTA_FORGE_UNBOUND_IS_READINESS=no
+WORKSPACE_WRITE_SEMANTICS=create_or_bounded_whole_file_replacement
+WORKSPACE_EDIT_SEMANTICS=coder_only_exact_local_CAS_edit
+WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=no
+```
+
+The AF-native thin path is exactly `role.bootstrap -> task_main.context(bind)
+-> handoff.write -> task.start -> task.return -> runtime-owned parent
+reconciliation -> exact-parent CARD`. `activate_milestone`, `advance_once`, and
+non-null `TrustedTaskMainRuntimeContext` are not normal readiness requirements;
+`trusted_task_main_context=None` is not a thin execution blocker. The
+`DailyTaskMainLauncher` is a headless/operator bootstrap adapter, not exclusive
+authority. `aota_forge-unbound` is only a worktree/runtime label. AF-native
+task-main owns Work selection, handoff, Worker role, start, reconciliation,
+retry/repair, and DAG decisions.
+
+`workspace.write` means create or bounded whole-file replacement. `workspace.edit`
+means a coder-only exact local CAS edit. Neither operation substitutes for the
+AF-native execution path.
+
 Codex is mechanical execution only. It must use the same canonical AF
 lifecycle for Project/Plan governance and must not implement a second
 `project.init`/`plan.init` path, create directories by hand, edit the

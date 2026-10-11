@@ -66,7 +66,36 @@ Execution adapter identity:
 EXECUTION_ADAPTER=chatgpt-manual-codex
 DIRECT_WORKER_DISPATCH=no
 MANUAL_CODEX_DISPATCH=yes
+MANUAL_CODEX_WORKFLOW=transitional_compatibility_adapter
+MANUAL_CODEX_IS_TRANSITIONAL=yes
+MANUAL_CODEX_ADAPTER_REPLACES_AF_NATIVE_SCHEDULING=no
+MANUAL_CODEX_DISPATCH_IS_EXECUTION_AUTHORITY=no
+AF_NATIVE_SCHEDULING_PRECEDENCE=yes
+AF_NATIVE_EXECUTION_OWNER=task-main
+TASK_MAIN_OWNS_WORK_SELECTION=yes
+TASK_MAIN_OWNS_HANDOFF=yes
+TASK_MAIN_OWNS_WORKER_ROLE=yes
+TASK_MAIN_OWNS_TASK_START=yes
+TASK_MAIN_OWNS_PARENT_RECONCILIATION=yes
+TASK_MAIN_OWNS_RETRY_REPAIR=yes
+TASK_MAIN_OWNS_DAG_DECISIONS=yes
 ```
+
+Manual Codex prompt packages remain a legal transitional compatibility
+workflow for isolated Work Items. They do not replace AF-native scheduling or
+become a second task-main. AF-native task-main has precedence and owns Work
+selection, handoff, Worker role, start, runtime-owned parent reconciliation,
+retry/repair, and DAG decisions.
+
+The same thin execution path is:
+
+```text
+AF_NATIVE_THIN_EXECUTION_PATH=role.bootstrap -> task_main.context(bind) -> handoff.write -> task.start -> task.return -> runtime-owned parent reconciliation -> exact-parent CARD
+```
+
+`workspace.write` is create or bounded whole-file replacement and
+`workspace.edit` is a coder-only exact local CAS edit; neither substitutes for
+AF-native task-main execution.
 
 ## Formal identity
 

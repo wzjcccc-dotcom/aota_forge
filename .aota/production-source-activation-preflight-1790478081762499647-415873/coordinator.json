@@ -1,0 +1,78 @@
+{
+  "aota_forge:M3:source-activation-preflight-1790478081762688355": {
+    "attempt_states": {},
+    "bindings": {},
+    "context_binding": {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "5653c299b6d0ad3f36a49da1ee0bf571cb0c5dd9799250d247a44b624c25f1e2",
+      "binding_digest": "7106e89fb81bd6dff72d62ee0dd9f7411d50b9b3e552e9b41c57c669ceb3fff5",
+      "origin_task_main_session_ref": "ses_f1f30a0ecffeTk2bEBf6KH7VAh",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+        "plan_id": "plan_002_session_first_context_activation",
+        "source_digest": "d694e169a06fabcafbe09f8b71af3606a6a1bbb14231ed49b2b5c9b13f983b1c",
+        "source_kind": "local_governance",
+        "source_revision": "d694e169a06fabcafbe09f8b71af3606a6a1bbb14231ed49b2b5c9b13f983b1c"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    "context_switch_transition": null,
+    "coordinator_id": "aota_forge:M3:source-activation-preflight-1790478081762688355",
+    "coordinator_revision": 1,
+    "created_at": "2026-09-27T03:01:21.829150+00:00",
+    "dependencies": [
+      [
+        "W1",
+        "W2"
+      ],
+      [
+        "W2",
+        "W3"
+      ],
+      [
+        "W2",
+        "W4"
+      ]
+    ],
+    "entry_base": "4699b988909ac9ea958e2e36686da94aa9995d50",
+    "executor_id": "opencode",
+    "frontier_ref": null,
+    "human_brake": null,
+    "integrated_review": null,
+    "milestone_id": "M3",
+    "next_action": null,
+    "open_blockers": [],
+    "origin_task_main_session_ref": "ses_f1f30a0ecffeTk2bEBf6KH7VAh",
+    "plan_authority": "local-governance:aota_forge/plan_002_session_first_context_activation",
+    "plan_digest": "d694e169a06fabcafbe09f8b71af3606a6a1bbb14231ed49b2b5c9b13f983b1c",
+    "plan_source_revision": "d694e169a06fabcafbe09f8b71af3606a6a1bbb14231ed49b2b5c9b13f983b1c",
+    "progression_revision": 0,
+    "project_id": "aota_forge",
+    "project_state": null,
+    "reconciled_completions": {},
+    "review_gates": null,
+    "revision_token": "703a704877ea591d3dc123957dd0f26b15021b8306c244b642f59684c8142a0b",
+    "risk_projection": null,
+    "schema_version": 2,
+    "status": "ACTIVE",
+    "updated_at": "2026-09-27T03:01:21.829150+00:00",
+    "user_approval_satisfied": true,
+    "wi_semantic_status": {},
+    "wi_status": {
+      "W1": "PENDING",
+      "W2": "PENDING",
+      "W3": "PENDING",
+      "W4": "PENDING"
+    },
+    "work_items": [
+      "W1",
+      "W2",
+      "W3",
+      "W4"
+    ],
+    "work_projections": {},
+    "working_truth": null
+  }
+}

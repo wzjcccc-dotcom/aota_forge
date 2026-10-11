@@ -1,0 +1,228 @@
+{
+  "fin-023aacc5b4b73d0a52a0c723eed75f28": {
+    "binding_digest": "f1f45541ba79e51870cf2cf0ae71ea7c0fd5466a1bc3dd2b14418c4a58df7b4a",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-023aacc5b4b73d0a52a0c723eed75f28",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M3",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+    "project_id": "aota_forge",
+    "receipt_digest": "a8754204acf0a49cd58371856bbef0884e64164ce68a2c5677981a2370bca9bf",
+    "receipt_id": "mfr-fc846847c57aca28",
+    "reconciled_at": "2026-09-27T07:51:48.772642+00:00",
+    "steward_digest": "642c12e938494140744d9470760e36404f52a0c5503e7d177e100b7b5ab01f5b"
+  },
+  "fin-06f6377440926c662c663adfaee740e5": {
+    "binding_digest": "0122240d372883b1f8ae98e799ec24ed3cfff36233d1f0a26820336bedfaff31",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-06f6377440926c662c663adfaee740e5",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M3",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+    "project_id": "aota_forge",
+    "receipt_digest": "8f3a0f84276d60edaa8c164fc01128cebd464554c00ca853924648d13d6e0608",
+    "receipt_id": "mfr-deb8df114729c14d",
+    "reconciled_at": "2026-09-29T15:33:19.783254+00:00",
+    "steward_digest": "b95320ff32164b9e9869366973919642c25ee9edd21f004cdf1d1ab0def64462"
+  },
+  "fin-1539d54412bc28513f84a765b3e6de90": {
+    "binding_digest": "b1f4b6bc0e61c8ce10021fe0c7d90260b23c0219c335675d4f1254a2b7cdc4b7",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-1539d54412bc28513f84a765b3e6de90",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M3",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+    "project_id": "aota_forge",
+    "receipt_digest": "b267049b8c8e337e865c0c8d8dc76f3ecd12fafd1438cc61d38f6df9459a9b2c",
+    "receipt_id": "mfr-7e46576e59a969cb",
+    "reconciled_at": "2026-10-06T14:12:34.431937+00:00",
+    "steward_digest": "62dd23703fa74e80518010b3401d456648a8acbce2514444677c03877c3c8cb4"
+  },
+  "fin-212de8ebbfc49cd22930f552ee2fa9f8": {
+    "binding_digest": "54f94da1fbb92725a36a825312f32f376e008ae7e18401132c63b8b670941761",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-212de8ebbfc49cd22930f552ee2fa9f8",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M1",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+    "project_id": "aota_forge",
+    "receipt_digest": "6abf6467a9f009b03c173953a74bfaf4e6544f6c866df6627e5e30c6ae4b994b",
+    "receipt_id": "mfr-e31325dcd454f7d7",
+    "reconciled_at": "2026-09-29T01:58:43.026316+00:00",
+    "steward_digest": "c29c0b7c3a58a77773e2973b0eb1dc28f22b9d05d37bee68820e79cf0940434d"
+  },
+  "fin-46ae7276d27270522c840bd00bdf78e5": {
+    "binding_digest": "43abdbeb99c23dbc7884b65bd030c727f80becf62737bcadea46418f201c26ce",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-46ae7276d27270522c840bd00bdf78e5",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M2",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+    "project_id": "aota_forge",
+    "receipt_digest": "974fcae72c5d2db8f2521fbac954de308557a1fb4c90649ab3c02d3555e7d801",
+    "receipt_id": "mfr-3e54f61d89d8e4a4",
+    "reconciled_at": "2026-09-30T14:44:32.222597+00:00",
+    "steward_digest": "cc713c4bceacbebb995a214843e4819d9fa1d03ae874fcf7554cd03708a3298e"
+  },
+  "fin-4ca53be83dd2ae736fe4fa2e42c35e82": {
+    "binding_digest": "0122240d372883b1f8ae98e799ec24ed3cfff36233d1f0a26820336bedfaff31",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-4ca53be83dd2ae736fe4fa2e42c35e82",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M3",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+    "project_id": "aota_forge",
+    "receipt_digest": "e7d54770ecc1bf9faeaaaffc8a2ed1d959e40910d944cacbbded99e218a73f82",
+    "receipt_id": "mfr-d56aedffab0e5f19",
+    "reconciled_at": "2026-09-29T15:32:40.660880+00:00",
+    "steward_digest": "e67d0b579061339b4943649112a6a1d73a7e5a578bfabcfcdb8c7d39f8c102a1"
+  },
+  "fin-5f8a6723a7690c89659ee3d19d459363": {
+    "binding_digest": "efd498a81f5a498899981e6e403c2851d4f35d0dc0e0d2d9299019b8f6d639a4",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-5f8a6723a7690c89659ee3d19d459363",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M2",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+    "project_id": "aota_forge",
+    "receipt_digest": "85110961ab5700bfadaa3962198e0a64d7c5649386eb9b6d17c4452523dad3a1",
+    "receipt_id": "mfr-3c0030a9605b2442",
+    "reconciled_at": "2026-09-29T08:35:03.273232+00:00",
+    "steward_digest": "f500b445db4ce5974d1a456620fe038e88fd62430bbbfda5053ba0e5db6ace8c"
+  },
+  "fin-76820c0734427a246fae59e7ac858017": {
+    "binding_digest": "8bcc05354729ee5e224681188b3b5c831b46f4979a9e6d39ca3e27ffba22463e",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "ALREADY_APPLIED",
+    "git_final_refs": {
+      "branch": "main",
+      "expected_old": "36e49db7c50f8569a3d13762b4f067b3ad937853",
+      "local": "129a6e18f1f547460bc60db6ef39807b4fde41cc",
+      "target": "129a6e18f1f547460bc60db6ef39807b4fde41cc"
+    },
+    "git_final_tree": "230f58a0096da91171c91370a30b691cf6fd6665",
+    "github_evidence": null,
+    "idempotency_key": "fin-76820c0734427a246fae59e7ac858017",
+    "materialization_scope": {
+      "git": {
+        "branch": "main",
+        "expected_old_ref": "36e49db7c50f8569a3d13762b4f067b3ad937853",
+        "remote": null,
+        "target_ref": "129a6e18f1f547460bc60db6ef39807b4fde41cc"
+      },
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M1",
+    "operations": [
+      {
+        "after_ref": "129a6e18f1f547460bc60db6ef39807b4fde41cc",
+        "before_ref": "129a6e18f1f547460bc60db6ef39807b4fde41cc",
+        "detail": "local already at target",
+        "kind": "git.fast_forward_local_branch",
+        "status": "already_applied",
+        "target": "git:branch:main"
+      }
+    ],
+    "plan_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+    "project_id": "aota_forge",
+    "receipt_digest": "643880debab3aaf88343e65db7302a5f74e22a552839f50810e4e69ecaf4f2b7",
+    "receipt_id": "mfr-d1d7d20c9c6db886",
+    "reconciled_at": "2026-10-09T06:51:55.088503+00:00",
+    "steward_digest": "2ff1df0b0551ee37f119702972599936f057bc77bfdceb85068a57177fa6e44c"
+  },
+  "fin-8b4c6dceff028568fb2f25cf5145064d": {
+    "binding_digest": "b77dc30bd6625e887f287f25955361356dcc823aaf3f5ef87159303aec32ec2d",
+    "closure_phase": "ACCEPTED_CLOSURE",
+    "final_status": "APPLIED",
+    "git_final_refs": null,
+    "git_final_tree": null,
+    "github_evidence": null,
+    "idempotency_key": "fin-8b4c6dceff028568fb2f25cf5145064d",
+    "materialization_scope": {
+      "git": null,
+      "github_roles": [],
+      "github_updates": [],
+      "review_projection": true
+    },
+    "milestone_ref": "M3",
+    "operations": [],
+    "plan_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+    "project_id": "aota_forge",
+    "receipt_digest": "d0bdb4b3da242ca0830f3ce1cd86951d44fd303fe2ae6360384e7f9eaee7c764",
+    "receipt_id": "mfr-ef52223cca415a96",
+    "reconciled_at": "2026-10-06T12:40:08.129252+00:00",
+    "steward_digest": "22a46249c3a0bef72a41073c047394d1f80c3af467efab90a49d321ecf796966"
+  }
+}

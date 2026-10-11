@@ -1,0 +1,334 @@
+{
+  "IS_AUTHORITY": false,
+  "records": [
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "4c4dfbc3f7f5e49b2b259694dff06d0d707baa65b920be18844864a116c65220",
+      "origin_task_main_session_ref": "ses_f13676cf7ffeAqsvaEQIpKQWMQ",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_003_interactive_session_first_context_repair",
+        "plan_id": "plan_003_interactive_session_first_context_repair",
+        "source_digest": "3b5bd665087196b0b87be7d57ad2cb8d03bfc2e38548c02b556bf65ad611544b",
+        "source_kind": "local_governance",
+        "source_revision": "3b5bd665087196b0b87be7d57ad2cb8d03bfc2e38548c02b556bf65ad611544b"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "ab86d3746361c022b1f5df0a69789a1180ac2a5257dfb4242702340d3ea9ed56",
+      "origin_task_main_session_ref": "ses_preflight_plan004_governance",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "af9b30e548ac527adb718b5ed6977238643dbe7d4487c454909adca8314c6301",
+        "source_kind": "local_governance",
+        "source_revision": "af9b30e548ac527adb718b5ed6977238643dbe7d4487c454909adca8314c6301"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "532e3902b3d670ec6940d7060e8c9be4eaaf8aaf1345bd5ba1bf6d6b0b198f0f",
+      "origin_task_main_session_ref": "ses_f0843c84bffecAqGwo28RNhYBQ",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "f690c3e2016de61b00082df6438ad1d614351e06b46aa0525c975775783eb2c9",
+        "source_kind": "local_governance",
+        "source_revision": "f690c3e2016de61b00082df6438ad1d614351e06b46aa0525c975775783eb2c9"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "0a1ddc6523f26e955d550284e6101cf2fc90544a22b6ca2f5e254d599570532b",
+      "binding_digest": "e58887a5aed8d5c82b2f6b5d7cf372f762127f23d83b1ac18c12d05fe3e68d8d",
+      "binding_kind": "PROJECT_BOUND",
+      "origin_task_main_session_ref": "ses_f07e5576cffesKC5vA9QCRxIGt",
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 2
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "5630661a7d574771414cfd9c983577ed5c94470c616ce12128a57c6620eefc6e",
+      "origin_task_main_session_ref": "ses_f07ddb65dffeHaGSJIQKrbsbDn",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "78fb11f73754c1a5683badcbf68d1a6d9c2fc118e02f6ecf21c256b38d184774",
+        "source_kind": "local_governance",
+        "source_revision": "78fb11f73754c1a5683badcbf68d1a6d9c2fc118e02f6ecf21c256b38d184774"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "c446d08f97d4241bd181ef320fe642e69d12f7f3426e41030e86ba6158332fb6",
+      "origin_task_main_session_ref": "ses_f0417e01fffeA55ZgCj6fzXIPD",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab",
+        "source_kind": "local_governance",
+        "source_revision": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "0a1ddc6523f26e955d550284e6101cf2fc90544a22b6ca2f5e254d599570532b",
+      "binding_digest": "2108187ac1c7d62e70e44f0757884b0d6c8945a3fff268262b3662416e7aa66a",
+      "binding_kind": "PROJECT_BOUND",
+      "origin_task_main_session_ref": "ses_f038ef9d1ffeXpWAkM7Ij0jZqw",
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 2
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "98fc8a6135044a86f1ea91c4a2136efe1e940d517a1fd0f87d31b53ab8ccdb05",
+      "origin_task_main_session_ref": "ses_f038dd023ffeEpKPu4XAgJ7iPG",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab",
+        "source_kind": "local_governance",
+        "source_revision": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "4fad03d93cf25cb85e029521df4dacbfcf67dc023774f5a069daee9ac442296e",
+      "origin_task_main_session_ref": "ses_f0386c3d3ffe96vpzM5gZfIBOf",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab",
+        "source_kind": "local_governance",
+        "source_revision": "0faf294861e9ffb36e48834910062e5aa0ad79875eecb5958c011a28626673ab"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "c0281132fb877d703f67e4f776926a2241728d1b338215d394c5e3eed709c3e3",
+      "origin_task_main_session_ref": "ses_f02a8241affeFEgDH2kbJlAIdc",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "72182276446ec0c8a203a83d08e58c30bb2e2ad97f47570ea9b850b2ec82497b",
+        "source_kind": "local_governance",
+        "source_revision": "72182276446ec0c8a203a83d08e58c30bb2e2ad97f47570ea9b850b2ec82497b"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "2f1ca0435b61ec5dd1382a1f5dadbd3e8ea3184b05c679afecbeb1f876e50c6a",
+      "origin_task_main_session_ref": "ses_ef8fcb482ffeyCpg8qoCnO89xC",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "466795df303274e4809d8f260856bc3ca8330d233acfba9eee183bad232468a0",
+        "source_kind": "local_governance",
+        "source_revision": "466795df303274e4809d8f260856bc3ca8330d233acfba9eee183bad232468a0"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "1818ed6db835c51df535c1be11d279504a4cfa64edda664d620e9d4b03d5095d",
+      "origin_task_main_session_ref": "ses_f0061f4d3ffedBxqlxZ1s33ics",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_004_trusted_opencode_session_bridge_context_isolation",
+        "plan_id": "plan_004_trusted_opencode_session_bridge_context_isolation",
+        "source_digest": "a83fff7efcc72ae5d9e6152afcecfcaf51315c6f0911b87fba42ae3a370ea4fc",
+        "source_kind": "local_governance",
+        "source_revision": "a83fff7efcc72ae5d9e6152afcecfcaf51315c6f0911b87fba42ae3a370ea4fc"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "0a1ddc6523f26e955d550284e6101cf2fc90544a22b6ca2f5e254d599570532b",
+      "binding_digest": "9252b37d4eb20ab5825f34b5714c5255a50493ebfe150279a9679040d1f9cc10",
+      "binding_kind": "PROJECT_BOUND",
+      "origin_task_main_session_ref": "ses_ef6016ffdffeIFaB5UeUHxIGru",
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 2
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "0a1ddc6523f26e955d550284e6101cf2fc90544a22b6ca2f5e254d599570532b",
+      "binding_digest": "d297ec8b58e3717a9e4c551b12a06dd742f84cee5b92ea853815ad5e28095cf7",
+      "binding_kind": "PROJECT_BOUND",
+      "origin_task_main_session_ref": "ses_ee6563d13ffeRgRH8lV14sDymE",
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 2
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "b15cdeaafec37eca36c9e131d700b3b33f655aa12481c7f25f3f5cef4c2c13f8",
+      "origin_task_main_session_ref": "ses_ee64bfa9affeQaJ5Tc5kiyvMzJ",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_002_session_first_context_activation",
+        "plan_id": "plan_002_session_first_context_activation",
+        "source_digest": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960",
+        "source_kind": "local_governance",
+        "source_revision": "bd4d3c836d3308145843f670cb6be89efb63e6456c86cb6065c466b40838c960"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "59e987ceff9ea3b086439b7a62a4095ae67b96669eb3ceb7ee775c3eadf340fe",
+      "origin_task_main_session_ref": "ses_ee5bf533fffe4nfoEgUUd9xgzp",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "93703a1b83c0bfb4cb3cb0d98ee1621e9f67a9db88f84ad57915668f9cb676c3",
+        "source_kind": "local_governance",
+        "source_revision": "93703a1b83c0bfb4cb3cb0d98ee1621e9f67a9db88f84ad57915668f9cb676c3"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "1794fb5c3f8e0d7a9a20c133f3ffce6c38070df2c7f76549ee4c26b09a39ee30",
+      "origin_task_main_session_ref": "ses_ee11b952effep3dpADTSaY72Jh",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7",
+        "source_kind": "local_governance",
+        "source_revision": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "be12e6c8fdfa574e2bcd97c6db85a657369689b494188021d00bb0cf4c313f38",
+      "origin_task_main_session_ref": "ses_ee03644caffejuZ3HWelwHMv0f",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7",
+        "source_kind": "local_governance",
+        "source_revision": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "2e6ecfd6af9c2a25cd21e587ba758f2fecc302943c2dc55304711bd434d708af",
+      "origin_task_main_session_ref": "ses_ee02072d1ffeN1ejmKTEmnQoqX",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7",
+        "source_kind": "local_governance",
+        "source_revision": "a0e4f2bf4577b6b3b0e06cce1db7b5d68ede5fdc55a765546d3e18360696a6e7"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "c44f58dd86d8624ce61ada8dbcccd21ad0cf7ccd89070ebc9845ef3b527b0a7e",
+      "origin_task_main_session_ref": "ses_ee016d5b8ffeQwRTDzm35nlncl",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "deec2d6389b6ba06566693497254ad23232f1fc9fad9a77560a2245ffe5aa43d",
+        "source_kind": "local_governance",
+        "source_revision": "deec2d6389b6ba06566693497254ad23232f1fc9fad9a77560a2245ffe5aa43d"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "b95a16d9b1d2b6db14a526366285a7a4a43169b3aac8d87c6d79dc284064e413",
+      "origin_task_main_session_ref": "ses_ede9b3f4bffesgO7wiKUQZ6FDw",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "fa41a31dd32e6cbd91ea6a47277adfdd9b4c1186f7376b1ebc46e17baab0d973",
+        "source_kind": "local_governance",
+        "source_revision": "fa41a31dd32e6cbd91ea6a47277adfdd9b4c1186f7376b1ebc46e17baab0d973"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    },
+    {
+      "IS_AUTHORITY": false,
+      "authorized_roots_digest": "cb706761fbfc36af9041f3a5ad034a88201fc632c6868b519afae43024fd97d7",
+      "binding_digest": "f52916dcee74f3ae23209c35bb47eec2069b68209c6718666c646ec0ed144b21",
+      "origin_task_main_session_ref": "ses_edc63efd5ffeuHX8gWSHH8UFkk",
+      "plan_binding": {
+        "authority_ref": "local-governance:aota_forge/plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "plan_id": "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+        "source_digest": "6a8293ac6e8cbd3b7da6570ad2967093d835b472bfa18c33c0dc16fa3c88e1d0",
+        "source_kind": "local_governance",
+        "source_revision": "6a8293ac6e8cbd3b7da6570ad2967093d835b472bfa18c33c0dc16fa3c88e1d0"
+      },
+      "project_fingerprint": "c08efcdc922db2bf2b105093a6f422d88dc5bed696a77f1e97606904bead39ce",
+      "project_id": "aota_forge",
+      "schema_version": 1
+    }
+  ],
+  "schema_version": 1
+}

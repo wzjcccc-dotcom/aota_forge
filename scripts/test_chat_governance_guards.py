@@ -137,6 +137,31 @@ def test_static_guard():
     gov3["aota-chatgpt-parallel-development.md"] = CANONICAL_PARALLEL + "\nEXTRA_GATE_ID=RISK-1\nIDENTIFIED_RISK=destructive migration\nJUSTIFICATION=irreversible\nSCOPE=DB migration\nEND_CONDITION=verified\nRISK_SCOPED_EXTRA_GATE_ALLOWED=yes\n"
     check("P04 risk-scoped exception wording -> PASS", gov3, True)
 
+    # P05 legal compatibility references must remain descriptive, not become
+    # false positives for the W5 thin-execution boundary.
+    gov4 = make_good_governance()
+    gov4["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + """
+## Legacy compatibility references
+activate_milestone and advance_once are not normal readiness requirements.
+A non-null TrustedTaskMainRuntimeContext is not required for thin execution.
+trusted_task_main_context=None is not a thin execution blocker.
+aota_forge-unbound is only a worktree/runtime label, not authority.
+Manual Codex is a transitional adapter and does not replace AF-native scheduling.
+workspace.write and workspace.edit do not substitute for AF-native execution.
+"""
+    check("P05 legal legacy thin-path references -> PASS", gov4, True)
+
+    # P06 explicit negative (=no) boundary claims are accepted.
+    gov5 = make_good_governance()
+    gov5["aota-chatgpt-parallel-development.md"] = CANONICAL_PARALLEL + """
+ACTIVATE_MILESTONE_NORMAL_READINESS_REQUIRED=no
+ADVANCE_ONCE_NORMAL_READINESS_REQUIRED=no
+TRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=no
+AOTA_FORGE_UNBOUND_IS_AUTHORITY=no
+WORKSPACE_WRITE_EDIT_SUBSTITUTE_FOR_THIN_EXECUTION=no
+"""
+    check("P06 explicit negative boundary markers -> PASS", gov5, True)
+
     # N01 adapter declares itself shared normative authority -> FAIL
     gov_n1 = make_good_governance()
     gov_n1["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nThis is the single shared semantic governance core for Chat planning\nONE_SHARED_GOVERNANCE_AUTHORITY=yes\n"
@@ -210,6 +235,42 @@ def test_static_guard():
     )
     check("N12 local amendment Issue mutation -> FAIL", gov_n12, False, "CG005_GOV1_RESTORED_AS_NORMAL")
 
+    # ---- W5 thin-execution boundary negatives: every substitution claim
+    # must fail with the stable CG010 code. ----
+    gov_n13 = make_good_governance()
+    gov_n13["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nACTIVATE_MILESTONE_REQUIRED_FOR_THIN_EXECUTION=yes\n"
+    check("N13 activate_milestone thin requirement -> FAIL", gov_n13, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n14 = make_good_governance()
+    gov_n14["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nADVANCE_ONCE_REQUIRED_FOR_THIN_EXECUTION=yes\n"
+    check("N14 advance_once thin requirement -> FAIL", gov_n14, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n15 = make_good_governance()
+    gov_n15["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nTRUSTED_TASK_MAIN_RUNTIME_CONTEXT_NON_NULL_NORMAL_READINESS_REQUIRED=yes\n"
+    check("N15 non-null runtime context requirement -> FAIL", gov_n15, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n16 = make_good_governance()
+    gov_n16["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nTRUSTED_TASK_MAIN_CONTEXT_NONE_IS_THIN_EXECUTION_BLOCKER=yes\n"
+    check("N16 None context blocker -> FAIL", gov_n16, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n17 = make_good_governance()
+    gov_n17["GOVERNANCE_INDEX.md"] = CANONICAL_INDEX_TEXT + "\nAOTA_FORGE_UNBOUND_IS_AUTHORITY=yes\n"
+    check("N17 unbound label authority -> FAIL", gov_n17, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n18 = make_good_governance()
+    gov_n18["aota-chatgpt-parallel-development.md"] = CANONICAL_PARALLEL + "\nMANUAL_CODEX_ADAPTER_REPLACES_AF_NATIVE_SCHEDULING=yes\n"
+    check("N18 manual Codex replaces AF scheduling -> FAIL", gov_n18, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n19 = make_good_governance()
+    gov_n19["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nWORKSPACE_WRITE_REPLACES_AF_NATIVE_EXECUTION=yes\n"
+    check("N19 workspace.write replaces execution -> FAIL", gov_n19, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    gov_n20 = make_good_governance()
+    gov_n20["aota-chatgpt-project-planning.md"] = CANONICAL_CHAT_PLANNING + "\nWORKSPACE_EDIT_REPLACES_AF_NATIVE_EXECUTION=yes\n"
+    check("N20 workspace.edit replaces execution -> FAIL", gov_n20, False, "CG010_THIN_EXECUTION_BOUNDARY")
+
+    failed_static = [(item[0], item[2], item[3]) for item in results if not item[1]]
+    assert not failed_static, f"static guard fixture failure: {failed_static[:1]}"
     return results
 
 def test_materialization():
@@ -557,8 +618,8 @@ def main():
     # Write a small fixture manifest for evidence
     # Deterministic counts for the normal-vs-legacy authority drift corpus.
     manifest = {
-        "positive_static": 4,
-        "negative_static": 12,
+        "positive_static": 6,
+        "negative_static": 20,
         "positive_material": 17,
         "negative_material": 22,
         "false_positive": len(res3),
