@@ -267,31 +267,23 @@ def evaluate_live_runtime_provenance(
         item = recorded_evidence.get(stage)
         stage_provenance = item.get("provenance") if isinstance(item, Mapping) else None
         stage_refs[stage] = {
-            "authority_ref": stage_provenance.get("authority_ref")
-            if isinstance(stage_provenance, Mapping)
-            else None,
             "evidence_ref": stage_provenance.get("evidence_ref")
             if isinstance(stage_provenance, Mapping)
             else None,
             "capability_evidence_ref": capability_refs.get(stage),
-            "observed": stage != "running" or running_subject is not None,
         }
     return {
-        "runtime_id": runtime_id,
         "runtime_subject": source_subject,
         "fingerprints": result["fingerprints"],
         "eligibility": {
             "eligible": decision["eligible"],
             "reason_codes": decision["reason_codes"],
             "provenance_valid": decision["provenance_valid"],
-            "external_evidence_present": decision["external_evidence_present"],
             "capability_parity": {
                 "parity": parity.get("parity", False),
                 "reason_codes": parity.get("reason_codes", []),
                 "missing_count": len(parity.get("missing") or []),
                 "unexpected_count": len(parity.get("unexpected") or []),
-                "expected_count": len(parity.get("expected") or []),
-                "observed_count": len(parity.get("observed") or []),
                 "expected_sha256": compute_source_fingerprint(parity.get("expected") or []),
                 "observed_sha256": compute_source_fingerprint(parity.get("observed") or []),
             },
@@ -304,14 +296,15 @@ def evaluate_live_runtime_provenance(
         },
         "stage_evidence_refs": stage_refs,
         "observations": {
-            "source": {
-                "evidence_ref": f"git:{source_subject['source_commit']}:{source_subject['source_tree']}"
-                if source_subject
-                else None,
-            },
             "configured": {"configuration_sha256": config_digest},
-            "deployed": deployment_refs,
-            "running": process_ref,
+            "deployed": {
+                "runtime_archive_sha256": deployment_refs.get("runtime_archive_sha256"),
+                "runtime_identity_sha256": deployment_refs.get("runtime_identity_sha256"),
+            },
+            "running": {
+                "pid": process_ref.get("pid"),
+                "process_start_time": process_ref.get("process_start_time"),
+            },
         },
     }
 
