@@ -26,6 +26,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -391,6 +392,72 @@ def _digest(body: str) -> str:
 def _canonical_digest(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _verify_plan_amendment_decision(
+    event: Mapping[str, Any], request: "LocalPlanLifecycleRequest"
+) -> tuple[bool, str]:
+    receipt = event.get("plan_decision_receipt")
+    amendment = event.get("amendment")
+    if not isinstance(receipt, Mapping) or not isinstance(amendment, Mapping):
+        return False, "structured amendment requires a Control Plane materialized Plan decision receipt"
+    receipt_amendment = receipt.get("amendment")
+    if not isinstance(receipt_amendment, Mapping):
+        return False, "Plan decision receipt does not carry its semantic amendment"
+    decision_source = receipt.get("decision_source")
+    if not isinstance(decision_source, Mapping) or not all(
+        isinstance(decision_source.get(key), str) and decision_source.get(key)
+        for key in ("owner_type", "owner_id", "channel", "provenance")
+    ):
+        return False, "Plan decision receipt has no trusted decision source/owner"
+    if receipt.get("request_provenance") != decision_source:
+        return False, "Plan decision request provenance does not match its trusted owner"
+    decision_kind = receipt.get("decision_kind")
+    project_id = receipt.get("project_id")
+    plan_id = receipt.get("plan_id")
+    base_revision = receipt.get("base_plan_revision")
+    amendment_digest = receipt.get("amendment_digest")
+    created_at = receipt.get("created_at")
+    decision_ref = receipt.get("decision_ref")
+    if (
+        decision_kind != "plan_amendment"
+        or project_id != request.project_id
+        or plan_id != request.plan_id
+        or isinstance(base_revision, bool)
+        or not isinstance(base_revision, int)
+        or base_revision != request.expected_plan_revision
+        or not isinstance(amendment_digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", amendment_digest)
+        or event.get("amendment_digest") != amendment_digest
+        or dict(receipt_amendment) != dict(amendment)
+        or not isinstance(created_at, str)
+        or len(created_at) > 64
+        or not isinstance(decision_ref, str)
+        or event.get("decision_ref") != decision_ref
+    ):
+        return False, "Plan decision receipt does not bind the exact amendment and current Plan revision"
+    try:
+        if _canonical_digest(dict(amendment)) != amendment_digest:
+            return False, "Plan decision receipt amendment digest does not match its semantic amendment"
+    except (TypeError, ValueError):
+        return False, "Plan decision receipt amendment is not canonical JSON data"
+    try:
+        timestamp = datetime.fromisoformat(created_at)
+    except ValueError:
+        return False, "Plan decision receipt created_at is not canonical ISO timestamp text"
+    if timestamp.tzinfo is None:
+        return False, "Plan decision receipt created_at must include a timezone"
+    identity = {
+        "decision_kind": decision_kind,
+        "project_id": project_id,
+        "plan_id": plan_id,
+        "base_plan_revision": base_revision,
+        "amendment_digest": amendment_digest,
+        "decision_source": dict(decision_source),
+    }
+    if decision_ref != f"plan-amendment:{_canonical_digest(identity)}":
+        return False, "Plan decision ref was not minted from the exact materialized semantic decision"
+    return True, ""
 
 
 def _bounded_body(body: object) -> str:
@@ -1397,6 +1464,15 @@ class LocalPlanLifecycleCoordinator:
                 LocalPlanLifecyclePhase.FAILED_CLOSED,
                 "AMENDMENT_EVENT_INVALID",
                 "amendment event must identify plan_amendment",
+                plan_record=current,
+            )
+        decision_valid, decision_error = _verify_plan_amendment_decision(event, request)
+        if not decision_valid:
+            return _failure(
+                request,
+                LocalPlanLifecyclePhase.FAILED_CLOSED,
+                "MATERIALIZED_DECISION_REQUIRED",
+                decision_error,
                 plan_record=current,
             )
 

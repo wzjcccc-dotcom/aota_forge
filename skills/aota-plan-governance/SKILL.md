@@ -46,8 +46,8 @@ Normal path:
 Mode intent:
 
 - `init` materializes an approved candidate as the first local Plan revision and creates its initial projections.
-- `inspect` is read-only and is the first step when current authority or lifecycle state is unknown.
-- `amend` is a semantic whole-candidate update guarded by a fresh revision/authority precondition and decision reference.
+- `inspect` is read-only; its default `view=card` is the compact navigation path. Use `view=index` for semantic refs, `view=section` with a `section_ref` to hydrate one bounded section, and `view=full` only when the complete authoritative Plan is explicitly needed.
+- `amend` submits a structured semantic delta with `expected_plan_revision`; do not reconstruct or submit the whole Plan body. The Control Plane renders the complete candidate, mints the durable semantic decision receipt, and verifies journal/CAS readback.
 - `close` is a governed lifecycle transition, not a body rewrite; verify closure and projection readback.
 
 Amendment and close operations must stop on missing approval, stale revision,

@@ -349,23 +349,12 @@ def _parse_dag_string(raw: str) -> tuple[tuple[str, ...], tuple[tuple[str, str],
         if not token:
             continue
         if "->" not in token:
-            # Might be a chain without commas: e.g., 'DISCOVER -> BUILD -> VERIFY -> SHIP'
-            # Already handled via split by '->' above? But this token is the whole string if no commas
-            # So handle chain
-            if token.count("->") >= 1:
-                parts = [p.strip() for p in token.split("->") if p.strip()]
-                # Clean each part: remove parentheses and || handling? Already done?
-                # For simple chain, each part is single node
-                for i in range(len(parts) - 1):
-                    src = parts[i].strip().strip("()")
-                    dst = parts[i + 1].strip().strip("()")
-                    if not src or not dst or src.startswith("RV") or dst.startswith("RV"):
-                        continue
-                    if not _WORK_ITEM_TOKEN_RE.fullmatch(src) or not _WORK_ITEM_TOKEN_RE.fullmatch(dst):
-                        continue
-                    work_set2.add(src)
-                    work_set2.add(dst)
-                    deps2.append((src, dst))
+            # A DAG may list independent Work nodes alongside explicit edges.
+            # Standalone nodes carry identity only and introduce no dependency.
+            for node in re.split(r"\s+", token.strip()):
+                node = node.strip().strip("()[]{}")
+                if node and not node.startswith("RV") and _WORK_ITEM_TOKEN_RE.fullmatch(node):
+                    work_set2.add(node)
             continue
         # Token contains '->' and may be chain
         parts = [p.strip() for p in token.split("->") if p.strip()]

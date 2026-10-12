@@ -341,7 +341,7 @@ contracts:
   - RETIREMENT_STALE_AUTHORITY_PRECONDITION
   protocol_version: '1.0'
 - name: governance.plan
-  description: Canonical local Governance 2.0 Plan intake and lifecycle family
+  description: Canonical local Governance 2.0 Plan lifecycle with bounded card/index/section/full inspect views and structured semantic amendments
   inputs:
   - name: mode
     type: str
@@ -351,10 +351,18 @@ contracts:
     type: str
   - name: candidate_body
     type: str?
+  - name: view
+    type: str?
+  - name: section_ref
+    type: str?
+  - name: amendment
+    type: dict?
+  - name: target_ref
+    type: str?
+  - name: expected_section_digest
+    type: str?
   - name: expected_plan_revision
     type: int?
-  - name: semantic_decision_ref
-    type: str?
   - name: authorization_reference
     type: str?
   - name: lease_reference
@@ -392,6 +400,20 @@ contracts:
   - PLAN_RECORD_REQUIRED
   - PLAN_REVISION_REQUIRED
   - STALE_PLAN_REVISION
+  - PLAN_VIEW_INVALID
+  - PLAN_SECTION_REF_REQUIRED
+  - PLAN_SECTION_NOT_FOUND
+  - PLAN_SECTION_TOO_LARGE
+  - AMENDMENT_INVALID
+  - AMENDMENT_KIND_UNSUPPORTED
+  - WORK_ITEM_ID_INVALID
+  - WORK_ITEM_ALREADY_EXISTS
+  - DAG_UNKNOWN_WORK_ITEM
+  - DAG_CYCLE
+  - SECTION_PRECONDITION_INVALID
+  - STALE_SECTION_DIGEST
+  - MATERIALIZED_DECISION_REQUIRED
+  - WHOLE_BODY_AMENDMENT_NOT_SUPPORTED
   - STALE_AUTHORITY
   - PLAN_NOT_FOUND
   - PLAN_NOT_ACTIVE

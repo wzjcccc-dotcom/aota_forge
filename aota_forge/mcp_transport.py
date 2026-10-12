@@ -1570,6 +1570,22 @@ def help_operation_projection(operation: str) -> dict[str, Any]:
     if descriptor.name == "workspace.edit":
         projection["CAS_semantics"] = "expected_sha256=full_file_sha256_precondition"
         projection["edit_semantics"] = "one_exact_literal_match"
+    elif descriptor.name == "governance.plan":
+        projection["read_or_write"] = "mode-dependent"
+        projection["kind"] = "mixed"
+        projection["inspect_views"] = ["card", "index", "section", "full"]
+        projection["default_inspect_view"] = "card"
+        projection["mode_semantics"] = {
+            "inspect": "read-only; view defaults to card",
+            "init": "materializes the first Plan from candidate_body",
+            "amend": "writes a structured semantic amendment under Plan revision CAS",
+            "close": "writes a trusted terminal Plan candidate and closes the current Plan",
+        }
+        projection["amendment_semantics"] = "structured semantic delta; whole candidate_body is rejected in mode=amend"
+        projection["implemented_amendment_kinds"] = ["add_work_item"]
+        projection["candidate_body_modes"] = ["init", "close"]
+        projection["decision_ref_semantics"] = "Control Plane mints and verifies a durable decision receipt"
+        projection["plan_identity_source"] = "trusted Control Plane Plan binding"
     elif "expected_updated_at" in declared:
         projection["CAS_semantics"] = "expected_updated_at=CAS_PRECONDITION"
     elif "expected_digest" in declared:

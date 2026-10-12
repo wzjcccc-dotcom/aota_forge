@@ -13,9 +13,11 @@ import json
 import os
 import tempfile
 import fcntl
+import re
 import stat
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -34,6 +36,8 @@ from aota_forge.core.identity.ids import make_id
 from aota_forge.core.identity.kinds import IdKind, SubjectKind
 from aota_forge.core.identity.refs import object_ref_subject
 from aota_forge.core.journal.store import FileBackedDurableJournalStore
+from aota_forge.core.plan.normalize import normalize_portable_plan
+from aota_forge.core.plan.read_model import PORTABLE_PLAN_SOURCE_LOCAL
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.core.project.lifecycle import (
     ProjectReconciliationEvidence,
@@ -61,6 +65,14 @@ from aota_forge.governance.projection import (
 from aota_forge.governance.projection_lifecycle import GovernanceProjectionLifecycle
 from aota_forge.governance.project_store import ProjectPlanRecord
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
+from aota_forge.governance.plan_semantics import (
+    MAX_PLAN_SECTION_READ_BYTES,
+    PlanSemanticError,
+    PlanSemanticIndex,
+    add_work_item_to_plan,
+    canonical_plan_amendment_digest,
+    normalize_add_work_item,
+)
 from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 
 
@@ -70,6 +82,9 @@ GOVERNANCE_PLAN_PREFLIGHT_OPERATION = "governance.plan.preflight"
 GOVERNANCE_OPERATIONS = (GOVERNANCE_PROJECT_OPERATION, GOVERNANCE_PLAN_OPERATION)
 GOVERNANCE_PROJECT_MODES = frozenset({"init", "inspect", "reconcile"})
 GOVERNANCE_PLAN_MODES = frozenset({"init", "inspect", "amend", "close"})
+GOVERNANCE_PLAN_INSPECT_VIEWS = frozenset({"card", "index", "section", "full"})
+DEFAULT_PLAN_INSPECT_VIEW = "card"
+STRUCTURED_PLAN_AMENDMENT_KINDS = frozenset({"add_work_item"})
 
 PROJECT_INTAKE_SINGLE_PATH = True
 PLAN_INTAKE_SINGLE_PATH = True
@@ -299,11 +314,26 @@ def _minimal_manifest(
 class GovernanceIntakeService:
     """Compose the existing durable Project/Plan owners for one context."""
 
-    def __init__(self, context: GovernanceIntakeContext, *, principal: str = "operator") -> None:
+    def __init__(
+        self,
+        context: GovernanceIntakeContext,
+        *,
+        principal: str = "operator",
+        decision_source: Mapping[str, str] | None = None,
+    ) -> None:
         if not isinstance(context, GovernanceIntakeContext):
             raise TypeError("context must be GovernanceIntakeContext")
         self.context = context
         self.principal = _safe_id(principal, "principal")
+        source = dict(decision_source or {})
+        self.decision_source = {
+            "owner_type": _safe_id(source.get("owner_type", "trusted_principal"), "decision_owner_type"),
+            "owner_id": _safe_id(source.get("owner_id", self.principal), "decision_owner_id"),
+            "channel": _safe_id(source.get("channel", "governance_intake"), "decision_channel"),
+            "provenance": _safe_id(source.get("provenance", "trusted_service"), "decision_provenance"),
+        }
+        if isinstance(source.get("freshness"), str) and source["freshness"]:
+            self.decision_source["freshness"] = _safe_id(source["freshness"], "decision_freshness")
         self._resolved_project_root: str | None = None
 
     def project(self, mode: str, *, project_id: str, **arguments: Any) -> dict[str, Any]:
@@ -400,7 +430,7 @@ class GovernanceIntakeService:
         project_id = self._project_id(project_id)
         if not is_plan_id(plan_id):
             raise GovernanceIntakeError("PLAN_ID_INVALID", "plan_id must be one canonical internal Plan ID")
-        if mode in {"init", "amend"}:
+        if mode == "init":
             body = arguments.get("candidate_body")
             if not isinstance(body, str) or not body.strip():
                 raise GovernanceIntakeError("PLAN_BODY_REQUIRED", "Plan mutation requires candidate_body")
@@ -417,6 +447,32 @@ class GovernanceIntakeService:
                 codes = ", ".join(admission.finding_codes)
                 code = admission.finding_codes[0] if admission.finding_codes else "PLAN_CANDIDATE_NOT_READY"
                 raise GovernanceIntakeError(code, f"Plan candidate failed semantic admission: {codes}")
+        if mode == "amend":
+            if arguments.get("candidate_body") is not None:
+                raise GovernanceIntakeError(
+                    "WHOLE_BODY_AMENDMENT_NOT_SUPPORTED",
+                    "Plan amend accepts a structured semantic amendment, not candidate_body",
+                )
+            try:
+                normalize_add_work_item(arguments.get("amendment"))
+            except PlanSemanticError as exc:
+                raise GovernanceIntakeError(exc.code, exc.message) from exc
+            expected = arguments.get("expected_plan_revision")
+            if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
+                raise GovernanceIntakeError(
+                    "PLAN_REVISION_REQUIRED", "Plan amendment requires a positive expected_plan_revision"
+                )
+        if mode == "inspect":
+            view = arguments.get("view", DEFAULT_PLAN_INSPECT_VIEW)
+            if not isinstance(view, str) or view not in GOVERNANCE_PLAN_INSPECT_VIEWS:
+                raise GovernanceIntakeError(
+                    "PLAN_VIEW_INVALID", f"view must be one of {sorted(GOVERNANCE_PLAN_INSPECT_VIEWS)}"
+                )
+            section_ref = arguments.get("section_ref")
+            if view == "section" and (not isinstance(section_ref, str) or not section_ref.strip()):
+                raise GovernanceIntakeError("PLAN_SECTION_REF_REQUIRED", "section view requires section_ref")
+            if view != "section" and section_ref is not None:
+                raise GovernanceIntakeError("PLAN_SECTION_REF_UNEXPECTED", "section_ref is only valid with view=section")
         source_repository = self._source_repository(arguments.get("source_repository"))
         registration = (
             self._reconcile_registered(project_id, source_repository)
@@ -458,12 +514,79 @@ class GovernanceIntakeService:
                     write_projection=True,
                 )
             if mode == "amend":
-                body = arguments.get("candidate_body")
-                if not isinstance(body, str) or not body.strip():
-                    raise GovernanceIntakeError("PLAN_BODY_REQUIRED", "plan amendment requires candidate_body")
                 current = store.get_plan(project_id, plan_id)
                 if current is None:
                     raise GovernanceIntakeError("PLAN_RECORD_REQUIRED", "Plan amendment requires an existing Plan record")
+                expected_revision = arguments.get("expected_plan_revision")
+                if expected_revision != current.revision:
+                    raise GovernanceIntakeError("STALE_PLAN_REVISION", "amendment expected_plan_revision is stale")
+                snapshot, document = self._read_bound_plan(governance_root, current)
+                try:
+                    amendment = normalize_add_work_item(arguments.get("amendment"))
+                except PlanSemanticError as exc:
+                    raise GovernanceIntakeError(exc.code, exc.message) from exc
+                semantic_index = PlanSemanticIndex.build(
+                    project_id=project_id,
+                    plan_id=plan_id,
+                    plan_revision=current.revision,
+                    authority_revision=snapshot.revision,
+                    source_digest=snapshot.digest or "",
+                    body=snapshot.body,
+                    document=document,
+                )
+                target_ref = arguments.get("target_ref")
+                expected_section_digest = arguments.get("expected_section_digest")
+                if (target_ref is None) != (expected_section_digest is None):
+                    raise GovernanceIntakeError(
+                        "SECTION_PRECONDITION_INVALID",
+                        "target_ref and expected_section_digest must be supplied together",
+                    )
+                if target_ref is not None:
+                    if target_ref != amendment["milestone_id"]:
+                        raise GovernanceIntakeError(
+                            "SECTION_PRECONDITION_INVALID",
+                            "add_work_item section precondition must target its milestone semantic ref",
+                        )
+                    try:
+                        target_section = semantic_index.resolve(target_ref)
+                    except PlanSemanticError as exc:
+                        raise GovernanceIntakeError(exc.code, exc.message) from exc
+                    if (
+                        not isinstance(expected_section_digest, str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", expected_section_digest)
+                    ):
+                        raise GovernanceIntakeError(
+                            "SECTION_PRECONDITION_INVALID", "expected_section_digest must be a SHA-256 digest"
+                        )
+                    if target_section.section_digest != expected_section_digest:
+                        raise GovernanceIntakeError(
+                            "STALE_SECTION_DIGEST", "semantic amendment target changed since it was inspected"
+                        )
+                try:
+                    body, amendment = add_work_item_to_plan(snapshot.body, document, amendment)
+                except PlanSemanticError as exc:
+                    raise GovernanceIntakeError(exc.code, exc.message) from exc
+                try:
+                    admission = preflight_local_plan_candidate(
+                        candidate_kind=PlanCandidateKind.AMEND,
+                        project_id=project_id,
+                        plan_id=plan_id,
+                        candidate_body=body,
+                    )
+                except LocalPlanLifecycleError as exc:
+                    raise GovernanceIntakeError(exc.code, exc.message) from exc
+                if admission.semantic_readiness != "READY":
+                    codes = ", ".join(admission.finding_codes)
+                    code = admission.finding_codes[0] if admission.finding_codes else "PLAN_CANDIDATE_NOT_READY"
+                    raise GovernanceIntakeError(code, f"structured Plan amendment failed semantic admission: {codes}")
+                amendment_digest = canonical_plan_amendment_digest(amendment)
+                decision_receipt = self._materialize_plan_decision(
+                    project_id=project_id,
+                    plan_id=plan_id,
+                    base_plan_revision=current.revision,
+                    amendment=amendment,
+                    amendment_digest=amendment_digest,
+                )
                 request = self._lifecycle_request(
                     mode=mode,
                     project_id=project_id,
@@ -471,10 +594,14 @@ class GovernanceIntakeService:
                     current=current,
                     candidate_body=body,
                     arguments=arguments,
+                    authorization_reference=decision_receipt["decision_ref"],
                 )
                 event = {
                     "event": "plan_amendment",
-                    "decision_ref": arguments.get("semantic_decision_ref") or "governance-intake",
+                    "decision_ref": decision_receipt["decision_ref"],
+                    "amendment": amendment,
+                    "amendment_digest": amendment_digest,
+                    "plan_decision_receipt": decision_receipt,
                 }
                 try:
                     result = LocalPlanLifecycleCoordinator(store, journal).amend(
@@ -487,7 +614,7 @@ class GovernanceIntakeService:
                     raise GovernanceIntakeError(exc.code, exc.message) from exc
                 if not result.ok:
                     raise GovernanceIntakeError(result.error_code or "PLAN_AMEND_FAILED", result.error_message or "Plan amendment failed")
-                return self._plan_result(
+                payload = self._plan_result(
                     mode,
                     project_id,
                     plan_id,
@@ -497,6 +624,38 @@ class GovernanceIntakeService:
                     source_repository=source_repository,
                     write_projection=True,
                 )
+                after_record = store.get_plan(project_id, plan_id)
+                if after_record is None:
+                    raise GovernanceIntakeError("PLAN_READBACK_FAILED", "amended Plan record is absent after mutation")
+                after_snapshot, _after_document = self._read_bound_plan(governance_root, after_record)
+                journal_entry = result.journal_entry
+                journal_record = getattr(journal_entry, "record", None)
+                journal_state = getattr(getattr(journal_record, "journal_state", None), "value", None)
+                projection_receipt = payload.get("projection_receipt")
+                payload["amendment_readback"] = {
+                    "plan_revision_before": current.revision,
+                    "plan_digest_before": snapshot.digest,
+                    "semantic_decision_ref": decision_receipt["decision_ref"],
+                    "semantic_decision_receipt": decision_receipt,
+                    "amendment_digest": amendment_digest,
+                    "plan_revision_after": after_record.revision,
+                    "plan_digest_after": after_snapshot.digest,
+                    "authority_source_revision_after": after_snapshot.revision,
+                    "journal_cas_outcome": {
+                        "journal_id": result.journal_id,
+                        "journal_state": journal_state,
+                        "phase": result.phase.value,
+                        "plan_store_revision_before": current.revision,
+                        "plan_store_revision_after": after_record.revision,
+                        "authority_source_revision_before": snapshot.revision,
+                        "authority_source_revision_after": after_snapshot.revision,
+                        "authority_write_verified": result.ok,
+                    },
+                    "projection_reconciliation_status": (
+                        "RECONCILED" if isinstance(projection_receipt, dict) else "NOT_RECONCILED"
+                    ),
+                }
+                return payload
             if mode == "close":
                 body = arguments.get("candidate_body")
                 if not isinstance(body, str) or not body.strip():
@@ -566,7 +725,7 @@ class GovernanceIntakeService:
                     "PLAN_RECORD_REQUIRED",
                     "Plan inspection requires an existing Project Governance Plan record",
                 )
-            return self._plan_result(
+            return self._inspect_plan(
                 mode,
                 project_id,
                 plan_id,
@@ -574,7 +733,8 @@ class GovernanceIntakeService:
                 governance_root,
                 store,
                 source_repository=source_repository,
-                write_projection=False,
+                view=arguments.get("view", DEFAULT_PLAN_INSPECT_VIEW),
+                section_ref=arguments.get("section_ref"),
             )
         finally:
             self._close_owner(journal)
@@ -732,6 +892,167 @@ class GovernanceIntakeService:
 
     def _destination(self, root: LocalGovernanceRootBinding, plan_id: str) -> LocalPlanAuthorityDestination:
         return LocalPlanAuthorityDestination(root, plan_id, _target_ref(plan_id))
+
+    def _read_bound_plan(
+        self,
+        root: LocalGovernanceRootBinding,
+        record: ProjectPlanRecord,
+    ) -> tuple[Any, Any]:
+        if record.authority.source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE:
+            raise GovernanceIntakeError("LOCAL_AUTHORITY_REQUIRED", "Plan operation requires local Plan authority")
+        try:
+            adapter = LocalPlanAuthorityReadAdapter(
+                self._destination(root, record.plan_id), binding=record.authority
+            )
+            snapshot = adapter.load()
+            if record.authority.source_revision is not None and snapshot.revision != record.authority.source_revision:
+                raise GovernanceIntakeError("STALE_AUTHORITY", "local Plan revision changed during intake")
+            if record.authority.source_digest is not None and snapshot.digest != record.authority.source_digest:
+                raise GovernanceIntakeError("STALE_AUTHORITY", "local Plan digest changed during intake")
+            document = normalize_portable_plan(
+                snapshot.body,
+                source_revision=str(snapshot.revision) if snapshot.revision is not None else None,
+                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+            )
+            return snapshot, document
+        except GovernanceIntakeError:
+            raise
+        except Exception as exc:
+            raise GovernanceIntakeError("PLAN_READ_FAILED", str(exc)) from exc
+
+    def _inspect_plan(
+        self,
+        mode: str,
+        project_id: str,
+        plan_id: str,
+        registration: ProjectRegistrationEvidence | ProjectReconciliationEvidence,
+        root: LocalGovernanceRootBinding,
+        store: SQLiteProjectGovernanceStore,
+        *,
+        source_repository: str,
+        view: str,
+        section_ref: str | None,
+    ) -> dict[str, Any]:
+        record = store.get_plan(project_id, plan_id)
+        if record is None:
+            raise GovernanceIntakeError("PLAN_RECORD_REQUIRED", "Plan inspection requires a current Plan record")
+        snapshot, document = self._read_bound_plan(root, record)
+        source, route = self._source(project_id, root, store, requested_plan_id=plan_id)
+        plan_input = next((item for item in source.plan_documents if item.plan_id == plan_id), None)
+        if plan_input is None or plan_input.document.source_digest != document.source_digest:
+            raise GovernanceIntakeError("STALE_AUTHORITY", "Plan projection did not read the same current authority")
+        lifecycle = GovernanceProjectionLifecycle(governance_store=store, governance_root=root)
+        bundle = lifecycle.engine.rebuild(source)
+        context_route = build_context_route(replace(route, bundle=bundle))
+        plan_card = next((card for card in bundle.plans if card.plan_id == plan_id), None)
+        if plan_card is None:
+            raise GovernanceIntakeError("PLAN_CARD_MISSING", "current Plan Card could not be projected")
+        milestone_card = None
+        if document.current_milestone is not None:
+            milestone_card = next(
+                (
+                    card
+                    for card in bundle.milestones
+                    if card.plan_id == plan_id and card.milestone_id == document.current_milestone
+                ),
+                None,
+            )
+        base: dict[str, Any] = {
+            "status": "INSPECTED",
+            "mode": mode,
+            "view": view,
+            "project_id": project_id,
+            "plan_id": plan_id,
+            "plan_status": document.plan_status,
+            "current_milestone": document.current_milestone,
+            "current_status": document.current_status,
+            "current_blocker": document.current_blocker,
+            "plan_revision": record.revision,
+            "plan_lifecycle_state": record.lifecycle_state,
+            "authority_source_kind": record.authority.source_kind,
+            "authority_source_revision": snapshot.revision,
+            "source_digest": snapshot.digest,
+            "plan_card": plan_card.to_dict(),
+            "milestone_card": milestone_card.to_dict() if milestone_card is not None else None,
+            "navigation_refs": [ref.to_dict() for ref in plan_card.navigation_refs],
+            "context_route": context_route.to_dict(),
+            "project": _public_project_evidence(registration),
+            "source_repository": source_repository,
+        }
+        if view == "card":
+            return base
+        if view in {"index", "section"}:
+            semantic_index = PlanSemanticIndex.build(
+                project_id=project_id,
+                plan_id=plan_id,
+                plan_revision=record.revision,
+                authority_revision=snapshot.revision,
+                source_digest=snapshot.digest or "",
+                body=snapshot.body,
+                document=document,
+            )
+        if view == "index":
+            return {
+                **base,
+                "semantic_index": semantic_index.to_dict(),
+            }
+        if view == "section":
+            try:
+                section = semantic_index.resolve(section_ref or "")
+            except PlanSemanticError as exc:
+                raise GovernanceIntakeError(exc.code, exc.message) from exc
+            if len(section.content.encode("utf-8")) > MAX_PLAN_SECTION_READ_BYTES:
+                raise GovernanceIntakeError(
+                    "PLAN_SECTION_TOO_LARGE",
+                    f"requested semantic section exceeds {MAX_PLAN_SECTION_READ_BYTES} bytes",
+                )
+            return {
+                "status": "INSPECTED",
+                "mode": mode,
+                "view": view,
+                "project_id": project_id,
+                "plan_id": plan_id,
+                "plan_revision": record.revision,
+                "authority_source_revision": snapshot.revision,
+                "source_digest": snapshot.digest,
+                "section": {**section.index_dict(), "content": section.content},
+                "line_number_is_authority": False,
+            }
+        if view == "full":
+            return {
+                **base,
+                "normalized_plan": document.to_dict(),
+                "plan_body": snapshot.body,
+                "read_through": "LocalPlanAuthorityReadAdapter",
+            }
+        raise GovernanceIntakeError("PLAN_VIEW_INVALID", f"unsupported Plan inspection view {view!r}")
+
+    def _materialize_plan_decision(
+        self,
+        *,
+        project_id: str,
+        plan_id: str,
+        base_plan_revision: int,
+        amendment: Mapping[str, Any],
+        amendment_digest: str,
+    ) -> dict[str, Any]:
+        decision_kind = "plan_amendment"
+        decision_identity = {
+            "decision_kind": decision_kind,
+            "project_id": project_id,
+            "plan_id": plan_id,
+            "base_plan_revision": base_plan_revision,
+            "amendment_digest": amendment_digest,
+            "decision_source": self.decision_source,
+        }
+        receipt = {
+            **decision_identity,
+            "amendment": dict(amendment),
+            "request_provenance": dict(self.decision_source),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "decision_ref": f"plan-amendment:{_canonical_digest(decision_identity)}",
+        }
+        return receipt
 
     def _read_plan_documents(
         self,
@@ -931,6 +1252,7 @@ class GovernanceIntakeService:
         current: ProjectPlanRecord | None,
         candidate_body: str,
         arguments: Mapping[str, Any],
+        authorization_reference: str | None = None,
     ) -> LocalPlanLifecycleRequest:
         candidate_digest = _digest(candidate_body)
         identity = _canonical_digest(
@@ -940,14 +1262,13 @@ class GovernanceIntakeService:
                 "project_id": project_id,
                 "plan_id": plan_id,
                 "candidate_digest": candidate_digest,
-                "semantic_decision_ref": arguments.get("semantic_decision_ref"),
             }
         )
         key = arguments.get("idempotency_key")
         key = _safe_id(key, "idempotency_key") if key is not None else f"governance-{mode}-{identity[:32]}"
         correlation = arguments.get("correlation_id")
         correlation = _safe_id(correlation, "correlation_id") if correlation is not None else f"governance-{identity[:32]}"
-        authorization = arguments.get("authorization_reference") or arguments.get("semantic_decision_ref") or "governance-intake"
+        authorization = authorization_reference or arguments.get("authorization_reference") or "governance-intake"
         lease = arguments.get("lease_reference") or f"lease-{identity[:32]}"
         expected = arguments.get("expected_plan_revision")
         if expected is None and current is not None:
@@ -998,7 +1319,20 @@ def dispatch_governance_operation(
         )
     principal = trusted_context.principal.id if trusted_context.principal is not None else "unbound"
     try:
-        service = GovernanceIntakeService(context, principal=principal)
+        principal_context = trusted_context.principal
+        decision_source = {
+            "owner_type": principal_context.kind if principal_context is not None else "trusted_runtime",
+            "owner_id": principal_context.id if principal_context is not None else "trusted-runtime",
+            "channel": trusted_context.channel,
+            "provenance": trusted_context.provenance,
+        }
+        if trusted_context.freshness:
+            decision_source["freshness"] = trusted_context.freshness
+        service = GovernanceIntakeService(
+            context,
+            principal=principal,
+            decision_source=decision_source,
+        )
         if operation == GOVERNANCE_PLAN_PREFLIGHT_OPERATION:
             project_id = arguments.get("project_id")
             project_root = _trusted_dir(context.project_root, "project_root", required=False)
@@ -1061,6 +1395,9 @@ __all__ = [
     "GOVERNANCE_OPERATIONS",
     "GOVERNANCE_PROJECT_MODES",
     "GOVERNANCE_PLAN_MODES",
+    "GOVERNANCE_PLAN_INSPECT_VIEWS",
+    "DEFAULT_PLAN_INSPECT_VIEW",
+    "STRUCTURED_PLAN_AMENDMENT_KINDS",
     "PROJECT_INTAKE_SINGLE_PATH",
     "PLAN_INTAKE_SINGLE_PATH",
     "PROJECT_INIT_REUSES_PROJECT_REGISTER",

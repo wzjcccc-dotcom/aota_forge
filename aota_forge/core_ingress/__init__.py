@@ -2489,6 +2489,42 @@ def dispatch_via_core(
     """
     # Canonical resolution first (same for all).
     descriptor = resolve_descriptor(operation)
+    if operation == "governance.plan":
+        if binding is None:
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "governance.plan requires a trusted Plan binding"}
+            )
+        plan_binding = getattr(binding, "plan_authority_binding", None)
+        try:
+            from aota_forge.adapters.plan_authority.binding import (
+                PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+                PlanAuthorityBinding,
+            )
+            from aota_forge.adapters.plan_authority.local_governance import (
+                local_plan_authority_reference,
+            )
+
+            bound_plan_id = plan_binding.plan_id if isinstance(plan_binding, PlanAuthorityBinding) else None
+            bound_source_kind = plan_binding.source_kind if isinstance(plan_binding, PlanAuthorityBinding) else None
+            bound_authority_ref = plan_binding.authority_ref if isinstance(plan_binding, PlanAuthorityBinding) else None
+            if (
+                not isinstance(bound_plan_id, str)
+                or bound_source_kind != PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE
+                or bound_authority_ref != local_plan_authority_reference(binding.project_id, bound_plan_id)
+                or not isinstance(params, dict)
+                or params.get("project_id") != binding.project_id
+                or params.get("plan_id") != bound_plan_id
+            ):
+                return ToolResponse.failure(
+                    {
+                        "code": "AUTHORITY_DENIED",
+                        "message": "governance.plan identity must exactly match the trusted current Plan binding",
+                    }
+                )
+        except Exception:
+            return ToolResponse.failure(
+                {"code": "AUTHORITY_DENIED", "message": "trusted local Plan binding could not be verified"}
+            )
     if operation in PROVIDER_BACKED_OPERATIONS:
         if binding is None:
             return ToolResponse.failure({"code": "AUTHORITY_DENIED", "message": "trusted binding is required"})
