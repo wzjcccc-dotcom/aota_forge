@@ -1571,6 +1571,11 @@ def help_operation_projection(operation: str) -> dict[str, Any]:
         projection["CAS_semantics"] = "expected_sha256=full_file_sha256_precondition"
         projection["edit_semantics"] = "one_exact_literal_match"
     elif descriptor.name == "governance.plan":
+        from aota_forge.governance.plan_semantics import (
+            PLAN_AMENDMENT_CONTRACTS,
+            plan_amendment_contracts_for_help,
+        )
+
         projection["read_or_write"] = "mode-dependent"
         projection["kind"] = "mixed"
         projection["inspect_views"] = ["card", "index", "section", "full"]
@@ -1582,7 +1587,10 @@ def help_operation_projection(operation: str) -> dict[str, Any]:
             "close": "writes a trusted terminal Plan candidate and closes the current Plan",
         }
         projection["amendment_semantics"] = "structured semantic delta; whole candidate_body is rejected in mode=amend"
-        projection["implemented_amendment_kinds"] = ["add_work_item"]
+        projection["implemented_amendment_kinds"] = [
+            contract["fields"]["kind"]["const"] for contract in PLAN_AMENDMENT_CONTRACTS
+        ]
+        projection["amendment_contracts"] = plan_amendment_contracts_for_help()
         projection["candidate_body_modes"] = ["init", "close"]
         projection["decision_ref_semantics"] = "Control Plane mints and verifies a durable decision receipt"
         projection["plan_identity_source"] = "trusted Control Plane Plan binding"

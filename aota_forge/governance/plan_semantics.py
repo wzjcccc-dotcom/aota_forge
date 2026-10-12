@@ -5,13 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import PORTABLE_PLAN_SOURCE_LOCAL, PortablePlanDocument
 from aota_forge.core.plan.sections import BodySection, parse_body_sections
-from aota_forge.core.plan.validation import is_milestone_id, is_work_item_id
+from aota_forge.core.plan.validation import (
+    MILESTONE_ID_RE,
+    WORK_ITEM_ID_RE,
+    is_milestone_id,
+    is_work_item_id,
+)
 
 
 MAX_PLAN_SEMANTIC_SECTIONS = 2048
@@ -21,6 +27,95 @@ _KV_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _WORK_HEADING_RE = re.compile(r"^(M[0-9]+)\s*/\s*([A-Za-z0-9][A-Za-z0-9._-]*)\b")
 _MILESTONE_HEADING_RE = re.compile(r"^(?:milestone\s+)?(M[0-9]+)(?:\b|$)", re.IGNORECASE)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+ADD_WORK_ITEM_AMENDMENT_CONTRACT: dict[str, Any] = {
+    "fields": {
+        "kind": {"type": "string", "const": "add_work_item"},
+        "milestone_id": {"type": "milestone_id", "pattern": MILESTONE_ID_RE.pattern},
+        "work_item": {
+            "type": "object",
+            "fields": {
+                "id": {"type": "work_item_id", "pattern": WORK_ITEM_ID_RE.pattern},
+                "title": {
+                    "type": "string",
+                    "max_utf8_bytes": 256,
+                    "non_empty": True,
+                    "single_line": True,
+                    "rejects_plan_headings": True,
+                    "rejects_nul": True,
+                },
+                "objective": {
+                    "type": "string",
+                    "max_utf8_bytes": 4096,
+                    "non_empty": True,
+                    "rejects_plan_headings": True,
+                    "rejects_nul": True,
+                },
+                "scope": {
+                    "type": "array[string]",
+                    "also_accepts": "newline_delimited_string",
+                    "blank_lines_ignored": True,
+                    "min_items": 1,
+                    "max_total_utf8_bytes": 8192,
+                    "items": {
+                        "type": "string",
+                        "max_utf8_bytes": 2048,
+                        "non_empty": True,
+                        "single_line": True,
+                        "rejects_plan_headings": True,
+                        "rejects_nul": True,
+                    },
+                },
+                "dependencies": {
+                    "type": "array[work_item_id]",
+                    "min_items": 0,
+                    "unique_items": True,
+                    "must_reference_existing_work_items": True,
+                    "same_milestone_only": True,
+                    "items": {
+                        "type": "work_item_id",
+                        "pattern": WORK_ITEM_ID_RE.pattern,
+                        "also_accepts_ref": "{milestone_id}/{work_item_id}",
+                    },
+                },
+                "acceptance": {
+                    "type": "array[string]",
+                    "also_accepts": "newline_delimited_string",
+                    "blank_lines_ignored": True,
+                    "min_items": 1,
+                    "max_total_utf8_bytes": 8192,
+                    "items": {
+                        "type": "string",
+                        "max_utf8_bytes": 2048,
+                        "non_empty": True,
+                        "single_line": True,
+                        "rejects_plan_headings": True,
+                        "rejects_nul": True,
+                    },
+                },
+            },
+        },
+    }
+}
+PLAN_AMENDMENT_CONTRACTS = (ADD_WORK_ITEM_AMENDMENT_CONTRACT,)
+
+
+def plan_amendment_contracts_for_help() -> dict[str, dict[str, Any]]:
+    """Project the canonical amendment field contracts into model-visible help."""
+    projected: dict[str, dict[str, Any]] = {}
+    for contract in PLAN_AMENDMENT_CONTRACTS:
+        fields = contract["fields"]
+        projected_fields = {name: deepcopy(field) for name, field in fields.items()}
+        for name, field in fields.items():
+            nested_fields = field.get("fields")
+            if isinstance(nested_fields, Mapping):
+                projected_fields[name]["required"] = list(nested_fields)
+        projected[fields["kind"]["const"]] = {
+            "required": list(fields),
+            "fields": projected_fields,
+        }
+    return projected
 
 
 class PlanSemanticError(ValueError):
@@ -351,43 +446,51 @@ def _field_section_content(body: str, milestone_id: str) -> str:
 def normalize_add_work_item(payload: object) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise PlanSemanticError("AMENDMENT_INVALID", "amendment must be an object")
-    if set(payload) != {"kind", "milestone_id", "work_item"}:
+    amendment_fields = ADD_WORK_ITEM_AMENDMENT_CONTRACT["fields"]
+    if set(payload) != set(amendment_fields):
         raise PlanSemanticError("AMENDMENT_INVALID", "add_work_item amendment has unknown or missing fields")
-    if payload.get("kind") != "add_work_item":
+    if payload.get("kind") != amendment_fields["kind"]["const"]:
         raise PlanSemanticError("AMENDMENT_KIND_UNSUPPORTED", "only add_work_item is currently supported")
     milestone_id = payload.get("milestone_id")
-    if not is_milestone_id(milestone_id):
+    if not _matches_semantic_id(milestone_id, amendment_fields["milestone_id"]):
         raise PlanSemanticError("MILESTONE_ID_INVALID", "milestone_id must match M<digits>")
     raw_item = payload.get("work_item")
     if not isinstance(raw_item, Mapping):
         raise PlanSemanticError("WORK_ITEM_INVALID", "work_item must be an object")
-    expected = {"id", "title", "objective", "scope", "dependencies", "acceptance"}
-    if set(raw_item) != expected:
+    work_item_fields = amendment_fields["work_item"]["fields"]
+    if set(raw_item) != set(work_item_fields):
         raise PlanSemanticError("WORK_ITEM_INVALID", "work_item has unknown or missing fields")
     work_id = raw_item.get("id")
-    if not is_work_item_id(work_id):
+    if not _matches_semantic_id(work_id, work_item_fields["id"]):
         raise PlanSemanticError("WORK_ITEM_ID_INVALID", "work_item.id is not a legal Work ID")
-    title = _plain_text(raw_item.get("title"), "work_item.title", maximum=256, single_line=True)
-    objective = _plain_text(raw_item.get("objective"), "work_item.objective", maximum=4096)
-    scope = _text_lines(raw_item.get("scope"), "work_item.scope")
-    acceptance = _text_lines(raw_item.get("acceptance"), "work_item.acceptance")
+    title = _plain_text(raw_item.get("title"), "work_item.title", contract=work_item_fields["title"])
+    objective = _plain_text(raw_item.get("objective"), "work_item.objective", contract=work_item_fields["objective"])
+    scope = _text_lines(raw_item.get("scope"), "work_item.scope", contract=work_item_fields["scope"])
+    acceptance = _text_lines(
+        raw_item.get("acceptance"), "work_item.acceptance", contract=work_item_fields["acceptance"]
+    )
+    dependency_contract = work_item_fields["dependencies"]
     dependencies_raw = raw_item.get("dependencies")
-    if not isinstance(dependencies_raw, (list, tuple)):
+    if dependency_contract["type"] != "array[work_item_id]" or not isinstance(dependencies_raw, (list, tuple)):
         raise PlanSemanticError("WORK_ITEM_DEPENDENCIES_INVALID", "dependencies must be a list")
+    if len(dependencies_raw) < dependency_contract["min_items"]:
+        raise PlanSemanticError("WORK_ITEM_DEPENDENCIES_INVALID", "dependencies must not be empty")
     dependencies: list[str] = []
     for dependency in dependencies_raw:
         if not isinstance(dependency, str):
             raise PlanSemanticError("WORK_ITEM_DEPENDENCIES_INVALID", "each dependency must be a Work ID or semantic ref")
         ref = dependency.strip()
-        if ref.startswith(f"{milestone_id}/"):
-            ref = ref[len(milestone_id) + 1 :]
-        if not is_work_item_id(ref):
+        ref_template = dependency_contract["items"]["also_accepts_ref"]
+        prefix = ref_template.split("{work_item_id}", 1)[0].format(milestone_id=milestone_id)
+        if dependency_contract["same_milestone_only"] and ref.startswith(prefix):
+            ref = ref[len(prefix) :]
+        if not _matches_semantic_id(ref, dependency_contract["items"]):
             raise PlanSemanticError("WORK_ITEM_DEPENDENCIES_INVALID", f"invalid dependency ref {dependency!r}")
-        if ref in dependencies:
+        if dependency_contract["unique_items"] and ref in dependencies:
             raise PlanSemanticError("WORK_ITEM_DEPENDENCIES_INVALID", f"duplicate dependency ref {dependency!r}")
         dependencies.append(ref)
     return {
-        "kind": "add_work_item",
+        "kind": amendment_fields["kind"]["const"],
         "milestone_id": milestone_id,
         "work_item": {
             "id": work_id,
@@ -400,29 +503,49 @@ def normalize_add_work_item(payload: object) -> dict[str, Any]:
     }
 
 
-def _plain_text(value: object, label: str, *, maximum: int, single_line: bool = False) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > maximum:
+def _matches_semantic_id(value: object, contract: Mapping[str, Any]) -> bool:
+    if contract.get("type") == "milestone_id":
+        return is_milestone_id(value)
+    if contract.get("type") == "work_item_id":
+        return is_work_item_id(value)
+    return False
+
+
+def _plain_text(value: object, label: str, *, contract: Mapping[str, Any]) -> str:
+    if (
+        not isinstance(value, str)
+        or (contract["non_empty"] and not value.strip())
+        or len(value.encode("utf-8")) > contract["max_utf8_bytes"]
+    ):
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} must be bounded non-empty text")
     text = value.strip()
-    if "\x00" in text or any(re.match(r"^\s*#{1,6}\s", line) for line in text.splitlines()):
+    if (contract["rejects_nul"] and "\x00" in text) or (
+        contract["rejects_plan_headings"]
+        and any(re.match(r"^\s*#{1,6}\s", line) for line in text.splitlines())
+    ):
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} must not inject Plan headings or NUL")
-    if single_line and ("\n" in text or "\r" in text):
+    if contract.get("single_line") and ("\n" in text or "\r" in text):
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} must be one line")
     return text
 
 
-def _text_lines(value: object, label: str) -> list[str]:
-    if isinstance(value, str):
-        raw_lines = [line.strip() for line in value.splitlines() if line.strip()]
-    elif isinstance(value, (list, tuple)):
-        raw_lines = [_plain_text(item, label, maximum=2048, single_line=True) for item in value]
+def _text_lines(value: object, label: str, *, contract: Mapping[str, Any]) -> list[str]:
+    if isinstance(value, str) and contract.get("also_accepts") == "newline_delimited_string":
+        lines = value.splitlines()
+        raw_lines = (
+            [line.strip() for line in lines if line.strip()]
+            if contract["blank_lines_ignored"]
+            else [line.strip() for line in lines]
+        )
+    elif isinstance(value, (list, tuple)) and contract["type"] == "array[string]":
+        raw_lines = [_plain_text(item, label, contract=contract["items"]) for item in value]
     else:
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} must be text or a list of text")
-    if not raw_lines:
+    if len(raw_lines) < contract["min_items"]:
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} must not be empty")
-    if sum(len(item.encode("utf-8")) for item in raw_lines) > 8192:
+    if sum(len(item.encode("utf-8")) for item in raw_lines) > contract["max_total_utf8_bytes"]:
         raise PlanSemanticError("AMENDMENT_FIELD_INVALID", f"{label} exceeds its bounded size")
-    return [_plain_text(item, label, maximum=2048, single_line=True) for item in raw_lines]
+    return [_plain_text(item, label, contract=contract["items"]) for item in raw_lines]
 
 
 def add_work_item_to_plan(body: str, document: PortablePlanDocument, amendment: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -430,6 +553,7 @@ def add_work_item_to_plan(body: str, document: PortablePlanDocument, amendment: 
     milestone_id = normalized["milestone_id"]
     item = normalized["work_item"]
     work_id = item["id"]
+    dependency_contract = ADD_WORK_ITEM_AMENDMENT_CONTRACT["fields"]["work_item"]["fields"]["dependencies"]
     known_milestones = set(document.milestone_specs) | set(document.milestone_status) | set(document.milestone_work_items)
     if milestone_id not in known_milestones:
         raise PlanSemanticError("MILESTONE_NOT_FOUND", f"milestone {milestone_id!r} does not exist")
@@ -445,9 +569,10 @@ def add_work_item_to_plan(body: str, document: PortablePlanDocument, amendment: 
         raise PlanSemanticError("WORK_ITEM_ALREADY_EXISTS", f"{milestone_id}/{work_id} already has a semantic section")
 
     dependencies = set(item["dependencies"])
-    unknown = dependencies - existing_ids
-    if unknown:
-        raise PlanSemanticError("DAG_UNKNOWN_WORK_ITEM", f"dependencies reference unknown Work IDs: {sorted(unknown)}")
+    if dependency_contract["must_reference_existing_work_items"]:
+        unknown = dependencies - existing_ids
+        if unknown:
+            raise PlanSemanticError("DAG_UNKNOWN_WORK_ITEM", f"dependencies reference unknown Work IDs: {sorted(unknown)}")
     old_edges = set(document.milestone_dependencies.get(milestone_id, ()))
     if any(source not in existing_ids or target not in existing_ids for source, target in old_edges):
         raise PlanSemanticError("DAG_UNKNOWN_WORK_ITEM", "current milestone dependencies are structurally invalid")
@@ -647,12 +772,15 @@ def _insert_work_section(body: str, milestone_id: str, item: Mapping[str, Any]) 
 
 
 __all__ = [
+    "ADD_WORK_ITEM_AMENDMENT_CONTRACT",
     "MAX_PLAN_SEMANTIC_SECTIONS",
     "MAX_PLAN_SECTION_READ_BYTES",
+    "PLAN_AMENDMENT_CONTRACTS",
     "PlanSemanticError",
     "PlanSemanticSection",
     "PlanSemanticIndex",
     "canonical_plan_amendment_digest",
     "normalize_add_work_item",
     "add_work_item_to_plan",
+    "plan_amendment_contracts_for_help",
 ]

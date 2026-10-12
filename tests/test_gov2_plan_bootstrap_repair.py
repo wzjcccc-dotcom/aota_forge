@@ -18,6 +18,12 @@ from aota_forge.core_ingress import (
     validate_operation_input,
 )
 from aota_forge.governance.intake import GovernanceIntakeContext, GovernanceIntakeError, GovernanceIntakeService
+from aota_forge.governance.plan_semantics import (
+    ADD_WORK_ITEM_AMENDMENT_CONTRACT,
+    PlanSemanticError,
+    normalize_add_work_item,
+    plan_amendment_contracts_for_help,
+)
 from aota_forge.mcp_transport import help_operation_projection
 
 
@@ -298,12 +304,45 @@ def test_add_work_item_fail_closed_for_duplicate_stale_revision_and_section_dige
     assert _inspect(service, "full")["source_digest"] == original
 
 
-def test_plan_help_and_core_identity_binding_describe_the_repaired_contract() -> None:
+def test_plan_help_and_core_identity_binding_describe_the_repaired_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     help_contract = help_operation_projection("governance.plan")
     assert help_contract["default_inspect_view"] == "card"
     assert help_contract["inspect_views"] == ["card", "index", "section", "full"]
     assert help_contract["read_or_write"] == "mode-dependent"
     assert help_contract["implemented_amendment_kinds"] == ["add_work_item"]
+    assert help_contract["implemented_amendment_kinds"] == [
+        contract["fields"]["kind"]["const"] for contract in (ADD_WORK_ITEM_AMENDMENT_CONTRACT,)
+    ]
+    assert help_contract["amendment_contracts"] == plan_amendment_contracts_for_help()
+    amendment_schema = help_contract["amendment_contracts"]["add_work_item"]
+    amendment_fields = ADD_WORK_ITEM_AMENDMENT_CONTRACT["fields"]
+    assert amendment_schema["required"] == list(amendment_fields)
+    assert amendment_schema["fields"]["kind"]["const"] == "add_work_item"
+    assert amendment_schema["fields"]["milestone_id"]["type"] == "milestone_id"
+    work_item_schema = amendment_schema["fields"]["work_item"]
+    work_item_fields = amendment_fields["work_item"]["fields"]
+    assert work_item_schema["required"] == list(work_item_fields)
+    assert work_item_schema["fields"] == work_item_fields
+    assert work_item_schema["fields"]["id"]["type"] == "work_item_id"
+    assert work_item_schema["fields"]["title"]["max_utf8_bytes"] == 256
+    assert work_item_schema["fields"]["objective"]["max_utf8_bytes"] == 4096
+    assert work_item_schema["fields"]["scope"]["type"] == "array[string]"
+    assert work_item_schema["fields"]["dependencies"]["type"] == "array[work_item_id]"
+    assert work_item_schema["fields"]["acceptance"]["type"] == "array[string]"
+
+    payload = _add_work_item()
+    max_title_bytes = work_item_fields["title"]["max_utf8_bytes"]
+    payload["work_item"]["title"] = "x" * (max_title_bytes + 1)
+    with pytest.raises(PlanSemanticError, match="AMENDMENT_FIELD_INVALID"):
+        normalize_add_work_item(payload)
+    monkeypatch.setitem(work_item_fields["title"], "max_utf8_bytes", max_title_bytes + 1)
+    payload["work_item"]["title"] = "x" * (max_title_bytes + 1)
+    assert len(normalize_add_work_item(payload)["work_item"]["title"]) == max_title_bytes + 1
+    assert (
+        help_operation_projection("governance.plan")["amendment_contracts"]["add_work_item"]["fields"]
+        ["work_item"]["fields"]["title"]["max_utf8_bytes"]
+        == max_title_bytes + 1
+    )
     assert "structured semantic delta" in help_contract["amendment_semantics"]
     validated = validate_operation_input(
         resolve_descriptor("governance.plan"),
