@@ -110,6 +110,18 @@ Use the existing reference runtime.
 The model-facing operation contract is canonical.
 """
 
+PLAN_BODY_WITH_W6 = (
+    PLAN_BODY.replace(
+        "M2_DAG=W1 -> W2 -> W3 -> W4 -> W5\nM2_WORK_ITEMS=W1, W2, W3, W4, W5",
+        "M2_DAG=W1 -> W2 -> W3 -> W4 -> W5, W6\nM2_WORK_ITEMS=W1, W2, W3, W4, W5, W6",
+    ).replace(
+        "## Decision D1 - Keep Plan authority canonical",
+        "#### M2/W6 - Bounded sibling fixture\n"
+        "Verify that a Work heading remains distinct from its milestone.\n\n"
+        "## Decision D1 - Keep Plan authority canonical",
+    )
+)
+
 
 def _context(tmp_path: Path) -> GovernanceIntakeContext:
     workspace = tmp_path / "workspace"
@@ -130,7 +142,9 @@ def _context(tmp_path: Path) -> GovernanceIntakeContext:
     )
 
 
-def _service(tmp_path: Path) -> tuple[GovernanceIntakeContext, GovernanceIntakeService]:
+def _service(
+    tmp_path: Path, *, plan_body: str = PLAN_BODY
+) -> tuple[GovernanceIntakeContext, GovernanceIntakeService]:
     context = _context(tmp_path)
     service = GovernanceIntakeService(
         context,
@@ -142,7 +156,7 @@ def _service(tmp_path: Path) -> tuple[GovernanceIntakeContext, GovernanceIntakeS
             "provenance": "trusted_fixture",
         },
     )
-    service.plan("init", project_id=PROJECT_ID, plan_id=PLAN_ID, candidate_body=PLAN_BODY)
+    service.plan("init", project_id=PROJECT_ID, plan_id=PLAN_ID, candidate_body=plan_body)
     return context, service
 
 
@@ -204,6 +218,26 @@ def test_progressive_plan_inspection_is_authority_bound_and_bounded(tmp_path: Pa
     assert full["read_through"] == "LocalPlanAuthorityReadAdapter"
     assert full["plan_body"] == PLAN_BODY
     assert full["normalized_plan"]["source_digest"]
+
+
+def test_milestone_section_excludes_work_headings_and_preserves_siblings(tmp_path: Path) -> None:
+    _context_value, service = _service(tmp_path, plan_body=PLAN_BODY_WITH_W6)
+
+    index = _inspect(service, "index")["semantic_index"]
+    sections = index["sections"]
+    assert sum(item["section_ref"] == "M2/W6" for item in sections) == 1
+
+    milestone = _inspect(service, "section", section_ref="M2")["section"]
+    assert milestone["content"].count("#### M2/W6 - ") == 1
+    assert milestone["content"].count("#### M2/W5 - ") == 1
+
+    work_w6 = _inspect(service, "section", section_ref="M2/W6")["section"]
+    assert work_w6["section_ref"] == "M2/W6"
+    assert work_w6["content"].count("#### M2/W6 - ") == 1
+
+    work_w5 = _inspect(service, "section", section_ref="M2/W5")["section"]
+    assert work_w5["section_ref"] == "M2/W5"
+    assert work_w5["content"].count("#### M2/W5 - ") == 1
 
 
 def test_structured_add_work_item_mints_decision_and_refreshes_projections(tmp_path: Path) -> None:

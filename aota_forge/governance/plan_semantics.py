@@ -198,7 +198,7 @@ class PlanSemanticIndex:
             blocks = [
                 item
                 for item in headings
-                if (match := _MILESTONE_HEADING_RE.match(item.title.strip())) is not None
+                if (match := _milestone_heading_match(item.title)) is not None
                 and f"M{match.group(1)[1:]}".upper() == milestone_id
             ]
             content = "\n\n".join(item.content for item in blocks)
@@ -365,6 +365,14 @@ def _heading_blocks(body: str) -> tuple[_HeadingBlock, ...]:
             )
         )
     return tuple(blocks)
+
+
+def _milestone_heading_match(title: str) -> re.Match[str] | None:
+    """Match milestone headings without classifying a Work heading as its parent."""
+    normalized = title.strip()
+    if _WORK_HEADING_RE.match(normalized) is not None:
+        return None
+    return _MILESTONE_HEADING_RE.match(normalized)
 
 
 def _natural_ref_key(value: str) -> tuple[Any, ...]:
