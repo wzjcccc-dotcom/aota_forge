@@ -339,6 +339,7 @@ class SemanticReturnEvidence:
     result_ref: str
     result_digest: str
     status: str
+    source_role: str
     summary: str | None = None
 
     @property
@@ -409,6 +410,7 @@ def resolve_semantic_return_evidence(
         result_ref=receipt.result_ref,
         result_digest=receipt.result_digest,
         status=receipt.status,
+        source_role=source_role,
         summary=summary,
     )
 

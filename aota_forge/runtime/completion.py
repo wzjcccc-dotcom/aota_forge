@@ -88,19 +88,23 @@ from aota_forge.core.execution.durable_state import (
     DurableExecutionRecord,
     ExecutionStateStore,
     StaleExecutionRevisionError,
+    _compute_execution_revision_token,
     card_digest_for,
     is_placeholder_origin_session_ref,
+    is_bound_origin_session_ref,
 )
 from aota_forge.core.execution.package import ExecutionPackage
 from aota_forge.core.execution.results import CanonicalResult
 from aota_forge.core.execution.state import CanonicalTaskState, parse_state
 from aota_forge.core.result_governance import ResultGovernanceProjection
-from aota_forge.work_plane.result_card import project_worker_result_card
+from aota_forge.work_plane.result_card import WorkerResultCard, project_worker_result_card
 from aota_forge.work_plane.roles import parse_agent_work_role
 from aota_forge.work_plane.task_return_receipt import (
     SemanticReturnEvidence,
     SemanticReturnEvidenceProvider,
+    TASK_RETURN_RECEIPT_SOURCE_ROLES,
 )
+from aota_forge.work_plane.execution_identity import require_task_identity_matches
 
 # ---------------------------------------------------------------------------
 # Governance markers
@@ -551,6 +555,125 @@ class DurableCompletionCoordinator:
         self._recovered = True
         return report
 
+    def recover_terminal_result(
+        self,
+        canonical_task_id: str,
+        *,
+        card_digest: str,
+        project_id: str,
+        plan_id: str,
+        milestone_id: str,
+        work_item_id: str,
+    ) -> DurableExecutionRecord:
+        """Hydrate one completed Worker result for a different headed task-main.
+
+        This is the exact-identity re-entry seam for a durable terminal result
+        whose historical ``origin_session_ref`` is no longer the current
+        headed session. The current session comes only from the already-bound
+        dispatcher; the old origin remains immutable provenance and is never
+        queried or rebound. All task, Plan, result, Worker, and CARD identity
+        checks are performed against the existing durable stores and
+        ``task.return`` evidence.
+        """
+        if not is_bound_origin_session_ref(self._dispatcher.origin_session_ref):
+            raise CompletionCoordinatorError(
+                "terminal result recovery requires a bound current task-main session"
+            )
+        current_session_ref = self._dispatcher.origin_session_ref.value
+        record = self._store.get(canonical_task_id)
+        if record is None or record.canonical_task_id != canonical_task_id:
+            raise CompletionCoordinatorError(
+                f"no exact durable execution record for {canonical_task_id!r}"
+            )
+        if (
+            record.origin_session_ref is None
+            or not is_bound_origin_session_ref(record.origin_session_ref)
+            or record.origin_session_ref.value == current_session_ref
+        ):
+            raise CompletionCoordinatorError(
+                "terminal result recovery requires a distinct, preserved historical origin session"
+            )
+        if record.revision_token != _compute_execution_revision_token(
+            record.canonical_task_id,
+            record.record_revision,
+            record.execution_phase,
+            record.canonical_task_state,
+        ):
+            raise CompletionCoordinatorError(
+                "durable execution revision token does not verify"
+            )
+        try:
+            require_task_identity_matches(
+                canonical_task_id,
+                project_id=project_id,
+                plan_id=plan_id,
+                milestone_id=milestone_id,
+                work_item_id=work_item_id,
+            )
+        except (TypeError, ValueError) as exc:
+            raise CompletionCoordinatorError(
+                f"durable task identity does not match the current Project/Plan/Work binding: {exc}"
+            ) from exc
+        if (
+            not isinstance(card_digest, str)
+            or len(card_digest) != 64
+            or record.canonical_task_state != CanonicalTaskState.COMPLETED
+            or record.terminal_result is None
+            or record.terminal_result.status != "completed"
+            or record.terminal_result.ok is not True
+            or record.terminal_result.canonical_task_id != canonical_task_id
+            or record.terminal_result.executor_id != record.executor_id
+            or record.adapter_handle is None
+            or record.terminal_result.execution_stats.get("session_id") != record.adapter_handle
+        ):
+            raise CompletionCoordinatorError(
+                "durable terminal result, task, or Worker session identity does not verify"
+            )
+
+        raw_card = record.worker_result_card
+        if (
+            raw_card is None
+            or record.worker_result_card_digest != card_digest
+            or card_digest_for(dict(raw_card)) != card_digest
+        ):
+            raise CompletionCoordinatorError(
+                "durable Worker Result CARD digest does not verify"
+            )
+        try:
+            card = WorkerResultCard.from_dict(raw_card)
+        except (TypeError, ValueError) as exc:
+            raise CompletionCoordinatorError(
+                f"durable Worker Result CARD fails strict validation: {exc}"
+            ) from exc
+        work_role = _work_role_from_admission_scope(record.admission_scope)
+        if (
+            card.compute_card_digest() != card_digest
+            or card.task_ref != canonical_task_id
+            or card.result_handoff_ref.ref != canonical_task_id
+            or card.agent_work_role.value != work_role
+        ):
+            raise CompletionCoordinatorError(
+                "durable Worker Result CARD task, role, or digest identity contradicts execution truth"
+            )
+
+        evidence = self._resolve_semantic_return_evidence_safe(canonical_task_id)
+        if (
+            evidence is None
+            or evidence.status != "completed"
+            or evidence.canonical_task_id != canonical_task_id
+            or evidence.source_role != card.agent_work_role.value
+            or evidence.result_digest != card.result_handoff_ref.digest
+            or not evidence.result_ref.startswith(f"handoff://{project_id}/")
+        ):
+            raise CompletionCoordinatorError(
+                "exact completed task.return and result-handoff ownership/digest do not verify"
+            )
+
+        # Return the existing record unchanged. In particular, the new headed
+        # session is only the reconciliation executor; historical origin
+        # provenance is not rewritten.
+        return record
+
     def _recover_nonterminal(self, record: DurableExecutionRecord) -> str:
         task_id = record.canonical_task_id
         if record.execution_phase.value == "PREPARED":
@@ -664,6 +787,8 @@ class DurableCompletionCoordinator:
         if evidence.canonical_task_id != task_id:
             return None
         if evidence.status not in ("completed", "blocked", "failed"):
+            return None
+        if evidence.source_role not in TASK_RETURN_RECEIPT_SOURCE_ROLES:
             return None
         digest = evidence.result_digest
         if not isinstance(digest, str) or len(digest) != 64:

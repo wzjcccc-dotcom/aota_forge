@@ -90,6 +90,7 @@ from aota_forge.core.execution.durable_state import (
     OriginSessionRef,
     is_bound_origin_session_ref,
 )
+from aota_forge.core.journal.store import FileBackedDurableJournalStore
 from aota_forge.core.identity.ids import make_id
 from aota_forge.core.identity.kinds import IdKind, SubjectKind
 from aota_forge.core.identity.refs import object_ref_subject
@@ -988,6 +989,17 @@ def compose_thin_task_main_host(
                     for message in messages
                 )
 
+        closure_journal_store = None
+        journal_path = getattr(governance_intake_context, "journal_path", None)
+        if isinstance(journal_path, (str, PathLike)):
+            try:
+                closure_journal_store = FileBackedDurableJournalStore(journal_path)
+            except Exception as exc:
+                if resolved_governance_store is not None:
+                    resolved_governance_store.close()
+                raise TrustedBindingError(
+                    f"thin host historical closure journal composition failed: {exc}"
+                ) from exc
         governance_closure = ThinMilestoneClosureEvidenceAdapter(
             project_id=pid,
             project_root=sandbox.project_root,
@@ -998,6 +1010,7 @@ def compose_thin_task_main_host(
             sandbox=sandbox,
             governance_store=resolved_governance_store,
             parent_decision_reader=parent_decision_reader,
+            journal_store=closure_journal_store,
         )
 
         doctor_context = DoctorContext(

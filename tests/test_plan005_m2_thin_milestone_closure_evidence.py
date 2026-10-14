@@ -11,6 +11,7 @@ from aota_forge.adapters.plan_authority.binding import (
     PlanAuthorityBinding,
 )
 from aota_forge.core.execution.durable_state import card_digest_for
+from aota_forge.core.plan.read_model import PortablePlanDocument
 from aota_forge.core.result_governance import ResultOutcome
 from aota_forge.governance import milestone_closure_evidence as closure
 from aota_forge.work_plane.result_card import ResultHandoffRef, WorkerResultCard
@@ -521,3 +522,164 @@ def test_milestone_close_requires_existing_user_gate_and_writes_steward_receipt(
     assert result["status"] == "accepted_closure"
     assert result["accepted_frontier"] == FRONTIER
     assert (tmp_path / ".aota" / "materialization_receipts.json").is_file()
+
+
+HISTORICAL_PLAN_REVISION = "b" * 64
+HISTORICAL_PARENT = "ses_historicalW6"
+
+
+def _historical_plan(revision: str, *, include_w6: bool, changed_work: str | None = None):
+    fields = {f"M2_{changed_work}_ACCEPTANCE": "tampered"} if changed_work else {}
+    work_items = WORK_ITEMS + (("W6",) if include_w6 else ())
+    return PortablePlanDocument(
+        current_milestone="M2",
+        current_status="active",
+        milestone_status={"M2": "IN_PROGRESS"},
+        milestone_approvals={"M2": True},
+        milestone_work_items={"M2": work_items},
+        current_fields=fields,
+        source_revision=revision,
+        source_digest=revision,
+    )
+
+
+def _historical_amendment():
+    return {
+        "kind": "add_work_item",
+        "milestone_id": "M2",
+        "work_item": {
+            "id": "W6",
+            "title": "Historical closure repair",
+            "objective": "Reconstruct bounded predecessor acceptance evidence",
+            "scope": ["M2 closure evidence"],
+            "dependencies": ["W5"],
+            "acceptance": ["same-Plan predecessor relation is verified"],
+        },
+    }
+
+
+def _historical_relation(*, state="VERIFIED", project_id=PROJECT, plan_id=PLAN, wrong_w6=False):
+    amendment = _historical_amendment()
+    if wrong_w6:
+        amendment["work_item"]["id"] = "W5"
+    return {
+        "project_id": project_id,
+        "plan_id": plan_id,
+        "milestone_id": "M2",
+        "work_item_id": "W6",
+        "authority_source_revision_before": HISTORICAL_PLAN_REVISION,
+        "authority_source_revision_after": "6a8293ac6e8cbd3b7da6570ad2967093d835b472bfa18c33c0dc16fa3c88e1d0",
+        "plan_revision_before": 9,
+        "plan_revision_after": 10,
+        "journal_state": state,
+        "amendment": amendment,
+        "amendment_digest": closure.canonical_plan_amendment_digest(amendment),
+    }
+
+
+def _prepare_historical_projection(monkeypatch, *, changed_work=None, relation=None, historical_reader=True):
+    adapter, executions, digests = _adapter(monkeypatch)
+    current = _historical_plan(adapter.plan_binding.source_revision, include_w6=True, changed_work=changed_work)
+    historical = _historical_plan(HISTORICAL_PLAN_REVISION, include_w6=False)
+    adapter._current_plan = lambda: (current, current.milestone_work_items["M2"])
+    _populate(adapter, executions, digests)
+    source_items = tuple(adapter.receipt_store.items)
+    historical_messages = []
+    historical_items = []
+    for item in source_items:
+        work = item.work_item_id
+        message_id = f"msg_{work.lower()}"
+        text = f"accepted:{item.canonical_task_id}"
+        historical_messages.append(
+            {
+                "session_ref": HISTORICAL_PARENT,
+                "message_id": message_id,
+                "role": "assistant",
+                "finish": "stop",
+                "text": text,
+            }
+        )
+        payload = item.canonical_payload()
+        payload["parent_session_ref"] = HISTORICAL_PARENT
+        payload["plan_source_revision"] = HISTORICAL_PLAN_REVISION
+        payload["decision_ref"] = f"task-main-decision:{HISTORICAL_PARENT}:{message_id}:{work}"
+        historical_items.append(closure.ParentWorkAcceptanceProjection.from_dict(payload))
+    adapter.receipt_store.items = historical_items
+    adapter.parent_decision_reader = lambda session_ref: tuple(
+        historical_messages if session_ref == HISTORICAL_PARENT else ()
+    )
+    adapter.historical_plan_reader = (
+        (lambda revision: historical if revision == HISTORICAL_PLAN_REVISION else None)
+        if historical_reader
+        else None
+    )
+    adapter.plan_lineage_reader = lambda *_args: relation or _historical_relation()
+    return adapter, executions, digests
+
+
+def test_v1_historical_w1_w5_acceptances_reconstruct_through_same_plan_w6_predecessor(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(monkeypatch)
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is True
+    assert tuple(item.work_item_id for item in result.work_acceptances) == WORK_ITEMS
+    assert all(item.parent_session_ref == HISTORICAL_PARENT for item in result.work_acceptances)
+
+
+def test_v2_historical_plan_source_missing_fails_closed(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(monkeypatch, historical_reader=False)
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("HISTORICAL_PLAN_SOURCE_UNAVAILABLE" in reason for reason in result.blocking_reasons)
+
+
+def test_v3_changed_historical_work_acceptance_semantics_fails_closed(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(monkeypatch, changed_work="W3")
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("HISTORICAL_WORK_SEMANTICS_CHANGED" in reason for reason in result.blocking_reasons)
+
+
+def test_v4_foreign_plan_lineage_fails_closed(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(
+        monkeypatch,
+        relation=_historical_relation(plan_id="plan_foreign"),
+    )
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("PLAN_LINEAGE_IDENTITY_MISMATCH" in reason for reason in result.blocking_reasons)
+
+
+def test_v5_non_w6_amendment_cannot_authorize_historical_exception(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(
+        monkeypatch,
+        relation=_historical_relation(wrong_w6=True),
+    )
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("PLAN_LINEAGE_NOT_W6_REPAIR" in reason for reason in result.blocking_reasons)
+
+
+def test_v6_unverified_w6_journal_state_fails_closed(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(
+        monkeypatch,
+        relation=_historical_relation(state="CONFLICT"),
+    )
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("PLAN_LINEAGE_JOURNAL_INVALID" in reason for reason in result.blocking_reasons)
+
+
+def test_v7_historical_parent_session_decision_is_required(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(monkeypatch)
+    adapter.parent_decision_reader = lambda _session_ref: ()
+    result = adapter.project(SOURCE)
+    assert result.ready_for_project_steward is False
+    assert any("PARENT_DECISION_MISSING" in reason for reason in result.blocking_reasons)
+
+
+def test_v8_inspector_session_is_not_acceptance_authority_and_w6_is_not_predecessor_receipt(monkeypatch):
+    adapter, _executions, _digests = _prepare_historical_projection(monkeypatch)
+    result = adapter.project(SOURCE)
+    assert closure.CURRENT_INSPECTOR_SESSION_IS_ACCEPTANCE_AUTHORITY is False
+    assert closure.W6_SAME_PLAN_PREDECESSOR_REVISION_EXCEPTION_ONLY is True
+    assert "W6" not in {item.work_item_id for item in result.work_acceptances}

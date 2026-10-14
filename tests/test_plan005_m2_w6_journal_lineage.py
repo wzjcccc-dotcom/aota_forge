@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+from pathlib import Path
+from types import SimpleNamespace
+
+from aota_forge.adapters.plan_authority.binding import PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE, PlanAuthorityBinding
+from aota_forge.adapters.plan_authority.local_governance import LocalPlanAuthorityDestination, local_plan_authority_reference
+from aota_forge.core.identity.ids import make_id
+from aota_forge.core.identity.kinds import IdKind, SubjectKind
+from aota_forge.core.identity.refs import object_ref_subject
+from aota_forge.core.journal.model import JournalRecord, JournalState
+from aota_forge.core.journal.store import FileBackedDurableJournalStore
+from aota_forge.core.plan.normalize import normalize_portable_plan
+from aota_forge.core.plan.read_model import PORTABLE_PLAN_SOURCE_LOCAL
+from aota_forge.governance import milestone_closure_evidence as closure
+from aota_forge.governance.plan_semantics import add_work_item_to_plan, canonical_plan_amendment_digest
+from aota_forge.governance.project_store import PLAN_LIFECYCLE_ACTIVE, ProjectPlanRecord
+from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
+from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
+
+spec = importlib.util.spec_from_file_location("gov2_fixture", Path(__file__).with_name("test_gov2_plan_bootstrap_repair.py"))
+assert spec and spec.loader
+fixture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture)
+
+
+def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path) -> None:
+    before = fixture.PLAN_BODY.replace("PLAN_REVISION=R1", "PLAN_REVISION=R9")
+    amendment = {"kind": "add_work_item", "milestone_id": "M2", "work_item": {
+        "id": "W6", "title": "Bootstrap repair validation",
+        "objective": "Prove the structured amendment and authority readback.",
+        "scope": ["Use the existing Plan lifecycle pipeline."], "dependencies": [],
+        "acceptance": ["The resulting Plan preserves W1-W5 and adds this exact Work Item."],
+    }}
+    before_doc = normalize_portable_plan(before, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
+    after, normalized = add_work_item_to_plan(before, before_doc, amendment)
+    before_digest, after_digest = (hashlib.sha256(x.encode()).hexdigest() for x in (before, after))
+    base = tmp_path / "plans"
+    plan_dir = base / fixture.PROJECT_ID / fixture.PLAN_ID
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "plan.md").write_text(after, encoding="utf-8")
+    root = LocalGovernanceRootBinding.from_trusted_base(base, project_id=fixture.PROJECT_ID)
+    target = object_ref_subject(make_id(IdKind.SUBJECT, fixture.PLAN_ID, sub_kind=SubjectKind.PLAN))
+    destination = LocalPlanAuthorityDestination(root, fixture.PLAN_ID, target)
+    binding = PlanAuthorityBinding(
+        plan_id=fixture.PLAN_ID, source_kind=PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE,
+        authority_ref=local_plan_authority_reference(fixture.PROJECT_ID, fixture.PLAN_ID),
+        source_revision=after_digest, source_digest=after_digest,
+    )
+    governance = SQLiteProjectGovernanceStore(tmp_path / "governance.sqlite3")
+    journal = FileBackedDurableJournalStore(tmp_path / "journal.json")
+    try:
+        governance.put_plan(ProjectPlanRecord(fixture.PROJECT_ID, fixture.PLAN_ID, PLAN_LIFECYCLE_ACTIVE, binding, 1))
+        evidence = {"project_id": fixture.PROJECT_ID, "plan_id": fixture.PLAN_ID,
+            "authority_source_revision_before": before_digest, "authority_source_revision_after": after_digest,
+            "authority_source_digest_before": before_digest, "authority_source_digest_after": after_digest,
+            "plan_revision_before": 9, "plan_revision_after": 10, "amendment": normalized,
+            "amendment_digest": canonical_plan_amendment_digest(normalized)}
+        journal.create_prepared(JournalRecord(
+            journal_id="lineage-journal-1", correlation_id="lineage-correlation", attempt_id="lineage-attempt",
+            operation="plan_init", typed_target=target, principal="trusted-test", contract_hash="a" * 64,
+            idempotency_key="lineage-idempotency", intent_fingerprint="b" * 64,
+            subject_expected_revision=9, authority_source_revision=before_digest,
+            authority_observed_raw_digest=before_digest, candidate_raw_digest=after_digest,
+            normalized_plan_digest="c" * 64, authorization_reference="lineage-auth",
+            lease_reference="lineage-lease", authorization_basis="trusted_test",
+            journal_state=JournalState.PREPARED, original_raw_digest=before_digest, evidence=evidence,
+        ))
+        _, applying = journal.cas_transition(
+            "lineage-journal-1", 1, JournalState.PREPARED, JournalState.APPLYING
+        )
+        _, reconciling = journal.cas_transition(
+            "lineage-journal-1", applying.journal_revision, JournalState.APPLYING, JournalState.RECONCILING
+        )
+        journal.cas_transition(
+            "lineage-journal-1", reconciling.journal_revision, JournalState.RECONCILING,
+            JournalState.VERIFIED_RECOVERED, observed_raw_digest=after_digest, observed_revision=after_digest,
+        )
+        adapter = object.__new__(closure.ThinMilestoneClosureEvidenceAdapter)
+        adapter.project_id = fixture.PROJECT_ID
+        adapter.plan_binding = binding
+        adapter.governance_root = root
+        adapter.journal_store = journal
+        adapter.governance_store = governance
+        adapter.historical_plan_reader = None
+        adapter.historical_plan_lineage_reader = None
+        adapter.plan_lineage_reader = None
+        receipt = SimpleNamespace(plan_source_revision=before_digest)
+        document, metadata = adapter._read_historical_plan(before_digest, receipt)
+        current_document = normalize_portable_plan(
+            after, source_revision=after_digest, source_kind=PORTABLE_PLAN_SOURCE_LOCAL
+        )
+        adapter._verify_historical_plan_lineage(
+            receipt,
+            current_plan=current_document,
+            required_work_items=closure.M2_HISTORICAL_WORK_ITEMS,
+        )
+        assert document.source_revision == before_digest
+        assert tuple(document.milestone_work_items["M2"]) == ("W1", "W2", "W3", "W4", "W5")
+        assert metadata["project_id"] == fixture.PROJECT_ID
+    finally:
+        journal.close()
+        governance.close()
