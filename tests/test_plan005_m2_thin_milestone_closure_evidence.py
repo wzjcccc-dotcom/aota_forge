@@ -67,6 +67,7 @@ class MemoryExecutions:
         )
         record = SimpleNamespace(
             canonical_task_id=task_id,
+            origin_session_ref=PARENT,
             canonical_task_state="COMPLETED",
             worker_result_card=card.to_dict(),
             worker_result_card_digest=card_digest_for(card.canonical_dict()),
@@ -607,6 +608,11 @@ def _prepare_historical_projection(monkeypatch, *, changed_work=None, relation=N
         payload["decision_ref"] = f"task-main-decision:{HISTORICAL_PARENT}:{message_id}:{work}"
         historical_items.append(closure.ParentWorkAcceptanceProjection.from_dict(payload))
     adapter.receipt_store.items = historical_items
+    for record in executions.records.values():
+        record.origin_session_ref = HISTORICAL_PARENT
+    adapter.historical_execution_record_reader = lambda session_ref, task_id: (
+        executions.get(task_id) if session_ref == HISTORICAL_PARENT else None
+    )
     adapter.parent_decision_reader = lambda session_ref: tuple(
         historical_messages if session_ref == HISTORICAL_PARENT else ()
     )
@@ -625,6 +631,71 @@ def test_v1_historical_w1_w5_acceptances_reconstruct_through_same_plan_w6_predec
     assert result.ready_for_project_steward is True
     assert tuple(item.work_item_id for item in result.work_acceptances) == WORK_ITEMS
     assert all(item.parent_session_ref == HISTORICAL_PARENT for item in result.work_acceptances)
+
+
+def test_cross_session_historical_work_results_resolve_by_exact_receipt_identity(monkeypatch):
+    adapter, executions, _digests = _prepare_historical_projection(monkeypatch)
+    historical_records = dict(executions.records)
+    executions.records.clear()
+    adapter.historical_execution_record_reader = lambda session_ref, task_id: (
+        historical_records.get(task_id) if session_ref == HISTORICAL_PARENT else None
+    )
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is True
+    assert tuple(item.work_item_id for item in result.work_acceptances) == WORK_ITEMS
+
+
+def test_missing_historical_work_result_fails_closed(monkeypatch):
+    adapter, executions, _digests = _prepare_historical_projection(monkeypatch)
+    executions.records.clear()
+    adapter.historical_execution_record_reader = lambda _session_ref, _task_id: None
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: WORK_RESULT_MISSING" in result.blocking_reasons
+
+
+def test_foreign_historical_work_result_owner_fails_closed(monkeypatch):
+    adapter, executions, _digests = _prepare_historical_projection(monkeypatch)
+    historical_records = dict(executions.records)
+    historical_records[_task("W1")].origin_session_ref = "ses_foreign"
+    executions.records.clear()
+    adapter.historical_execution_record_reader = lambda session_ref, task_id: (
+        historical_records.get(task_id) if session_ref == HISTORICAL_PARENT else None
+    )
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: WORK_RESULT_FOREIGN" in result.blocking_reasons
+
+
+def test_tampered_historical_work_card_fails_closed(monkeypatch):
+    adapter, executions, _digests = _prepare_historical_projection(monkeypatch)
+    historical_records = dict(executions.records)
+    historical_records[_task("W1")].worker_result_card_digest = "0" * 64
+    executions.records.clear()
+    adapter.historical_execution_record_reader = lambda session_ref, task_id: (
+        historical_records.get(task_id) if session_ref == HISTORICAL_PARENT else None
+    )
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: WORK_CARD_MISMATCH" in result.blocking_reasons
+
+
+def test_current_session_record_cannot_substitute_for_missing_historical_owner(monkeypatch):
+    adapter, executions, _digests = _prepare_historical_projection(monkeypatch)
+    adapter.historical_execution_record_reader = lambda _session_ref, _task_id: None
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert "W1: WORK_RESULT_MISSING" in result.blocking_reasons
 
 
 def test_v2_historical_plan_source_missing_fails_closed(monkeypatch):

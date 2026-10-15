@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -427,6 +428,58 @@ def _default_execution_store(
     return FileBackedExecutionStateStore(store_path)
 
 
+def _session_execution_store_path(worktree_root: Path, session_ref: str) -> Path:
+    session_digest = hashlib.sha256(session_ref.encode("utf-8")).hexdigest()[:32]
+    return worktree_root / ".aota" / "execution-sessions" / f"{session_digest}.json"
+
+
+def _reject_duplicate_json_object_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("durable execution store contains duplicate JSON object keys")
+        result[key] = value
+    return result
+
+
+def _historical_execution_record_reader(project_root: Path) -> Callable[[str, str], Any | None]:
+    """Read one exact receipt-owner record from the existing session store path."""
+
+    def read(session_ref: str, canonical_task_id: str) -> Any | None:
+        if not isinstance(session_ref, str) or re.fullmatch(r"ses_[A-Za-z0-9]+", session_ref) is None:
+            raise ValueError("historical execution owner requires an exact bound session identity")
+        root = Path(project_root)
+        if root.is_symlink() or root.resolve(strict=True) != root:
+            raise ValueError("historical execution Project root is not canonical")
+        state_root = root / ".aota"
+        if state_root.is_symlink() or not state_root.is_dir():
+            raise ValueError("historical execution state root is unavailable or unsafe")
+        session_root = state_root / "execution-sessions"
+        if not session_root.exists():
+            return None
+        if session_root.is_symlink() or not session_root.is_dir():
+            raise ValueError("historical execution session root is unsafe")
+        path = _session_execution_store_path(root, session_ref)
+        if not path.exists():
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("historical execution store is unsafe")
+        canonical_path = path.resolve(strict=True)
+        if canonical_path.parent != session_root.resolve(strict=True):
+            raise ValueError("historical execution store escaped its trusted session root")
+        json.loads(
+            canonical_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_json_object_keys,
+        )
+        store = FileBackedExecutionStateStore(canonical_path, ensure_dir=False)
+        try:
+            return store.get(canonical_task_id)
+        finally:
+            store.close()
+
+    return read
+
+
 @dataclass(frozen=True)
 class ThinTaskMainHost:
     """Trusted thin task-main host composition result (non-live ready).
@@ -730,8 +783,7 @@ def compose_thin_task_main_host(
 
     headed_store_path = None
     if not bind_global_dispatcher and session_execution_store_path is None:
-        session_digest = hashlib.sha256(origin.encode("utf-8")).hexdigest()[:32]
-        headed_store_path = root / ".aota" / "execution-sessions" / f"{session_digest}.json"
+        headed_store_path = _session_execution_store_path(root, origin)
     elif session_execution_store_path is not None:
         headed_store_path = Path(session_execution_store_path)
     selected_store_path: Path | None = Path(
@@ -1008,11 +1060,13 @@ def compose_thin_task_main_host(
             parent_session_ref=origin,
             execution_store=store,
             sandbox=sandbox,
+            historical_execution_record_reader=_historical_execution_record_reader(
+                Path(sandbox.project_root)
+            ),
             governance_store=resolved_governance_store,
             parent_decision_reader=parent_decision_reader,
             journal_store=closure_journal_store,
         )
-
         doctor_context = DoctorContext(
             project_id=pid,
             plan_id=plan_authority_binding.plan_id,

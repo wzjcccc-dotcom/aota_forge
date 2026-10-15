@@ -358,6 +358,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         parent_session_ref: str,
         execution_store: Any,
         sandbox: Any,
+        historical_execution_record_reader: Callable[[str, str], Any | None] | None = None,
         governance_store: Any | None = None,
         receipt_store: FileBackedParentWorkAcceptanceProjectionStore | None = None,
         parent_decision_reader: Callable[[str], Sequence[Mapping[str, Any]]] | None = None,
@@ -376,6 +377,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         self.parent_session_ref = parent_session_ref
         self.execution_store = execution_store
         self.sandbox = sandbox
+        self.historical_execution_record_reader = historical_execution_record_reader
         self.governance_store = governance_store
         self.receipt_store = receipt_store or FileBackedParentWorkAcceptanceProjectionStore(project_root)
         self.parent_decision_reader = parent_decision_reader
@@ -424,6 +426,8 @@ class ThinMilestoneClosureEvidenceAdapter:
         record = self.execution_store.get(canonical_task_id) if self.execution_store is not None else None
         if record is None or getattr(record, "canonical_task_id", None) != canonical_task_id:
             raise MilestoneClosureEvidenceError("WORK_RESULT_MISSING", "exact Work execution record is unavailable")
+        if self._record_origin_session(record) != self.parent_session_ref:
+            raise MilestoneClosureEvidenceError("WORK_RESULT_FOREIGN", "exact Work execution record has a foreign parent session")
         card_raw = getattr(record, "worker_result_card", None)
         if not isinstance(card_raw, Mapping):
             raise MilestoneClosureEvidenceError("WORK_CARD_MISSING", "exact Work Result CARD is unavailable")
@@ -1501,9 +1505,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         return plan, tuple(plan.milestone_work_items.get("M2", ()))
 
     def _verify_result_lineage(self, receipt: ParentWorkAcceptanceProjection) -> None:
-        record = self.execution_store.get(receipt.canonical_task_id) if self.execution_store is not None else None
-        if record is None or getattr(record, "canonical_task_id", None) != receipt.canonical_task_id:
-            raise MilestoneClosureEvidenceError("WORK_RESULT_MISSING", "exact Worker execution result is unavailable")
+        record = self._execution_record_for_receipt(receipt)
         card_raw = getattr(record, "worker_result_card", None)
         if not isinstance(card_raw, Mapping):
             raise MilestoneClosureEvidenceError("WORK_CARD_MISSING", "exact Worker Result CARD is unavailable")
@@ -1532,6 +1534,65 @@ class ThinMilestoneClosureEvidenceAdapter:
             or receipt.result_ref != f"handoff://{receipt.project_id}/{self.sandbox.worktree_id}/result/{envelope.get('artifact_id')}/{receipt.result_digest}"
         ):
             raise MilestoneClosureEvidenceError("WORK_RESULT_MISMATCH", "receipt does not match the canonical result handoff")
+
+    def _execution_record_for_receipt(self, receipt: ParentWorkAcceptanceProjection) -> Any:
+        if receipt.parent_session_ref == self.parent_session_ref:
+            if self.execution_store is None:
+                raise MilestoneClosureEvidenceError(
+                    "WORK_RESULT_MISSING",
+                    "exact Worker execution result is unavailable",
+                )
+            try:
+                record = self.execution_store.get(receipt.canonical_task_id)
+            except Exception as exc:
+                raise MilestoneClosureEvidenceError(
+                    "WORK_RESULT_SOURCE_INVALID",
+                    "trusted current execution owner could not be read",
+                ) from exc
+        else:
+            reader = self.historical_execution_record_reader
+            if not callable(reader):
+                raise MilestoneClosureEvidenceError(
+                    "WORK_RESULT_MISSING",
+                    "exact historical Worker execution owner is unavailable",
+                )
+            try:
+                record = reader(receipt.parent_session_ref, receipt.canonical_task_id)
+            except Exception as exc:
+                raise MilestoneClosureEvidenceError(
+                    "WORK_RESULT_SOURCE_INVALID",
+                    "trusted historical execution owner could not be read",
+                ) from exc
+        if record is None:
+            raise MilestoneClosureEvidenceError(
+                "WORK_RESULT_MISSING",
+                "exact Worker execution result is unavailable",
+            )
+        self._verify_execution_record_owner(record, receipt)
+        return record
+
+    @classmethod
+    def _verify_execution_record_owner(
+        cls,
+        record: Any,
+        receipt: ParentWorkAcceptanceProjection,
+    ) -> None:
+        if getattr(record, "canonical_task_id", None) != receipt.canonical_task_id:
+            raise MilestoneClosureEvidenceError(
+                "WORK_RESULT_FOREIGN",
+                "execution record does not bind the exact canonical task identity",
+            )
+        if cls._record_origin_session(record) != receipt.parent_session_ref:
+            raise MilestoneClosureEvidenceError(
+                "WORK_RESULT_FOREIGN",
+                "execution record origin does not match the receipt's exact parent session",
+            )
+
+    @staticmethod
+    def _record_origin_session(record: Any) -> str | None:
+        origin = getattr(record, "origin_session_ref", None)
+        value = getattr(origin, "value", origin)
+        return value if isinstance(value, str) else None
 
     def _read_parent_decision_messages(
         self,

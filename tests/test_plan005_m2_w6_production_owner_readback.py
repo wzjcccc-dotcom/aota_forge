@@ -4,12 +4,27 @@ import pytest
 from aota_forge.core.execution.durable_state import FileBackedExecutionStateStore
 from aota_forge.core.journal.store import FileBackedDurableJournalStore
 from aota_forge.adapters.opencode.host_client import OpenCodeHostClient, message_finish, message_info, message_role, message_text_parts
+from aota_forge.composition.thin_task_main_host import (
+    _historical_execution_record_reader,
+    _session_execution_store_path,
+)
 from aota_forge.runtime.config import EXECUTOR_OPENCODE, load_runtime_config
 from aota_forge.governance import milestone_closure_evidence as c
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 from aota_forge.work_plane.steward_finalizer import SubprocessGitPort
 P="aota_forge"; N="plan_005_governance_self_hosting_routing_runtime_lifecycle"; W=("W1","W2","W3","W4","W5")
+
+def test_historical_execution_reader_is_exact_and_rejects_ambiguous_store_keys(tmp_path):
+ session="ses_historicalW6"
+ path=_session_execution_store_path(tmp_path,session)
+ path.parent.mkdir(parents=True)
+ path.write_text('{"task": {}, "task": {}}',encoding="utf-8")
+ reader=_historical_execution_record_reader(tmp_path)
+ with pytest.raises(ValueError,match="duplicate JSON object keys"):
+  reader(session,"task")
+ assert reader("ses_different", "task") is None
+
 def test_real_owner_readbacks():
  root=Path(__file__).parents[1]; s=root/".aota"
  g=SQLiteProjectGovernanceStore(s/"governance.sqlite3"); j=FileBackedDurableJournalStore(s/"governance-journal.json")
@@ -30,6 +45,8 @@ def test_real_owner_readbacks():
   if miss: pytest.fail(f"real immutable W1-W5 receipts missing: {miss}")
   missing=[w for w in W if x.get(rs[w].canonical_task_id) is None]
   assert missing==[]
+  historical_reader=_historical_execution_record_reader(root)
+  assert all(historical_reader(origin, rs[w].canonical_task_id)==x.get(rs[w].canonical_task_id) for w in W)
   cards={}
   for w in W:
    z=rs[w]; record=x.get(z.canonical_task_id); card=c.WorkerResultCard.from_dict(record.worker_result_card)
