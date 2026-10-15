@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from aota_forge.adapters.plan_authority.binding import PLAN_AUTHORITY_SOURCE_LOCAL_GOVERNANCE, PlanAuthorityBinding
 from aota_forge.adapters.plan_authority.local_governance import LocalPlanAuthorityDestination, local_plan_authority_reference
@@ -27,7 +30,7 @@ spec.loader.exec_module(fixture)
 
 
 def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path) -> None:
-    before = fixture.PLAN_BODY.replace("PLAN_REVISION=R1", "PLAN_REVISION=R9")
+    before = fixture.PLAN_BODY.replace("PLAN_REVISION=R1", "PLAN_REVISION=R8")
     amendment = {"kind": "add_work_item", "milestone_id": "M2", "work_item": {
         "id": "W6", "title": "Bootstrap repair validation",
         "objective": "Prove the structured amendment and authority readback.",
@@ -35,7 +38,11 @@ def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path
         "acceptance": ["The resulting Plan preserves W1-W5 and adds this exact Work Item."],
     }}
     before_doc = normalize_portable_plan(before, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
-    after, normalized = add_work_item_to_plan(before, before_doc, amendment)
+    rendered_after, normalized = add_work_item_to_plan(before, before_doc, amendment)
+    assert "PLAN_REVISION=R9" in rendered_after
+    # The live #005 authority records Store revision 10 while plan.md is at
+    # semantic body revision R9. The predecessor body is R8.
+    after = rendered_after
     before_digest, after_digest = (hashlib.sha256(x.encode()).hexdigest() for x in (before, after))
     base = tmp_path / "plans"
     plan_dir = base / fixture.PROJECT_ID / fixture.PLAN_ID
@@ -53,6 +60,14 @@ def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path
     journal = FileBackedDurableJournalStore(tmp_path / "journal.json")
     try:
         governance.put_plan(ProjectPlanRecord(fixture.PROJECT_ID, fixture.PLAN_ID, PLAN_LIFECYCLE_ACTIVE, binding, 1))
+        for expected_revision in range(1, 10):
+            governance.compare_and_swap_plan(
+                fixture.PROJECT_ID,
+                fixture.PLAN_ID,
+                expected_revision,
+                authority=binding,
+            )
+        assert governance.get_plan(fixture.PROJECT_ID, fixture.PLAN_ID).revision == 10
         evidence = {"project_id": fixture.PROJECT_ID, "plan_id": fixture.PLAN_ID,
             "authority_source_revision_before": before_digest, "authority_source_revision_after": after_digest,
             "authority_source_digest_before": before_digest, "authority_source_digest_after": after_digest,
@@ -87,7 +102,24 @@ def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path
         adapter.historical_plan_reader = None
         adapter.historical_plan_lineage_reader = None
         adapter.plan_lineage_reader = None
+        exact_entry = journal.get("lineage-journal-1")
+        assert exact_entry is not None
+        unrelated = SimpleNamespace(
+            evidence={"project_id": "foreign_project", "plan_id": "plan_foreign"},
+            typed_target=target,
+            authority_source_revision="c" * 64,
+            observed_revision="d" * 64,
+            journal_state=JournalState.VERIFIED,
+        )
+        entries = [SimpleNamespace(record=unrelated) for _ in range(128)] + [exact_entry]
+        adapter.journal_store = SimpleNamespace(list_all=lambda: entries)
         receipt = SimpleNamespace(plan_source_revision=before_digest)
+        assert len(adapter._journal_lineage_records()) == 129
+        exact_relation = adapter._journal_plan_lineage(receipt)
+        assert exact_relation is not None
+        assert exact_relation["journal_record"].journal_id == "lineage-journal-1"
+        assert exact_relation["project_id"] == fixture.PROJECT_ID
+        assert exact_relation["plan_id"] == fixture.PLAN_ID
         document, metadata = adapter._read_historical_plan(before_digest, receipt)
         current_document = normalize_portable_plan(
             after, source_revision=after_digest, source_kind=PORTABLE_PLAN_SOURCE_LOCAL
@@ -100,6 +132,38 @@ def test_historical_plan_reconstructs_from_real_journal_and_store(tmp_path: Path
         assert document.source_revision == before_digest
         assert tuple(document.milestone_work_items["M2"]) == ("W1", "W2", "W3", "W4", "W5")
         assert metadata["project_id"] == fixture.PROJECT_ID
+        assert "PLAN_REVISION=R9" in after
+        assert "PLAN_REVISION=R8" in before
+
+        valid_record = exact_entry.record
+        foreign_evidence = dict(valid_record.evidence)
+        foreign_evidence["project_id"] = "foreign_project"
+        adapter.journal_store = SimpleNamespace(
+            list_all=lambda: [replace(valid_record, evidence=foreign_evidence)]
+        )
+        with pytest.raises(closure.MilestoneClosureEvidenceError) as foreign_error:
+            adapter._journal_plan_lineage(receipt)
+        assert foreign_error.value.code == "PLAN_LINEAGE_IDENTITY_MISMATCH"
+
+        tampered_evidence = dict(valid_record.evidence)
+        tampered_evidence["amendment_digest"] = "0" * 64
+        adapter.journal_store = SimpleNamespace(
+            list_all=lambda: [replace(valid_record, evidence=tampered_evidence)]
+        )
+        with pytest.raises(closure.MilestoneClosureEvidenceError) as tampered_error:
+            adapter._verify_historical_plan_lineage(
+                receipt,
+                current_plan=current_document,
+                required_work_items=closure.M2_HISTORICAL_WORK_ITEMS,
+            )
+        assert tampered_error.value.code == "PLAN_LINEAGE_AMENDMENT_DIGEST_MISMATCH"
+
+        adapter.journal_store = SimpleNamespace(
+            list_all=lambda: [valid_record, valid_record]
+        )
+        with pytest.raises(closure.MilestoneClosureEvidenceError) as ambiguous_error:
+            adapter._journal_plan_lineage(receipt)
+        assert ambiguous_error.value.code == "PLAN_LINEAGE_AMBIGUOUS"
     finally:
         journal.close()
         governance.close()

@@ -7,6 +7,7 @@ from aota_forge.adapters.opencode.host_client import OpenCodeHostClient, message
 from aota_forge.runtime.config import EXECUTOR_OPENCODE, load_runtime_config
 from aota_forge.governance import milestone_closure_evidence as c
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
+from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 from aota_forge.work_plane.steward_finalizer import SubprocessGitPort
 P="aota_forge"; N="plan_005_governance_self_hosting_routing_runtime_lifecycle"; W=("W1","W2","W3","W4","W5")
 def test_real_owner_readbacks():
@@ -36,6 +37,21 @@ def test_real_owner_readbacks():
    assert record.worker_result_card_digest==card.card_digest==z.completion_card_digest
    assert card.result_handoff_ref.digest==z.result_digest
    cards[w]=(z.receipt_digest,z.result_digest,z.completion_card_digest,card.result_handoff_ref.digest)
+  journal_entries=j.list_all()
+  assert 129 <= len(journal_entries) <= c.HISTORICAL_PLAN_LINEAGE_MAX_JOURNAL_RECORDS
+  lineage_probe=object.__new__(c.ThinMilestoneClosureEvidenceAdapter)
+  lineage_probe.project_id=P; lineage_probe.plan_binding=plan.authority; lineage_probe.governance_store=g; lineage_probe.journal_store=j
+  exact_lineage=lineage_probe._journal_plan_lineage(rs["W1"])
+  assert exact_lineage is not None and exact_lineage.get("project_id")==P and exact_lineage.get("plan_id")==N
+  assert exact_lineage.get("journal_record").journal_id==rec.journal_id
+  lineage_probe.governance_root=LocalGovernanceRootBinding.from_trusted_base(root.parent/"plans",project_id=P)
+  lineage_probe.historical_plan_reader=None; lineage_probe.plan_lineage_reader=None
+  current_plan,_=lineage_probe._current_plan()
+  reconstructed=[]
+  for w in W:
+   lineage_probe._verify_historical_plan_lineage(rs[w],current_plan=current_plan,required_work_items=c.M2_HISTORICAL_WORK_ITEMS)
+   reconstructed.append(w)
+  assert tuple(reconstructed)==W
   cfg=load_runtime_config()
   if cfg.executor!=EXECUTOR_OPENCODE:
    assert cfg.host_endpoint is None

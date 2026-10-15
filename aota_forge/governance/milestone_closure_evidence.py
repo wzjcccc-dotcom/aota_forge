@@ -13,6 +13,7 @@ import json
 import os
 import re
 import tempfile
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,7 +82,10 @@ HISTORICAL_WORK_ACCEPTANCE_RECONSTRUCTION = True
 CURRENT_INSPECTOR_SESSION_IS_ACCEPTANCE_AUTHORITY = False
 W6_SAME_PLAN_PREDECESSOR_REVISION_EXCEPTION_ONLY = True
 GENERALIZED_PLAN_REVISION_ENGINE_CREATED = False
-HISTORICAL_PLAN_LINEAGE_MAX_ENTRIES = 16
+# The journal port exposes a bounded snapshot through ``list_all`` rather than
+# a query API. Keep that snapshot finite, then select only the exact Plan
+# source transition being verified below.
+HISTORICAL_PLAN_LINEAGE_MAX_JOURNAL_RECORDS = 256
 
 PARENT_WORK_ACCEPTANCE_DIRECTORY = "parent-work-acceptances"
 PARENT_WORK_ACCEPTANCE_MAX_RECEIPTS = 64
@@ -786,7 +790,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         before, after, before_plan, after_plan, before_digest, current_plan = self._w6_lineage_bounds(body, relation)
         amendment, predecessor_edges, predecessor_dag, block = self._w6_successor_shape(body, current_plan, relation)
         return self._w6_find_predecessor(
-            body, before, before_plan, before_digest, after_plan, current_plan,
+            body, before, before_digest, current_plan,
             predecessor_edges, predecessor_dag, block,
         )
 
@@ -802,9 +806,14 @@ class ThinMilestoneClosureEvidenceAdapter:
         if self.plan_binding.source_revision is None or str(self.plan_binding.source_revision) != after:
             raise MilestoneClosureEvidenceError("HISTORICAL_PLAN_REVISION_MISMATCH", "successor revision is not bound")
         current_digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        after_digest = str(relation.get("authority_source_digest_after") or relation.get("observed_raw_digest") or after)
-        before_digest = str(relation.get("authority_source_digest_before") or relation.get("original_plan_raw_digest") or before)
-        if current_digest != after or current_digest != after_digest or before_digest != before:
+        after_digest = str(relation.get("authority_source_digest_after") or relation.get("observed_raw_digest") or "")
+        before_digest = str(relation.get("authority_source_digest_before") or relation.get("original_plan_raw_digest") or "")
+        if (
+            not _SHA256_RE.fullmatch(after_digest)
+            or not _SHA256_RE.fullmatch(before_digest)
+            or current_digest != after_digest
+            or self.plan_binding.source_digest != after_digest
+        ):
             raise MilestoneClosureEvidenceError("HISTORICAL_PLAN_DIGEST_MISMATCH", "journal/source digest mismatch")
         try:
             current_plan = normalize_portable_plan(body, source_revision=after, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
@@ -830,10 +839,12 @@ class ThinMilestoneClosureEvidenceAdapter:
         expected_items = set(M2_HISTORICAL_WORK_ITEMS) | {M2_W6_REPAIR_WORK_ITEM_ID}
         if set(items) != expected_items or len(items) != len(expected_items):
             raise MilestoneClosureEvidenceError("HISTORICAL_WORK_SEMANTICS_CHANGED", "successor Work set is outside W1-W5/W6")
-        after_plan = relation.get("plan_revision_after")
-        revision_match = re.search(r"(?m)^PLAN_REVISION=([^\r\n]+)", body)
-        if revision_match is None or revision_match.group(1).strip() != f"R{after_plan}":
-            raise MilestoneClosureEvidenceError("PLAN_LINEAGE_REVISION_INVALID", "successor body revision disagrees with journal")
+        body_revisions = tuple(re.finditer(r"(?m)^PLAN_REVISION=([^\r\n]+)", body))
+        if len(body_revisions) != 1 or re.fullmatch(r"R[0-9]+", body_revisions[0].group(1).strip()) is None:
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_REVISION_INVALID",
+                "successor Plan body must contain one canonical PLAN_REVISION",
+            )
         edges = set()
         for edge in current_plan.milestone_dependencies.get("M2", ()):
             if not isinstance(edge, (tuple, list)) or len(edge) != 2:
@@ -861,9 +872,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         self,
         body: str,
         before: str,
-        before_plan: int,
         before_digest: str,
-        after_plan: int,
         current_plan: PortablePlanDocument,
         predecessor_edges: set[tuple[str, str]],
         predecessor_dag: Sequence[str],
@@ -874,7 +883,30 @@ class ThinMilestoneClosureEvidenceAdapter:
         stop = start + len(block)
         current_items = str(current_plan.current_fields.get("M2_WORK_ITEMS") or "").strip()
         current_dag = str(current_plan.current_fields.get("M2_DAG") or "").strip()
+        body_revisions = tuple(re.finditer(r"(?m)^PLAN_REVISION=([^\r\n]+)", body))
+        body_revision = body_revisions[0].group(1).strip()
+        # Structured add-work advances the body revision independently of the
+        # adjacent Project Governance Store record revisions checked above.
+        body_revision_number = int(body_revision[1:])
+        if body_revision_number < 1:
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_REVISION_INVALID",
+                "W6 successor body revision has no legal predecessor",
+            )
+        predecessor_body_revision = f"R{body_revision_number - 1}"
         dag_values = [", ".join(predecessor_dag)]
+        predecessor_graph = {
+            ("W1", "W2"),
+            ("W1", "W3"),
+            ("W2", "W4"),
+            ("W3", "W4"),
+            ("W4", "W5"),
+        }
+        if predecessor_edges == predecessor_graph:
+            dag_values.append("W1 -> (W2 || W3) -> W4 -> W5")
+        # The exact predecessor source uses the compact item-list encoding;
+        # keep the existing spaced form as the other bounded canonical form.
+        work_item_values = [", ".join(M2_HISTORICAL_WORK_ITEMS), ",".join(M2_HISTORICAL_WORK_ITEMS)]
         outgoing: dict[str, str] = {}
         incoming: set[str] = set()
         for source, target in predecessor_edges:
@@ -892,40 +924,57 @@ class ThinMilestoneClosureEvidenceAdapter:
                 node = outgoing.get(node, "")
         if len(chain) == len(M2_HISTORICAL_WORK_ITEMS) and len(predecessor_edges) == len(M2_HISTORICAL_WORK_ITEMS) - 1:
             dag_values.append(" -> ".join(chain))
+        reconstructed: list[str] = []
         for dag_value in dag_values:
-            for left in range(3):
-                left_start = start - left * len(ending)
-                if left_start < 0 or body[left_start:start] != ending * left:
-                    continue
-                for right in range(3):
-                    right_stop = stop + right * len(ending)
-                    if right_stop > len(body) or body[stop:right_stop] != ending * right:
+            for work_items_value in work_item_values:
+                for left in range(3):
+                    left_start = start - left * len(ending)
+                    if left_start < 0 or body[left_start:start] != ending * left:
                         continue
-                    candidate = body[:left_start] + body[right_stop:]
-                    try:
-                        candidate = self._replace_reconstructed_field(candidate, "PLAN_REVISION", f"R{after_plan}", f"R{before_plan}")
-                        candidate = self._replace_reconstructed_field(candidate, "M2_WORK_ITEMS", current_items, ", ".join(M2_HISTORICAL_WORK_ITEMS))
-                        candidate = self._replace_reconstructed_field(candidate, "M2_DAG", current_dag, dag_value)
-                        document = normalize_portable_plan(candidate, source_revision=before, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
-                    except Exception:
-                        continue
-                    if (
-                        hashlib.sha256(candidate.encode("utf-8")).hexdigest() == before_digest
-                        and set(document.milestone_work_items.get("M2", ())) == set(M2_HISTORICAL_WORK_ITEMS)
-                        and M2_W6_REPAIR_WORK_ITEM_ID not in document.milestone_work_items.get("M2", ())
-                        and set(document.milestone_dependencies.get("M2", ())) == predecessor_edges
-                    ):
-                        return candidate
+                    for right in range(3):
+                        right_stop = stop + right * len(ending)
+                        if right_stop > len(body) or body[stop:right_stop] != ending * right:
+                            continue
+                        candidate = body[:left_start] + body[right_stop:]
+                        try:
+                            candidate = self._replace_reconstructed_field(
+                                candidate,
+                                "PLAN_REVISION",
+                                body_revision,
+                                predecessor_body_revision,
+                            )
+                            candidate = self._replace_reconstructed_field(candidate, "M2_WORK_ITEMS", current_items, work_items_value)
+                            candidate = self._replace_reconstructed_field(candidate, "M2_DAG", current_dag, dag_value)
+                            document = normalize_portable_plan(candidate, source_revision=before, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
+                        except Exception:
+                            continue
+                        if (
+                            hashlib.sha256(candidate.encode("utf-8")).hexdigest() == before_digest
+                            and set(document.milestone_work_items.get("M2", ())) == set(M2_HISTORICAL_WORK_ITEMS)
+                            and M2_W6_REPAIR_WORK_ITEM_ID not in document.milestone_work_items.get("M2", ())
+                            and set(document.milestone_dependencies.get("M2", ())) == predecessor_edges
+                            and candidate not in reconstructed
+                        ):
+                            reconstructed.append(candidate)
+        if len(reconstructed) == 1:
+            return reconstructed[0]
+        if len(reconstructed) > 1:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_RECONSTRUCTION_AMBIGUOUS",
+                "multiple exact predecessor Plan bodies match the journal digest",
+            )
         raise MilestoneClosureEvidenceError("HISTORICAL_PLAN_RECONSTRUCTION_MISMATCH", "reverse W6 digest did not match")
 
     def _reconstruct_historical_plan_from_journal(
         self,
         source_revision: str,
         receipt: ParentWorkAcceptanceProjection,
+        *,
+        lineage: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any] | None:
         if self.journal_store is None:
             return None
-        relation = self._journal_plan_lineage(receipt)
+        relation = lineage or self._journal_plan_lineage(receipt)
         if relation is None or str(relation.get("authority_source_revision_before") or "") != source_revision:
             return None
         try:
@@ -979,8 +1028,23 @@ class ThinMilestoneClosureEvidenceAdapter:
                 "HISTORICAL_PLAN_SOURCE_UNAVAILABLE",
                 "exact predecessor Plan relation is unavailable",
             )
+        if str(relation.get("authority_source_revision_before") or "") != str(source_revision):
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_REVISION_MISMATCH",
+                "exact journal relation does not bind the receipt's predecessor source revision",
+            )
+        before_digest = str(
+            relation.get("authority_source_digest_before")
+            or relation.get("original_plan_raw_digest")
+            or ""
+        )
+        if not _SHA256_RE.fullmatch(before_digest):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_DIGEST_MISMATCH",
+                "exact journal relation has no valid predecessor source digest",
+            )
         body = relation.get("last_observed_raw_authority_body")
-        if isinstance(body, str) and hashlib.sha256(body.encode("utf-8")).hexdigest() == source_revision:
+        if isinstance(body, str) and hashlib.sha256(body.encode("utf-8")).hexdigest() == before_digest:
             try:
                 return (
                     normalize_portable_plan(
@@ -995,17 +1059,21 @@ class ThinMilestoneClosureEvidenceAdapter:
                     "HISTORICAL_PLAN_SOURCE_INVALID",
                     "journal predecessor Plan body is not a valid normalized Plan",
                 ) from exc
-        reconstructed = self._reconstruct_historical_plan_from_journal(source_revision, receipt)
+        reconstructed = self._reconstruct_historical_plan_from_journal(
+            source_revision,
+            receipt,
+            lineage=relation,
+        )
         if not isinstance(reconstructed, Mapping) or not isinstance(reconstructed.get("body"), str):
             raise MilestoneClosureEvidenceError(
                 "HISTORICAL_PLAN_SOURCE_UNAVAILABLE",
                 "exact predecessor Plan body is unavailable",
             )
         predecessor_body = reconstructed["body"]
-        if hashlib.sha256(predecessor_body.encode("utf-8")).hexdigest() != source_revision:
+        if hashlib.sha256(predecessor_body.encode("utf-8")).hexdigest() != before_digest:
             raise MilestoneClosureEvidenceError(
                 "HISTORICAL_PLAN_DIGEST_MISMATCH",
-                "reconstructed predecessor Plan digest differs from the journal predecessor revision",
+                "reconstructed predecessor Plan digest differs from the journal predecessor source digest",
             )
         try:
             document = normalize_portable_plan(
@@ -1098,7 +1166,7 @@ class ThinMilestoneClosureEvidenceAdapter:
             entries = self.journal_store.list_all()
         except Exception as exc:
             raise MilestoneClosureEvidenceError("PLAN_LINEAGE_SOURCE_UNAVAILABLE", "trusted durable journal could not be read") from exc
-        if len(entries) > HISTORICAL_PLAN_LINEAGE_MAX_ENTRIES * 4:
+        if len(entries) > HISTORICAL_PLAN_LINEAGE_MAX_JOURNAL_RECORDS:
             raise MilestoneClosureEvidenceError("PLAN_LINEAGE_UNBOUNDED", "durable journal lineage scan exceeds its bound")
         return tuple(getattr(entry, "record", entry) for entry in entries)
 
@@ -1160,20 +1228,36 @@ class ThinMilestoneClosureEvidenceAdapter:
 
     def _journal_plan_lineage(self, receipt: ParentWorkAcceptanceProjection) -> Mapping[str, Any] | None:
         matches = []
+        predecessor_revision = str(receipt.plan_source_revision)
+        successor_revision = str(self.plan_binding.source_revision or "")
+        try:
+            expected_target = _plan_object_ref(self.plan_binding.plan_id).to_canonical()
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError("PLAN_LINEAGE_IDENTITY_MISMATCH", "bound Plan target is invalid") from exc
         for record in self._journal_lineage_records():
+            target = getattr(record, "typed_target", None)
+            target_reader = getattr(target, "to_canonical", None)
+            if (
+                not callable(target_reader)
+                or target_reader() != expected_target
+                or str(getattr(record, "authority_source_revision", "") or "") != predecessor_revision
+                or str(getattr(record, "observed_revision", "") or "") != successor_revision
+            ):
+                continue
             relation = self._journal_lineage_relation(record)
             if relation is None:
-                continue
+                raise MilestoneClosureEvidenceError("PLAN_LINEAGE_RECORD_MISMATCH", "exact Plan journal entry has no evidence")
+            if relation.get("project_id") != self.project_id or relation.get("plan_id") != self.plan_binding.plan_id:
+                raise MilestoneClosureEvidenceError("PLAN_LINEAGE_IDENTITY_MISMATCH", "exact source transition has foreign Plan identity")
             if (
-                relation.get("project_id") == self.project_id
-                and relation.get("plan_id") == self.plan_binding.plan_id
-                and str(relation.get("authority_source_revision_before") or "") == str(receipt.plan_source_revision)
-                and str(relation.get("authority_source_revision_after") or "") == str(self.plan_binding.source_revision)
+                str(relation.get("authority_source_revision_before") or "") != predecessor_revision
+                or str(relation.get("authority_source_revision_after") or "") != successor_revision
             ):
-                relation["journal_record"] = record
-                matches.append(relation)
-        if len(matches) > 1:
-            raise MilestoneClosureEvidenceError("PLAN_LINEAGE_AMBIGUOUS", "multiple durable Plan predecessor relations match the receipt")
+                raise MilestoneClosureEvidenceError("PLAN_LINEAGE_RECORD_MISMATCH", "exact Plan journal entry does not bind both source revisions")
+            relation["journal_record"] = record
+            matches.append(relation)
+            if len(matches) > 1:
+                raise MilestoneClosureEvidenceError("PLAN_LINEAGE_AMBIGUOUS", "multiple durable Plan predecessor relations match the receipt")
         return matches[0] if matches else None
 
     def _verify_historical_plan_lineage(
@@ -1203,8 +1287,64 @@ class ThinMilestoneClosureEvidenceAdapter:
                 "predecessor/current Plan is not bound to M2",
             )
         self._closure_work_items(historical_plan.milestone_work_items.get("M2", ()))
+        w6_source_lines: set[str] = set()
+        raw_amendment = self._mapping_value(lineage, "amendment", "amendment_payload", "plan_amendment")
+        if isinstance(raw_amendment, Mapping):
+            try:
+                normalized_w6 = normalize_add_work_item(raw_amendment)
+                if (
+                    normalized_w6["milestone_id"] == "M2"
+                    and normalized_w6["work_item"]["id"] == M2_W6_REPAIR_WORK_ITEM_ID
+                    and lineage.get("amendment_digest") == canonical_plan_amendment_digest(normalized_w6)
+                ):
+                    item = normalized_w6["work_item"]
+                    dependencies = item["dependencies"]
+                    w6_source_lines = {
+                        line[:500]
+                        for line in (
+                            f"#### M2/{item['id']} - {item['title']}",
+                            f"Objective: {item['objective']}",
+                            "Scope:",
+                            *(f"- {entry}" for entry in item["scope"]),
+                            f"Dependencies: {', '.join(dependencies) if dependencies else 'none'}",
+                            "Acceptance:",
+                            *(f"- {entry}" for entry in item["acceptance"]),
+                        )
+                    }
+            except Exception:
+                pass
         for work_item_id in M2_HISTORICAL_WORK_ITEMS:
-            if self._work_projection(historical_plan, work_item_id) != self._work_projection(current_plan, work_item_id):
+            historical_projection = self._work_projection(historical_plan, work_item_id)
+            current_projection = self._work_projection(current_plan, work_item_id)
+            current_projection["dependencies"] = [
+                edge
+                for edge in current_projection["dependencies"]
+                if M2_W6_REPAIR_WORK_ITEM_ID not in edge
+            ]
+            if w6_source_lines:
+                for current_slice in current_projection["source_slices"]:
+                    historical_slice = next(
+                        (
+                            item
+                            for item in historical_projection["source_slices"]
+                            if item.get("title") == current_slice.get("title")
+                        ),
+                        None,
+                    )
+                    source_text = current_slice.get("source_text")
+                    historical_text = historical_slice.get("source_text") if historical_slice else None
+                    if not isinstance(source_text, str) or not isinstance(historical_text, str):
+                        continue
+                    historical_lines = Counter(historical_text.splitlines())
+                    filtered_lines = []
+                    for line in source_text.splitlines():
+                        if historical_lines[line]:
+                            historical_lines[line] -= 1
+                            filtered_lines.append(line)
+                        elif line not in w6_source_lines:
+                            filtered_lines.append(line)
+                    current_slice["source_text"] = "\n".join(filtered_lines)
+            if historical_projection != current_projection:
                 raise MilestoneClosureEvidenceError(
                     "HISTORICAL_WORK_SEMANTICS_CHANGED",
                     f"M2/{work_item_id} acceptance or semantic projection changed",
@@ -1262,6 +1402,29 @@ class ThinMilestoneClosureEvidenceAdapter:
             raise MilestoneClosureEvidenceError(
                 "PLAN_LINEAGE_REVISION_MISMATCH",
                 "predecessor relation does not bind both Plan source revisions",
+            )
+        before_digest = self._mapping_value(
+            lineage,
+            "authority_source_digest_before",
+            "original_plan_raw_digest",
+        )
+        after_digest = self._mapping_value(
+            lineage,
+            "authority_source_digest_after",
+            "observed_raw_digest",
+        )
+        if (
+            not isinstance(before_digest, str)
+            or not _SHA256_RE.fullmatch(before_digest)
+            or not isinstance(after_digest, str)
+            or not _SHA256_RE.fullmatch(after_digest)
+            or self.plan_binding.source_digest != after_digest
+            or str(historical_plan.source_revision) != predecessor_revision
+            or str(current_plan.source_revision) != current_revision
+        ):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_DIGEST_MISMATCH",
+                "predecessor/successor source digests do not match the exact journal and bound Plan",
             )
 
         before_plan_revision = self._mapping_value(lineage, "plan_revision_before", "revision_before")
