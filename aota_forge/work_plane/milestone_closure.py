@@ -159,6 +159,7 @@ _ALLOWED_CLOSURE_FIELDS: frozenset[str] = frozenset({
     "milestone_ref",
     "ready_for_project_steward",
     "final_review_cycle",
+    "review_gate_waived_by_user",
     "reviewed_frontier_ref",
     "supporting_evidence_refs",
     "blocking_reasons",
@@ -179,10 +180,11 @@ class MilestoneClosureReadiness:
 
     milestone_ref: SemanticReference
     ready_for_project_steward: bool
-    final_review_cycle: ReviewCycle
+    final_review_cycle: ReviewCycle | None
     reviewed_frontier_ref: SemanticReference
     supporting_evidence_refs: tuple[str, ...] = ()
     blocking_reasons: tuple[str, ...] = ()
+    review_gate_waived_by_user: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.milestone_ref, SemanticReference):
@@ -191,8 +193,14 @@ class MilestoneClosureReadiness:
         _validate_bounded_str(self.milestone_ref.ref, "milestone_ref", MAX_MILESTONE_REF_LENGTH)
         if type(self.ready_for_project_steward) is not bool:  # strict bool
             raise TypeError(f"ready_for_project_steward must be bool, got {type(self.ready_for_project_steward).__name__}")
-        rc = parse_review_cycle(self.final_review_cycle)
-        object.__setattr__(self, "final_review_cycle", rc)
+        if type(self.review_gate_waived_by_user) is not bool:
+            raise TypeError("review_gate_waived_by_user must be bool")
+        if self.review_gate_waived_by_user:
+            if self.final_review_cycle is not None:
+                raise ValueError("a user-waived review gate must not claim a completed review cycle")
+        else:
+            rc = parse_review_cycle(self.final_review_cycle)
+            object.__setattr__(self, "final_review_cycle", rc)
         if not isinstance(self.reviewed_frontier_ref, SemanticReference):
             raise TypeError(f"reviewed_frontier_ref must be SemanticReference, got {type(self.reviewed_frontier_ref).__name__}")
         _validate_bounded_str(self.reviewed_frontier_ref.ref, "reviewed_frontier_ref", MAX_FRONTIER_REF_LENGTH)
@@ -241,14 +249,17 @@ class MilestoneClosureReadiness:
         return False
 
     def canonical_dict(self) -> dict[str, Any]:
-        return canonicalize({
+        value = {
             "blocking_reasons": sorted(self.blocking_reasons),
-            "final_review_cycle": self.final_review_cycle.value,
+            "final_review_cycle": self.final_review_cycle.value if self.final_review_cycle is not None else None,
             "milestone_ref": self.milestone_ref.to_dict(),
             "ready_for_project_steward": self.ready_for_project_steward,
             "reviewed_frontier_ref": self.reviewed_frontier_ref.to_dict(),
             "supporting_evidence_refs": sorted(self.supporting_evidence_refs),
-        }, path="MilestoneClosureReadiness")  # type: ignore[return-value]
+        }
+        if self.review_gate_waived_by_user:
+            value["review_gate_waived_by_user"] = True
+        return canonicalize(value, path="MilestoneClosureReadiness")  # type: ignore[return-value]
 
     def canonical_json(self) -> str:
         return canonical_json(self.canonical_dict())
@@ -261,14 +272,17 @@ class MilestoneClosureReadiness:
         return self.compute_digest()
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "milestone_ref": self.milestone_ref.to_dict(),
             "ready_for_project_steward": self.ready_for_project_steward,
-            "final_review_cycle": self.final_review_cycle.value,
+            "final_review_cycle": self.final_review_cycle.value if self.final_review_cycle is not None else None,
             "reviewed_frontier_ref": self.reviewed_frontier_ref.to_dict(),
             "supporting_evidence_refs": list(self.supporting_evidence_refs),
             "blocking_reasons": list(self.blocking_reasons),
         }
+        if self.review_gate_waived_by_user:
+            value["review_gate_waived_by_user"] = True
+        return value
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "MilestoneClosureReadiness":
@@ -289,12 +303,15 @@ class MilestoneClosureReadiness:
         if type(data["ready_for_project_steward"]) is not bool:
             raise TypeError(f"ready_for_project_steward must be bool, got {type(data['ready_for_project_steward']).__name__}")
         # foreign enum
+        waived = data.get("review_gate_waived_by_user", False)
+        if type(waived) is not bool:
+            raise TypeError("review_gate_waived_by_user must be bool")
         if isinstance(data["final_review_cycle"], Enum) and not isinstance(data["final_review_cycle"], ReviewCycle):
             raise TypeError(f"final_review_cycle must be ReviewCycle, got foreign Enum {type(data['final_review_cycle']).__name__}")
         # dict impostor checks for refs: must be SemanticReference compatible
         milestone_ref = _to_semantic_ref(data["milestone_ref"], "milestone_ref")
         frontier_ref = _to_semantic_ref(data["reviewed_frontier_ref"], "reviewed_frontier_ref")
-        rc = parse_review_cycle(data["final_review_cycle"])
+        rc = None if waived and data["final_review_cycle"] is None else parse_review_cycle(data["final_review_cycle"])
         s_refs = tuple(data.get("supporting_evidence_refs") or ())
         b_reasons = tuple(data.get("blocking_reasons") or ())
         # Validate items are not dict impostors pretending to be typed evidence: s_refs must be strings, not mappings
@@ -317,6 +334,7 @@ class MilestoneClosureReadiness:
             reviewed_frontier_ref=frontier_ref,
             supporting_evidence_refs=s_refs,
             blocking_reasons=b_reasons,
+            review_gate_waived_by_user=waived,
         )
 
 # ---------------------------------------------------------------------------

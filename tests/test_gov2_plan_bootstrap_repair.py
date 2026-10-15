@@ -20,8 +20,12 @@ from aota_forge.core_ingress import (
 from aota_forge.governance.intake import GovernanceIntakeContext, GovernanceIntakeError, GovernanceIntakeService
 from aota_forge.governance.plan_semantics import (
     ADD_WORK_ITEM_AMENDMENT_CONTRACT,
+    M2_RV2_WAIVER_DECISION_REF,
+    M2_RV2_WAIVER_REASON,
+    WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT,
     PlanSemanticError,
     normalize_add_work_item,
+    normalize_plan_amendment,
     plan_amendment_contracts_for_help,
 )
 from aota_forge.mcp_transport import help_operation_projection
@@ -289,6 +293,103 @@ def test_structured_add_work_item_mints_decision_and_refreshes_projections(tmp_p
     assert (Path(context.governance_base) / PROJECT_ID / "STATUS.md").is_file()
 
 
+def _plan005_r9_body() -> str:
+    body = PLAN_BODY_WITH_W6.replace(PROJECT_ID, "aota_forge").replace(
+        PLAN_ID,
+        "plan_005_governance_self_hosting_routing_runtime_lifecycle",
+    )
+    body = body.replace("PLAN_REVISION=R1", "PLAN_REVISION=R9")
+    body = body.replace(
+        "Verify that a Work heading remains distinct from its milestone.",
+        "Verify that a Work heading remains distinct from its milestone.\n"
+        "Lifecycle is W6 → integration → RV2 → Doctor → M2 closure; "
+        "RV2 is a separate Milestone-level gate, not a Work Item.\n"
+        "AC12: No second Plan authority; M2_RV2_REQUIRED=yes and RV2 remains a separate Milestone-level gate.",
+    )
+    return body
+
+
+def test_plan005_rv2_waiver_uses_governance_cas_and_preserves_work_semantics(tmp_path: Path) -> None:
+    project_id = "aota_forge"
+    plan_id = "plan_005_governance_self_hosting_routing_runtime_lifecycle"
+    workspace = tmp_path / "workspace"
+    project_root = workspace / "checkout"
+    (project_root / ".aota").mkdir(parents=True)
+    (project_root / ".aota" / "project.yaml").write_text(MANIFEST.replace(PROJECT_ID, project_id), encoding="utf-8")
+    governance_base = tmp_path / "plans"
+    governance_base.mkdir()
+    registry = tmp_path / "workspaces.json"
+    registry.write_text("{}", encoding="utf-8")
+    context = GovernanceIntakeContext(
+        workspace_id="plan005-rv2-waiver-workspace",
+        governance_base=governance_base,
+        registry_path=registry,
+        workspace_root=workspace,
+        project_root=project_root,
+    )
+    service = GovernanceIntakeService(
+        context,
+        principal="task-main",
+        decision_source={
+            "owner_type": "task-main",
+            "owner_id": "task-main",
+            "channel": "test",
+            "provenance": "trusted_fixture",
+        },
+    )
+    service.plan("init", project_id=project_id, plan_id=plan_id, candidate_body=_plan005_r9_body())
+    before = service.plan("inspect", project_id=project_id, plan_id=plan_id, view="full")
+    index = service.plan("inspect", project_id=project_id, plan_id=plan_id, view="index")["semantic_index"]
+    milestone_digest = next(item["section_digest"] for item in index["sections"] if item["section_ref"] == "M2")
+    before_work_digests = {
+        item["section_ref"]: item["section_digest"]
+        for item in index["sections"]
+        if item["section_ref"].startswith("M2/") and item["section_ref"] != "M2/W6"
+    }
+
+    result = service.plan(
+        "amend",
+        project_id=project_id,
+        plan_id=plan_id,
+        expected_plan_revision=1,
+        target_ref="M2",
+        expected_section_digest=milestone_digest,
+        amendment={
+            "kind": "waive_m2_rv2_gate",
+            "milestone_id": "M2",
+            "decision_ref": M2_RV2_WAIVER_DECISION_REF,
+        },
+    )
+
+    after = service.plan("inspect", project_id=project_id, plan_id=plan_id, view="full")
+    after_index = service.plan("inspect", project_id=project_id, plan_id=plan_id, view="index")["semantic_index"]
+    body = after["plan_body"]
+    readback = result["amendment_readback"]
+    assert "PLAN_REVISION=R10" in body
+    assert "M2_RV2_REQUIRED=no" in body
+    assert "M2_RV2_WAIVED_BY_USER=yes" in body
+    assert f"M2_RV2_WAIVER_DECISION={M2_RV2_WAIVER_DECISION_REF}" in body
+    assert f"M2_RV2_WAIVER_REASON={M2_RV2_WAIVER_REASON}" in body
+    assert "W6 → integration → Doctor → M2 closure" in body
+    assert "W6 → integration → RV2 → Doctor → M2 closure" not in body
+    assert "AC12: No second Plan authority;" in body
+    assert "M2_RV2_REQUIRED=yes and RV2 remains a separate Milestone-level gate." not in body
+    assert after["normalized_plan"]["milestone_work_items"]["M2"] == ["W1", "W2", "W3", "W4", "W5", "W6"]
+    assert before["normalized_plan"]["milestone_dependencies"]["M2"] == after["normalized_plan"]["milestone_dependencies"]["M2"]
+    assert {
+        item["section_ref"]: item["section_digest"]
+        for item in after_index["sections"]
+        if item["section_ref"].startswith("M2/") and item["section_ref"] != "M2/W6"
+    } == before_work_digests
+    assert readback["plan_revision_before"] == 1
+    assert readback["plan_revision_after"] == 2
+    assert readback["plan_digest_before"] == before["source_digest"]
+    assert readback["plan_digest_after"] == after["source_digest"]
+    assert readback["plan_digest_before"] != readback["plan_digest_after"]
+    assert readback["journal_cas_outcome"]["authority_write_verified"] is True
+    assert readback["journal_cas_outcome"]["journal_state"] in {"VERIFIED", "VERIFIED_RECOVERED"}
+
+
 def test_add_work_item_fail_closed_for_duplicate_stale_revision_and_section_digest(tmp_path: Path) -> None:
     _context_value, service = _service(tmp_path)
     original = _inspect(service, "full")["source_digest"]
@@ -335,6 +436,18 @@ def test_add_work_item_fail_closed_for_duplicate_stale_revision_and_section_dige
             expected_plan_revision=1,
             candidate_body=PLAN_BODY,
         )
+    with pytest.raises(GovernanceIntakeError, match="AMENDMENT_SCOPE_INVALID"):
+        service.plan(
+            "amend",
+            project_id=PROJECT_ID,
+            plan_id=PLAN_ID,
+            expected_plan_revision=1,
+            amendment={
+                "kind": "waive_m2_rv2_gate",
+                "milestone_id": "M2",
+                "decision_ref": M2_RV2_WAIVER_DECISION_REF,
+            },
+        )
     assert _inspect(service, "full")["source_digest"] == original
 
 
@@ -343,9 +456,10 @@ def test_plan_help_and_core_identity_binding_describe_the_repaired_contract(monk
     assert help_contract["default_inspect_view"] == "card"
     assert help_contract["inspect_views"] == ["card", "index", "section", "full"]
     assert help_contract["read_or_write"] == "mode-dependent"
-    assert help_contract["implemented_amendment_kinds"] == ["add_work_item"]
+    assert help_contract["implemented_amendment_kinds"] == ["add_work_item", "waive_m2_rv2_gate"]
     assert help_contract["implemented_amendment_kinds"] == [
-        contract["fields"]["kind"]["const"] for contract in (ADD_WORK_ITEM_AMENDMENT_CONTRACT,)
+        contract["fields"]["kind"]["const"]
+        for contract in (ADD_WORK_ITEM_AMENDMENT_CONTRACT, WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT)
     ]
     assert help_contract["amendment_contracts"] == plan_amendment_contracts_for_help()
     amendment_schema = help_contract["amendment_contracts"]["add_work_item"]
@@ -363,6 +477,17 @@ def test_plan_help_and_core_identity_binding_describe_the_repaired_contract(monk
     assert work_item_schema["fields"]["scope"]["type"] == "array[string]"
     assert work_item_schema["fields"]["dependencies"]["type"] == "array[work_item_id]"
     assert work_item_schema["fields"]["acceptance"]["type"] == "array[string]"
+    waiver_schema = help_contract["amendment_contracts"]["waive_m2_rv2_gate"]
+    assert waiver_schema["required"] == list(WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT["fields"])
+    assert waiver_schema["fields"]["milestone_id"]["const"] == "M2"
+    assert waiver_schema["fields"]["decision_ref"]["const"] == M2_RV2_WAIVER_DECISION_REF
+    assert normalize_plan_amendment(
+        {"kind": "waive_m2_rv2_gate", "milestone_id": "M2", "decision_ref": M2_RV2_WAIVER_DECISION_REF}
+    )["kind"] == "waive_m2_rv2_gate"
+    with pytest.raises(PlanSemanticError, match="AMENDMENT_DECISION_INVALID"):
+        normalize_plan_amendment(
+            {"kind": "waive_m2_rv2_gate", "milestone_id": "M2", "decision_ref": "user-decision:other"}
+        )
 
     payload = _add_work_item()
     max_title_bytes = work_item_fields["title"]["max_utf8_bytes"]

@@ -14,9 +14,12 @@ from aota_forge.core.execution.durable_state import card_digest_for
 from aota_forge.core.plan.read_model import PortablePlanDocument
 from aota_forge.core.result_governance import ResultOutcome
 from aota_forge.governance import milestone_closure_evidence as closure
+from aota_forge.governance.plan_semantics import M2_RV2_WAIVER_DECISION_REF, M2_RV2_WAIVER_REASON
 from aota_forge.work_plane.result_card import ResultHandoffRef, WorkerResultCard
 from aota_forge.work_plane.roles import AgentWorkRole
 from aota_forge.work_plane.steward_finalizer import TrustedUserGateState
+from aota_forge.work_plane.handoff import SemanticReference
+from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
 
 PROJECT = "aota_forge"
 PLAN = "plan_005_governance_self_hosting_routing_runtime_lifecycle"
@@ -138,7 +141,18 @@ def _adapter(monkeypatch, *, project_root: Path | None = None):
         git_port=FakeGit(),
         handoff_reader=read_handoff,
     )
-    adapter._current_plan = lambda: (SimpleNamespace(current_milestone="M2"), WORK_ITEMS)
+    adapter._current_plan = lambda: (
+        SimpleNamespace(
+            current_milestone="M2",
+            current_fields={
+                "M2_RV2_REQUIRED": "no",
+                "M2_RV2_WAIVED_BY_USER": "yes",
+                "M2_RV2_WAIVER_DECISION": M2_RV2_WAIVER_DECISION_REF,
+                "M2_RV2_WAIVER_REASON": M2_RV2_WAIVER_REASON,
+            },
+        ),
+        WORK_ITEMS,
+    )
 
     def production_ref(resource_id, config):
         assert resource_id == closure.M2_W2_PRODUCTION_RUNTIME_ID
@@ -244,6 +258,44 @@ def test_t1_external_w2_production_owner_is_discovered_by_trusted_resolver(monke
     assert result.production_evidence_ref == (
         f"managed_deployment_receipt:{closure.M2_W2_PRODUCTION_RUNTIME_ID}#sha256:{W2_RECEIPT_DIGEST}"
     )
+    assert result.readiness is not None
+    assert result.readiness.final_review_cycle is None
+    assert result.readiness.review_gate_waived_by_user is True
+
+
+def test_t1a_missing_user_waiver_blocks_m2_readiness(monkeypatch):
+    adapter, executions, digests = _adapter(monkeypatch)
+    _populate(adapter, executions, digests)
+    adapter._current_plan = lambda: (SimpleNamespace(current_milestone="M2", current_fields={}), WORK_ITEMS)
+
+    result = adapter.project(SOURCE)
+
+    assert result.ready_for_project_steward is False
+    assert any("not explicitly waived" in reason for reason in result.blocking_reasons)
+
+
+def test_review_readiness_user_waiver_does_not_claim_a_review_cycle():
+    readiness = MilestoneClosureReadiness(
+        milestone_ref=SemanticReference(ref="M2"),
+        ready_for_project_steward=True,
+        final_review_cycle=None,
+        reviewed_frontier_ref=SemanticReference(ref=FRONTIER),
+        review_gate_waived_by_user=True,
+    )
+
+    round_trip = MilestoneClosureReadiness.from_dict(readiness.to_dict())
+
+    assert round_trip.final_review_cycle is None
+    assert round_trip.review_gate_waived_by_user is True
+    assert round_trip.canonical_dict()["review_gate_waived_by_user"] is True
+    with pytest.raises(ValueError, match="must not claim a completed review cycle"):
+        MilestoneClosureReadiness(
+            milestone_ref=SemanticReference(ref="M2"),
+            ready_for_project_steward=True,
+            final_review_cycle="RV2",
+            reviewed_frontier_ref=SemanticReference(ref=FRONTIER),
+            review_gate_waived_by_user=True,
+        )
 
 
 def test_t2_w2_source_only_worker_result_does_not_erase_external_production_proof(monkeypatch):
@@ -529,8 +581,17 @@ HISTORICAL_PLAN_REVISION = "b" * 64
 HISTORICAL_PARENT = "ses_historicalW6"
 
 
-def _historical_plan(revision: str, *, include_w6: bool, changed_work: str | None = None):
+def _historical_plan(revision: str, *, include_w6: bool, changed_work: str | None = None, waived: bool = False):
     fields = {f"M2_{changed_work}_ACCEPTANCE": "tampered"} if changed_work else {}
+    if waived:
+        fields.update(
+            {
+                "M2_RV2_REQUIRED": "no",
+                "M2_RV2_WAIVED_BY_USER": "yes",
+                "M2_RV2_WAIVER_DECISION": M2_RV2_WAIVER_DECISION_REF,
+                "M2_RV2_WAIVER_REASON": M2_RV2_WAIVER_REASON,
+            }
+        )
     work_items = WORK_ITEMS + (("W6",) if include_w6 else ())
     return PortablePlanDocument(
         current_milestone="M2",
@@ -582,7 +643,7 @@ def _historical_relation(*, state="VERIFIED", project_id=PROJECT, plan_id=PLAN, 
 
 def _prepare_historical_projection(monkeypatch, *, changed_work=None, relation=None, historical_reader=True):
     adapter, executions, digests = _adapter(monkeypatch)
-    current = _historical_plan(adapter.plan_binding.source_revision, include_w6=True, changed_work=changed_work)
+    current = _historical_plan(adapter.plan_binding.source_revision, include_w6=True, changed_work=changed_work, waived=True)
     historical = _historical_plan(HISTORICAL_PLAN_REVISION, include_w6=False)
     adapter._current_plan = lambda: (current, current.milestone_work_items["M2"])
     _populate(adapter, executions, digests)

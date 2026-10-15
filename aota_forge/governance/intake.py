@@ -67,11 +67,12 @@ from aota_forge.governance.project_store import ProjectPlanRecord
 from aota_forge.governance.sqlite_store import SQLiteProjectGovernanceStore
 from aota_forge.governance.plan_semantics import (
     MAX_PLAN_SECTION_READ_BYTES,
+    PLAN_AMENDMENT_CONTRACTS,
     PlanSemanticError,
     PlanSemanticIndex,
-    add_work_item_to_plan,
+    apply_plan_amendment,
     canonical_plan_amendment_digest,
-    normalize_add_work_item,
+    normalize_plan_amendment,
 )
 from aota_forge.work_plane.authorized_roots import LocalGovernanceRootBinding
 
@@ -84,7 +85,9 @@ GOVERNANCE_PROJECT_MODES = frozenset({"init", "inspect", "reconcile"})
 GOVERNANCE_PLAN_MODES = frozenset({"init", "inspect", "amend", "close"})
 GOVERNANCE_PLAN_INSPECT_VIEWS = frozenset({"card", "index", "section", "full"})
 DEFAULT_PLAN_INSPECT_VIEW = "card"
-STRUCTURED_PLAN_AMENDMENT_KINDS = frozenset({"add_work_item"})
+STRUCTURED_PLAN_AMENDMENT_KINDS = frozenset(
+    contract["fields"]["kind"]["const"] for contract in PLAN_AMENDMENT_CONTRACTS
+)
 
 PROJECT_INTAKE_SINGLE_PATH = True
 PLAN_INTAKE_SINGLE_PATH = True
@@ -454,9 +457,10 @@ class GovernanceIntakeService:
                     "Plan amend accepts a structured semantic amendment, not candidate_body",
                 )
             try:
-                normalize_add_work_item(arguments.get("amendment"))
+                normalized_amendment = normalize_plan_amendment(arguments.get("amendment"))
             except PlanSemanticError as exc:
                 raise GovernanceIntakeError(exc.code, exc.message) from exc
+            self._validate_amendment_scope(project_id, plan_id, normalized_amendment)
             expected = arguments.get("expected_plan_revision")
             if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
                 raise GovernanceIntakeError(
@@ -522,9 +526,10 @@ class GovernanceIntakeService:
                     raise GovernanceIntakeError("STALE_PLAN_REVISION", "amendment expected_plan_revision is stale")
                 snapshot, document = self._read_bound_plan(governance_root, current)
                 try:
-                    amendment = normalize_add_work_item(arguments.get("amendment"))
+                    amendment = normalize_plan_amendment(arguments.get("amendment"))
                 except PlanSemanticError as exc:
                     raise GovernanceIntakeError(exc.code, exc.message) from exc
+                self._validate_amendment_scope(project_id, plan_id, amendment)
                 semantic_index = PlanSemanticIndex.build(
                     project_id=project_id,
                     plan_id=plan_id,
@@ -545,7 +550,7 @@ class GovernanceIntakeService:
                     if target_ref != amendment["milestone_id"]:
                         raise GovernanceIntakeError(
                             "SECTION_PRECONDITION_INVALID",
-                            "add_work_item section precondition must target its milestone semantic ref",
+                            "Plan amendment section precondition must target its milestone semantic ref",
                         )
                     try:
                         target_section = semantic_index.resolve(target_ref)
@@ -563,7 +568,7 @@ class GovernanceIntakeService:
                             "STALE_SECTION_DIGEST", "semantic amendment target changed since it was inspected"
                         )
                 try:
-                    body, amendment = add_work_item_to_plan(snapshot.body, document, amendment)
+                    body, amendment = apply_plan_amendment(snapshot.body, document, amendment)
                 except PlanSemanticError as exc:
                     raise GovernanceIntakeError(exc.code, exc.message) from exc
                 try:
@@ -744,6 +749,17 @@ class GovernanceIntakeService:
         if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
             raise GovernanceIntakeError("PROJECT_ID_INVALID", "project_id must match the canonical project identity grammar")
         return project_id
+
+    @staticmethod
+    def _validate_amendment_scope(project_id: str, plan_id: str, amendment: Mapping[str, Any]) -> None:
+        if amendment.get("kind") == "waive_m2_rv2_gate" and (
+            project_id != "aota_forge"
+            or plan_id != "plan_005_governance_self_hosting_routing_runtime_lifecycle"
+        ):
+            raise GovernanceIntakeError(
+                "AMENDMENT_SCOPE_INVALID",
+                "waive_m2_rv2_gate is authorized only for aota_forge Plan #005",
+            )
 
     def _source_repository(self, supplied: object) -> str:
         trusted = self.context.source_repository.strip()

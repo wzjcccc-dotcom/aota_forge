@@ -98,7 +98,36 @@ ADD_WORK_ITEM_AMENDMENT_CONTRACT: dict[str, Any] = {
         },
     }
 }
-PLAN_AMENDMENT_CONTRACTS = (ADD_WORK_ITEM_AMENDMENT_CONTRACT,)
+M2_RV2_WAIVER_DECISION_REF = "user-decision:AF005-M2-RV2-WAIVER-20261015"
+M2_RV2_WAIVER_REASON = (
+    "User cancels the independent M2 RV2 acceptance gate: W1-W6 are complete, "
+    "Evidence Verifier has passed, Doctor reported evidence readiness, and Thin Host "
+    "lacks independent RV2 acceptance integration; do not develop it for this closure."
+)
+_M2_RV2_OLD_LIFECYCLE = "W6 → integration → RV2 → Doctor → M2 closure"
+_M2_RV2_NEW_LIFECYCLE = "W6 → integration → Doctor → M2 closure"
+_M2_RV2_OLD_GATE_CLAUSE = "RV2 is a separate Milestone-level gate, not a Work Item."
+_M2_RV2_NEW_GATE_CLAUSE = (
+    "M2_RV2_REQUIRED=no; M2_RV2_WAIVED_BY_USER=yes by "
+    f"{M2_RV2_WAIVER_DECISION_REF}."
+)
+_M2_RV2_OLD_AC12 = "M2_RV2_REQUIRED=yes and RV2 remains a separate Milestone-level gate."
+_M2_RV2_NEW_AC12 = (
+    "M2_RV2_REQUIRED=no; M2_RV2_WAIVED_BY_USER=yes by "
+    f"{M2_RV2_WAIVER_DECISION_REF}; {M2_RV2_WAIVER_REASON}"
+)
+
+WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT: dict[str, Any] = {
+    "fields": {
+        "kind": {"type": "string", "const": "waive_m2_rv2_gate"},
+        "milestone_id": {"type": "milestone_id", "const": "M2", "pattern": MILESTONE_ID_RE.pattern},
+        "decision_ref": {"type": "string", "const": M2_RV2_WAIVER_DECISION_REF},
+    }
+}
+PLAN_AMENDMENT_CONTRACTS = (
+    ADD_WORK_ITEM_AMENDMENT_CONTRACT,
+    WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT,
+)
 
 
 def plan_amendment_contracts_for_help() -> dict[str, dict[str, Any]]:
@@ -511,6 +540,36 @@ def normalize_add_work_item(payload: object) -> dict[str, Any]:
     }
 
 
+def normalize_waive_m2_rv2_gate(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise PlanSemanticError("AMENDMENT_INVALID", "amendment must be an object")
+    fields = WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT["fields"]
+    if set(payload) != set(fields):
+        raise PlanSemanticError("AMENDMENT_INVALID", "waive_m2_rv2_gate amendment has unknown or missing fields")
+    if payload.get("kind") != fields["kind"]["const"]:
+        raise PlanSemanticError("AMENDMENT_KIND_UNSUPPORTED", "unsupported Plan amendment kind")
+    if payload.get("milestone_id") != fields["milestone_id"]["const"]:
+        raise PlanSemanticError("AMENDMENT_SCOPE_INVALID", "RV2 waiver is limited to milestone M2")
+    if payload.get("decision_ref") != fields["decision_ref"]["const"]:
+        raise PlanSemanticError("AMENDMENT_DECISION_INVALID", "RV2 waiver requires the exact user decision reference")
+    return {
+        "kind": fields["kind"]["const"],
+        "milestone_id": fields["milestone_id"]["const"],
+        "decision_ref": fields["decision_ref"]["const"],
+    }
+
+
+def normalize_plan_amendment(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise PlanSemanticError("AMENDMENT_INVALID", "amendment must be an object")
+    kind = payload.get("kind")
+    if kind == "add_work_item":
+        return normalize_add_work_item(payload)
+    if kind == "waive_m2_rv2_gate":
+        return normalize_waive_m2_rv2_gate(payload)
+    raise PlanSemanticError("AMENDMENT_KIND_UNSUPPORTED", "unsupported Plan amendment kind")
+
+
 def _matches_semantic_id(value: object, contract: Mapping[str, Any]) -> bool:
     if contract.get("type") == "milestone_id":
         return is_milestone_id(value)
@@ -620,6 +679,85 @@ def add_work_item_to_plan(body: str, document: PortablePlanDocument, amendment: 
     if not revision_readback:
         raise PlanSemanticError("AMENDMENT_RENDER_INVALID", "rendered Plan revision did not verify")
     return candidate, normalized
+
+
+def waive_m2_rv2_gate_in_plan(
+    body: str,
+    document: PortablePlanDocument,
+    amendment: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    normalized = normalize_waive_m2_rv2_gate(amendment)
+    expected_work = ("W1", "W2", "W3", "W4", "W5", "W6")
+    if (
+        document.current_milestone != "M2"
+        or _next_text_plan_revision(body) != "R10"
+        or tuple(document.milestone_work_items.get("M2", ())) != expected_work
+        or "M2_RV2_REQUIRED" in document.current_fields
+        or "M2_RV2_WAIVED_BY_USER" in document.current_fields
+        or "M2_RV2_WAIVER_DECISION" in document.current_fields
+        or "M2_RV2_WAIVER_REASON" in document.current_fields
+    ):
+        raise PlanSemanticError(
+            "AMENDMENT_PRECONDITION_INVALID",
+            "RV2 waiver applies only to the unamended #005/M2 R9 W1-W6 requirement",
+        )
+    if body.count(_M2_RV2_OLD_LIFECYCLE) != 1:
+        raise PlanSemanticError("AMENDMENT_PRECONDITION_INVALID", "R9 RV2 closure lifecycle text is not uniquely present")
+    if body.count(_M2_RV2_OLD_GATE_CLAUSE) != 1:
+        raise PlanSemanticError("AMENDMENT_PRECONDITION_INVALID", "R9 RV2 gate clause is not uniquely present")
+    if body.count(_M2_RV2_OLD_AC12) != 1:
+        raise PlanSemanticError("AMENDMENT_PRECONDITION_INVALID", "R9 M2 AC12 RV2 requirement is not uniquely present")
+    current_field_matches = 0
+    field_lines, spans = _section_spans(body)
+    for start, end, section in spans:
+        if section.kind != "current":
+            continue
+        for index in range(start, end):
+            match = _KV_RE.match(field_lines[index].rstrip("\r\n"))
+            if match is not None and match.group(1) == "M2_RV2_REQUIRED":
+                current_field_matches += 1
+    if current_field_matches != 0:
+        raise PlanSemanticError("AMENDMENT_PRECONDITION_INVALID", "R9 must not already materialize an M2_RV2_REQUIRED field")
+
+    candidate = _replace_plan_revision(body, "R10")
+    candidate = _replace_milestone_values(
+        candidate,
+        {
+            "M2_RV2_REQUIRED": "no",
+            "M2_RV2_WAIVED_BY_USER": "yes",
+            "M2_RV2_WAIVER_DECISION": normalized["decision_ref"],
+            "M2_RV2_WAIVER_REASON": M2_RV2_WAIVER_REASON,
+        },
+    )
+    candidate = candidate.replace(_M2_RV2_OLD_LIFECYCLE, _M2_RV2_NEW_LIFECYCLE, 1)
+    candidate = candidate.replace(_M2_RV2_OLD_GATE_CLAUSE, _M2_RV2_NEW_GATE_CLAUSE, 1)
+    candidate = candidate.replace(_M2_RV2_OLD_AC12, _M2_RV2_NEW_AC12, 1)
+    try:
+        result = normalize_portable_plan(candidate, source_kind=PORTABLE_PLAN_SOURCE_LOCAL)
+    except Exception as exc:
+        raise PlanSemanticError("AMENDMENT_RENDER_INVALID", f"RV2 waiver Plan materialization failed admission: {exc}") from exc
+    if (
+        _next_text_plan_revision(candidate) != "R11"
+        or result.current_fields.get("M2_RV2_REQUIRED") != "no"
+        or result.current_fields.get("M2_RV2_WAIVED_BY_USER") != "yes"
+        or result.current_fields.get("M2_RV2_WAIVER_DECISION") != normalized["decision_ref"]
+        or result.current_fields.get("M2_RV2_WAIVER_REASON") != M2_RV2_WAIVER_REASON
+        or tuple(result.milestone_work_items.get("M2", ())) != expected_work
+        or result.milestone_dependencies.get("M2") != document.milestone_dependencies.get("M2")
+    ):
+        raise PlanSemanticError("AMENDMENT_RENDER_INVALID", "RV2 waiver readback changed unrelated M2 Work semantics")
+    return candidate, normalized
+
+
+def apply_plan_amendment(
+    body: str,
+    document: PortablePlanDocument,
+    amendment: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    normalized = normalize_plan_amendment(amendment)
+    if normalized["kind"] == "add_work_item":
+        return add_work_item_to_plan(body, document, normalized)
+    return waive_m2_rv2_gate_in_plan(body, document, normalized)
 
 
 def _has_cycle(nodes: set[str], edges: set[tuple[str, str]]) -> bool:
@@ -781,6 +919,9 @@ def _insert_work_section(body: str, milestone_id: str, item: Mapping[str, Any]) 
 
 __all__ = [
     "ADD_WORK_ITEM_AMENDMENT_CONTRACT",
+    "WAIVE_M2_RV2_GATE_AMENDMENT_CONTRACT",
+    "M2_RV2_WAIVER_DECISION_REF",
+    "M2_RV2_WAIVER_REASON",
     "MAX_PLAN_SEMANTIC_SECTIONS",
     "MAX_PLAN_SECTION_READ_BYTES",
     "PLAN_AMENDMENT_CONTRACTS",
@@ -789,6 +930,10 @@ __all__ = [
     "PlanSemanticIndex",
     "canonical_plan_amendment_digest",
     "normalize_add_work_item",
+    "normalize_waive_m2_rv2_gate",
+    "normalize_plan_amendment",
     "add_work_item_to_plan",
+    "waive_m2_rv2_gate_in_plan",
+    "apply_plan_amendment",
     "plan_amendment_contracts_for_help",
 ]
