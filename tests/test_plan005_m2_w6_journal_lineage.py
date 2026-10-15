@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -247,19 +248,37 @@ def test_w1_w5_history_accepts_exact_w6_then_user_waiver_lineage(tmp_path: Path)
         after_digest: str,
         plan_revision_before: int,
         amendment: dict,
+        last_observed_raw_authority_body: str | None = None,
     ) -> None:
+        decision_ref = f"decision-{journal_id}"
+        amendment_digest = canonical_plan_amendment_digest(amendment)
         evidence = {
             "project_id": fixture.PROJECT_ID,
             "plan_id": fixture.PLAN_ID,
+            "decision_ref": decision_ref,
             "authority_source_revision_before": before_digest,
             "authority_source_revision_after": after_digest,
             "authority_source_digest_before": before_digest,
             "authority_source_digest_after": after_digest,
             "plan_revision_before": plan_revision_before,
             "plan_revision_after": plan_revision_before + 1,
+            "binding_revision": plan_revision_before + 1,
             "amendment": amendment,
             "amendment_digest": canonical_plan_amendment_digest(amendment),
-            "last_observed_raw_authority_body": before_body,
+            "last_observed_raw_authority_body": (
+                before_body
+                if last_observed_raw_authority_body is None
+                else last_observed_raw_authority_body
+            ),
+            "plan_decision_receipt": {
+                "decision_kind": "plan_amendment",
+                "decision_ref": decision_ref,
+                "project_id": fixture.PROJECT_ID,
+                "plan_id": fixture.PLAN_ID,
+                "amendment": amendment,
+                "amendment_digest": amendment_digest,
+                "base_plan_revision": plan_revision_before,
+            },
         }
         journal.create_prepared(
             JournalRecord(
@@ -277,7 +296,7 @@ def test_w1_w5_history_accepts_exact_w6_then_user_waiver_lineage(tmp_path: Path)
                 authority_observed_raw_digest=before_digest,
                 candidate_raw_digest=after_digest,
                 normalized_plan_digest="c" * 64,
-                authorization_reference=f"auth-{journal_id}",
+                authorization_reference=decision_ref,
                 lease_reference=f"lease-{journal_id}",
                 authorization_basis="trusted_test",
                 journal_state=JournalState.PREPARED,
@@ -326,6 +345,7 @@ def test_w1_w5_history_accepts_exact_w6_then_user_waiver_lineage(tmp_path: Path)
             after_digest=r10_digest,
             plan_revision_before=10,
             amendment=normalized_waiver,
+            last_observed_raw_authority_body=r10[:1024],
         )
 
         adapter = object.__new__(closure.ThinMilestoneClosureEvidenceAdapter)
@@ -341,6 +361,53 @@ def test_w1_w5_history_accepts_exact_w6_then_user_waiver_lineage(tmp_path: Path)
         relation = adapter._journal_plan_lineage(receipt, r10_doc)
         assert relation is not None
         assert relation["lineage_kind"] == "m2_w6_then_user_waiver"
+        waiver_relation = relation["user_waiver_relation"]
+        waiver_summary = waiver_relation["last_observed_raw_authority_body"]
+        assert isinstance(waiver_summary, str)
+        assert len(waiver_summary) < len(r9)
+        assert hashlib.sha256(waiver_summary.encode("utf-8")).hexdigest() != r9_digest
+        reconstructed_r9 = adapter._verified_m2_rv2_waiver_predecessor(r10, waiver_relation, r10_doc)
+        assert reconstructed_r9 == r9
+        assert hashlib.sha256(reconstructed_r9.encode("utf-8")).hexdigest() == r9_digest
+        replayed_r10, _ = waive_m2_rv2_gate_in_plan(
+            reconstructed_r9,
+            normalize_portable_plan(
+                reconstructed_r9,
+                source_revision=r9_digest,
+                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+            ),
+            normalized_waiver,
+        )
+        assert replayed_r10 == r10
+        assert hashlib.sha256(replayed_r10.encode("utf-8")).hexdigest() == r10_digest
+        tampered_relations = []
+        changed = deepcopy(waiver_relation)
+        changed["amendment"]["kind"] = "add_work_item"
+        tampered_relations.append(changed)
+        changed = deepcopy(waiver_relation)
+        changed["amendment"]["decision_ref"] = "user-decision:foreign"
+        tampered_relations.append(changed)
+        changed = deepcopy(waiver_relation)
+        changed["amendment_digest"] = "0" * 64
+        tampered_relations.append(changed)
+        changed = deepcopy(waiver_relation)
+        changed["project_id"] = "foreign_project"
+        tampered_relations.append(changed)
+        changed = deepcopy(waiver_relation)
+        changed["authority_source_digest_before"] = "0" * 64
+        tampered_relations.append(changed)
+        changed = deepcopy(waiver_relation)
+        changed["authority_source_revision_before"] = "0" * 64
+        tampered_relations.append(changed)
+        for tampered in tampered_relations:
+            with pytest.raises(closure.MilestoneClosureEvidenceError):
+                adapter._verified_m2_rv2_waiver_predecessor(r10, tampered, r10_doc)
+        with pytest.raises(closure.MilestoneClosureEvidenceError):
+            adapter._verified_m2_rv2_waiver_predecessor(
+                r10.replace(f"PLAN_ID={fixture.PLAN_ID}", "PLAN_ID=foreign_plan", 1),
+                waiver_relation,
+                r10_doc,
+            )
         historical, _metadata = adapter._read_historical_plan(r8_digest, receipt, lineage=relation)
         adapter._verify_historical_plan_lineage(
             receipt,

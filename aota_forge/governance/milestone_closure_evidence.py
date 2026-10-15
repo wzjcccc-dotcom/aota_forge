@@ -34,14 +34,22 @@ from aota_forge.core.execution.durable_state import card_digest_for, is_bound_or
 from aota_forge.core.journal.model import JournalState
 from aota_forge.core.plan.normalize import normalize_portable_plan
 from aota_forge.core.plan.read_model import PORTABLE_PLAN_SOURCE_LOCAL, PortablePlanDocument
+from aota_forge.core.plan.sections import parse_body_sections
 from aota_forge.core.plan.validation import is_plan_id
 from aota_forge.core.project.manifest import PROJECT_ID_RE
 from aota_forge.governance.plan_semantics import (
+    _M2_RV2_NEW_AC12,
+    _M2_RV2_NEW_GATE_CLAUSE,
+    _M2_RV2_NEW_LIFECYCLE,
+    _M2_RV2_OLD_AC12,
+    _M2_RV2_OLD_GATE_CLAUSE,
+    _M2_RV2_OLD_LIFECYCLE,
     M2_RV2_WAIVER_DECISION_REF,
     M2_RV2_WAIVER_REASON,
     canonical_plan_amendment_digest,
     normalize_add_work_item,
     normalize_waive_m2_rv2_gate,
+    waive_m2_rv2_gate_in_plan,
 )
 from aota_forge.work_plane.handoff_store import handoff_open
 from aota_forge.work_plane.milestone_closure import MilestoneClosureReadiness
@@ -808,6 +816,265 @@ class ThinMilestoneClosureEvidenceAdapter:
         match = matches[0]
         return body[:match.start()] + f"{key}={replacement}{match.group('ending')}" + body[match.end():]
 
+    @staticmethod
+    def _remove_reconstructed_field(body: str, key: str, expected: str) -> str:
+        pattern = re.compile(rf"(?m)^{re.escape(key)}={re.escape(expected)}(?:\r?\n|$)")
+        matches = tuple(pattern.finditer(body))
+        if len(matches) != 1:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_RECONSTRUCTION_INVALID",
+                f"canonical successor field {key} is not present exactly once",
+            )
+        match = matches[0]
+        return body[:match.start()] + body[match.end():]
+
+    @staticmethod
+    def _replace_reconstructed_text(body: str, expected: str, replacement: str) -> str:
+        if body.count(expected) != 1:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_RECONSTRUCTION_INVALID",
+                "canonical successor text is not present exactly once",
+            )
+        return body.replace(expected, replacement, 1)
+
+    @staticmethod
+    def _plan_identity_fields(body: str) -> Mapping[str, str]:
+        identity_sections = tuple(section for section in parse_body_sections(body) if section.title == "Plan Identity")
+        if len(identity_sections) != 1:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_IDENTITY_MISMATCH",
+                "Plan body does not contain one canonical Plan Identity section",
+            )
+        return identity_sections[0].key_values
+
+    def _reverse_m2_rv2_waiver_body(
+        self,
+        body: str,
+        amendment: Mapping[str, Any],
+    ) -> str:
+        try:
+            current = normalize_portable_plan(
+                body,
+                source_revision=str(self.plan_binding.source_revision),
+                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+            )
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_RECONSTRUCTION_INVALID",
+                "bound R10 Plan is not a valid normalized Plan",
+            ) from exc
+        if (
+            current.current_milestone != "M2"
+            or current.current_fields.get("M2_RV2_REQUIRED") != "no"
+            or current.current_fields.get("M2_RV2_WAIVED_BY_USER") != "yes"
+            or current.current_fields.get("M2_RV2_WAIVER_DECISION") != M2_RV2_WAIVER_DECISION_REF
+            or current.current_fields.get("M2_RV2_WAIVER_REASON") != M2_RV2_WAIVER_REASON
+            or tuple(current.milestone_work_items.get("M2", ())) != ("W1", "W2", "W3", "W4", "W5", "W6")
+        ):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_WORK_SEMANTICS_CHANGED",
+                "bound successor is not the canonical waived R10 W1-W6 Plan",
+            )
+        try:
+            normalized_amendment = normalize_waive_m2_rv2_gate(amendment)
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_AMENDMENT_INVALID",
+                "M2 RV2 waiver amendment is not canonical",
+            ) from exc
+
+        predecessor = body
+        predecessor = self._remove_reconstructed_field(predecessor, "M2_RV2_WAIVER_REASON", M2_RV2_WAIVER_REASON)
+        predecessor = self._remove_reconstructed_field(
+            predecessor,
+            "M2_RV2_WAIVER_DECISION",
+            normalized_amendment["decision_ref"],
+        )
+        predecessor = self._remove_reconstructed_field(predecessor, "M2_RV2_WAIVED_BY_USER", "yes")
+        predecessor = self._remove_reconstructed_field(predecessor, "M2_RV2_REQUIRED", "no")
+        predecessor = self._replace_reconstructed_text(
+            predecessor,
+            _M2_RV2_NEW_LIFECYCLE,
+            _M2_RV2_OLD_LIFECYCLE,
+        )
+        predecessor = self._replace_reconstructed_text(
+            predecessor,
+            _M2_RV2_NEW_GATE_CLAUSE,
+            _M2_RV2_OLD_GATE_CLAUSE,
+        )
+        predecessor = self._replace_reconstructed_text(
+            predecessor,
+            _M2_RV2_NEW_AC12,
+            _M2_RV2_OLD_AC12,
+        )
+        return self._replace_reconstructed_field(predecessor, "PLAN_REVISION", "R10", "R9")
+
+    def _verified_m2_rv2_waiver_predecessor(
+        self,
+        body: str,
+        relation: Mapping[str, Any],
+        current_plan: PortablePlanDocument,
+    ) -> str:
+        before = str(relation.get("authority_source_revision_before") or "")
+        after = str(relation.get("authority_source_revision_after") or "")
+        before_digest = str(relation.get("authority_source_digest_before") or "")
+        after_digest = str(relation.get("authority_source_digest_after") or "")
+        before_plan_revision = relation.get("plan_revision_before")
+        after_plan_revision = relation.get("plan_revision_after")
+        raw_amendment = self._mapping_value(relation, "amendment", "amendment_payload", "plan_amendment")
+        try:
+            amendment = normalize_waive_m2_rv2_gate(raw_amendment)
+            expected_amendment_digest = canonical_plan_amendment_digest(amendment)
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_AMENDMENT_INVALID",
+                "M2 RV2 waiver journal amendment is not canonical",
+            ) from exc
+        state = self._mapping_value(relation, "journal_state", "cas_state")
+        state = getattr(state, "value", state)
+        record = relation.get("journal_record")
+        target = getattr(record, "typed_target", None)
+        target_reader = getattr(target, "to_canonical", None)
+        binding_revision = relation.get("binding_revision")
+        current_record_revision = relation.get("current_plan_record_revision")
+        decision = relation.get("plan_decision_receipt") or relation.get("semantic_decision_receipt")
+        decision_ref = relation.get("decision_ref")
+        try:
+            expected_target = _plan_object_ref(self.plan_binding.plan_id).to_canonical()
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_IDENTITY_MISMATCH",
+                "bound Plan target is invalid",
+            ) from exc
+        current_digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        identity = self._plan_identity_fields(body)
+        if (
+            relation.get("project_id") != self.project_id
+            or relation.get("plan_id") != self.plan_binding.plan_id
+            or relation.get("milestone_id") != "M2"
+            or amendment["decision_ref"] != M2_RV2_WAIVER_DECISION_REF
+            or relation.get("amendment_digest") != expected_amendment_digest
+            or state not in {JournalState.VERIFIED.value, JournalState.VERIFIED_RECOVERED.value}
+            or not callable(target_reader)
+            or target_reader() != expected_target
+            or not _SHA256_RE.fullmatch(before)
+            or not _SHA256_RE.fullmatch(after)
+            or before != before_digest
+            or after != after_digest
+            or after != str(self.plan_binding.source_revision or "")
+            or after_digest != self.plan_binding.source_digest
+            or current_digest != after_digest
+            or isinstance(before_plan_revision, bool)
+            or not isinstance(before_plan_revision, int)
+            or before_plan_revision != 10
+            or isinstance(after_plan_revision, bool)
+            or not isinstance(after_plan_revision, int)
+            or after_plan_revision != 11
+            or after_plan_revision != before_plan_revision + 1
+            or isinstance(binding_revision, bool)
+            or not isinstance(binding_revision, int)
+            or binding_revision != after_plan_revision
+            or getattr(record, "subject_expected_revision", None) != before_plan_revision
+            or isinstance(current_record_revision, bool)
+            or not isinstance(current_record_revision, int)
+            or current_record_revision != after_plan_revision
+            or not isinstance(decision, Mapping)
+            or decision.get("decision_kind") != "plan_amendment"
+            or decision.get("project_id") != self.project_id
+            or decision.get("plan_id") != self.plan_binding.plan_id
+            or decision.get("amendment") != amendment
+            or decision.get("amendment_digest") != expected_amendment_digest
+            or decision.get("base_plan_revision") != before_plan_revision
+            or not isinstance(decision_ref, str)
+            or decision_ref != getattr(record, "authorization_reference", None)
+            or decision.get("decision_ref") != decision_ref
+            or (
+                relation.get("current_plan_source_revision") is not None
+                and str(relation.get("current_plan_source_revision")) != after
+            )
+            or (
+                relation.get("current_plan_source_digest") is not None
+                and relation.get("current_plan_source_digest") != after_digest
+            )
+            or current_plan.current_milestone != "M2"
+            or identity.get("PROJECT_ID") != self.project_id
+            or identity.get("PLAN_ID") != self.plan_binding.plan_id
+            or not self._m2_rv2_user_waiver_is_current(current_plan)
+        ):
+            raise MilestoneClosureEvidenceError(
+                "PLAN_LINEAGE_RECORD_MISMATCH",
+                "M2 RV2 waiver journal does not bind the exact verified R9/R10 Plan transition",
+            )
+
+        journal_predecessor = relation.get("last_observed_raw_authority_body")
+        if (
+            isinstance(journal_predecessor, str)
+            and hashlib.sha256(journal_predecessor.encode("utf-8")).hexdigest() == before_digest
+        ):
+            predecessor = journal_predecessor
+        else:
+            predecessor = self._reverse_m2_rv2_waiver_body(body, amendment)
+        if hashlib.sha256(predecessor.encode("utf-8")).hexdigest() != before_digest:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_DIGEST_MISMATCH",
+                "reconstructed R9 Plan digest differs from the journal predecessor digest",
+            )
+        try:
+            predecessor_plan = normalize_portable_plan(
+                predecessor,
+                source_revision=before,
+                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+            )
+            replayed, _normalized = waive_m2_rv2_gate_in_plan(predecessor, predecessor_plan, amendment)
+            predecessor_identity = self._plan_identity_fields(predecessor)
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_RECONSTRUCTION_INVALID",
+                "reconstructed R9 Plan cannot be verified by the canonical waiver rule",
+            ) from exc
+        if (
+            replayed != body
+            or hashlib.sha256(replayed.encode("utf-8")).hexdigest() != after_digest
+            or predecessor_plan.current_milestone != "M2"
+            or predecessor_identity.get("PROJECT_ID") != self.project_id
+            or predecessor_identity.get("PLAN_ID") != self.plan_binding.plan_id
+            or tuple(predecessor_plan.milestone_work_items.get("M2", ()))
+            != tuple(current_plan.milestone_work_items.get("M2", ()))
+            or predecessor_plan.milestone_dependencies.get("M2") != current_plan.milestone_dependencies.get("M2")
+        ):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_WORK_SEMANTICS_CHANGED",
+                "R9-to-R10 waiver replay changed M2 Work, DAG, or acceptance semantics",
+            )
+        for work_item_id in ("W1", "W2", "W3", "W4", "W5", "W6"):
+            predecessor_projection = self._work_projection(predecessor_plan, work_item_id)
+            successor_projection = self._work_projection(current_plan, work_item_id)
+            if work_item_id == M2_W6_REPAIR_WORK_ITEM_ID:
+                for work_slice in successor_projection["source_slices"]:
+                    source_text = work_slice.get("source_text")
+                    if not isinstance(source_text, str):
+                        continue
+                    for successor_text, predecessor_text in (
+                        (_M2_RV2_NEW_LIFECYCLE, _M2_RV2_OLD_LIFECYCLE),
+                        (_M2_RV2_NEW_GATE_CLAUSE, _M2_RV2_OLD_GATE_CLAUSE),
+                        (_M2_RV2_NEW_AC12, _M2_RV2_OLD_AC12),
+                    ):
+                        occurrences = source_text.count(successor_text)
+                        if occurrences > 1:
+                            raise MilestoneClosureEvidenceError(
+                                "HISTORICAL_WORK_SEMANTICS_CHANGED",
+                                "W6 acceptance contains ambiguous waiver text",
+                            )
+                        if occurrences == 1:
+                            source_text = source_text.replace(successor_text, predecessor_text, 1)
+                    work_slice["source_text"] = source_text
+            if predecessor_projection != successor_projection:
+                raise MilestoneClosureEvidenceError(
+                    "HISTORICAL_WORK_SEMANTICS_CHANGED",
+                    f"R9-to-R10 waiver changed M2/{work_item_id} acceptance semantics",
+                )
+        return predecessor
+
     def _reverse_w6_predecessor_body(
         self,
         body: str,
@@ -1053,17 +1320,35 @@ class ThinMilestoneClosureEvidenceAdapter:
             waiver_relation = relation.get("user_waiver_relation")
             if not isinstance(w6_relation, Mapping) or not isinstance(waiver_relation, Mapping):
                 raise MilestoneClosureEvidenceError("PLAN_LINEAGE_RECORD_MISMATCH", "bounded waiver lineage is incomplete")
-            r9_body = waiver_relation.get("last_observed_raw_authority_body")
             r9_digest = str(waiver_relation.get("authority_source_digest_before") or "")
+            try:
+                current_plan = normalize_portable_plan(
+                    snapshot.body,
+                    source_revision=str(snapshot.revision),
+                    source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+                )
+            except Exception as exc:
+                raise MilestoneClosureEvidenceError(
+                    "HISTORICAL_PLAN_SOURCE_INVALID",
+                    "trusted current R10 Plan is not a valid normalized Plan",
+                ) from exc
+            verified_waiver = self._journal_m2_rv2_waiver_transition(current_plan)
+            passed_record = waiver_relation.get("journal_record")
+            verified_record = verified_waiver.get("journal_record") if isinstance(verified_waiver, Mapping) else None
             if (
-                not isinstance(r9_body, str)
+                verified_waiver is None
+                or getattr(passed_record, "journal_id", None) != getattr(verified_record, "journal_id", None)
                 or not _SHA256_RE.fullmatch(r9_digest)
-                or hashlib.sha256(r9_body.encode("utf-8")).hexdigest() != r9_digest
             ):
                 raise MilestoneClosureEvidenceError(
-                    "HISTORICAL_PLAN_DIGEST_MISMATCH",
-                    "verified waiver journal does not retain the exact R9 predecessor body",
+                    "PLAN_LINEAGE_RECORD_MISMATCH",
+                    "bounded waiver lineage does not match the exact verified R9-to-R10 Journal record",
                 )
+            r9_body = self._verified_m2_rv2_waiver_predecessor(
+                snapshot.body,
+                verified_waiver,
+                current_plan,
+            )
             predecessor_body = self._reverse_w6_predecessor_body(
                 r9_body,
                 w6_relation,
@@ -1108,14 +1393,15 @@ class ThinMilestoneClosureEvidenceAdapter:
                         "predecessor Plan source revision does not match the receipt",
                     )
                 return document, {"project_id": self.project_id, "plan_id": self.plan_binding.plan_id}
-        relation = lineage or self._journal_plan_lineage(receipt, self._current_plan()[0])
-        if relation is None:
+        full_lineage = lineage or self._journal_plan_lineage(receipt, self._current_plan()[0])
+        if full_lineage is None:
             raise MilestoneClosureEvidenceError(
                 "HISTORICAL_PLAN_SOURCE_UNAVAILABLE",
                 "exact predecessor Plan relation is unavailable",
             )
-        if relation.get("lineage_kind") == "m2_w6_then_user_waiver":
-            relation = relation.get("w6_relation")
+        relation = full_lineage
+        if full_lineage.get("lineage_kind") == "m2_w6_then_user_waiver":
+            relation = full_lineage.get("w6_relation")
         if not isinstance(relation, Mapping) or str(relation.get("authority_source_revision_before") or "") != str(source_revision):
             raise MilestoneClosureEvidenceError(
                 "PLAN_LINEAGE_REVISION_MISMATCH",
@@ -1150,7 +1436,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         reconstructed = self._reconstruct_historical_plan_from_journal(
             source_revision,
             receipt,
-            lineage=relation,
+            lineage=full_lineage,
         )
         if not isinstance(reconstructed, Mapping) or not isinstance(reconstructed.get("body"), str):
             raise MilestoneClosureEvidenceError(
@@ -1322,6 +1608,7 @@ class ThinMilestoneClosureEvidenceAdapter:
             if current is not None:
                 relation.setdefault("project_id", current.project_id)
                 relation.setdefault("plan_id", current.plan_id)
+                relation.setdefault("current_plan_record_revision", current.revision)
                 relation.setdefault("current_plan_source_revision", current.authority.source_revision)
                 relation.setdefault("current_plan_source_digest", current.authority.source_digest)
         return relation
@@ -1369,11 +1656,62 @@ class ThinMilestoneClosureEvidenceAdapter:
             return None
         successor_revision = str(self.plan_binding.source_revision or "")
         matches = []
+        try:
+            destination = LocalPlanAuthorityDestination(
+                self.governance_root,
+                self.plan_binding.plan_id,
+                _plan_object_ref(self.plan_binding.plan_id),
+            )
+            snapshot = LocalPlanAuthorityReadAdapter(destination, binding=self.plan_binding).load()
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_SOURCE_UNAVAILABLE",
+                "trusted bound R10 Plan source could not be read for waiver reconstruction",
+            ) from exc
+        if (
+            str(snapshot.revision) != str(self.plan_binding.source_revision)
+            or snapshot.digest != self.plan_binding.source_digest
+            or hashlib.sha256(snapshot.body.encode("utf-8")).hexdigest() != self.plan_binding.source_digest
+        ):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_DIGEST_MISMATCH",
+                "trusted bound R10 Plan bytes do not match the PlanAuthorityBinding",
+            )
+        try:
+            trusted_current_plan = normalize_portable_plan(
+                snapshot.body,
+                source_revision=str(snapshot.revision),
+                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
+            )
+        except Exception as exc:
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_SOURCE_INVALID",
+                "trusted bound R10 Plan is not a valid normalized Plan",
+            ) from exc
+        if (
+            str(current_plan.source_revision) != str(snapshot.revision)
+            or not self._m2_rv2_user_waiver_is_current(trusted_current_plan)
+        ):
+            raise MilestoneClosureEvidenceError(
+                "HISTORICAL_PLAN_DIGEST_MISMATCH",
+                "current Plan projection does not match the trusted bound R10 Plan",
+            )
         for record in self._journal_lineage_records():
             if str(getattr(record, "observed_revision", "") or "") != successor_revision:
                 continue
             relation = self._journal_lineage_relation(record)
             if relation is None:
+                continue
+            target = getattr(record, "typed_target", None)
+            target_reader = getattr(target, "to_canonical", None)
+            try:
+                expected_target = _plan_object_ref(self.plan_binding.plan_id).to_canonical()
+            except Exception as exc:
+                raise MilestoneClosureEvidenceError(
+                    "PLAN_LINEAGE_IDENTITY_MISMATCH",
+                    "bound Plan target is invalid",
+                ) from exc
+            if not callable(target_reader) or target_reader() != expected_target:
                 continue
             raw_amendment = self._mapping_value(relation, "amendment", "amendment_payload", "plan_amendment")
             if not isinstance(raw_amendment, Mapping) or raw_amendment.get("kind") != "waive_m2_rv2_gate":
@@ -1391,51 +1729,9 @@ class ThinMilestoneClosureEvidenceAdapter:
                     "PLAN_LINEAGE_AMENDMENT_DIGEST_MISMATCH",
                     "M2 RV2 waiver amendment digest mismatch",
                 )
-            before = str(relation.get("authority_source_revision_before") or "")
-            after = str(relation.get("authority_source_revision_after") or "")
-            before_digest = str(relation.get("authority_source_digest_before") or "")
-            after_digest = str(relation.get("authority_source_digest_after") or "")
-            previous_body = relation.get("last_observed_raw_authority_body")
-            if (
-                relation.get("project_id") != self.project_id
-                or relation.get("plan_id") != self.plan_binding.plan_id
-                or before != before_digest
-                or after != successor_revision
-                or after_digest != successor_revision
-                or not isinstance(previous_body, str)
-                or hashlib.sha256(previous_body.encode("utf-8")).hexdigest() != before_digest
-            ):
-                raise MilestoneClosureEvidenceError(
-                    "PLAN_LINEAGE_RECORD_MISMATCH",
-                    "M2 RV2 waiver journal does not bind the exact R9/R10 authority transition",
-                )
-            previous_plan = normalize_portable_plan(
-                previous_body,
-                source_revision=before,
-                source_kind=PORTABLE_PLAN_SOURCE_LOCAL,
-            )
-            previous_revisions = tuple(re.findall(r"(?m)^PLAN_REVISION=R9\s*$", previous_body))
-            if (
-                len(previous_revisions) != 1
-                or "M2_RV2_REQUIRED" in previous_plan.current_fields
-                or previous_body.count("M2_RV2_REQUIRED=yes and RV2 remains a separate Milestone-level gate.") != 1
-                or previous_body.count("W6 → integration → RV2 → Doctor → M2 closure") != 1
-                or previous_plan.milestone_work_items.get("M2") != current_plan.milestone_work_items.get("M2")
-                or previous_plan.milestone_dependencies.get("M2") != current_plan.milestone_dependencies.get("M2")
-            ):
-                raise MilestoneClosureEvidenceError(
-                    "HISTORICAL_WORK_SEMANTICS_CHANGED",
-                    "M2 RV2 waiver predecessor is not the unchanged R9 W1-W6 Plan",
-                )
-            state = self._mapping_value(relation, "journal_state", "cas_state")
-            state = getattr(state, "value", state)
-            if state not in {JournalState.VERIFIED.value, JournalState.VERIFIED_RECOVERED.value}:
-                raise MilestoneClosureEvidenceError(
-                    "PLAN_LINEAGE_JOURNAL_INVALID",
-                    "M2 RV2 waiver journal evidence is not terminally verified",
-                )
-            relation["amendment"] = amendment
             relation["journal_record"] = record
+            self._verified_m2_rv2_waiver_predecessor(snapshot.body, relation, trusted_current_plan)
+            relation["amendment"] = amendment
             matches.append(relation)
             if len(matches) > 1:
                 raise MilestoneClosureEvidenceError(
@@ -1502,7 +1798,7 @@ class ThinMilestoneClosureEvidenceAdapter:
         historical_plan, _metadata = self._read_historical_plan(
             predecessor_revision,
             receipt,
-            lineage=w6_lineage,
+            lineage=lineage,
         )
         if historical_plan.current_milestone != "M2" or current_plan.current_milestone != "M2":
             raise MilestoneClosureEvidenceError(
